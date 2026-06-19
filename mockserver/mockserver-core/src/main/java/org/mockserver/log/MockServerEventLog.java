@@ -12,6 +12,7 @@ import org.mockserver.matchers.HttpResponseMatcher;
 import org.mockserver.matchers.MatchDifference;
 import org.mockserver.matchers.MatchDifferenceFormatter;
 import org.mockserver.matchers.MatcherBuilder;
+import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.listeners.MockServerEventLogNotifier;
 import org.mockserver.model.ExpectationId;
@@ -34,6 +35,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -103,6 +106,13 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
     private RequestDefinitionSerializer requestDefinitionSerializer;
     private final boolean asynchronousEventProcessing;
     private Disruptor<LogEntry> disruptor;
+    // Count of INFO/DEBUG log events silently dropped because the disruptor ring buffer was full.
+    // Under sustained load the ring buffer can saturate and tryPublishEvent() fails; previously
+    // these drops were invisible (only WARN/ERROR drops were logged), so the saturation cliff was
+    // undetectable. This counter (plus a WARN logged once on the first drop and the
+    // mock_server_dropped_log_events Prometheus counter) makes the cliff observable.
+    private final AtomicLong droppedLogEvents = new AtomicLong(0);
+    private final AtomicBoolean droppedLogEventWarned = new AtomicBoolean(false);
 
     public MockServerEventLog(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, boolean asynchronousEventProcessing) {
         super(scheduler);
@@ -119,6 +129,15 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         logEntry.setPort(getPort());
         if (asynchronousEventProcessing) {
             if (!disruptor.getRingBuffer().tryPublishEvent(logEntry)) {
+                // ring buffer full: the event is dropped. Make the drop observable — count it,
+                // mirror it to the Prometheus mock_server_dropped_log_events counter (no-op when
+                // metrics are disabled), and WARN once so the saturation cliff surfaces in the log
+                // even for INFO/DEBUG events (which were previously dropped silently).
+                droppedLogEvents.incrementAndGet();
+                Metrics.incrementDroppedLogEvents();
+                if (droppedLogEventWarned.compareAndSet(false, true)) {
+                    logger.warn("Log event ring buffer full — dropping log events; increase ringBufferSize or reduce log verbosity to avoid losing events");
+                }
                 // if ring buffer full only write WARN and ERROR to logger
                 if (logEntry.getLogLevel().toInt() >= Level.WARN.toInt()) {
                     logger.warn("Too many log events failed to add log event to ring buffer: " + logEntry);
@@ -131,6 +150,17 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
 
     public int size() {
         return eventLog.size();
+    }
+
+    /**
+     * Number of log events dropped because the disruptor ring buffer was full. A non-zero, growing
+     * value indicates the event log cannot keep up with the incoming load — increase
+     * {@code ringBufferSize} or reduce log verbosity. Always available (independent of whether
+     * Prometheus metrics are enabled); also mirrored to the {@code mock_server_dropped_log_events}
+     * Prometheus counter when metrics are enabled.
+     */
+    public long getDroppedLogEventCount() {
+        return droppedLogEvents.get();
     }
 
     private void startRingBuffer() {
@@ -231,8 +261,16 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
             .setType(RUNNABLE)
             .setConsumer(() -> {
                 String logCorrelationId = UUIDService.getUUID();
-                RequestDefinition matcher = requestDefinition != null ? requestDefinition : request().withLogCorrelationId(logCorrelationId);
-                HttpRequestMatcher requestMatcher = matcherBuilder.transformsToMatcher(matcher);
+                // A null filter means "clear everything". The previous code built a fresh empty
+                // request().withLogCorrelationId(uuid) matcher for this case, but the unique
+                // correlation id made it miss the matcher LRU cache on every clear, forcing an
+                // uncached matcher rebuild — and an empty matcher matches every entry anyway. So
+                // short-circuit the whole scan to "match all" rather than building and running a
+                // matcher. When a real filter is supplied the matcher is built once (cached by the
+                // filter) and matched fail-fast (single-arg matches => context == null => no
+                // MatchDifference allocation) exactly as before.
+                final boolean clearEverything = requestDefinition == null;
+                HttpRequestMatcher requestMatcher = clearEverything ? null : matcherBuilder.transformsToMatcher(requestDefinition);
                 for (LogEntry logEntry : new LinkedList<>(eventLog)) {
                     if (markAsDeletedOnly && logEntry.isDeleted()) {
                         // already tombstoned by an earlier clear — skip the expensive matcher so
@@ -241,7 +279,9 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                     }
                     RequestDefinition[] requests = logEntry.getHttpRequests();
                     boolean matches = false;
-                    if (requests != null) {
+                    if (clearEverything) {
+                        matches = true;
+                    } else if (requests != null) {
                         for (RequestDefinition request : requests) {
                             if (requestMatcher.matches(request.cloneWithLogCorrelationId())) {
                                 matches = true;

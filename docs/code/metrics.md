@@ -254,6 +254,16 @@ Two Prometheus `Counter`s track broker message flow for the optional `mockserver
 
 The dashboard **Metrics** view renders these on a dedicated **"Async message activity (cumulative)"** chart — kept separate from the HTTP **"HTTP request activity"** chart because broker message counts and HTTP request counts have different semantics. The two series (Published, Consumed) are summed across all channels client-side via `gaugeSeriesSum`; the panel is hidden until at least one async counter has data.
 
+### Dropped Log Events Counter
+
+A single Prometheus `Counter` makes the event-log ring-buffer saturation cliff observable. Registered once when `metricsEnabled` is `true`.
+
+| Metric Name | Incremented When |
+|-------------|------------------|
+| `mock_server_dropped_log_events` | A log event cannot be published because the `MockServerEventLog` disruptor ring buffer is full (`tryPublishEvent` returns `false`) |
+
+Under sustained load the event-log ring buffer can saturate and drop events. Previously only WARN/ERROR drops were logged, so INFO/DEBUG drops were silent and the cliff was undetectable. `MockServerEventLog.add(...)` now counts every drop on an always-available `AtomicLong` (readable via `getDroppedLogEventCount()` regardless of whether metrics are enabled), mirrors it to this Prometheus counter via the null-safe static `Metrics.incrementDroppedLogEvents()` (a no-op when metrics are off), and logs a single WARN on the first drop pointing at `ringBufferSize` / log verbosity as the remedy. A non-zero, growing value means the event log cannot keep up — raise `ringBufferSize` (derived from `maxLogEntries`) or reduce log verbosity.
+
 ### How Metrics Are Incremented
 
 - `HttpActionHandler` calls `metrics.increment(action.getType())` after dispatching each action, which maps the `Action.Type` enum to the corresponding `*_ACTIONS_COUNT` gauge

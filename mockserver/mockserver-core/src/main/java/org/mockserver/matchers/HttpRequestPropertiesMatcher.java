@@ -205,19 +205,35 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                 // behaviour so administrative operations are unaffected. Header/cookie/query map
                 // matchers below always use the default case-insensitive constructors.
                 boolean caseSensitive = !controlPlaneMatcher && configuration.matchExactCase();
+                BodyMatcher bodyMatcher = buildBodyMatcher(httpRequest.getBody());
+                // The JsonSchemaBodyDecoder is only dereferenced (in BodyMatching.bodyMatches) when a
+                // JSON-type body matcher converts an XML/form actual body to JSON. On the data-plane
+                // path the body matcher is fixed at build time, so for any non-JSON (or absent) body
+                // matcher the decoder is dead weight and we skip allocating it. The control-plane path
+                // is different: it can build a *fresh* JSON body matcher at match time from the
+                // candidate request's parsed BodyDTO (see matchesBody) and feed it back through the
+                // same decoder, so a control-plane matcher must always carry the decoder regardless of
+                // its own body matcher type.
+                JsonSchemaBodyDecoder jsonSchemaBodyParser =
+                    (controlPlaneMatcher
+                        || bodyMatcher instanceof JsonStringMatcher
+                        || bodyMatcher instanceof JsonSchemaMatcher
+                        || bodyMatcher instanceof JsonPathMatcher)
+                        ? new JsonSchemaBodyDecoder(configuration, mockServerLogger, expectation, httpRequest)
+                        : null;
                 rebuilt = new Compiled(
                     httpRequest,
                     new RegexStringMatcher(mockServerLogger, httpRequest.getMethod(), controlPlaneMatcher, caseSensitive),
                     new RegexStringMatcher(mockServerLogger, pathParametersParser.normalisePathWithParametersForMatching(httpRequest), controlPlaneMatcher, caseSensitive),
                     new MultiValueMapMatcher(mockServerLogger, httpRequest.getPathParameters(), controlPlaneMatcher),
                     new MultiValueMapMatcher(mockServerLogger, httpRequest.getQueryStringParameters(), controlPlaneMatcher),
-                    buildBodyMatcher(httpRequest.getBody()),
+                    bodyMatcher,
                     new MultiValueMapMatcher(mockServerLogger, httpRequest.getHeaders(), controlPlaneMatcher),
                     new HashMapMatcher(mockServerLogger, httpRequest.getCookies(), controlPlaneMatcher),
                     new BooleanMatcher(mockServerLogger, httpRequest.isKeepAlive()),
                     new BooleanMatcher(mockServerLogger, httpRequest.isSecure()),
                     new ExactStringMatcher(mockServerLogger, httpRequest.getProtocol() != null ? string(httpRequest.getProtocol().name()) : null),
-                    new JsonSchemaBodyDecoder(configuration, mockServerLogger, expectation, httpRequest)
+                    jsonSchemaBodyParser
                 );
             } else {
                 rebuilt = new Compiled(null);

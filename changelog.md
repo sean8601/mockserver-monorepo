@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   appears in the response (a subset of the type is honoured). Backed by a new `com.graphql-java:graphql-java`
   dependency (pinned to the Java-17-compatible 22.x line). The `schema` field round-trips in JSON in both the
   nested `graphQL` form and the flat body form.
+- **Dropped-log-event visibility**: when the event-log ring buffer is full under sustained load, dropped
+  log events are now counted and observable instead of vanishing silently (previously only WARN/ERROR
+  drops were logged, so INFO/DEBUG drops were invisible). A `mock_server_dropped_log_events` Prometheus
+  counter is exported when metrics are enabled, the running total is always available regardless of
+  metrics, and a single WARN is logged on the first drop pointing at `ringBufferSize` / log verbosity as
+  the remedy.
 - **Response verification: status-code range / operator matching**: a response template may now match a
   status code by class range (`statusCodeRange: "2XX"` matches `200`–`299`, case-insensitive `2xx` is also
   accepted) or numeric operator (`">= 400"`, `"> 200"`, `"< 300"`, `"<= 204"`, `"== 201"`) instead of only
@@ -427,6 +433,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
 
 ### Changed
+- **Efficiency: fewer allocations on hot expectation/log paths** (behaviour-preserving): clearing the
+  whole event log (a `clear` with no filter) no longer rebuilds an uncached request matcher per call and
+  no longer scans each entry through a matcher — an empty filter now short-circuits to "match all";
+  compiling a request expectation only allocates the JSON-schema body decoder when the body matcher is a
+  JSON-type matcher (the control-plane path still always carries it); and `ObjectMapperFactory` now caches
+  the custom-serializer export `ObjectMapper`s by serializer-set signature instead of rebuilding one per
+  export. No observable behaviour changes.
 - **`HttpRequest.withBody((String) null)` now leaves the body unset**: a null string body passed to a
   request builder no longer coerces to an empty `StringBody` — the body field stays `null`, exactly as
   `HttpResponse.withBody((String) null)` has always behaved. `getBodyAsString()` therefore returns `null`

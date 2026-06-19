@@ -41,6 +41,10 @@ public class Metrics {
     private static volatile Histogram requestDurationByMethodSeconds;
     // Counter for slow forwarded requests. Null until metrics are enabled.
     private static volatile Counter slowRequestTotal;
+    // Counter for log events dropped because the event-log disruptor ring buffer was full.
+    // Null until metrics are enabled. Makes the (previously silent for INFO/DEBUG) ring-buffer
+    // saturation cliff observable under load.
+    private static volatile Counter droppedLogEventsTotal;
     // Per-upstream forwarded-request observability. Histogram of forward/proxy
     // latency labeled by upstream host, plus a count labeled by host + status
     // class. Both null until metrics are enabled. Cardinality is bounded by the
@@ -99,6 +103,10 @@ public class Metrics {
                     slowRequestTotal = Counter.builder()
                         .name("mock_server_slow_requests")
                         .help("Total number of forwarded requests that exceeded the slow request threshold")
+                        .register();
+                    droppedLogEventsTotal = Counter.builder()
+                        .name("mock_server_dropped_log_events")
+                        .help("Total number of log events dropped because the event-log ring buffer was full")
                         .register();
                     forwardRequestDurationSeconds = Histogram.builder()
                         .name("mock_server_forward_request_duration_seconds")
@@ -240,6 +248,7 @@ public class Metrics {
             requestDurationSeconds = null;
             requestDurationByMethodSeconds = null;
             slowRequestTotal = null;
+            droppedLogEventsTotal = null;
             forwardRequestDurationSeconds = null;
             forwardRequestsTotal = null;
             httpChaosInjectedTotal = null;
@@ -332,6 +341,28 @@ public class Metrics {
         if (counter != null) {
             counter.inc();
         }
+    }
+
+    /**
+     * Increment the dropped-log-events counter (event-log ring buffer full).
+     * No-op unless metrics are enabled (the counter is null otherwise). The
+     * authoritative, always-available count is maintained on
+     * {@link org.mockserver.log.MockServerEventLog#getDroppedLogEventCount()};
+     * this mirrors it to Prometheus when metrics are on.
+     */
+    public static void incrementDroppedLogEvents() {
+        Counter counter = droppedLogEventsTotal;
+        if (counter != null) {
+            counter.inc();
+        }
+    }
+
+    /**
+     * Return the current dropped-log-events count, or 0 if metrics are disabled.
+     */
+    public static long getDroppedLogEventCount() {
+        Counter counter = droppedLogEventsTotal;
+        return counter != null ? (long) counter.get() : 0L;
     }
 
     /**
