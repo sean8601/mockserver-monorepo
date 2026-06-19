@@ -29,6 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stripped, so saving creates a brand-new expectation while preserving `priority` and every other field). Each
   row also shows a `P<n>` chip with the expectation's match `priority` (defaults to `0`; higher wins), and a
   header "Priority" toggle re-orders the list by priority descending so the match order is visible at a glance.
+- **One-command record round-trip**: `GET/PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=...`
+  now accepts an optional `forwardUnmatchedTo=<upstream>` parameter. When supplied, the call arms
+  record-and-forward of unmatched requests to that upstream for the session — subsequent traffic that
+  matches no expectation is forwarded to the upstream and captured — and the same/next retrieve returns
+  the recorded expectations (deduplicated and templatized when `deduplicateRecordedExpectations` is on) in
+  the requested format (`java`, `javascript`, `python`, `go`, `csharp`, `ruby`, `rust`, `php`, `json`, …).
+  This removes the multi-step setup (configure `proxyRemoteHost`/`proxyRemotePort` and
+  `attemptToProxyIfNoMatchingExpectation`, run traffic, then retrieve) for the common "proxy a real
+  upstream → get ready-to-use expectations/code" flow. The upstream accepts a bare `host`, `host:port`, or
+  full URL (`http://host:port` / `https://host:port`, default ports 80/443) and is SSRF-validated against
+  the same `forwardProxyBlockPrivateNetworks` policy as the forward and replay paths **before** any state is
+  mutated or any connection is made (a blocked upstream returns `403` and leaves configuration untouched; a
+  malformed upstream returns `400`). Recording remains traffic-driven — the call only arms recording, it
+  does not synthesise traffic.
 - **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
   containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
   schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched

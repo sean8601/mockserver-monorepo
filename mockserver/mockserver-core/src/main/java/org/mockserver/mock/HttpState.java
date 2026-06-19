@@ -948,6 +948,21 @@ public class HttpState {
                 // ?namespace=T (or the configured namespace header) returns only that
                 // tenant's expectations plus global (no-namespace) expectations.
                 final String namespaceFilter = resolveNamespaceFilter(request);
+
+                // Record-and-forward one-command round-trip (Unit R): when ?forwardUnmatchedTo=<upstream>
+                // is supplied, enable record-and-forward of unmatched requests to that upstream for the
+                // session. Subsequent traffic that matches no expectation is forwarded to the upstream and
+                // captured as a recorded expectation, which the same/next retrieve returns (deduplicated and
+                // templatized when deduplicateRecordedExpectations is on) in the requested format. Recording
+                // is inherently traffic-driven: this call only arms recording — it does not synthesise traffic.
+                final String forwardUnmatchedTo = request.getFirstQueryStringParameter("forwardUnmatchedTo");
+                if (isNotBlank(forwardUnmatchedTo)) {
+                    final HttpResponse forwardSetupError = enableRecordAndForward(forwardUnmatchedTo, logCorrelationId);
+                    if (forwardSetupError != null) {
+                        return forwardSetupError;
+                    }
+                }
+
                 switch (type) {
                     case LOGS: {
                         java.util.function.Consumer<List<LogEntry>> logsConsumer;
@@ -4369,6 +4384,78 @@ public class HttpState {
         if (isNotBlank(hostHeader)) {
             return HttpRequest.splitHostPort(hostHeader)[0];
         }
+        return null;
+    }
+
+    /**
+     * Arms record-and-forward of unmatched requests to {@code upstream} for the session — the
+     * server-side half of the one-command record round-trip exposed via
+     * {@code GET /mockserver/retrieve?type=RECORDED_EXPECTATIONS&forwardUnmatchedTo=<upstream>}.
+     * <p>
+     * {@code upstream} may be a bare {@code host}, {@code host:port}, or a full URL
+     * ({@code http://host:port} / {@code https://host:port}). The host is SSRF-validated against the
+     * same policy enforced by the normal forward and replay paths <em>before</em> any state is mutated.
+     * On success the proxy-remote host/port and {@code attemptToProxyIfNoMatchingExpectation} flag are
+     * set so that subsequent unmatched traffic is forwarded to the upstream and recorded.
+     *
+     * @return {@code null} on success, or a populated error {@link HttpResponse} (BAD_REQUEST / FORBIDDEN)
+     * to return directly when the upstream is malformed or blocked by SSRF policy.
+     */
+    private HttpResponse enableRecordAndForward(String upstream, String logCorrelationId) {
+        final String host;
+        final int port;
+        final boolean https;
+        try {
+            final String trimmed = upstream.trim();
+            if (trimmed.contains("://")) {
+                final java.net.URI uri = new java.net.URI(trimmed);
+                host = uri.getHost();
+                https = "https".equalsIgnoreCase(uri.getScheme());
+                port = uri.getPort() != -1 ? uri.getPort() : (https ? 443 : 80);
+            } else {
+                final String[] hostPort = HttpRequest.splitHostPort(trimmed);
+                host = hostPort[0];
+                https = false;
+                port = hostPort.length > 1 && isNotBlank(hostPort[1]) ? Integer.parseInt(hostPort[1]) : 80;
+            }
+        } catch (Exception parseError) {
+            return response()
+                .withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":" + jsonEncodeString("invalid forwardUnmatchedTo value: " + parseError.getMessage()) + "}", MediaType.JSON_UTF_8);
+        }
+        if (isBlank(host)) {
+            return response()
+                .withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"forwardUnmatchedTo must include a host e.g. localhost:8080 or http://localhost:8080\"}", MediaType.JSON_UTF_8);
+        }
+
+        // SSRF protection: validate the upstream host against the same policy enforced by the
+        // normal forward and replay paths before mutating any configuration / connecting.
+        try {
+            InetAddressValidator.validateForwardTarget(configuration, host);
+        } catch (IllegalArgumentException blocked) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setCorrelationId(logCorrelationId)
+                    .setMessageFormat("record-and-forward blocked by SSRF policy:{}")
+                    .setArguments(blocked.getMessage())
+            );
+            return response()
+                .withStatusCode(FORBIDDEN.code())
+                .withBody("{\"error\":" + jsonEncodeString("record-and-forward blocked by SSRF policy: " + blocked.getMessage()) + "}", MediaType.JSON_UTF_8);
+        }
+
+        configuration.proxyRemoteHost(host);
+        configuration.proxyRemotePort(port);
+        configuration.attemptToProxyIfNoMatchingExpectation(true);
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setType(LogEntry.LogMessageType.INFO)
+                .setLogLevel(Level.INFO)
+                .setCorrelationId(logCorrelationId)
+                .setMessageFormat("enabled record-and-forward of unmatched requests to upstream " + host + ":" + port + (https ? " (https)" : ""))
+        );
         return null;
     }
 

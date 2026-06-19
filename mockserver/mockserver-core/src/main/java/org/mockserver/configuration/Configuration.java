@@ -216,8 +216,12 @@ public class Configuration {
     private String proxyAuthenticationUsername;
     private String proxyAuthenticationPassword;
     private String noProxyHosts;
-    private String proxyRemoteHost;
-    private Integer proxyRemotePort;
+    // volatile: proxyRemoteHost/proxyRemotePort can be set at runtime via the
+    // retrieve ?forwardUnmatchedTo= record-and-forward convenience (control-plane
+    // thread) and are read on the Netty request path (HttpActionHandler), so the
+    // write must be visible across I/O threads.
+    private volatile String proxyRemoteHost;
+    private volatile Integer proxyRemotePort;
     private Boolean forwardAdjustHostHeader;
     private String forwardDefaultHostHeader;
     private List<ProxyPassMapping> proxyPassMappings;
