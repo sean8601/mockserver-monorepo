@@ -711,6 +711,25 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                     } else {
                         failureMessage = "Response not found " + verification.getTimes() + ", expected:<" + serializedResponseToBeVerified + "> but was found " + matchedCount + " time" + (matchedCount == 1 ? "" : "s") + " among " + allPairs.size() + " recorded responses";
                     }
+                    // Mirror the request side (buildClosestMatchDiff): when detailed failures are on and
+                    // there is at least one recorded response to compare against, append a field-level
+                    // "closest response" diff to the failure message. This is diagnostic only — it never
+                    // changes the pass/fail result (already inside the failed branch) and is gated
+                    // identically to the request-side closest-match diff (which does NOT gate on INFO, so
+                    // the diff reaches the returned failure message regardless of log level).
+                    if (configuration.detailedVerificationFailures() && !allPairs.isEmpty()) {
+                        List<HttpResponse> recordedResponses = allPairs.stream()
+                            .map(LogEventRequestAndResponse::getHttpResponse)
+                            .filter(Objects::nonNull)
+                            // bound the work like the request side — a huge recorded log should not blow
+                            // up the diff computation; cap at the same configured maximum
+                            .limit(maximumNumberOfRequestToReturnInVerificationFailure)
+                            .collect(Collectors.toList());
+                        String diffSummary = buildClosestResponseMatchDiff(verification, verification.getHttpResponse(), recordedResponses);
+                        if (isNotBlank(diffSummary)) {
+                            failureMessage += diffSummary;
+                        }
+                    }
                     if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                         mockServerLogger.logEvent(
                             new LogEntry()
@@ -936,6 +955,65 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                     new LogEntry()
                         .setLogLevel(Level.TRACE)
                         .setMessageFormat("exception generating closest match diff:{}")
+                        .setArguments(e.getMessage())
+                        .setThrowable(e)
+                );
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Response-verification analogue of {@link #buildClosestMatchDiff(HttpRequest, List)}: compares the
+     * verification response template against each recorded response and returns a field-level diff for
+     * the closest one (fewest differing fields), formatted by {@link MatchDifferenceFormatter} exactly
+     * as the request side is. Diagnostic only — the result is appended to the failure message and never
+     * affects the pass/fail outcome.
+     * <p>
+     * The {@code verification} argument supplies a non-null request for the {@link MatchDifference}: it
+     * dereferences its {@code httpRequest} when TRACE logging records a difference, so a null request
+     * would NPE — fall back to an empty {@link HttpRequest#request()} placeholder when the verification
+     * carries no request (a response-only verify), mirroring the request side's non-null guarantee.
+     */
+    private String buildClosestResponseMatchDiff(Verification verification, HttpResponse verificationResponse, List<HttpResponse> recordedResponses) {
+        try {
+            HttpResponseMatcher verificationMatcher = new HttpResponseMatcher(configuration, mockServerLogger, verificationResponse);
+            // MatchDifference dereferences its request under TRACE logging, so it must never be null —
+            // use the verification request when present, otherwise a non-null empty request placeholder
+            RequestDefinition diffRequest = verification.getHttpRequest() instanceof HttpRequest
+                ? (HttpRequest) verification.getHttpRequest()
+                : request();
+            int closestMatchFailures = Integer.MAX_VALUE;
+            Map<MatchDifference.Field, List<String>> closestDifferences = null;
+
+            for (HttpResponse recordedResponse : recordedResponses) {
+                // defensive: the call site already filters nulls, but guard here too so this helper is
+                // safe in isolation (HttpResponseMatcher.matches returns false on a null actual anyway)
+                if (recordedResponse == null) {
+                    continue;
+                }
+                MatchDifference matchDifference = new MatchDifference(true, diffRequest);
+                verificationMatcher.matches(matchDifference, recordedResponse);
+                Map<MatchDifference.Field, List<String>> differences = matchDifference.getAllDifferences();
+                int failures = differences.size();
+                if (failures < closestMatchFailures) {
+                    closestMatchFailures = failures;
+                    closestDifferences = differences;
+                    if (failures == 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (closestDifferences != null && !closestDifferences.isEmpty()) {
+                return MatchDifferenceFormatter.formatDifferences(closestDifferences);
+            }
+        } catch (Exception e) {
+            if (mockServerLogger.isEnabledForInstance(Level.TRACE)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.TRACE)
+                        .setMessageFormat("exception generating closest response match diff:{}")
                         .setArguments(e.getMessage())
                         .setThrowable(e)
                 );

@@ -761,6 +761,172 @@ public class MockServerEventLogRequestLogEntryVerificationTest {
     }
 
     @Test
+    public void shouldIncludeClosestResponseDiffInResponseVerificationFailureWhenEnabled() {
+        // given
+        configuration.detailedVerificationFailures(true);
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- verifying 404 against a recorded 200 should fail and append the closest response diff,
+        // naming the differing statusCode (recorded under MatchDifference.Field.OPERATION -> "operation")
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(404))
+        );
+        assertThat(result, containsString("Response not found"));
+        assertThat(result, containsString("closest match diff:"));
+        assertThat(result, containsString("operation:"));
+        assertThat(result, containsString("statusCode match failed"));
+    }
+
+    @Test
+    public void shouldIncludeClosestResponseBodyDiffInResponseVerificationFailureWhenEnabled() {
+        // given
+        configuration.detailedVerificationFailures(true);
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse = new HttpResponse().withStatusCode(200).withBody("recorded body");
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- the status matches but the body differs, so the diff names the body field
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(200).withBody("expected body"))
+        );
+        assertThat(result, containsString("Response not found"));
+        assertThat(result, containsString("closest match diff:"));
+        assertThat(result, containsString("body:"));
+    }
+
+    @Test
+    public void shouldNotIncludeClosestResponseDiffInResponseVerificationFailureWhenDisabled() {
+        // given
+        configuration.detailedVerificationFailures(false);
+        HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+        HttpResponse httpResponse = new HttpResponse().withStatusCode(200);
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(httpRequest)
+                .setHttpResponse(httpResponse)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- no diff appended when detailed verification failures is off; message unchanged
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(404))
+        );
+        assertThat(result, containsString("Response not found"));
+        assertThat(result, org.hamcrest.CoreMatchers.not(containsString("closest match diff:")));
+    }
+
+    @Test
+    public void shouldNotIncludeClosestResponseDiffWhenNoResponsesRecorded() {
+        // given -- detailed failures on but nothing recorded, so there is no closest response
+        configuration.detailedVerificationFailures(true);
+
+        // then
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(404))
+        );
+        assertThat(result, containsString("Response not found"));
+        assertThat(result, org.hamcrest.CoreMatchers.not(containsString("closest match diff:")));
+    }
+
+    @Test
+    public void shouldIncludeClosestResponseDiffWithoutNpeUnderTraceLogging() {
+        // given -- TRACE logging makes MatchDifference dereference its request when recording a
+        // difference; the closest-response diff must construct MatchDifference with a non-null request
+        // (here a response-only verify, so it falls back to the empty request() placeholder) and must
+        // not NPE. Use a fresh event log whose logger sees the TRACE configuration.
+        configuration.detailedVerificationFailures(true);
+        configuration.logLevel(org.slf4j.event.Level.TRACE);
+        MockServerEventLog traceEventLog = new MockServerEventLog(configuration, new MockServerLogger(configuration, MockServerLogger.class), scheduler, true);
+        try {
+            HttpRequest httpRequest = new HttpRequest().withPath("some_path");
+            HttpResponse httpResponse = new HttpResponse().withStatusCode(200);
+
+            // when
+            traceEventLog.add(
+                new LogEntry()
+                    .setHttpRequest(httpRequest)
+                    .setHttpResponse(httpResponse)
+                    .setType(FORWARDED_REQUEST)
+            );
+
+            // then -- response-only verify (no request) so the diff uses the placeholder request; no NPE
+            CompletableFuture<String> resultFuture = new CompletableFuture<>();
+            traceEventLog.verify(
+                verification().withResponse(response().withStatusCode(404)),
+                resultFuture::complete
+            );
+            String result;
+            try {
+                result = resultFuture.get(10, SECONDS);
+            } catch (Exception e) {
+                fail(e.getMessage());
+                return;
+            }
+            assertThat(result, containsString("Response not found"));
+            assertThat(result, containsString("closest match diff:"));
+            assertThat(result, containsString("operation:"));
+        } finally {
+            traceEventLog.stop();
+        }
+    }
+
+    @Test
+    public void shouldPickClosestResponseByFewestDifferingFields() {
+        // given
+        configuration.detailedVerificationFailures(true);
+        // farMatch differs on both statusCode and body; closeMatch matches statusCode and differs only
+        // on body -> fewer differing fields, so it must be selected as the closest response
+        HttpResponse farMatch = new HttpResponse().withStatusCode(500).withBody("wrong body");
+        HttpResponse closeMatch = new HttpResponse().withStatusCode(200).withBody("almost right");
+
+        // when
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(new HttpRequest().withPath("p1"))
+                .setHttpResponse(farMatch)
+                .setType(FORWARDED_REQUEST)
+        );
+        mockServerEventLog.add(
+            new LogEntry()
+                .setHttpRequest(new HttpRequest().withPath("p2"))
+                .setHttpResponse(closeMatch)
+                .setType(FORWARDED_REQUEST)
+        );
+
+        // then -- verifying status 200 + a specific body; closeMatch is closest (only body differs),
+        // so the appended diff names body but NOT the operation/statusCode field
+        String result = verify(
+            verification()
+                .withResponse(response().withStatusCode(200).withBody("expected body"))
+        );
+        assertThat(result, containsString("closest match diff:"));
+        assertThat(result, containsString("body:"));
+        assertThat(result, org.hamcrest.CoreMatchers.not(containsString("statusCode match failed")));
+    }
+
+    @Test
     public void shouldPassResponseVerificationWithRequestAndResponseFilter() {
         // given
         HttpRequest httpRequest1 = new HttpRequest().withPath("path_one");

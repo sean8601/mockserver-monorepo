@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an exact `statusCode`. The new `statusCodeRange` field is verification-only — it is never written to the
   wire when a response is served — and round-trips in JSON. When `statusCodeRange` is absent the historical
   exact-`statusCode` matching is byte-for-byte unchanged.
+- **`detailedVerificationFailures` now applies to response verification**: a failing response verification
+  (when `detailedVerificationFailures` is enabled) now appends a field-level "closest match diff" naming the
+  response fields that differed (statusCode/reasonPhrase, headers, cookies, body) and the expected-vs-found
+  values for the closest recorded response — mirroring the long-standing request-verification diagnostic,
+  which previously did nothing for response verification. The diff is diagnostic only and never changes the
+  pass/fail result; it is gated identically to the request side and capped by
+  `maximumNumberOfRequestToReturnInVerificationFailure`.
 - **Response matcher: reason-phrase honours `matchExactCase`**: when `matchExactCase` is enabled, the
   response reason-phrase is now matched case-sensitively (parity with the response body), so a template
   reason-phrase `OK` no longer matches an actual `ok`. The default (false) keeps the historical
