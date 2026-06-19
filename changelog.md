@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads `GET /mockserver/cluster` and shows the state-backend cluster status (clustered flag, node id,
   coordinator, named cluster, and a member list with coordinator/local markers), auto-refreshing with a manual
   refresh; a standalone server reports a single local node.
+- **Dashboard: Monaco code editor with live JSON validation for body matchers**: the Composer's request
+  body-matcher field is now a real Monaco code editor with syntax highlighting and per-type language modes
+  (JSON, XML, GraphQL, plaintext for path/regex expressions). For JSON and JSON-Schema body types it
+  validates live as you type — malformed JSON (and, for the JSON-Schema type, an invalid schema document)
+  is flagged inline with red squiggles plus a short error summary beneath the editor, before you submit.
+  Monaco and its language workers are bundled and served locally by the dashboard (no runtime CDN dependency).
 - **Deterministic fuzzy / similarity body matcher**: a request body matcher `FuzzyBody`
   (`{"type":"FUZZY","fuzzy":"...","threshold":0.8,"ignoreCase":false}`, DSL `FuzzyBody.fuzzy(...)`) matches when
   the request body is similar enough to an expected string by a deterministic Jaro-Winkler ratio at or above a

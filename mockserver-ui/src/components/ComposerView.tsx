@@ -84,6 +84,7 @@ import {
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
 import ImportForm from './ImportForm';
+import JsonEditor from './JsonEditor';
 import SnippetPalette from './SnippetPalette';
 import type { TemplateEngine as SnippetEngine } from '../lib/templateSnippets';
 
@@ -414,6 +415,44 @@ function infoAdornment(text: string) {
   };
 }
 
+// Minimal JSON-Schema (draft-07 subset) used to live-validate the body when the
+// body type is "JSON Schema": the value the user types must itself be a valid
+// JSON Schema document. This is a meta-schema, not the full expectation schema —
+// the body field holds only the body matcher value, not a whole expectation.
+const JSON_SCHEMA_META = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  properties: {
+    type: {},
+    properties: { type: 'object' },
+    required: { type: 'array', items: { type: 'string' } },
+    items: {},
+    enum: { type: 'array' },
+    $ref: { type: 'string' },
+    additionalProperties: {},
+  },
+} as const;
+
+// Map a body matcher type to the Monaco language and (optionally) a JSON Schema
+// to validate against. Types that are not document bodies (json-path, xpath,
+// regex, parameters, wasm, binary) fall back to plaintext with no validation.
+function bodyEditorConfig(type: BodyMatcherType): { language: string; schema?: object } {
+  switch (type) {
+    case 'json':
+      return { language: 'json' };
+    case 'json-schema':
+      return { language: 'json', schema: JSON_SCHEMA_META };
+    case 'xml':
+    case 'xml-schema':
+      return { language: 'xml' };
+    case 'graphql':
+      return { language: 'graphql' };
+    default:
+      // string, binary, json-path, xpath, regex, parameters, wasm
+      return { language: 'plaintext' };
+  }
+}
+
 function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatcher: (m: MatcherState) => void }) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -533,8 +572,8 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
             <MenuItem value="wasm">WASM module</MenuItem>
           </TextField>
         </Box>
-        <TextField
-          label={
+        {(() => {
+          const bodyLabel =
             matcher.bodyMatcherType === 'binary'
               ? 'Body matcher (base64 bytes)'
               : matcher.bodyMatcherType === 'graphql'
@@ -557,15 +596,8 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                                 ? 'Parameters (key=value per line)'
                                 : matcher.bodyMatcherType === 'wasm'
                                   ? 'WASM module name'
-                                  : 'Body matcher (string)'
-          }
-          fullWidth
-          multiline
-          minRows={matcher.bodyMatcherType === 'json-path' || matcher.bodyMatcherType === 'xpath' || matcher.bodyMatcherType === 'regex' ? 1 : 2}
-          maxRows={10}
-          value={matcher.body}
-          onChange={(e) => setMatcher({ ...matcher, body: e.target.value })}
-          placeholder={
+                                  : 'Body matcher (string)';
+          const bodyPlaceholder =
             matcher.bodyMatcherType === 'binary'
               ? 'SGVsbG8sIFdvcmxkIQ=='
               : matcher.bodyMatcherType === 'graphql'
@@ -588,10 +620,25 @@ function MatcherPanel({ matcher, setMatcher }: { matcher: MatcherState; setMatch
                                 ? 'username=admin\npassword=secret'
                                 : matcher.bodyMatcherType === 'wasm'
                                   ? 'myMatcher'
-                                  : 'e.g. hello world'
-          }
-          slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.78rem' } } }}
-        />
+                                  : 'e.g. hello world';
+          const editorConfig = bodyEditorConfig(matcher.bodyMatcherType);
+          const compact =
+            matcher.bodyMatcherType === 'json-path' ||
+            matcher.bodyMatcherType === 'xpath' ||
+            matcher.bodyMatcherType === 'regex';
+          return (
+            <JsonEditor
+              label={bodyLabel}
+              ariaLabel={bodyLabel}
+              language={editorConfig.language}
+              schema={editorConfig.schema}
+              value={matcher.body}
+              onChange={(next) => setMatcher({ ...matcher, body: next })}
+              placeholder={bodyPlaceholder}
+              height={compact ? 64 : 160}
+            />
+          );
+        })()}
         {matcher.bodyMatcherType === 'graphql' && (
           <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
             <TextField
@@ -4466,6 +4513,25 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                 // server rejects the registration.
                 if (kind !== 'dns' && (matcher.bodyMatcherType === 'binary' || matcher.bodyBinary) && matcher.body.trim().length > 0 && !isValidBase64(matcher.body)) {
                   return 'Binary body matcher is not valid base64';
+                }
+
+                // A JSON or JSON-Schema body matcher must be well-formed JSON —
+                // the Monaco editor flags this inline, and we also block the
+                // Register button so an invalid body cannot be submitted (it
+                // would otherwise be rejected by the server). Mirrors the
+                // dns_response answer-records check below.
+                if (
+                  kind !== 'dns' &&
+                  (matcher.bodyMatcherType === 'json' || matcher.bodyMatcherType === 'json-schema') &&
+                  matcher.body.trim().length > 0
+                ) {
+                  try {
+                    JSON.parse(matcher.body);
+                  } catch {
+                    return matcher.bodyMatcherType === 'json-schema'
+                      ? 'JSON Schema body matcher is not valid JSON'
+                      : 'JSON body matcher is not valid JSON';
+                  }
                 }
 
                 // Steps mode validation — exactly one responder required
