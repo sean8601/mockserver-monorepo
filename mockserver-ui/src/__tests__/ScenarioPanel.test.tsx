@@ -143,7 +143,7 @@ describe('ScenarioPanel — state-machine diagram (UI3)', () => {
     await waitFor(() => expect(mermaidRender).toHaveBeenCalled());
     const [, source] = mermaidRender.mock.calls[0] as [string, string];
     expect(source.startsWith('stateDiagram-v2')).toBe(true);
-    expect(source).toContain('paid : "paid"');
+    expect(source).toContain('paid : paid');
     expect(source).toContain('[*] --> paid');
     expect(source).toContain('class paid current');
     expect(source).not.toContain('<br');

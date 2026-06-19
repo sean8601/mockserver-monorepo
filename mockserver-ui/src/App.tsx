@@ -18,7 +18,6 @@ import FilterPanel from './components/FilterPanel';
 import DashboardGrid from './components/DashboardGrid';
 import TrafficInspector from './components/TrafficInspector';
 import SessionInspector from './components/SessionInspector';
-import ComposerView from './components/ComposerView';
 import LibraryView from './components/LibraryView';
 import ServiceChaosPanel from './components/ServiceChaosPanel';
 import DriftPanel from './components/DriftPanel';
@@ -38,6 +37,10 @@ import type { RequestFilter } from './types';
 // Lazy-loaded so the @mui/x-charts bundle only loads when the Metrics tab is
 // opened, keeping it off the initial dashboard load.
 const MetricsView = lazy(() => import('./components/MetricsView'));
+
+// Lazy-loaded so the Monaco editor (multi-MB) bundle only loads when the
+// Composer tab is opened, keeping it off the initial dashboard load.
+const ComposerView = lazy(() => import('./components/ComposerView'));
 
 export default function App() {
   const themeMode = useDashboardStore((s) => s.themeMode);
@@ -138,7 +141,11 @@ export default function App() {
             {view === 'dashboard' && <DashboardGrid />}
             {view === 'traffic' && <TrafficInspector />}
             {view === 'sessions' && <SessionInspector connectionParams={params} />}
-            {view === 'composer' && <ComposerView connectionParams={params} />}
+            {view === 'composer' && (
+              <Suspense fallback={<Box sx={{ p: 2 }}>Loading composer…</Box>}>
+                <ComposerView connectionParams={params} />
+              </Suspense>
+            )}
             {view === 'library' && <LibraryView connectionParams={params} />}
             {view === 'metrics' && (
               <Suspense fallback={<Box sx={{ p: 2 }}>Loading metrics…</Box>}>

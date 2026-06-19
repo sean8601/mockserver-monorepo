@@ -73,9 +73,10 @@ describe('scenarioGraph — Mermaid rendering', () => {
     const src = toScenarioMermaid(model);
 
     expect(src.startsWith('stateDiagram-v2')).toBe(true);
-    // state declarations carry the human-readable label.
-    expect(src).toContain('started : "started"');
-    expect(src).toContain('paid : "paid"');
+    // state declarations carry the human-readable description (unquoted — the
+    // text after `:` in stateDiagram-v2 is a description, not a quoted string).
+    expect(src).toContain('started : started');
+    expect(src).toContain('paid : paid');
     // initial marker points at the live current state.
     expect(src).toContain('[*] --> paid');
     // the transition edge is drawn.
@@ -95,8 +96,8 @@ describe('scenarioGraph — Mermaid rendering', () => {
       'order placed',
     );
     const src = toScenarioMermaid(model);
-    // ids are identifier-safe; the original name survives only inside the quoted label.
-    expect(src).toContain('order_placed : "order placed"');
+    // ids are identifier-safe; the original name survives in the description.
+    expect(src).toContain('order_placed : order placed');
     expect(src).toContain('order_placed --> order_shipped');
     expect(src).toContain('class order_placed current');
   });
