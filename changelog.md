@@ -137,6 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Resizable panels**: the four Dashboard panels can be resized by dragging the column and row
     dividers, and the Traffic inspector's request-detail pane width is drag-adjustable; the chosen sizes
     are remembered. The Mocks form now fills the full width like every other tab.
+  - **Clearer controls**: the Mocks "Quick mock / Advanced" switch is now an obvious cyan toggle, and
+    the Service Chaos switch toggles no longer hug the left edge.
   - **Consistency pass**: control-plane error messages are humanised everywhere (a short message with the
     raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
     come from a single typography scale, and "Capture as mock" can hand a captured request straight to
