@@ -327,7 +327,25 @@ describe('SessionInspector', () => {
     renderInspector();
 
     expect(screen.getByText('Show graph')).toBeInTheDocument();
-    // A single-provider lane uses the plain "Conversation" label (no "latest of N").
+    // A single-provider scoped lane uses the plain "Conversation" label (no "latest of N").
     expect(screen.getByText('Conversation')).toBeInTheDocument();
+    expect(screen.queryByText(/latest of/)).not.toBeInTheDocument();
+  });
+
+  it('flags a single-provider unscoped lane that holds multiple unrelated requests', async () => {
+    const user = userEvent.setup();
+    // Two unrelated Anthropic requests, same host, no isolation → one <unscoped> lane.
+    const r1 = makeAnthropicRequest('u1');
+    const r2 = makeAnthropicRequest('u2');
+    useDashboardStore.setState({ proxiedRequests: [r1, r2], activeExpectations: [] });
+
+    renderInspector();
+
+    // Even with one provider, the unscoped lane shows only the latest and says so.
+    const convBtn = screen.getByText(/Conversation \(latest of 2\)/);
+    await user.click(convBtn);
+    expect(
+      screen.getByText(/This lane groups 2 unrelated LLM requests \(Anthropic\)/),
+    ).toBeInTheDocument();
   });
 });

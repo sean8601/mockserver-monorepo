@@ -165,26 +165,31 @@ function ConversationByKind({ parsed }: { parsed: SessionRequest['parsed'] }) {
  * as chat bubbles, matching the Traffic tab's Conversation view. Collapsed by
  * default to keep the lanes compact.
  */
-function SessionConversation({ requests }: { requests: SessionRequest[] }) {
+function SessionConversation({ requests, isUnscoped }: { requests: SessionRequest[]; isUnscoped: boolean }) {
   const [open, setOpen] = useState(false);
   const convRequests = useMemo(
     () => requests.filter((r) => CONVERSATION_KINDS.has(r.parsed.kind)),
     [requests],
   );
-  const primary = convRequests.length > 0 ? convRequests[convRequests.length - 1] : undefined;
+  const primary = useMemo(
+    () => (convRequests.length > 0 ? convRequests[convRequests.length - 1] : undefined),
+    [convRequests],
+  );
   const providerKinds = useMemo(
     () => Array.from(new Set(convRequests.map((r) => r.parsed.kind))),
     [convRequests],
   );
-  // A normal agent session resends one growing history to a single provider, so
-  // the last conversation-capable request alone is the full transcript. The
-  // <unscoped> catch-all, though, groups unrelated requests across multiple
-  // providers — there is no single conversation, so we render the most recent one
-  // and flag that the others are only viewable by expanding their request above.
-  const mixed = convRequests.length > 1 && providerKinds.length > 1;
+  // A normal agent session resends one growing history to a single provider, so the
+  // last conversation-capable request alone is the full transcript — show it plainly.
+  // The <unscoped> catch-all instead groups UNRELATED requests (often across several
+  // providers); there is no single conversation, so whenever it holds more than one we
+  // render the most recent and flag that the others are only viewable by expanding
+  // their request above. (A multi-provider lane is always treated as mixed.)
+  const mixed = (isUnscoped && convRequests.length > 1) || providerKinds.length > 1;
 
   if (!primary) return null;
 
+  const providerList = providerKinds.map(providerLabel).join(', ');
   return (
     <Box sx={{ px: 1.5, pb: 0.75 }}>
       <Button
@@ -204,9 +209,12 @@ function SessionConversation({ requests }: { requests: SessionRequest[] }) {
               color="text.secondary"
               sx={{ display: 'block', mb: 0.5, fontStyle: 'italic' }}
             >
-              This lane groups {convRequests.length} unrelated LLM requests across {providerKinds.length}{' '}
-              providers ({providerKinds.map(providerLabel).join(', ')}). Showing only the most recent
-              ({providerLabel(primary.parsed.kind)}) — expand a request above to view the others.
+              This lane groups {convRequests.length} unrelated LLM requests
+              {providerKinds.length > 1
+                ? ` across ${providerKinds.length} providers (${providerList})`
+                : ` (${providerList})`}
+              . Showing only the most recent ({providerLabel(primary.parsed.kind)}) — expand a request
+              above to view the others.
             </Typography>
           )}
           <ConversationByKind parsed={primary.parsed} />
@@ -409,7 +417,7 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
       {/* Session-level conversation transcript (chat-bubble Conversation view,
           same as the Traffic tab). Shown for any session with a detectable LLM
           provider, including unscoped proxy traffic. */}
-      <SessionConversation requests={session.requests} />
+      <SessionConversation requests={session.requests} isUnscoped={isUnscoped} />
 
       {/* "Show Mermaid" link below the Conversation section — opens the
           correlated agent-run call graph (fetched on demand via explain_agent_run)
