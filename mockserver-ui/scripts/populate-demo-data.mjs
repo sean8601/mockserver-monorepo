@@ -1553,6 +1553,154 @@ async function mcpToolCallExamples() {
 }
 
 // ---------------------------------------------------------------------------
+// 8. LLM cost-optimisation showcase (Optimise tab — all six signals fire)
+// ---------------------------------------------------------------------------
+
+// A single coherent agent "run" — a customer-support triage agent making seven
+// OpenAI Chat Completions calls — crafted so the optimisation report
+// (GET /mockserver/llm/optimisationReport) fires ALL SIX deterministic signals.
+//
+// Why OpenAI /v1/chat/completions: its codec is the one that decodes a `system`
+// role message into a SYSTEM ParsedMessage (so the system-prompt signals fire),
+// parses assistant `tool_calls` (deterministic-tool detection) and `tool` role
+// messages with `tool_call_id` (oversized-tool-result detection). The report is
+// built from RECORDED request/response pairs: signal inputs come from each
+// request body's decoded conversation, and the token counts come from each
+// mocked response's `usage` block (so costIsEstimated=false — real numbers).
+//
+// How each signal is provoked (see OptimisationSignals.java thresholds):
+//   REPEATED_SYSTEM_PROMPT (HIGH)      every call resends the same large system
+//                                       prompt (≥1000 tokens, repeated ≥3 times).
+//   LARGE_STATIC_CONTEXT_RESENT (HIGH) that same system prompt is ≥2000 tokens
+//                                       (systemPromptTokens = ceil(chars/4), so the
+//                                       block below is sized to ~9k chars ⇒ ~2.3k tokens).
+//   DETERMINISTIC_TOOL_CALL (MEDIUM)   the assistant calls lookup_ticket with the
+//                                       SAME arguments, and that assistant turn is
+//                                       carried in ≥2 calls' message history.
+//   OVERSIZED_TOOL_RESULT (MEDIUM)     a tool result message ≥1000 tokens (≥4k chars).
+//   OUTPUT_TOKEN_BLOAT (LOW)           one call's response usage.completion_tokens is
+//                                       ≥1500 while the others are small.
+//   DUPLICATE_CONSECUTIVE_CALL (MEDIUM) two CONSECUTIVE calls with identical request
+//                                       shape (path/model/messageCount/systemPrompt
+//                                       fingerprint/inputTokens) — a retry.
+//
+// The calls are keyed by an `opt` query parameter and given high priority so each
+// returns its own exact `usage`, winning over the generic OpenAI single-shot mock.
+
+const OPTIMISE_MODEL = 'gpt-4o-mini';
+const OPTIMISE_PATH = '/v1/chat/completions';
+
+// A large, static instruction + context block (~9k chars ⇒ ~2.3k tokens) reused
+// verbatim on every call so its fingerprint is identical run-wide. Padded with a
+// realistic, repetitive policy/runbook body — exactly the kind of static context
+// that should be cached or retrieved rather than resent every turn.
+const OPTIMISE_SYSTEM_PROMPT = (() => {
+  const header =
+    'You are ACME Corp\'s customer-support triage agent. Follow the support runbook ' +
+    'precisely and never invent policy. Classify each ticket, decide the next action, ' +
+    'and call the provided tools when a lookup is required.\n\n';
+  // A long, static policy/runbook block. Repeated bullet sections pad it out to a
+  // realistically large (and resent-every-turn) static context.
+  const policyUnit =
+    'POLICY: Refunds are permitted within 30 days of delivery for unused items in original ' +
+    'packaging. Shipping fees are non-refundable except where the item arrived damaged or the ' +
+    'wrong item was sent. Always verify the order id against the ticket before promising a refund. ' +
+    'Escalate to a human agent for chargeback threats, legal language, or order values over 500 GBP. ' +
+    'For delivery delays, check the carrier status before responding and set expectations conservatively. ' +
+    'Never share another customer\'s personal data. Log every action to the audit trail. ';
+  let body = header;
+  // 16 sections ⇒ ~9k chars ⇒ ~2.3k tokens (comfortably over the 2,000-token
+  // LARGE_STATIC_CONTEXT_RESENT threshold; systemPromptTokens = ceil(chars/4)).
+  for (let i = 1; i <= 16; i++) {
+    body += `RUNBOOK SECTION ${i}. ${policyUnit}\n`;
+  }
+  return body;
+})();
+
+// The single deterministic tool call the agent keeps making (identical args).
+const LOOKUP_TICKET = {
+  id: 'call_lookup_ticket_0',
+  type: 'function',
+  function: { name: 'lookup_ticket', arguments: '{"ticketId":"TICKET-1001"}' },
+};
+
+// An oversized (~4.5k char ⇒ ~1.1k token) tool result — a giant raw ticket dump
+// that gets re-sent as input on every subsequent turn.
+const OVERSIZED_TOOL_RESULT = (() => {
+  const line =
+    'event: status_change; from: open; to: pending; actor: system; note: customer contacted carrier; ';
+  let dump = 'TICKET-1001 full history dump (verbose): ';
+  for (let i = 0; i < 45; i++) {
+    dump += `[#${i}] ${line}`;
+  }
+  return dump;
+})();
+
+// Build the message history for a given turn. Each call resends the full system
+// prompt + the growing conversation (this is what real agent frameworks do).
+function optimiseMessages(turn) {
+  const messages = [
+    { role: 'system', content: OPTIMISE_SYSTEM_PROMPT },
+    { role: 'user', content: 'Customer asks: where is my refund for order TICKET-1001?' },
+  ];
+  if (turn >= 2) {
+    // assistant decides to look the ticket up (the deterministic tool call)
+    messages.push({ role: 'assistant', content: null, tool_calls: [LOOKUP_TICKET] });
+  }
+  if (turn >= 3) {
+    // the oversized tool result is fed back, then re-sent every later turn
+    messages.push({ role: 'tool', tool_call_id: LOOKUP_TICKET.id, content: OVERSIZED_TOOL_RESULT });
+    messages.push({ role: 'user', content: 'Please summarise the refund status for the customer.' });
+  }
+  return messages;
+}
+
+// The crafted run: seven calls. usage.prompt_tokens drives inputTokens (must be
+// identical for the two duplicate calls); usage.completion_tokens drives
+// outputTokens (one call is deliberately bloated). Two consecutive calls (5 and 6)
+// share an identical body AND identical prompt_tokens ⇒ DUPLICATE_CONSECUTIVE_CALL.
+const OPTIMISE_RUN = [
+  { opt: 1, turn: 1, text: 'Let me check the refund policy and the order.', usage: { input: 2400, output: 40 } },
+  { opt: 2, turn: 2, text: 'I need to look up the ticket.', toolUse: true, usage: { input: 2410, output: 45 } },
+  { opt: 3, turn: 3, text: 'The order was delivered 12 days ago; a refund is permitted.', usage: { input: 3590, output: 60 } },
+  { opt: 4, turn: 3, text: 'Here is a very long, over-verbose answer that should have been constrained.', usage: { input: 3620, output: 1800 } },
+  // Calls 5 and 6 are an identical retry pair (same body AND same prompt_tokens) ⇒ DUPLICATE_CONSECUTIVE_CALL.
+  { opt: 5, turn: 3, text: 'Refund approved — processed to the original payment method.', usage: { input: 3600, output: 55 } },
+  { opt: 6, turn: 3, text: 'Refund approved — processed to the original payment method.', usage: { input: 3600, output: 55 } },
+  { opt: 7, turn: 3, text: 'Anything else I can help with?', usage: { input: 3610, output: 30 } },
+];
+
+async function optimisationShowcase() {
+  log('\n→ LLM cost-optimisation showcase (Optimise tab — all six signals)');
+
+  // One high-priority mock per call, keyed by ?opt=N, returning the exact usage.
+  for (const call of OPTIMISE_RUN) {
+    const completion = {
+      text: call.text,
+      stopReason: call.toolUse ? 'tool_calls' : 'stop',
+      usage: { inputTokens: call.usage.input, outputTokens: call.usage.output },
+    };
+    if (call.toolUse) {
+      completion.toolCalls = [{ id: LOOKUP_TICKET.id, name: 'lookup_ticket', arguments: LOOKUP_TICKET.function.arguments }];
+    }
+    await expectation(`optimise call ${call.opt} (usage in=${call.usage.input} out=${call.usage.output})`, {
+      priority: 50,
+      httpRequest: { method: 'POST', path: OPTIMISE_PATH, queryStringParameters: { opt: [String(call.opt)] } },
+      httpLlmResponse: { provider: 'OPENAI', model: OPTIMISE_MODEL, completion },
+    });
+  }
+
+  // Drive the run, back-to-back so the duplicate pair stays consecutive in the log.
+  for (const call of OPTIMISE_RUN) {
+    await traffic(`optimise run · call ${call.opt}`, 'POST', `${OPTIMISE_PATH}?opt=${call.opt}`, {
+      body: { model: OPTIMISE_MODEL, messages: optimiseMessages(call.turn) },
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  log('   ↳ open the dashboard Optimise tab (or curl /mockserver/llm/optimisationReport?format=markdown) to see all six signals');
+}
+
+// ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
 
@@ -1603,6 +1751,7 @@ async function main() {
   await proxyTraffic();
   await llmTraffic();
   await agentLoops();
+  await optimisationShowcase();
   await mcpToolCallExamples();
   await matchedShowcaseTraffic();
 
@@ -1641,6 +1790,7 @@ async function main() {
   log('   Mocks              — HTTP, gRPC (stream/unary), DNS (A/AAAA/CNAME/NXDOMAIN) mocks listed per kind');
   log('   Traffic            — recorded + proxied (forwarded) requests, incl. a lane per LLM provider + token/cost');
   log('   Sessions           — agent-001 / agent-002 loops + call graphs; Scenarios panel lists the seeded scenario state machines');
+  log('   Optimise           — LLM cost-optimisation brief from a crafted 7-call support-agent run; all six signals fire (REPEATED_SYSTEM_PROMPT, LARGE_STATIC_CONTEXT_RESENT, DETERMINISTIC_TOOL_CALL, OVERSIZED_TOOL_RESULT, OUTPUT_TOKEN_BLOAT, DUPLICATE_CONSECUTIVE_CALL)');
   log('   Chaos              — HTTP service chaos (incl. GraphQL-semantic) + gRPC chaos (health + fault injection with streaming/trailer faults) + TCP-layer chaos + a looping multi-stage Experiment');
   log('   Drift              — schema / status / header drift records from proxied-vs-stub comparison');
   log('   AsyncAPI           — Tools · AsyncAPI Broker Mock: loaded spec + Channels table (5 channels, varied schema/example counts)');
