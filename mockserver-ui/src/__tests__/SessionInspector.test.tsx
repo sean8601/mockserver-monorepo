@@ -56,6 +56,37 @@ function makeAnthropicRequest(
   };
 }
 
+function makeOpenAiRequest(key: string, host = 'api.openai.com'): JsonListItem {
+  return {
+    key,
+    value: {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/chat/completions',
+        headers: [{ name: 'host', values: [host] }],
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4o',
+            messages: [{ role: 'user', content: 'Where is my order?' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-4o',
+            choices: [{ message: { role: 'assistant', content: 'Checking now.' } }],
+            usage: { prompt_tokens: 12, completion_tokens: 4 },
+          }),
+        },
+      },
+    },
+  };
+}
+
 function makeIsolatedExpectation(scenarioName: string): JsonListItem {
   return {
     key: `exp-${scenarioName}`,
@@ -236,5 +267,67 @@ describe('SessionInspector', () => {
     // With no host header, isolationKey is the <unscoped> sentinel,
     // so the label should be plain "Unscoped requests" without a parenthetical.
     expect(screen.getByText('Unscoped requests')).toBeInTheDocument();
+  });
+
+  it('flags a mixed unscoped lane and hides the agent-run graph', async () => {
+    const user = userEvent.setup();
+    // Two unrelated providers sharing a host → one <unscoped> lane with a mix.
+    const anthropic: JsonListItem = {
+      key: 'a1',
+      value: {
+        httpRequest: {
+          method: 'POST',
+          path: '/v1/messages',
+          headers: [{ name: 'host', values: ['localhost:1080'] }],
+          body: {
+            type: 'JSON',
+            json: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              messages: [{ role: 'user', content: 'Hi' }],
+            }),
+          },
+        },
+        httpResponse: {
+          statusCode: 200,
+          body: {
+            type: 'JSON',
+            json: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              content: [{ type: 'text', text: 'Hello' }],
+              usage: { input_tokens: 10, output_tokens: 5 },
+              stop_reason: 'end_turn',
+            }),
+          },
+        },
+      },
+    };
+    useDashboardStore.setState({
+      proxiedRequests: [anthropic, makeOpenAiRequest('o1', 'localhost:1080')],
+      activeExpectations: [],
+    });
+
+    renderInspector();
+
+    // No correlated agent-run graph for the heterogeneous catch-all.
+    expect(screen.queryByText('Show graph')).not.toBeInTheDocument();
+    // The Conversation flags that it shows only the most recent of several.
+    const convBtn = screen.getByText(/Conversation \(latest of 2\)/);
+    await user.click(convBtn);
+    expect(
+      screen.getByText(/This lane groups 2 unrelated LLM requests across 2 providers/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the agent-run graph for a scoped single-provider session', () => {
+    useDashboardStore.setState({
+      proxiedRequests: [makeAnthropicRequest('r1', 'agent-A')],
+      activeExpectations: [makeIsolatedExpectation('__llm_conv_chat__iso=header:x-agent-id')],
+    });
+
+    renderInspector();
+
+    expect(screen.getByText('Show graph')).toBeInTheDocument();
+    // A single-provider lane uses the plain "Conversation" label (no "latest of N").
+    expect(screen.getByText('Conversation')).toBeInTheDocument();
   });
 });

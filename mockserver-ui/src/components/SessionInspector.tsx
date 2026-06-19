@@ -136,6 +136,15 @@ function RequestDetail({ request }: { request: SessionRequest }) {
 
 const CONVERSATION_KINDS = new Set(['anthropic', 'openai', 'openai_responses', 'gemini', 'ollama']);
 
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  openai_responses: 'OpenAI Responses',
+  gemini: 'Gemini',
+  ollama: 'Ollama',
+};
+const providerLabel = (kind: string): string => PROVIDER_LABELS[kind] ?? kind;
+
 /** Renders a single parsed request with the matching Traffic-tab conversation view. */
 function ConversationByKind({ parsed }: { parsed: SessionRequest['parsed'] }) {
   switch (parsed.kind) {
@@ -158,13 +167,21 @@ function ConversationByKind({ parsed }: { parsed: SessionRequest['parsed'] }) {
  */
 function SessionConversation({ requests }: { requests: SessionRequest[] }) {
   const [open, setOpen] = useState(false);
-  const primary = useMemo(() => {
-    let found: SessionRequest | undefined;
-    for (const r of requests) {
-      if (CONVERSATION_KINDS.has(r.parsed.kind)) found = r; // keep the last match
-    }
-    return found;
-  }, [requests]);
+  const convRequests = useMemo(
+    () => requests.filter((r) => CONVERSATION_KINDS.has(r.parsed.kind)),
+    [requests],
+  );
+  const primary = convRequests.length > 0 ? convRequests[convRequests.length - 1] : undefined;
+  const providerKinds = useMemo(
+    () => Array.from(new Set(convRequests.map((r) => r.parsed.kind))),
+    [convRequests],
+  );
+  // A normal agent session resends one growing history to a single provider, so
+  // the last conversation-capable request alone is the full transcript. The
+  // <unscoped> catch-all, though, groups unrelated requests across multiple
+  // providers — there is no single conversation, so we render the most recent one
+  // and flag that the others are only viewable by expanding their request above.
+  const mixed = convRequests.length > 1 && providerKinds.length > 1;
 
   if (!primary) return null;
 
@@ -177,10 +194,21 @@ function SessionConversation({ requests }: { requests: SessionRequest[] }) {
         startIcon={open ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
         sx={{ textTransform: 'none', fontSize: '0.7rem', color: 'text.secondary', px: 0.5, minWidth: 0 }}
       >
-        Conversation
+        {mixed ? `Conversation (latest of ${convRequests.length})` : 'Conversation'}
       </Button>
       <Collapse in={open} unmountOnExit>
         <Box sx={{ mt: 0.5, maxHeight: 500, overflowY: 'auto' }}>
+          {mixed && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mb: 0.5, fontStyle: 'italic' }}
+            >
+              This lane groups {convRequests.length} unrelated LLM requests across {providerKinds.length}{' '}
+              providers ({providerKinds.map(providerLabel).join(', ')}). Showing only the most recent
+              ({providerLabel(primary.parsed.kind)}) — expand a request above to view the others.
+            </Typography>
+          )}
           <ConversationByKind parsed={primary.parsed} />
         </Box>
       </Collapse>
@@ -385,8 +413,12 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
 
       {/* "Show Mermaid" link below the Conversation section — opens the
           correlated agent-run call graph (fetched on demand via explain_agent_run)
-          as a Mermaid diagram, a compact alternative to the chat transcript. */}
-      {graphProvider && (
+          as a Mermaid diagram, a compact alternative to the chat transcript.
+          Only shown for a scoped session: the <unscoped> lane is a heterogeneous
+          catch-all of unrelated requests across providers/paths, so a single
+          correlated call graph (derived from one provider+path) cannot represent
+          it and would not match the conversation transcript above. */}
+      {graphProvider && !isUnscoped && (
         <Box sx={{ px: 1.5, pb: 0.75 }}>
           <AgentRunGraph connectionParams={connectionParams} provider={graphProvider} path={graphPath} />
         </Box>
