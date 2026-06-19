@@ -88,6 +88,7 @@ public class HttpActionHandler {
     private HttpWebSocketResponseActionHandler httpWebSocketResponseActionHandler;
     private GrpcStreamResponseActionHandler grpcStreamResponseActionHandler;
     private HttpErrorActionHandler httpErrorActionHandler;
+    private org.mockserver.templates.engine.DelayTemplateResolver delayTemplateResolver;
 
     // forwarding
     private NettyHttpClient httpClient;
@@ -148,7 +149,7 @@ public class HttpActionHandler {
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
                 dispatchErrorAction((HttpError) action, request, earlyResponseWriter, ctx);
                 expectationPostProcessor.run();
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(getDelayTemplateResolver().resolve(action.getDelay(), request)));
             default ->
                 // Other action types are rejected at expectation-add time; nothing to dispatch here.
                 expectationPostProcessor.run();
@@ -319,6 +320,12 @@ public class HttpActionHandler {
         final HttpChaosProfile forwardChaos = (effectiveChaos == null && expectation.getChaos() == null && action.getType().name().startsWith("FORWARD"))
             ? ServiceChaosRegistry.getInstance().get(request.getFirstHeader("host"))
             : effectiveChaos;
+        // WS2.3: resolve an opt-in template delay (duration computed from the request) into a concrete
+        // millisecond delay here, where the request is in scope, so it applies to every action type's
+        // scheduled delay below. Non-template (static/distribution) delays resolve to themselves, so
+        // existing behaviour is byte-for-byte preserved. For the static RESPONSE action the response's own
+        // delay (which may differ from the action delay) is additionally resolved in writeResponseActionResponse.
+        final Delay actionDelay = getDelayTemplateResolver().resolve(action.getDelay(), request);
         switch (action.getType()) {
             // breakpoint: REQUEST-phase pause gates each mock-response dispatch; chaos faults and the
             // RESPONSE-phase breakpoint are applied inside writeResponseActionResponse. MODIFY feeds the
@@ -328,13 +335,13 @@ public class HttpActionHandler {
                     req -> getHttpResponseActionHandler().handle((HttpResponse) action, req, expectation.getHttpRequest())), expectationPostProcessor), synchronous);
             case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
-                    req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, action.getDelay());
+                    req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, actionDelay);
             case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
-                    req -> getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, req)), expectationPostProcessor), synchronous, action.getDelay());
+                    req -> getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, req)), expectationPostProcessor), synchronous, actionDelay);
             case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
                     getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
-                synchronous, action.getDelay());
+                synchronous, actionDelay);
             // chaos: inject HTTP chaos faults on expectation-based forwarded responses (FORWARD, FORWARD_TEMPLATE,
             // FORWARD_CLASS_CALLBACK, FORWARD_REPLACE, FORWARD_VALIDATE). Deferred: FORWARD_OBJECT_CALLBACK has
             // its own write path and the unmatched/anonymous proxy-pass path.
@@ -345,46 +352,46 @@ public class HttpActionHandler {
                 // breakpoint: REQUEST-phase pause gates the forward; MODIFY feeds the modified request into the forward handler
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
                     req -> getHttpForwardActionHandler().handle((HttpForward) action, req));
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
                     req -> getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, req));
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
                     req -> getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, req));
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             // deferred: FORWARD_OBJECT_CALLBACK chaos injection and REQUEST breakpoint — uses its own write path
             case FORWARD_OBJECT_CALLBACK -> scheduler.schedule(() ->
                     getHttpForwardObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
-                synchronous, combineWithGlobalDelay(action.getDelay()));
+                synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_REPLACE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
                     req -> getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, req));
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
                     req -> getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, req));
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_WITH_FALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
                     req -> getHttpForwardWithFallbackActionHandler().handle((HttpForwardWithFallback) action, req));
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case SSE_RESPONSE -> {
                 if (ctx == null) {
                     writeResponseActionResponse(
@@ -421,7 +428,7 @@ public class HttpActionHandler {
                         } finally {
                             expectationPostProcessor.run();
                         }
-                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }, synchronous, combineWithGlobalDelay(actionDelay));
                 }
             }
             case LLM_RESPONSE -> {
@@ -491,7 +498,7 @@ public class HttpActionHandler {
                             } finally {
                                 expectationPostProcessor.run();
                             }
-                        }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                        }, synchronous, combineWithGlobalDelay(actionDelay));
                     }
                 } else {
                     scheduler.schedule(() -> {
@@ -527,7 +534,7 @@ public class HttpActionHandler {
                             }
                             expectationPostProcessor.run();
                         }
-                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }, synchronous, combineWithGlobalDelay(actionDelay));
                 }
             }
             case WEBSOCKET_RESPONSE -> {
@@ -566,7 +573,7 @@ public class HttpActionHandler {
                         } finally {
                             expectationPostProcessor.run();
                         }
-                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }, synchronous, combineWithGlobalDelay(actionDelay));
                 }
             }
             case GRPC_STREAM_RESPONSE -> {
@@ -607,7 +614,7 @@ public class HttpActionHandler {
                         } finally {
                             expectationPostProcessor.run();
                         }
-                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }, synchronous, combineWithGlobalDelay(actionDelay));
                 } else {
                     scheduler.schedule(() -> {
                         try {
@@ -638,7 +645,7 @@ public class HttpActionHandler {
                         } finally {
                             expectationPostProcessor.run();
                         }
-                    }, synchronous, combineWithGlobalDelay(action.getDelay()));
+                    }, synchronous, combineWithGlobalDelay(actionDelay));
                 }
             }
             case GRPC_BIDI_RESPONSE -> {
@@ -660,7 +667,7 @@ public class HttpActionHandler {
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 dispatchErrorAction((HttpError) action, request, responseWriter, ctx);
                 expectationPostProcessor.run();
-            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(action.getDelay()));
+            }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
         }
 
         final List<Action> secondaryActions = expectation.getSecondaryActions();
@@ -1957,7 +1964,11 @@ public class HttpActionHandler {
             org.mockserver.metrics.Metrics.incrementHttpChaosInjected("latency");
         }
 
-        Delay[] delays = combineWithChaosAndGlobalDelay(effectiveResponse.getDelay(), chaosLatency);
+        // WS2.3: resolve an opt-in template delay (duration computed from the request) into a concrete
+        // millisecond delay while the request is in scope. Non-template (static/distribution) delays are
+        // returned unchanged, so existing behaviour is byte-for-byte preserved.
+        Delay resolvedActionDelay = getDelayTemplateResolver().resolve(effectiveResponse.getDelay(), request);
+        Delay[] delays = combineWithChaosAndGlobalDelay(resolvedActionDelay, chaosLatency);
         scheduler.schedule(() -> {
             // breakpoint: RESPONSE-phase pause for matched mock responses (RESPONSE / RESPONSE_TEMPLATE /
             // RESPONSE_CLASS_CALLBACK only — scoped by action type so the protocol-specific write paths that
@@ -2031,6 +2042,13 @@ public class HttpActionHandler {
             default:
                 return false;
         }
+    }
+
+    private org.mockserver.templates.engine.DelayTemplateResolver getDelayTemplateResolver() {
+        if (delayTemplateResolver == null) {
+            delayTemplateResolver = new org.mockserver.templates.engine.DelayTemplateResolver(mockServerLogger, configuration);
+        }
+        return delayTemplateResolver;
     }
 
     private Delay[] combineWithGlobalDelay(Delay actionDelay) {
@@ -2266,7 +2284,7 @@ public class HttpActionHandler {
                 // blocking Thread.sleep — avoids starving the bounded scheduler thread pool.
                 // Only chaos latency is scheduled here because the forward path's action +
                 // global delay was already applied when the forward handler was dispatched
-                // (see combineWithGlobalDelay(action.getDelay()) in the processAction switch).
+                // (see combineWithGlobalDelay(actionDelay) in the processAction switch).
                 if (chaosLatency != null) {
                     scheduler.schedule(writeCommand, synchronous, chaosLatency);
                 } else {

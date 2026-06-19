@@ -2002,6 +2002,42 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
         <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
     </div>
 </div>
+<button id="button_response_with_template_delay" class="accordion">response with delay computed from the request (template-based latency)</button>
+<div class="panel">
+    <p>A template-based delay computes the delay duration in milliseconds by rendering a Velocity or Mustache template against the incoming request, so the response time can depend on the request itself &mdash; for example, larger request payloads can respond more slowly. The template has the same request context (<span class="inline_code">request.body</span>, <span class="inline_code">request.headers</span>, etc.) available to response-body templates, and its rendered output is parsed as a whole number of milliseconds.</p>
+    <p>If the template renders a blank or non-numeric value (or fails for any reason) the delay falls back to the static <span class="inline_code">value</span>/<span class="inline_code">timeUnit</span> on the same delay object (which defaults to zero), so a misconfigured template never fails the response. Only <span class="inline_code">VELOCITY</span> and <span class="inline_code">MUSTACHE</span> are supported for delay templates.</p>
+    <button class="accordion inner">Java</button>
+    <div class="panel">
+        <pre class="prettyprint lang-java code"><code class="code">// delay 10ms per character of the request body
+new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withPath("/some/path")
+    )
+    .respond(
+        response()
+            .withBody("some_response_body")
+            .withDelay(Delay.template(HttpTemplate.TemplateType.VELOCITY, "#set($d = $request.body.length() * 10)$d"))
+    );</code></pre>
+    </div>
+    <button class="accordion inner">REST API</button>
+    <div class="panel">
+        <pre class="prettyprint code"><code class="code"># delay 10ms per character of the request body
+curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
+    "httpRequest": {
+        "path": "/some/path"
+    },
+    "httpResponse": {
+        "body": "some_response_body",
+        "delay": {
+            "templateType": "VELOCITY",
+            "template": "#set($d = $request.body.length() * 10)$d"
+        }
+    }
+}'</code></pre>
+        <p>See <a  href="https://app.swaggerhub.com/apis/jamesdbloom/mock-server-openapi/{{ site.mockserver_api_version }}#/expectation/put_expectation" target="_blank" rel="noopener noreferrer">REST API</a> for full JSON specification</p>
+    </div>
+</div>
 <button id="button_response_differently_for_same_request" class="accordion">respond differently for the same request</button>
 <div class="panel">
     <button class="accordion inner">Java</button>
