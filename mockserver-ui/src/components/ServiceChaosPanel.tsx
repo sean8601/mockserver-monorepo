@@ -993,6 +993,32 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     });
   }, [connectionParams, runAction]);
 
+  // Load the running (or last-known) experiment definition into the editor so the
+  // user can tweak it and re-start. Reverses the editor -> DTO mapping in
+  // handleStartExperiment: one editor row per (stage, host) pair, each with a
+  // fresh id from the same counter addExpStage uses.
+  const loadExperimentIntoEditor = useCallback((definition: ExperimentDefinitionDTO) => {
+    setExpName(definition.name);
+    setExpLoop(!!definition.loop);
+    const rows = definition.stages.flatMap((stage) =>
+      Object.entries(stage.profiles).map(([host, profile]) => ({
+        id: stageIdCounter.current++,
+        durationMs: String(stage.durationMillis),
+        host,
+        errorStatus: profile.errorStatus != null ? String(profile.errorStatus) : '',
+        errorProbability: profile.errorProbability != null ? String(profile.errorProbability) : '',
+        latencyMs: profile.latency?.value != null ? String(profile.latency.value) : '',
+        dropProbability: profile.dropConnectionProbability != null ? String(profile.dropConnectionProbability) : '',
+      })),
+    );
+    // Keep at least one (empty) stage row so the editor never collapses to nothing.
+    setExpStages(rows.length > 0 ? rows : [{
+      id: stageIdCounter.current++, durationMs: '10000', host: '', errorStatus: '',
+      errorProbability: '', latencyMs: '', dropProbability: '',
+    }]);
+    setActionError(null);
+  }, []);
+
   const isExperimentActive = experimentStatus?.status === 'running' || experimentStatus?.status === 'starting';
 
   // Confirmation dialog for destructive clear-all actions
@@ -1810,6 +1836,16 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   {experimentStatus.loopIteration > 0 && (
                     <Chip size="small" label={`loop ${experimentStatus.loopIteration}`} variant="outlined" />
                   )}
+                  <Box sx={{ flex: 1 }} />
+                  {experimentStatus.experiment && (
+                    <Button
+                      size="small"
+                      startIcon={<EditIcon fontSize="small" />}
+                      onClick={() => loadExperimentIntoEditor(experimentStatus.experiment!)}
+                    >
+                      Edit &amp; restart
+                    </Button>
+                  )}
                 </Box>
                 {isExperimentActive && experimentStatus.totalStages > 0 && (
                   <Box sx={{ mt: 1 }}>
@@ -1833,6 +1869,52 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
                       Total elapsed: {formatDuration(experimentStatus.totalElapsedMillis)}
                     </Typography>
+                  </Box>
+                )}
+                {/* Read-only view of the running experiment's stages */}
+                {experimentStatus.experiment && experimentStatus.experiment.stages.length > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    {experimentStatus.experiment.stages.map((stage, idx) => {
+                      const active = isExperimentActive && idx === experimentStatus.currentStageIndex;
+                      return (
+                        <Box
+                          key={idx}
+                          sx={{
+                            px: 0.75,
+                            py: 0.5,
+                            mt: idx === 0 ? 0 : 0.5,
+                            borderRadius: 1,
+                            border: '1px solid',
+                            borderColor: active ? 'warning.main' : 'divider',
+                            bgcolor: active ? 'action.selected' : 'action.hover',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                              Stage {idx + 1}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {formatDuration(stage.durationMillis)}
+                            </Typography>
+                            {active && <Chip size="small" color="warning" label="active" variant="outlined" />}
+                          </Box>
+                          {Object.entries(stage.profiles).map(([host, profile]) => (
+                            <Box key={host} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                              <Tooltip title={host}>
+                                <Typography variant="body2" noWrap sx={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {host}
+                                </Typography>
+                              </Tooltip>
+                              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                {summarizeChaosProfile(profile).map((part) => (
+                                  <Chip key={part} size="small" label={part} variant="outlined" />
+                                ))}
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
+                      );
+                    })}
                   </Box>
                 )}
               </Paper>

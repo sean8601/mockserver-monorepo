@@ -725,6 +725,141 @@ describe('ServiceChaosPanel', () => {
     expect(screen.getByRole('button', { name: /Stop/ })).toBeInTheDocument();
   });
 
+  it('renders the running experiment stages read-only (host + fault summary + duration)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/chaosExperiment') && !init?.method) {
+          return {
+            ok: true, status: 200, statusText: 'ok',
+            json: async () => ({
+              name: 'staged-run',
+              status: 'running',
+              currentStageIndex: 1,
+              totalStages: 2,
+              stageElapsedMillis: 2000,
+              stageRemainingMillis: 8000,
+              loopIteration: 0,
+              totalElapsedMillis: 7000,
+              experiment: {
+                name: 'staged-run',
+                loop: false,
+                stages: [
+                  { durationMillis: 5000, profiles: { 'api.svc': { errorStatus: 503, errorProbability: 1.0 } } },
+                  { durationMillis: 10000, profiles: { 'api.svc': { latency: { timeUnit: 'MILLISECONDS', value: 500 } } } },
+                ],
+              },
+            }),
+          };
+        }
+        if (u.includes('/grpc/health')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({}) };
+        }
+        if (u.includes('/tcpChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ hosts: {} }) };
+        }
+        if (u.includes('/grpcChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+        }
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+      }),
+    );
+    const user = userEvent.setup({ delay: null });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Expand experiments' }));
+
+    // Status card should render the read-only stage detail
+    await waitFor(() => expect(screen.getByText('staged-run')).toBeInTheDocument());
+    // Host appears in the read-only stage rows
+    expect(screen.getAllByText('api.svc').length).toBeGreaterThanOrEqual(1);
+    // Fault summaries from summarizeChaosProfile
+    expect(screen.getByText('error 503 @ 100%')).toBeInTheDocument();
+    expect(screen.getByText('+500ms latency')).toBeInTheDocument();
+    // Durations from formatDuration
+    expect(screen.getByText('5s')).toBeInTheDocument();
+    expect(screen.getByText('10s')).toBeInTheDocument();
+    // The currently active stage (index 1) is flagged
+    expect(screen.getByText('active')).toBeInTheDocument();
+  });
+
+  it('loads the running experiment into the editor when Edit & restart is clicked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/chaosExperiment') && !init?.method) {
+          return {
+            ok: true, status: 200, statusText: 'ok',
+            json: async () => ({
+              name: 'editable-run',
+              status: 'running',
+              currentStageIndex: 0,
+              totalStages: 2,
+              stageElapsedMillis: 1000,
+              stageRemainingMillis: 4000,
+              loopIteration: 0,
+              totalElapsedMillis: 1000,
+              experiment: {
+                name: 'editable-run',
+                loop: true,
+                stages: [
+                  { durationMillis: 5000, profiles: { 'api.svc': { errorStatus: 503, errorProbability: 1.0 } } },
+                  { durationMillis: 10000, profiles: { 'cache.svc': { latency: { timeUnit: 'MILLISECONDS', value: 500 }, dropConnectionProbability: 0.2 } } },
+                ],
+              },
+            }),
+          };
+        }
+        if (u.includes('/grpc/health')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({}) };
+        }
+        if (u.includes('/tcpChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ hosts: {} }) };
+        }
+        if (u.includes('/grpcChaos')) {
+          return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+        }
+        return { ok: true, status: 200, statusText: 'ok', json: async () => ({ services: {} }) };
+      }),
+    );
+    const user = userEvent.setup({ delay: null });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('Experiments')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Expand experiments' }));
+    await waitFor(() => expect(screen.getByText('editable-run')).toBeInTheDocument());
+
+    // Click Edit & restart
+    await user.click(screen.getByRole('button', { name: /Edit & restart/i }));
+
+    // The experiment name input is populated from the definition
+    await waitFor(() => expect(screen.getByLabelText('Experiment name')).toHaveValue('editable-run'));
+
+    // The stage editor now has two stages populated from the definition
+    const defineHeader = screen.getByText('Define experiment');
+    const experimentEditor = defineHeader.closest('.MuiPaper-root') as HTMLElement;
+    expect(within(experimentEditor).getByText('Stage 1')).toBeInTheDocument();
+    expect(within(experimentEditor).getByText('Stage 2')).toBeInTheDocument();
+
+    const durationFields = within(experimentEditor).getAllByLabelText('Duration ms');
+    expect(durationFields[0]).toHaveValue('5000');
+    expect(durationFields[1]).toHaveValue('10000');
+
+    const hostFields = within(experimentEditor).getAllByLabelText(/^Host$/);
+    expect(hostFields[0]).toHaveValue('api.svc');
+    expect(hostFields[1]).toHaveValue('cache.svc');
+
+    const errorStatusFields = within(experimentEditor).getAllByLabelText('Error status');
+    expect(errorStatusFields[0]).toHaveValue('503');
+
+    const latencyFields = within(experimentEditor).getAllByLabelText('Latency ms');
+    expect(latencyFields[1]).toHaveValue('500');
+
+    const dropFields = within(experimentEditor).getAllByLabelText('Drop prob (0-1)');
+    expect(dropFields[1]).toHaveValue('0.2');
+  });
+
   it('sends DELETE when Stop is clicked on a running experiment', async () => {
     const deleteCalls: string[] = [];
     vi.stubGlobal(
