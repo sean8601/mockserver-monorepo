@@ -100,4 +100,67 @@ public class MultimodalImageDecodeTest {
         assertThat(msg.hasImage(), is(false));
         assertThat(msg.imageCount(), is(0));
     }
+
+    @Test
+    public void shouldRecogniseOpenAiInputAudioPart() {
+        ParsedConversation parsed = new OpenAiChatCompletionsCodec().decode(request()
+            .withBody("{\"model\":\"gpt-4o-audio-preview\",\"messages\":[" +
+                "{\"role\":\"user\",\"content\":[" +
+                "{\"type\":\"text\",\"text\":\"transcribe this\"}," +
+                "{\"type\":\"input_audio\",\"input_audio\":{\"data\":\"AAAA\",\"format\":\"wav\"}}" +
+                "]}]}"));
+
+        assertThat(parsed.getMessages(), hasSize(1));
+        ParsedMessage msg = parsed.getMessages().get(0);
+        assertThat(msg.hasAudio(), is(true));
+        assertThat(msg.audioCount(), is(1));
+        assertThat(msg.getAudio().get(0).getFormat(), is("wav"));
+        assertThat(msg.getTextContent(), is("transcribe this"));
+        // audio and image parts are tracked independently
+        assertThat(msg.hasImage(), is(false));
+    }
+
+    @Test
+    public void shouldRecogniseOpenAiInputAudioWithoutFormat() {
+        ParsedConversation parsed = new OpenAiChatCompletionsCodec().decode(request()
+            .withBody("{\"model\":\"gpt-4o-audio-preview\",\"messages\":[" +
+                "{\"role\":\"user\",\"content\":[" +
+                "{\"type\":\"input_audio\",\"input_audio\":{\"data\":\"AAAA\"}}" +
+                "]}]}"));
+
+        ParsedMessage msg = parsed.getMessages().get(0);
+        assertThat(msg.hasAudio(), is(true));
+        // a missing format leaves the declared format null
+        assertThat(msg.getAudio().get(0).getFormat(), is((String) null));
+    }
+
+    @Test
+    public void shouldRecogniseBothImageAndAudioInOneMessage() {
+        ParsedConversation parsed = new OpenAiChatCompletionsCodec().decode(request()
+            .withBody("{\"model\":\"gpt-4o-audio-preview\",\"messages\":[" +
+                "{\"role\":\"user\",\"content\":[" +
+                "{\"type\":\"text\",\"text\":\"describe both\"}," +
+                "{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AAAA\"}}," +
+                "{\"type\":\"input_audio\",\"input_audio\":{\"data\":\"BBBB\",\"format\":\"mp3\"}}" +
+                "]}]}"));
+
+        ParsedMessage msg = parsed.getMessages().get(0);
+        assertThat(msg.hasImage(), is(true));
+        assertThat(msg.imageCount(), is(1));
+        assertThat(msg.getImages().get(0).getMediaType(), is("image/png"));
+        assertThat(msg.hasAudio(), is(true));
+        assertThat(msg.audioCount(), is(1));
+        assertThat(msg.getAudio().get(0).getFormat(), is("mp3"));
+    }
+
+    @Test
+    public void shouldReportNoAudioForTextOnlyMessage() {
+        ParsedConversation parsed = new OpenAiChatCompletionsCodec().decode(request()
+            .withBody("{\"model\":\"gpt-4o\",\"messages\":[" +
+                "{\"role\":\"user\",\"content\":\"just text\"}]}"));
+
+        ParsedMessage msg = parsed.getMessages().get(0);
+        assertThat(msg.hasAudio(), is(false));
+        assertThat(msg.audioCount(), is(0));
+    }
 }

@@ -60,6 +60,7 @@ curl -s -X PUT http://localhost:1080/mockserver/expectation \
     <li><a href="#supported_providers">Supported providers</a></li>
     <li><a href="#streaming">Streaming responses</a></li>
     <li><a href="#tool_calls">Tool calls</a></li>
+    <li><a href="#multimodal">Multimodal request recognition (images and audio)</a></li>
     <li><a href="#conversations">Multi-turn conversations</a></li>
     <li><a href="#session_isolation">Session isolation</a></li>
     <li><a href="#cost_budget">Cost budget</a></li>
@@ -464,6 +465,42 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
     }
   }
 }</code></pre>
+
+<p>
+    For OpenAI-compatible mocks you can also set <span class="inline_code">toolChoice</span> on the completion to
+    model the request's <span class="inline_code">tool_choice</span> directive. It accepts
+    <span class="inline_code">auto</span>, <span class="inline_code">none</span>,
+    <span class="inline_code">required</span>, or a named tool. When <span class="inline_code">toolChoice</span> is
+    <span class="inline_code">required</span> and a tool call is configured, the mocked response's
+    <span class="inline_code">finish_reason</span> is forced to <span class="inline_code">tool_calls</span> (for both
+    non-streaming and streaming responses), matching how OpenAI behaves when a caller forces a tool call. Omitting
+    <span class="inline_code">toolChoice</span> leaves the finish reason behaviour unchanged.
+</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "httpLlmResponse": {
+    "provider": "OPENAI",
+    "model": "gpt-4o",
+    "completion": {
+      "toolChoice": "required",
+      "toolCalls": [
+        { "name": "get_weather", "arguments": "{\"location\": \"London\"}" }
+      ]
+    }
+  }
+}</code></pre>
+
+<a id="multimodal" class="anchor" href="#multimodal">&nbsp;</a>
+<h2>Multimodal Request Recognition (Images and Audio)</h2>
+
+<p>
+    When matching against requests, MockServer recognises <strong>image</strong> and <strong>audio</strong> content
+    parts in the decoded conversation, so conversation predicates can assert that a message contained an image or an
+    audio clip (and, where the provider declares it, the media type or audio format). For the OpenAI-compatible
+    format this covers <span class="inline_code">image_url</span> and <span class="inline_code">input_audio</span>
+    content parts. This is request-side recognition only &mdash; MockServer notes the presence (and how many) but does
+    not store the media bytes or generate image/audio responses.
+</p>
 
 <a id="conversations" class="anchor" href="#conversations">&nbsp;</a>
 <h2>Multi-Turn Conversations</h2>

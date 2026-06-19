@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
+  recognises `input_audio` content parts on the request side (so conversation matchers can assert a message
+  contains audio, and in what `format` — e.g. `wav`/`mp3`), mirroring the existing image-part recognition;
+  `ParsedMessage` exposes `hasAudio()`, `audioCount()`, and `getAudio()`. A new `toolChoice` field on the
+  `completion` response model (`auto` | `none` | `required` | a named tool) is wired through the OpenAI codec so
+  that when `toolChoice` is `required` and a tool call is configured, the mocked response's `finish_reason` is
+  `tool_calls` (non-streaming and streaming). Absent `toolChoice` leaves the existing finish-reason behaviour
+  unchanged.
 - **LLM optimisation export**: proxy your agent's LLM calls through MockServer, then export a one-click
   **optimisation brief** (Markdown, pre-framed for any LLM) or structured **JSON bundle**
   (`LlmOptimisationReport`) from captured traffic. Six deterministic optimisation signals detect

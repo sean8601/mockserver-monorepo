@@ -87,7 +87,7 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
         }
 
         // finish_reason mapping
-        choice.put("finish_reason", mapFinishReason(completion.getStopReason(), hasToolCalls));
+        choice.put("finish_reason", mapFinishReason(completion.getStopReason(), hasToolCalls, completion.getToolChoice()));
 
         // usage
         ObjectNode usage = root.putObject("usage");
@@ -148,7 +148,7 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
         }
 
         // 4. Final chunk with finish_reason
-        String finishReason = mapFinishReason(completion.getStopReason(), hasToolCalls);
+        String finishReason = mapFinishReason(completion.getStopReason(), hasToolCalls, completion.getToolChoice());
         events.add(sseEvent().withData(buildChunk(id, created, modelName, "{}", finishReason)));
 
         // 5. [DONE] sentinel
@@ -182,6 +182,7 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
                 List<ToolUse> toolCalls = new ArrayList<>();
                 Map<String, String> toolResults = new LinkedHashMap<>();
                 List<ParsedMessage.ImagePart> images = new ArrayList<>();
+                List<ParsedMessage.AudioPart> audio = new ArrayList<>();
 
                 // Parse text content
                 if (contentNode != null) {
@@ -197,6 +198,10 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
                             } else if ("image_url".equals(partType)) {
                                 // OpenAI image part: {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}
                                 images.add(new ParsedMessage.ImagePart(mediaTypeFromDataUrl(part.path("image_url").path("url").asText(""))));
+                            } else if ("input_audio".equals(partType)) {
+                                // OpenAI audio part: {"type":"input_audio","input_audio":{"data":"<base64>","format":"wav"}}
+                                String format = part.path("input_audio").path("format").asText("");
+                                audio.add(new ParsedMessage.AudioPart(format.isEmpty() ? null : format));
                             }
                         }
                         textContent = textBuilder.toString();
@@ -240,7 +245,8 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
                     textContent,
                     toolCalls.isEmpty() ? null : toolCalls,
                     toolResults.isEmpty() ? null : toolResults,
-                    images.isEmpty() ? null : images
+                    images.isEmpty() ? null : images,
+                    audio.isEmpty() ? null : audio
                 ));
             }
 
@@ -398,7 +404,12 @@ public class OpenAiChatCompletionsCodec implements ProviderCodec {
         return sb.toString();
     }
 
-    private static String mapFinishReason(String stopReason, boolean hasToolCalls) {
+    private static String mapFinishReason(String stopReason, boolean hasToolCalls, String toolChoice) {
+        // When the request forces a tool call (tool_choice=required) and a tool is available,
+        // OpenAI returns finish_reason "tool_calls" regardless of any configured stop reason.
+        if (hasToolCalls && "required".equalsIgnoreCase(toolChoice)) {
+            return "tool_calls";
+        }
         if (stopReason == null) {
             return hasToolCalls ? "tool_calls" : "stop";
         }

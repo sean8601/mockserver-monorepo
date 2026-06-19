@@ -79,6 +79,16 @@ The decoders recognise **image content parts** on the request side so a mocked r
 
 This is **request-side recognition only** — MockServer notes that a message contains an image (and how many, and the media type) so conversation matchers can assert it; it does not store the image bytes or generate image responses.
 
+### Multimodal (audio) recognition
+
+The OpenAI decoder also recognises **audio content parts** on the request side, mirroring the image handling. Each `ParsedMessage` exposes `hasAudio()`, `audioCount()`, and `getAudio()` (a list of `AudioPart`, each carrying the declared `format` where the provider shape includes it):
+
+| Provider | Audio shape recognised |
+|----------|------------------------|
+| OPENAI / AZURE_OPENAI | `input_audio` content part (`format` read from `input_audio.format`, e.g. `wav`/`mp3`; `null` when absent) |
+
+Like image recognition, this is **request-side only** — MockServer notes that a message contains audio (and how many, and the declared format); it does not store the audio bytes.
+
 ### Normalised prompt matching
 
 Agent prompts are dynamically assembled, so exact-byte matching is brittle. `NormalizationOptions` (carried on `ConversationPredicates`) applies a **deterministic** transform to the latest-message text before the text predicates run, via `PromptNormalizer.normalize(text, options)`:
@@ -288,6 +298,7 @@ classDiagram
     class Completion {
         +text: String
         +toolCalls: List~ToolUse~
+        +toolChoice: String
         +stopReason: String
         +usage: Usage
         +streaming: Boolean
@@ -344,8 +355,11 @@ classDiagram
         +toolName: String
         +toolCallId: String
         +images: List~ImagePart~
+        +audio: List~AudioPart~
         +hasImage() boolean
         +imageCount() int
+        +hasAudio() boolean
+        +audioCount() int
     }
     class IsolationSource {
         +kind: Kind

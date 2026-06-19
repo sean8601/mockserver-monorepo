@@ -62,6 +62,18 @@ public class CompletionTest {
         assertThat(c.getUsage(), is(nullValue()));
         assertThat(c.getStreaming(), is(nullValue()));
         assertThat(c.getStreamingPhysics(), is(nullValue()));
+        assertThat(c.getToolChoice(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldBuildWithToolChoice() {
+        assertThat(completion().withToolChoice("required").getToolChoice(), is("required"));
+    }
+
+    @Test
+    public void shouldNotBeEqualWhenDifferentToolChoice() {
+        assertThat(completion().withToolChoice("required"),
+            is(not(completion().withToolChoice("none"))));
     }
 
     @Test

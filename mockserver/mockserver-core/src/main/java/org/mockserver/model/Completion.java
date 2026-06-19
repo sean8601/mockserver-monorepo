@@ -15,6 +15,7 @@ public class Completion extends ObjectWithJsonToString {
     private StreamingPhysics streamingPhysics;
     private String outputSchema;
     private String model;
+    private String toolChoice;
 
     public static Completion completion() {
         return new Completion();
@@ -174,6 +175,24 @@ public class Completion extends ObjectWithJsonToString {
         return model;
     }
 
+    /**
+     * Optional tool-choice directive modelling the request's {@code tool_choice} for this
+     * mocked exchange. Recognised values: {@code auto} (model decides), {@code none}
+     * (never call a tool), {@code required} (must call a tool), or a named tool. When set to
+     * {@code required} and at least one tool call is configured, the encoded response's
+     * {@code finish_reason} is forced to {@code tool_calls}. Absent {@code toolChoice}
+     * leaves the existing finish-reason behaviour unchanged.
+     */
+    public Completion withToolChoice(String toolChoice) {
+        this.toolChoice = toolChoice;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getToolChoice() {
+        return toolChoice;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -193,13 +212,14 @@ public class Completion extends ObjectWithJsonToString {
             Objects.equals(streaming, that.streaming) &&
             Objects.equals(streamingPhysics, that.streamingPhysics) &&
             Objects.equals(outputSchema, that.outputSchema) &&
-            Objects.equals(model, that.model);
+            Objects.equals(model, that.model) &&
+            Objects.equals(toolChoice, that.toolChoice);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, model);
+            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, model, toolChoice);
         }
         return hashCode;
     }

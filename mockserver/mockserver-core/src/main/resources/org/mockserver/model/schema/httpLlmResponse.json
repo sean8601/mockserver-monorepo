@@ -69,6 +69,9 @@
         "outputSchema": {
           "type": "string"
         },
+        "toolChoice": {
+          "type": "string"
+        },
         "streamingPhysics": {
           "type": "object",
           "additionalProperties": false,

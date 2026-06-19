@@ -85,6 +85,31 @@ public class ExpectationLlmRoundTripTest {
     }
 
     @Test
+    public void shouldRoundTripCompletionWithToolChoice() {
+        // given — a completion carrying a tool_choice directive
+        Expectation original = when(request().withPath("/v1/chat/completions"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withModel("gpt-4o")
+                    .withCompletion(
+                        completion()
+                            .withToolCall(toolUse("get_weather").withArguments("{\"city\":\"London\"}"))
+                            .withToolChoice("required")
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then — toolChoice survives the schema-validated JSON round-trip
+        assertThat(deserialized, is(notNullValue()));
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getHttpLlmResponse().getCompletion().getToolChoice(), is("required"));
+    }
+
+    @Test
     public void shouldRoundTripEmbeddingExpectation() {
         // given
         Expectation original = when(request().withPath("/v1/embeddings"))
