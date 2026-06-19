@@ -88,7 +88,8 @@ public class McpToolRegistryTest {
         assertThat(tools.containsKey("list_mock_tools"), is(true));
         assertThat(tools.containsKey("retrieve_logs"), is(true));
         assertThat(tools.containsKey("mock_llm_failover"), is(true));
-        assertThat(tools.size(), is(35));
+        assertThat(tools.containsKey("export_optimisation_report"), is(true));
+        assertThat(tools.size(), is(36));
     }
 
     @Test
