@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`{"type":"FUZZY","fuzzy":"...","threshold":0.8,"ignoreCase":false}`, DSL `FuzzyBody.fuzzy(...)`) matches when
   the request body is similar enough to an expected string by a deterministic Jaro-Winkler ratio at or above a
   configurable threshold (default `0.8`) — a non-LLM alternative to exact/regex body matching.
+- **Response templates: `html`, `csv`, `xpath`, and `yaml` helper functions**: response templates (Velocity /
+  JavaScript / Mustache) gain four new built-in helpers — `html.escape`/`html.unescape`, `csv.parse`/`csv.row`,
+  `xpath.evaluate` (XXE-hardened), and `yaml.toJson`/`yaml.parse` — for shaping response bodies from request
+  data without custom code.
+- **Node client: advanced response builders**: the Node.js client now exposes `respondWithSse`,
+  `respondWithWebSocket`, `respondWithDns`, `respondWithBinary`, and `respondWithGrpcStream` (with TypeScript
+  declarations) so SSE, WebSocket, DNS, raw-binary, and gRPC-stream expectations can be registered from Node,
+  reaching parity with the Java and Python clients (serializer-only additions; the server already accepted these payloads).
+- **Rust client: advanced response-builder naming parity**: the Rust client's fluent `when(...)` chain now
+  exposes `respond_with_sse`, `respond_with_web_socket`, `respond_with_dns`, `respond_with_binary`, and
+  `respond_with_grpc_stream` aliases so SSE, WebSocket, DNS, raw-binary, and gRPC-stream expectations can be
+  registered with method names aligned to the other clients (each delegates to the existing idiomatic
+  `respond_*` methods; serializer payloads are unchanged).
+- **Dashboard: duplicate an expectation + priority column and sort**: the Active Expectations panel now shows a
+  "Duplicate" action on each row that opens the Composer pre-populated with a copy of the expectation (its `id`
+  stripped, so saving creates a brand-new expectation while preserving `priority` and every other field). Each
+  row also shows a `P<n>` chip with the expectation's match `priority` (defaults to `0`; higher wins), and a
+  header "Priority" toggle re-orders the list by priority descending so the match order is visible at a glance.
 - **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
   containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
   schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched
