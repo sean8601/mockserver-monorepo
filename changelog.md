@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Request-driven (template) response delay**: a `delay` may carry a `template`+`templateType` (`VELOCITY`/
+  `MUSTACHE`) rendered against the request to compute the delay in milliseconds (e.g. larger payloads respond
+  slower). Static and statistical-distribution delays are unchanged; an invalid/blank render falls back safely.
+- **Conditional (if-then-else) request matcher**: a new `conditionalRequestDefinition` (`if`/`then`/`else`
+  request matchers) matches as: if the `if` guard matches require `then`, otherwise require `else` (absent
+  `else` ⇒ match when the guard is false). Existing AND-only matching is unchanged.
+- **JSON Patch / JSON Merge Patch on forwarded responses**: a response modifier may carry a `jsonPatch`
+  (RFC 6902) and/or `jsonMergePatch` (RFC 7386) applied to a forwarded/proxied JSON response body, so a single
+  field of a real upstream response can be changed without replacing the whole body. Non-JSON or absent ⇒ body
+  unchanged.
+- **Editor extensions: in-IDE breakpoint debugger and power-user panels**: the VS Code and JetBrains extensions
+  add a debugger over the breakpoint callback WebSocket (pause/inspect/Modify/Continue/Abort on requests and
+  responses flowing through MockServer), drift quick-fixes, code-aware run gutters, and chaos/contract panels.
 - **Accept-header content-negotiation matching**: a header matcher value may use an opt-in `accept:<media-type>`
   directive that matches when the request's `Accept` header finds the media type acceptable per RFC 7231 —
   honouring q-weights (`q=0` excludes), `type/*` and `*/*` wildcards, and specificity/preference ordering.
