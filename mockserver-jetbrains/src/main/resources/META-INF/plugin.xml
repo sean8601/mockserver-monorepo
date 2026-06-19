@@ -146,6 +146,12 @@
                     text="List WASM Modules"
                     description="Lists the WASM custom-rule modules registered on the running MockServer (GET /mockserver/wasm/modules)"
                     icon="AllIcons.Actions.ListFiles"/>
+            <separator text="Advanced"/>
+            <action id="MockServer.ChaosExperiment"
+                    class="com.mockserver.jetbrains.ChaosExperimentAction"
+                    text="Chaos Experiment"
+                    description="Show status, start (from the active file), or stop a MockServer chaos experiment (GET/PUT/DELETE /mockserver/chaosExperiment)"
+                    icon="AllIcons.Actions.Lightning"/>
         </group>
     </actions>
 
@@ -160,6 +166,12 @@
                     anchor="right"
                     canCloseContents="false"
                     icon="/icons/mockserver.svg"/>
+        <toolWindow id="MockServerDebugger"
+                    factoryClass="com.mockserver.jetbrains.BreakpointDebuggerToolWindowFactory"
+                    anchor="bottom"
+                    secondary="true"
+                    canCloseContents="false"
+                    icon="/icons/mockserver.svg"/>
         <notificationGroup id="MockServer Notifications"
                            displayType="BALLOON"
                            isLogByDefault="true"/>
@@ -168,6 +180,17 @@
                                  instance="com.mockserver.jetbrains.MockServerConfigurable"
                                  id="com.mockserver.jetbrains.MockServerConfigurable"
                                  displayName="MockServer"/>
+        <!-- Phase 4: drift quick-fix on *.mockserver.json expectation files. -->
+        <intentionAction>
+            <language></language>
+            <className>com.mockserver.jetbrains.DriftQuickFixIntention</className>
+            <category>MockServer</category>
+        </intentionAction>
+        <!-- Phase 4: gutter run-affordance on MockServerClient/@MockServerSettings/Testcontainers
+             usage. language="" registers it for every language (best-effort textual detection). -->
+        <codeInsight.lineMarkerProvider
+                language=""
+                implementationClass="com.mockserver.jetbrains.MockServerGutterLineMarkerProvider"/>
     </extensions>
 
     <!-- The JSON Schema provider extension point is `JavaScript.JsonSchema.ProviderFactory`

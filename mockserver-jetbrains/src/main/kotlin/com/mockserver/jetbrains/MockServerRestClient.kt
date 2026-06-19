@@ -110,6 +110,40 @@ object MockServerRestClient {
     }
 
     /**
+     * `GET /mockserver/chaosExperiment` — fetch the current chaos-experiment status
+     * (running stage, remaining ms, auto-halt state). Returns 200 with the status JSON,
+     * or 404 when no experiment has run since the last reset.
+     */
+    fun buildChaosStatusRequest(baseUrl: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/chaosExperiment"))
+            .header("Accept", "application/json")
+            .GET()
+            .build()
+
+    /**
+     * `PUT /mockserver/chaosExperiment` — start (or replace) a chaos experiment from the
+     * [experimentJson] definition (`{ name, stages: [...] }`). Returns 200 + status, or
+     * 400 on a validation error. The body is sent as-is.
+     */
+    fun buildChaosStartRequest(baseUrl: String, experimentJson: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/chaosExperiment"))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(experimentJson))
+            .build()
+
+    /**
+     * `DELETE /mockserver/chaosExperiment` — stop the running experiment and clear all
+     * chaos. Idempotent; returns 204.
+     */
+    fun buildChaosStopRequest(baseUrl: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/chaosExperiment"))
+            .DELETE()
+            .build()
+
+    /**
      * `PUT /mockserver/openapi` — generate expectations from an OpenAPI/Swagger
      * spec. A JSON spec is sent as a parsed object so the server treats it
      * unambiguously as an inline payload; anything else (YAML) is sent as a

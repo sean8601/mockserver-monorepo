@@ -228,16 +228,16 @@ sequenceDiagram
 
 ## Phased roadmap
 
-| Phase | Outcome | Status | Risk class |
-|-------|---------|--------|------------|
-| 0 | Fix image-tag drift; make container/port/image configurable (incl. multiple named instances); remove stale `.vsix` | **done** — image tag derives from the extension/plugin version; container/port configurable; no stale `.vsix` checked in | act-autonomously |
-| 1 | Publish the bundled `expectation.schema.json` as a release artifact; wire `jsonValidation` (VS Code) + JSON Schema mapping (JetBrains) | **done** — bundled schema wired via `contributes.jsonValidation` (VS Code) and the `JavaScript.JsonSchema.ProviderFactory` (JetBrains) | gated-approval (release-pipeline change) |
-| 2 | Contract→stub generation; scratch-request client; CodeLens load/verify/diff | **done** — generate-from-OpenAPI writes a `*.mockserver.json` workspace file; scratch-request now reports match / nearest-miss via `debugMismatch`; CodeLens/actions cover Load, **Verify**, Diff, **Delete** | act-autonomously |
-| 3 | **Record-to-code** (flagship) | **done** — recorded expectations (JSON or Java DSL) written to a new workspace file (VS Code) / opened as a `*.mockserver.json` / `.java` tab (JetBrains) | act-autonomously |
-| 4 | Drift diagnostics + quick-fix; test/code-aware gutter integration | **done (VS Code)** — drift quick-fix lightbulb ("update stub to match upstream") swaps the stub's declared value for the live upstream value; run/inspect gutter CodeLens detects `new MockServerClient(...)`, `@MockServerSettings`, and Testcontainers `MockServerContainer` (best-effort regex, not AST). JetBrains drift report shipped; JetBrains quick-fix/gutters remain | act-autonomously |
-| 5 | Debugger (REQUEST/RESPONSE pause/inspect/modify), scoped per the prerequisite above | **done (VS Code)** — in-IDE debugger over the callback WebSocket: register a request matcher, receive paused exchanges, Continue / Modify / Abort (Abort = REQUEST phase only; RESPONSE = Continue/Modify). Per-frame stream editing also wired (see Phase 7). Prerequisite stated in the panel + docs: breakpoints fire only on traffic THROUGH MockServer. JetBrains debugger remains | act-autonomously |
-| 6 | LLM authoring + call-graph; chaos panel; contract/resiliency runner | **done (VS Code)** — `httpLlmResponse` authoring completion; agent-run call graph (via the `explain_agent_run` MCP tool) rendered as Mermaid; chaos status/stop panel over `GET`/`DELETE /mockserver/chaosExperiment`; OpenAPI contract-test runner over `PUT /mockserver/contractTest` with a per-operation pass/fail report. JetBrains equivalents remain | act-autonomously |
-| 7 | Stream-frame breakpoint editing; WASM authoring; trace correlation | **partial (VS Code)** — stream-frame breakpoint editing (Continue/Modify/Drop/Inject/Close, Base64 bodies) shipped in the debugger panel; WASM upload/list and trace correlation shipped earlier. **Deferred:** a WASM "test this module against a sample body" affordance has no server endpoint today (only PUT/GET/DELETE `/wasm/modules` exist), so it needs a server change first and is out of scope for the editor-only increment | act-autonomously |
+| Phase | Outcome | Risk class |
+|-------|---------|------------|
+| 0 | Fix image-tag drift; make container/port/image configurable (incl. multiple named instances); remove stale `.vsix` | act-autonomously |
+| 1 | Publish the bundled `expectation.schema.json` as a release artifact; wire `jsonValidation` (VS Code) + JSON Schema mapping (JetBrains) | gated-approval (release-pipeline change) |
+| 2 | Contract→stub generation; scratch-request client; CodeLens load/verify/diff | act-autonomously |
+| 3 | **Record-to-code** (flagship) | act-autonomously |
+| 4 | Drift diagnostics + quick-fix; test/code-aware gutter integration | act-autonomously — **JetBrains: done** (drift quick-fix intention on `*.mockserver.json` mapping `GET /mockserver/drift` records to the file's expectation `id`s; gutter run-affordance line markers for `MockServerClient` / `@MockServerSettings` / `@MockServerTest` / `MockServerContainer`) |
+| 5 | Debugger (REQUEST/RESPONSE pause/inspect/modify), scoped per the prerequisite above | act-autonomously — **JetBrains: done** (MockServer Debugger tool window over the callback WS; set matcher by method+path/phases, list paused exchanges, Continue/Modify/Abort — Abort REQUEST-phase only; JDK WebSocket client, Community-safe; per-frame stream editing deferred to Phase 7) |
+| 6 | LLM authoring + call-graph; chaos panel; contract/resiliency runner | act-autonomously — **JetBrains: chaos panel done** (Chaos Experiment action: status/start-from-file/stop via `GET/PUT/DELETE /mockserver/chaosExperiment`); LLM call-graph rendering + contract/resiliency runner deferred (need graph-rendering UI infra) |
+| 7 | Stream-frame breakpoint editing; WASM authoring; trace correlation | act-autonomously — **JetBrains: WASM authoring + trace correlation already shipped (phases 0–3)**; stream-frame breakpoint editing (RESPONSE_STREAM/INBOUND_STREAM Continue/Modify/Drop/Inject/Close) deferred |
 
 Ship the **Phase 1 schema-validation slice first** as the smallest real proof, then
 **record-to-code** as the feature that makes users say "now I need this."
