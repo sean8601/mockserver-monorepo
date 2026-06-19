@@ -473,16 +473,19 @@ public class HttpActionHandlerTest {
                 .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
                 .setArguments(request)
         );
+        // the LOGGED forwarded response carries the internal upstream round-trip header
+        // (here 0ms — the mocked response has no Timing); the client response stays clean
+        HttpResponse loggedResponse = response.clone().withHeader("x-mockserver-response-time-ms", "0");
         verify(mockServerLogger).logEvent(
             new LogEntry()
                 .setLogLevel(INFO)
                 .setType(FORWARDED_REQUEST)
                 .setHttpRequest(request)
-                .setHttpResponse(response)
-                .setExpectation(request, response)
+                .setHttpResponse(loggedResponse)
+                .setExpectation(request, loggedResponse)
                 .setExpectationId(expectation.getAction().getExpectationId())
                 .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
-                .setArguments(response, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
+                .setArguments(loggedResponse, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
         );
         verify(httpRequestToCurlSerializer).toCurl(forwardedHttpRequest, remoteAddress);
     }
@@ -509,16 +512,17 @@ public class HttpActionHandlerTest {
                 .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
                 .setArguments(request)
         );
+        HttpResponse loggedResponse = response.clone().withHeader("x-mockserver-response-time-ms", "0");
         verify(mockServerLogger).logEvent(
             new LogEntry()
                 .setLogLevel(INFO)
                 .setType(FORWARDED_REQUEST)
                 .setHttpRequest(request)
-                .setHttpResponse(response)
-                .setExpectation(request, response)
+                .setHttpResponse(loggedResponse)
+                .setExpectation(request, loggedResponse)
                 .setExpectationId(expectation.getAction().getExpectationId())
                 .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
-                .setArguments(response, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
+                .setArguments(loggedResponse, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
         );
         verify(httpRequestToCurlSerializer).toCurl(forwardedHttpRequest, remoteAddress);
     }
@@ -588,16 +592,17 @@ public class HttpActionHandlerTest {
                 .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
                 .setArguments(request)
         );
+        HttpResponse loggedResponse = response.clone().withHeader("x-mockserver-response-time-ms", "0");
         verify(mockServerLogger).logEvent(
             new LogEntry()
                 .setLogLevel(INFO)
                 .setType(FORWARDED_REQUEST)
                 .setHttpRequest(request)
-                .setHttpResponse(response)
-                .setExpectation(request, response)
+                .setHttpResponse(loggedResponse)
+                .setExpectation(request, loggedResponse)
                 .setExpectationId(expectation.getAction().getExpectationId())
                 .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
-                .setArguments(response, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
+                .setArguments(loggedResponse, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
         );
         verify(httpRequestToCurlSerializer).toCurl(forwardedHttpRequest, remoteAddress);
     }
@@ -647,16 +652,17 @@ public class HttpActionHandlerTest {
                 .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
                 .setArguments(request)
         );
+        HttpResponse loggedResponse = response.clone().withHeader("x-mockserver-response-time-ms", "0");
         verify(mockServerLogger).logEvent(
             new LogEntry()
                 .setLogLevel(INFO)
                 .setType(FORWARDED_REQUEST)
                 .setHttpRequest(request)
-                .setHttpResponse(response)
-                .setExpectation(request, response)
+                .setHttpResponse(loggedResponse)
+                .setExpectation(request, loggedResponse)
                 .setExpectationId(expectation.getAction().getExpectationId())
                 .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}")
-                .setArguments(response, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
+                .setArguments(loggedResponse, forwardedHttpRequest, "curl -v 'http://" + remoteAddress.getHostName() + ":" + remoteAddress.getPort() + "/'", expectation.getAction(), expectation.getId())
         );
         verify(httpRequestToCurlSerializer).toCurl(forwardedHttpRequest, remoteAddress);
     }
@@ -825,15 +831,16 @@ public class HttpActionHandlerTest {
                 .setMessageFormat(RECEIVED_REQUEST_MESSAGE_FORMAT)
                 .setArguments(request)
         );
+        HttpResponse loggedResponse = response.clone().withHeader("x-mockserver-response-time-ms", "0");
         verify(mockServerLogger).logEvent(
             new LogEntry()
                 .setLogLevel(INFO)
                 .setType(FORWARDED_REQUEST)
                 .setHttpRequest(request)
-                .setHttpResponse(response)
-                .setExpectation(request, response)
+                .setHttpResponse(loggedResponse)
+                .setExpectation(request, loggedResponse)
                 .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
+                .setArguments(loggedResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
         );
     }
 

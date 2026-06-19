@@ -229,7 +229,7 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
 <ol>
     <li><strong>Framing preamble</strong> — tells the LLM it is a cost-optimisation expert and what to do</li>
     <li><strong>Run summary</strong> — provider(s), model(s), call count, token totals, estimated cost, latency, tool-call count</li>
-    <li><strong>Per-call table</strong> — one row per call: model, input/output tokens, cost, latency, tools, finish reason</li>
+    <li><strong>Per-call table</strong> — one row per call: model, input/output tokens, cost, latency, tools, finish reason. For proxied/forwarded traffic the per-call <code class="code inline">latencyMs</code> is the measured upstream round-trip time (full-stream duration for streaming responses). It is <code class="code inline">0</code> only when the upstream time could not be captured for that call.</li>
     <li><strong>Detected opportunities</strong> — each detected signal as a section with title, detail, affected call indices, estimated saving, and recommendation</li>
     <li><strong>Conversations and tool definitions (appendix)</strong> — redacted messages and tool schemas so the LLM has the raw material to propose concrete edits</li>
 </ol>
@@ -365,12 +365,6 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
 <h2>Current Limitations</h2>
 
 <ul>
-    <li>
-        <strong>Per-call latency</strong> — for proxied traffic, the per-call
-        <code class="code inline">latencyMs</code> field may be reported as <code class="code inline">0</code>
-        when the upstream response time was not captured in the log entry. The total latency in the run
-        summary is unaffected when the server-side wall-clock time is available. This is a v1 limitation.
-    </li>
     <li>
         <strong>Cost estimates</strong> — costs are computed from MockServer's built-in provider
         pricing tables (<code class="code inline">LlmPricing</code>), which may lag provider price

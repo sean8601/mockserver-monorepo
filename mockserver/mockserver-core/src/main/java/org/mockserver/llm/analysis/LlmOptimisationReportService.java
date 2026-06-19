@@ -110,7 +110,21 @@ public class LlmOptimisationReportService {
                     groupingKey = key;
                 }
                 HttpResponse response = pair.getHttpResponse();
-                exchanges.add(new CapturedExchange(request, response, null));
+                // Per-call upstream latency is carried on the LOGGED forwarded response via the
+                // internal x-mockserver-response-time-ms header (see HttpActionHandler.RESPONSE_TIME_HEADER).
+                // It is never sent to the real client; only the event-log clone carries it.
+                Long latencyMs = null;
+                if (response != null) {
+                    String h = response.getFirstHeader("x-mockserver-response-time-ms");
+                    if (h != null && !h.isEmpty()) {
+                        try {
+                            latencyMs = Long.parseLong(h.trim());
+                        } catch (NumberFormatException ignored) {
+                            // malformed value: leave latency unset (report shows 0)
+                        }
+                    }
+                }
+                exchanges.add(new CapturedExchange(request, response, latencyMs));
             }
         }
 

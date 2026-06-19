@@ -182,6 +182,37 @@ public class LlmOptimisationReportServiceTest {
     }
 
     @Test
+    public void perCallLatencyReadFromResponseTimeHeader() {
+        // The forwarded response carries the upstream round-trip time on the internal
+        // x-mockserver-response-time-ms header (logged-clone only). The report reads it.
+        LogEventRequestAndResponse pair = openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10);
+        pair.getHttpResponse().withHeader("x-mockserver-response-time-ms", "1234");
+
+        LlmOptimisationReportService.Result result = service.build(Collections.singletonList(pair), noFilter());
+        assertEquals(1, result.getReport().getCalls().size());
+        assertEquals(1234L, result.getReport().getCalls().get(0).getLatencyMs());
+        assertEquals(1234L, result.getReport().getTotals().getTotalLatencyMs());
+    }
+
+    @Test
+    public void malformedLatencyHeaderYieldsZeroLatencyGracefully() {
+        LogEventRequestAndResponse pair = openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10);
+        pair.getHttpResponse().withHeader("x-mockserver-response-time-ms", "not-a-number");
+
+        LlmOptimisationReportService.Result result = service.build(Collections.singletonList(pair), noFilter());
+        assertEquals(1, result.getReport().getCalls().size());
+        assertEquals(0L, result.getReport().getCalls().get(0).getLatencyMs());
+        assertEquals(0L, result.getReport().getTotals().getTotalLatencyMs());
+    }
+
+    @Test
+    public void absentLatencyHeaderYieldsZeroLatency() {
+        LogEventRequestAndResponse pair = openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10);
+        LlmOptimisationReportService.Result result = service.build(Collections.singletonList(pair), noFilter());
+        assertEquals(0L, result.getReport().getCalls().get(0).getLatencyMs());
+    }
+
+    @Test
     public void briefRedactsConfiguredBodyFields() {
         ConfigurationProperties.fixtureBodyRedactFields("content");
         HttpRequest req = request().withMethod("POST").withPath("/v1/chat/completions")

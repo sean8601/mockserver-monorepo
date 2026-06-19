@@ -68,6 +68,15 @@ public class HttpActionHandler {
 
     public static final AttributeKey<InetSocketAddress> REMOTE_SOCKET = AttributeKey.valueOf("REMOTE_SOCKET");
 
+    /**
+     * Internal header carrying the upstream round-trip time (in milliseconds) on the LOGGED
+     * {@code FORWARDED_REQUEST} response only. Mirrors the {@code x-mockserver-streamed} /
+     * {@code x-mockserver-chunk-delays-ms} convention: it is attached to a clone stored in the
+     * event log and is NEVER written to the real client. The LLM optimisation report reads it to
+     * populate per-call upstream latency.
+     */
+    public static final String RESPONSE_TIME_HEADER = "x-mockserver-response-time-ms";
+
     private final Configuration configuration;
     private final HttpState httpStateHandler;
     private final Scheduler scheduler;
@@ -855,11 +864,14 @@ public class HttpActionHandler {
                             // Metrics: per-upstream forward latency + status for the unmatched proxy path
                             recordForwardMetrics(null, streamingResponse, remoteAddress, responseTimeMs);
                             responseWriter.writeResponse(request, streamingResponse, false);
+                            final long streamForwardStartNanos = forwardStartNanos;
                             streamingResponse.getStreamingBody().addCompletionListener(() -> {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
                                 attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
+                                long streamResponseTimeMs = (System.nanoTime() - streamForwardStartNanos) / 1_000_000;
+                                logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                                 // validation proxy: validate completed streaming response (report-only)
                                 if (validationEnabled) {
                                     validateProxyResponse(request, logResponse, true);
@@ -897,17 +909,20 @@ public class HttpActionHandler {
                                     java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                                         ? scheduler.getExecutorService()
                                         : Runnable::run;
+                                    final long breakpointResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                                     if (attemptResponseBreakpoint(responseBreakpoint, request, response, null, responseWriter, continuationExecutor, responseToWrite -> {
+                                        HttpResponse logResponse = responseToWrite.clone();
+                                        logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(breakpointResponseTimeMs));
                                         mockServerLogger.logEvent(
                                             new LogEntry()
                                                 .setType(FORWARDED_REQUEST)
                                                 .setLogLevel(Level.INFO)
                                                 .setCorrelationId(request.getLogCorrelationId())
                                                 .setHttpRequest(request)
-                                                .setHttpResponse(responseToWrite)
-                                                .setExpectation(request, responseToWrite)
+                                                .setHttpResponse(logResponse)
+                                                .setExpectation(request, logResponse)
                                                 .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                                .setArguments(responseToWrite, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
+                                                .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
                                         );
                                         responseWriter.writeResponse(request, responseToWrite, false);
                                     }, null)) {
@@ -916,16 +931,18 @@ public class HttpActionHandler {
                                     // cap reached — fall through to normal write
                                 }
                             }
+                            HttpResponse logResponse = response.clone();
+                            logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(effectiveForwardLatencyMs(response, responseTimeMs)));
                             mockServerLogger.logEvent(
                                 new LogEntry()
                                     .setType(FORWARDED_REQUEST)
                                     .setLogLevel(Level.INFO)
                                     .setCorrelationId(request.getLogCorrelationId())
                                     .setHttpRequest(request)
-                                    .setHttpResponse(response)
-                                    .setExpectation(request, response)
+                                    .setHttpResponse(logResponse)
+                                    .setExpectation(request, logResponse)
                                     .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                    .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
+                                    .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, remoteAddress))
                             );
                             responseWriter.writeResponse(request, response, false);
                         }
@@ -1032,11 +1049,14 @@ public class HttpActionHandler {
                 // OpenTelemetry: emit SERVER span for the breakpoint-continuation streaming forward path
                 emitRequestSpan(originalRequest, streamingResponse, null, null, responseTimeMs);
                 responseWriter.writeResponse(originalRequest, streamingResponse, false);
+                final long streamForwardStartNanos = forwardStartNanos;
                 streamingResponse.getStreamingBody().addCompletionListener(() -> {
                     HttpResponse logResponse = streamingResponse.clone();
                     byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                     setCapturedStreamingBody(logResponse, captured);
                     attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
+                    long streamResponseTimeMs = (System.nanoTime() - streamForwardStartNanos) / 1_000_000;
+                    logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                     if (validationEnabled) {
                         validateProxyResponse(originalRequest, logResponse, true);
                     }
@@ -1069,17 +1089,20 @@ public class HttpActionHandler {
                         java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                             ? scheduler.getExecutorService()
                             : Runnable::run;
+                        final long breakpointResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                         if (attemptResponseBreakpoint(responseBreakpoint2, originalRequest, response, null, responseWriter, continuationExecutor, responseToWrite -> {
+                            HttpResponse logResponse = responseToWrite.clone();
+                            logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(breakpointResponseTimeMs));
                             mockServerLogger.logEvent(
                                 new LogEntry()
                                     .setType(FORWARDED_REQUEST)
                                     .setLogLevel(Level.INFO)
                                     .setCorrelationId(originalRequest.getLogCorrelationId())
                                     .setHttpRequest(originalRequest)
-                                    .setHttpResponse(responseToWrite)
-                                    .setExpectation(originalRequest, responseToWrite)
+                                    .setHttpResponse(logResponse)
+                                    .setExpectation(originalRequest, logResponse)
                                     .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                    .setArguments(responseToWrite, originalRequest, httpRequestToCurlSerializer.toCurl(originalRequest, remoteAddress))
+                                    .setArguments(logResponse, originalRequest, httpRequestToCurlSerializer.toCurl(originalRequest, remoteAddress))
                             );
                             responseWriter.writeResponse(originalRequest, responseToWrite, false);
                         }, null)) {
@@ -1088,16 +1111,18 @@ public class HttpActionHandler {
                         // cap reached — fall through to normal write
                     }
                 }
+                HttpResponse logResponse = response.clone();
+                logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(effectiveForwardLatencyMs(response, responseTimeMs)));
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(FORWARDED_REQUEST)
                         .setLogLevel(Level.INFO)
                         .setCorrelationId(originalRequest.getLogCorrelationId())
                         .setHttpRequest(originalRequest)
-                        .setHttpResponse(response)
-                        .setExpectation(originalRequest, response)
+                        .setHttpResponse(logResponse)
+                        .setExpectation(originalRequest, logResponse)
                         .setMessageFormat("returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                        .setArguments(response, originalRequest, httpRequestToCurlSerializer.toCurl(originalRequest, remoteAddress))
+                        .setArguments(logResponse, originalRequest, httpRequestToCurlSerializer.toCurl(originalRequest, remoteAddress))
                 );
                 responseWriter.writeResponse(originalRequest, response, false);
             }
@@ -1211,11 +1236,14 @@ public class HttpActionHandler {
                             // has already been written to the client — violations are logged (report-only).
                             final HttpResponse streamingResponse = response;
                             responseWriter.writeResponse(request, streamingResponse, false);
+                            final long streamForwardStartNanos = forwardStartNanos;
                             streamingResponse.getStreamingBody().addCompletionListener(() -> {
                                 HttpResponse logResponse = streamingResponse.clone();
                                 byte[] captured = streamingResponse.getStreamingBody().capturedBytes();
                                 setCapturedStreamingBody(logResponse, captured);
                                 attachStreamingHeaders(logResponse, streamingResponse.getStreamingBody());
+                                long streamResponseTimeMs = (System.nanoTime() - streamForwardStartNanos) / 1_000_000;
+                                logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                                 // validation proxy: validate completed streaming response (report-only)
                                 if (validationEnabled) {
                                     validateProxyResponse(request, logResponse, true);
@@ -1237,16 +1265,18 @@ public class HttpActionHandler {
                             if (validationEnabled) {
                                 response = validateProxyResponse(request, response, false);
                             }
+                            HttpResponse logResponse = response.clone();
+                            logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(effectiveForwardLatencyMs(response, responseTimeMs)));
                             mockServerLogger.logEvent(
                                 new LogEntry()
                                     .setType(FORWARDED_REQUEST)
                                     .setLogLevel(Level.INFO)
                                     .setCorrelationId(request.getLogCorrelationId())
                                     .setHttpRequest(request)
-                                    .setHttpResponse(response)
-                                    .setExpectation(request, response)
+                                    .setHttpResponse(logResponse)
+                                    .setExpectation(request, logResponse)
                                     .setMessageFormat("returning response:{}for proxy pass forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}")
-                                    .setArguments(response, request, httpRequestToCurlSerializer.toCurl(request, targetAddress))
+                                    .setArguments(logResponse, request, httpRequestToCurlSerializer.toCurl(request, targetAddress))
                             );
                             responseWriter.writeResponse(request, response, false);
                         }
@@ -2222,9 +2252,12 @@ public class HttpActionHandler {
                             ? scheduler.getExecutorService()
                             : Runnable::run;
                         final boolean capturedChaosErrorInjected = chaosErrorInjected;
+                        final long breakpointResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                         if (attemptResponseBreakpoint(responseBreakpoint3, request, effectiveResponse,
                             action != null ? action.getExpectationId() : null, responseWriter, continuationExecutor, responseToWrite -> {
                             responseWriter.writeResponse(request, responseToWrite, false);
+                            HttpResponse logResponse = responseToWrite.clone();
+                            logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(breakpointResponseTimeMs));
                             String logMessageFormat = capturedChaosErrorInjected
                                 ? "returning chaos-injected error response:{}replacing forwarded response" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}"
                                 : "returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}";
@@ -2234,11 +2267,11 @@ public class HttpActionHandler {
                                     .setLogLevel(Level.INFO)
                                     .setCorrelationId(request.getLogCorrelationId())
                                     .setHttpRequest(request)
-                                    .setHttpResponse(responseToWrite)
-                                    .setExpectation(request, responseToWrite)
+                                    .setHttpResponse(logResponse)
+                                    .setExpectation(request, logResponse)
                                     .setExpectationId(action != null ? action.getExpectationId() : null)
                                     .setMessageFormat(logMessageFormat)
-                                    .setArguments(responseToWrite, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action != null ? action.getExpectationId() : null)
+                                    .setArguments(logResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action != null ? action.getExpectationId() : null)
                             );
                         }, postProcessor)) {
                             // Return immediately — do NOT block the scheduler worker thread
@@ -2251,14 +2284,18 @@ public class HttpActionHandler {
                 // Factor the write (streaming vs non-streaming) into a single command so
                 // it can be dispatched either directly or via the non-blocking scheduler.
                 final Runnable writeCommand;
+                final long capturedForwardStartNanos = forwardStartNanos;
                 if (isStreaming) {
                     // Streaming path: GenAI span is deferred to the completion listener
                     // inside writeStreamingForwardActionResponse where the full body is available
-                    writeCommand = () -> writeStreamingForwardActionResponse(effectiveResponse, responseWriter, request, action, responseFuture, postProcessor);
+                    writeCommand = () -> writeStreamingForwardActionResponse(effectiveResponse, responseWriter, request, action, responseFuture, postProcessor, capturedForwardStartNanos);
                 } else {
                     // Non-streaming path: GenAI span already emitted above (before breakpoint check)
+                    final long nonStreamingResponseTimeMs = effectiveForwardLatencyMs(response, responseTimeMs);
                     writeCommand = () -> {
                         responseWriter.writeResponse(request, effectiveResponse, false);
+                        HttpResponse logResponse = effectiveResponse.clone();
+                        logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(nonStreamingResponseTimeMs));
                         String logMessageFormat = chaosErrorInjected
                             ? "returning chaos-injected error response:{}replacing forwarded response" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}"
                             : "returning response:{}for forwarded request" + NEW_LINE + NEW_LINE + " in json:{}" + NEW_LINE + NEW_LINE + " in curl:{}for action:{}from expectation:{}";
@@ -2268,11 +2305,11 @@ public class HttpActionHandler {
                                 .setLogLevel(Level.INFO)
                                 .setCorrelationId(request.getLogCorrelationId())
                                 .setHttpRequest(request)
-                                .setHttpResponse(effectiveResponse)
-                                .setExpectation(request, effectiveResponse)
+                                .setHttpResponse(logResponse)
+                                .setExpectation(request, logResponse)
                                 .setExpectationId(action.getExpectationId())
                                 .setMessageFormat(logMessageFormat)
-                                .setArguments(effectiveResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId())
+                                .setArguments(logResponse, responseFuture.getHttpRequest(), httpRequestToCurlSerializer.toCurl(responseFuture.getHttpRequest(), responseFuture.getRemoteAddress()), action, action.getExpectationId())
                         );
                         if (postProcessor != null) {
                             postProcessor.run();
@@ -2299,7 +2336,7 @@ public class HttpActionHandler {
         }, synchronous, throwable -> true);
     }
 
-    private void writeStreamingForwardActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, final HttpForwardActionResult responseFuture, final Runnable postProcessor) {
+    private void writeStreamingForwardActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, final HttpForwardActionResult responseFuture, final Runnable postProcessor, final long forwardStartNanos) {
         final StreamingBody streamingBody = response.getStreamingBody();
 
         // Write the response head through the response writer (which will subscribe to the streaming body)
@@ -2313,6 +2350,8 @@ public class HttpActionHandler {
                 byte[] captured = streamingBody.capturedBytes();
                 setCapturedStreamingBody(logResponse, captured);
                 attachStreamingHeaders(logResponse, streamingBody);
+                long streamResponseTimeMs = (System.nanoTime() - forwardStartNanos) / 1_000_000;
+                logResponse.withHeader(RESPONSE_TIME_HEADER, String.valueOf(streamResponseTimeMs));
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(FORWARDED_REQUEST)
@@ -3504,6 +3543,20 @@ public class HttpActionHandler {
      * @param upstreamAddress the resolved upstream socket address
      * @param responseTimeMs  fallback wall-clock latency when the response carries no Timing
      */
+    /**
+     * Effective upstream round-trip latency in milliseconds for the LOGGED forwarded response.
+     * Prefers the precise {@code Timing} measured by {@link NettyHttpClient} (total round-trip),
+     * falling back to the supplied wall-clock delta when no Timing is attached. Used to populate
+     * {@link #RESPONSE_TIME_HEADER} on the event-log clone (see {@link #recordForwardMetrics} which
+     * applies the same precedence for metrics).
+     */
+    private static long effectiveForwardLatencyMs(HttpResponse response, long fallbackMs) {
+        if (response != null && response.getTiming() != null && response.getTiming().getTotalTimeInMillis() != null) {
+            return response.getTiming().getTotalTimeInMillis();
+        }
+        return fallbackMs;
+    }
+
     private void recordForwardMetrics(Action action, HttpResponse response,
                                       InetSocketAddress upstreamAddress, long responseTimeMs) {
         if (!org.mockserver.metrics.Metrics.isForwardMetricsActive()) {

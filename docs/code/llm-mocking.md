@@ -617,6 +617,15 @@ flowchart LR
 
 Only LLM traffic (where the sniffer recognises a provider) is included; non-LLM forwarded traffic is ignored.
 
+### Per-call upstream latency
+
+The per-call `latencyMs` is the measured upstream round-trip time. It is carried from the forward path to the report via an internal `x-mockserver-response-time-ms` header attached **only to the logged `FORWARDED_REQUEST` response clone** (never the response written to the real client) — the same convention as `x-mockserver-streamed` / `x-mockserver-chunk-delays-ms`. `HttpActionHandler` defines the constant (`HttpActionHandler.RESPONSE_TIME_HEADER`) and sets the header on every forward path's logged clone:
+
+- **Non-streaming** — the value prefers the precise `Timing.getTotalTimeInMillis()` measured by `NettyHttpClient` (matching `recordForwardMetrics`), falling back to the wall-clock delta. This matters for the matched-`FORWARD` path, where `scheduler.submit(responseFuture, …)` only runs after the future has completed, so a naive nanos delta would read ~0.
+- **Streaming** — the full-stream duration is computed from the captured forward-start nanos at stream completion (the upstream `Timing` only covers the response head).
+
+`LlmOptimisationReportService` reads the header off the recorded response and passes it as `CapturedExchange.latencyMs`; the builder applies it when non-null and `>= 0` and aggregates `totals.totalLatencyMs`. A malformed/absent header degrades gracefully to a `0` latency for that call. The matched-`FORWARD` two-arg `writeForwardActionResponse(HttpResponse, …)` overload (pre-resolved responses, e.g. object-callback) has no upstream timing and leaves latency unset.
+
 ### Endpoint and MCP tool
 
 **REST** — `GET /mockserver/llm/optimisationReport` (mockserver-netty control-plane, handled by `HttpRequestHandler.handleOptimisationReport`):
