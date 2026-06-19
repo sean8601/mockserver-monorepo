@@ -629,7 +629,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("5 error"));
+        assertThat(result, startsWith("6 error"));
         assertThat(result, containsString("$.httpRequest.operationId: integer found, string expected"));
         assertThat(result, containsString("$.httpRequest.binaryData: is missing, but is required"));
         assertThat(result, containsString("$.httpRequest.dnsName: is missing, but is required"));
@@ -665,7 +665,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("10 error"));
+        assertThat(result, startsWith("11 error"));
         assertThat(result, containsString("$.httpRequest.headers[0].name: integer found, string expected"));
         assertThat(result, containsString("$.httpRequest.headers: array found, object expected"));
         assertThat(result, containsString("$.httpResponse.headers[0].values[0]: integer found, string expected"));
@@ -724,7 +724,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("10 error"));
+        assertThat(result, startsWith("11 error"));
         assertThat(result, containsString("$.httpRequest.keepAlive: string found, boolean expected"));
         assertThat(result, containsString("$.httpRequest.secure: string found, boolean expected"));
         assertThat(result, containsString("$.httpRequest.socketAddress.port: string found, integer expected"));
@@ -755,7 +755,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("10 error"));
+        assertThat(result, startsWith("11 error"));
         assertThat(result, containsString("$.httpRequest.cookies[0].name: integer found, string expected"));
         assertThat(result, containsString("$.httpRequest.cookies: array found, object expected"));
         assertThat(result, containsString("$.httpResponse.cookies[0].value: integer found, string expected"));
@@ -784,7 +784,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("8 error"));
+        assertThat(result, startsWith("9 error"));
         assertThat(result, containsString("$.httpRequest.queryStringParameters[0].name: integer found, string expected"));
         assertThat(result, containsString("$.httpRequest.queryStringParameters: array found, object expected"));
         assertThat(result, containsString("$.httpResponse.body: should match one of its valid types"));
@@ -819,7 +819,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("13 error"));
+        assertThat(result, startsWith("14 error"));
         assertThat(result, containsString("$.httpRequest.queryStringParameters[0].name: integer found, string expected"));
         assertThat(result, containsString("$.httpRequest.headers[0].values[0]: integer found, string expected"));
         assertThat(result, containsString("$.httpResponse.cookies[0].name: integer found, string expected"));
@@ -957,7 +957,7 @@ public class JsonSchemaExpectationValidatorTest {
             "}");
 
         // then
-        assertThat(result, startsWith("12 error"));
+        assertThat(result, startsWith("13 error"));
         assertThat(result, containsString("$.httpRequest.headers: array found, object expected"));
         assertThat(result, containsString("$.httpRequest.headers[0]: string found, object expected"));
         assertThat(result, containsString("$.httpRequest.headers[1]: string found, object expected"));

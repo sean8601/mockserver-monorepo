@@ -83,6 +83,8 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
                 this.httpRequest = new BinaryRequestDefinitionDTO((BinaryRequestDefinition) requestMatcher);
             } else if (requestMatcher instanceof DnsRequestDefinition) {
                 this.httpRequest = new DnsRequestDefinitionDTO((DnsRequestDefinition) requestMatcher);
+            } else if (requestMatcher instanceof ConditionalRequestDefinition) {
+                this.httpRequest = new ConditionalRequestDefinitionDTO((ConditionalRequestDefinition) requestMatcher);
             }
             HttpResponse httpResponse = expectation.getHttpResponse();
             if (httpResponse != null) {

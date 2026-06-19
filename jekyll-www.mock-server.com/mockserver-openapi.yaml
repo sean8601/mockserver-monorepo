@@ -2500,6 +2500,7 @@ components:
       oneOf:
         - $ref: "#/components/schemas/HttpRequest"
         - $ref: "#/components/schemas/OpenAPIDefinition"
+        - $ref: "#/components/schemas/ConditionalRequestDefinition"
     HttpRequest:
       description: "request properties matcher"
       type: object
@@ -2536,6 +2537,21 @@ components:
           type: string
         operationId:
           type: string
+    ConditionalRequestDefinition:
+      description: "conditional (if-then-else) request matcher: if the 'if' guard matches the request then the 'then' branch is required, otherwise the 'else' branch is required (when 'else' is omitted the expectation matches whenever the guard is false)"
+      type: object
+      additionalProperties: false
+      required:
+        - if
+      properties:
+        not:
+          type: boolean
+        if:
+          $ref: "#/components/schemas/RequestDefinition"
+        then:
+          $ref: "#/components/schemas/RequestDefinition"
+        else:
+          $ref: "#/components/schemas/RequestDefinition"
     HttpResponse:
       description: "response to return"
       type: object

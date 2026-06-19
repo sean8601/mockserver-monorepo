@@ -215,11 +215,12 @@ public class JsonSchemaRequestDefinitionValidatorTest {
             "  }");
 
         // then
-        assertThat(result, startsWith("4 error"));
+        assertThat(result, startsWith("5 error"));
         assertThat(result, containsString("$.invalidField: is not defined in the schema and the schema does not allow additional properties"));
         assertThat(result, containsString("$.binaryData: is missing but it is required"));
         assertThat(result, containsString("$.dnsName: is missing but it is required"));
         assertThat(result, containsString("$.specUrlOrPayload: is missing, but is required, if specifying OpenAPI request matcher"));
+        assertThat(result, containsString("$.if: is missing but it is required"));
     }
 
     @Test
@@ -230,12 +231,13 @@ public class JsonSchemaRequestDefinitionValidatorTest {
             "  }");
 
         // then
-        assertThat(result, startsWith("5 error"));
+        assertThat(result, startsWith("6 error"));
         assertThat(result, containsString("$.method: integer found, string expected"));
         assertThat(result, containsString("$.method: should be valid to one and only one schema, but 0 are valid"));
         assertThat(result, containsString("$.binaryData: is missing but it is required"));
         assertThat(result, containsString("$.dnsName: is missing but it is required"));
         assertThat(result, containsString("$.specUrlOrPayload: is missing, but is required, if specifying OpenAPI request matcher"));
+        assertThat(result, containsString("$.if: is missing but it is required"));
     }
 
     @Test
