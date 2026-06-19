@@ -80,6 +80,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded expectations) as a string. Previously only the Java client and the dashboard UI exposed code retrieval;
   the other clients hard-coded `format=JSON`. Server behaviour is unchanged — this only plumbs the existing
   capability into the client libraries.
+- **Dashboard UI: named-example picker for OpenAPI-backed expectations**. The **Import OpenAPI**
+  dialog now detects when a pasted inline JSON spec declares multiple named response examples for an
+  operation (under the first media type of a response body) and shows a per-operation dropdown to
+  choose which one the generated mock should return. The chosen example is sent to the server as the
+  `operationsAndResponses` value `{ statusCode, exampleName }` (the field the existing
+  `OpenAPIConverter` already honours), so no server change was needed. Leaving a picker on **Default**
+  sends no override, preserving MockServer's default example selection. URL and YAML specs are sent
+  untouched (no picker), and `$ref`-resolved examples are not surfaced since the dialog inspects the
+  raw pasted JSON.
 - **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
   recognises `input_audio` content parts on the request side (so conversation matchers can assert a message
   contains audio, and in what `format` — e.g. `wav`/`mp3`), mirroring the existing image-part recognition;

@@ -8,16 +8,135 @@ import { buildBaseUrl } from './mcpClient';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 
 /**
+ * A named example a user can pick for one operation/response of a spec.
+ * `statusCode` is the response code the named examples were found under (e.g.
+ * "200"); `exampleNames` are the keys of that response's `content.*.examples`
+ * map — exactly the values the server accepts as `exampleName`.
+ */
+export interface OperationExamples {
+  operationId: string;
+  statusCode: string;
+  exampleNames: string[];
+}
+
+/**
+ * The user's chosen example per operation, keyed by operationId. The value pairs
+ * the response `statusCode` the example belongs to with the chosen `exampleName`.
+ */
+export type ExampleSelections = Record<string, { statusCode: string; exampleName: string }>;
+
+const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head', 'trace'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Discover the named examples a spec exposes, so the UI can offer a picker.
+ *
+ * Only inline JSON specs are inspected — a URL or YAML payload is sent to the
+ * server untouched and yields an empty list (the picker is hidden). For each
+ * operation that declares two or more named examples on the FIRST media type of
+ * a response body, an {@link OperationExamples} entry is returned (the first
+ * response status with named examples wins). Operations with zero or one named
+ * example are omitted, since there is nothing meaningful to choose.
+ *
+ * Only the first media type is inspected because the server's OpenAPIConverter
+ * itself selects the first content entry when building the example response — a
+ * named example declared on a second media type cannot be honoured, so offering
+ * it in the picker would be a false promise.
+ *
+ * Limitation: examples reached via a `$ref` (e.g. a `$ref`-ed response or a
+ * `$ref`-ed example object) are not resolved here, since this walks the raw
+ * pasted JSON rather than a fully-dereferenced spec. Such operations simply show
+ * no picker; the server still applies its own default example for them.
+ */
+export function discoverNamedExamples(specOrUrl: string): OperationExamples[] {
+  const trimmed = specOrUrl.trim();
+  if (!trimmed.startsWith('{')) {
+    return [];
+  }
+  let spec: unknown;
+  try {
+    spec = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!isRecord(spec) || !isRecord(spec.paths)) {
+    return [];
+  }
+  const results: OperationExamples[] = [];
+  for (const pathItem of Object.values(spec.paths)) {
+    if (!isRecord(pathItem)) {
+      continue;
+    }
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!isRecord(operation) || typeof operation.operationId !== 'string') {
+        continue;
+      }
+      const found = firstResponseWithNamedExamples(operation.responses);
+      if (found && found.exampleNames.length >= 2) {
+        results.push({ operationId: operation.operationId, ...found });
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Find the first response status whose first media type declares named examples.
+ * Only the first media type is considered, matching the server's content
+ * selection (see {@link discoverNamedExamples}).
+ */
+function firstResponseWithNamedExamples(
+  responses: unknown,
+): { statusCode: string; exampleNames: string[] } | null {
+  if (!isRecord(responses)) {
+    return null;
+  }
+  for (const [statusCode, response] of Object.entries(responses)) {
+    if (!isRecord(response) || !isRecord(response.content)) {
+      continue;
+    }
+    const firstMediaType = Object.values(response.content)[0];
+    if (isRecord(firstMediaType) && isRecord(firstMediaType.examples)) {
+      const exampleNames = Object.keys(firstMediaType.examples);
+      if (exampleNames.length > 0) {
+        return { statusCode, exampleNames };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Import an OpenAPI spec. `specOrUrl` may be a URL or an inline JSON/YAML spec.
  * Returns the list of created/updated expectations.
+ *
+ * `exampleSelections` optionally pins a named example per operation. Each entry
+ * is sent to the server as an `operationsAndResponses` value of the form
+ * `{ statusCode, exampleName }`, so the generated response uses that example.
  *
  * @throws Error with the server's message on a non-2xx response.
  */
 export async function importOpenApi(
   params: ConnectionParams,
   specOrUrl: string,
+  exampleSelections?: ExampleSelections,
 ): Promise<unknown[]> {
-  const body = JSON.stringify([{ specUrlOrPayload: specOrUrl }]);
+  const expectation: Record<string, unknown> = { specUrlOrPayload: specOrUrl };
+  if (exampleSelections && Object.keys(exampleSelections).length > 0) {
+    const operationsAndResponses: Record<string, { statusCode: string; exampleName: string }> = {};
+    for (const [operationId, selection] of Object.entries(exampleSelections)) {
+      operationsAndResponses[operationId] = {
+        statusCode: selection.statusCode,
+        exampleName: selection.exampleName,
+      };
+    }
+    expectation.operationsAndResponses = operationsAndResponses;
+  }
+  const body = JSON.stringify([expectation]);
   const res = await fetch(`${buildBaseUrl(params)}/mockserver/openapi`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
