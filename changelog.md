@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutated or any connection is made (a blocked upstream returns `403` and leaves configuration untouched; a
   malformed upstream returns `400`). Recording remains traffic-driven — the call only arms recording, it
   does not synthesise traffic.
+- **Cluster status endpoint and metric**: a new read-only `GET /mockserver/cluster` control-plane endpoint
+  reports the node's view of cluster membership and health as JSON — `clustered`, `nodeId`, `coordinator`,
+  `clusterName`, `memberCount`, and a `members` list that flags the coordinator and the local node. On a
+  single-node / in-memory deployment it returns a sensible degenerate response (`clustered: false`, one local
+  member that is its own coordinator), so health checks and tooling can call it unconditionally; with the
+  Infinispan backend clustered, it reports the real JGroups fleet membership. A matching Prometheus gauge
+  `mock_server_cluster_members` (read live at scrape time, `1` for single-node) exports the member count when
+  metrics are enabled. Backed by a new `StateBackend.clusterInfo()` SPI method with a degenerate default
+  implementation and a real Infinispan implementation.
 - **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
   containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
   schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched

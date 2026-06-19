@@ -412,6 +412,45 @@ app:
     </tbody>
 </table>
 
+<h3>Monitoring cluster membership</h3>
+
+<p>
+    Every MockServer node exposes a read-only <code class="inline code">GET /mockserver/cluster</code> control-plane
+    endpoint that reports the node's view of the cluster &mdash; how many members it can see, which member is the
+    coordinator, and which member is itself. Use it from a health check, dashboard, or operations script to confirm
+    that all nodes have formed the cluster and agree on membership.
+</p>
+
+<pre class="prettyprint lang-bash code"><code class="code">curl -s http://localhost:1080/mockserver/cluster</code></pre>
+
+<p>On a clustered node, the response lists every member and flags the coordinator and the local node:</p>
+
+<pre class="prettyprint lang-json code"><code class="code">{
+  "clustered" : true,
+  "nodeId" : "node-a-7f3c",
+  "coordinator" : "node-a-7f3c",
+  "clusterName" : "shared-cluster",
+  "memberCount" : 2,
+  "members" : [
+    { "id" : "node-a-7f3c", "coordinator" : true,  "local" : true  },
+    { "id" : "node-b-91ad", "coordinator" : false, "local" : false }
+  ]
+}</code></pre>
+
+<p>
+    On a single-node deployment (the default in-memory backend, or Infinispan in LOCAL mode), the same endpoint returns
+    a sensible degenerate response: <code class="inline code">"clustered": false</code> with exactly one member &mdash;
+    this node, which is its own coordinator. This means health checks and tooling can call the endpoint unconditionally,
+    regardless of whether clustering is enabled.
+</p>
+
+<p>
+    If MockServer metrics are enabled (<code class="inline code">metricsEnabled=true</code>), the live member count is
+    also exported as the Prometheus gauge <code class="inline code">mock_server_cluster_members</code> (read at scrape time),
+    so you can chart and alert on cluster size from your existing Prometheus stack. The gauge reads <code class="inline code">1</code>
+    for a single-node deployment. See <a href="/mock_server/observability.html">Observability</a> for the full metrics setup.
+</p>
+
 <a id="option3" class="anchor" href="#option3">&nbsp;</a>
 <h2>Option 3: Persistence-Only Durability</h2>
 

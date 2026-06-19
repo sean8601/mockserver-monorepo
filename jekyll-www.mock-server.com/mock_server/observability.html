@@ -172,6 +172,20 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
     <li><span class="inline_code">mock_server_chaos_auto_halt_total</span> &mdash; counter that increments each time the <a href="/mock_server/chaos_testing.html">chaos auto-halt circuit-breaker</a> triggers</li>
 </ul>
 
+<h4>Cluster metrics</h4>
+
+<p>
+    MockServer also exposes the size of the cluster it belongs to:
+</p>
+
+<ul>
+    <li><span class="inline_code">mock_server_cluster_members</span> &mdash; gauge of the number of members in the
+    MockServer cluster, read live at scrape time. It reads <span class="inline_code">1</span> for a single-node
+    deployment (the default in-memory backend, or Infinispan in LOCAL mode) and the real fleet size when
+    <a href="/mock_server/centralized_deployment.html#option2">clustering</a> is enabled. The same membership detail
+    is available as JSON from the <span class="inline_code">GET /mockserver/cluster</span> control-plane endpoint.</li>
+</ul>
+
 <a id="llm_metrics" class="anchor" href="#llm_metrics">&nbsp;</a>
 <h2>LLM Token and Cost Metrics</h2>
 

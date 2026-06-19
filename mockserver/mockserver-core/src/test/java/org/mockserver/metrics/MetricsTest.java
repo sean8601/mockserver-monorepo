@@ -38,6 +38,7 @@ public class MetricsTest {
     public void clearServiceChaos() {
         ServiceChaosRegistry.getInstance().reset();
         Metrics.setActiveExpectationsSupplier(null);
+        Metrics.setClusterMemberCountSupplier(null);
     }
 
     @Test
@@ -407,6 +408,62 @@ public class MetricsTest {
         // safe to call regardless of whether supplier is set
         Map<String, Integer> counts = Metrics.getActiveExpectationCountByType();
         assertThat("empty map when no supplier", counts.isEmpty(), is(true));
+    }
+
+    // --- cluster members gauge tests ---
+
+    @Test
+    public void registersClusterMembersGauge() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        assertThat(scrapeContains("mock_server_cluster_members"), is(true));
+    }
+
+    @Test
+    public void clusterMembersGaugeDefaultsToOneWhenNoSupplier() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        // single-node default: exactly one member when no supplier is registered
+        assertThat(scrapeGaugeValue("mock_server_cluster_members"), is(1.0));
+        assertThat(Metrics.getClusterMemberCount(), is(1));
+    }
+
+    @Test
+    public void clusterMembersGaugeReflectsSupplierValue() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        Metrics.setClusterMemberCountSupplier(() -> 3);
+        assertThat(scrapeGaugeValue("mock_server_cluster_members"), is(3.0));
+
+        // follows updates (e.g. a node leaves the cluster)
+        Metrics.setClusterMemberCountSupplier(() -> 2);
+        assertThat(scrapeGaugeValue("mock_server_cluster_members"), is(2.0));
+    }
+
+    @Test
+    public void clusterMembersGaugeFailsSoftToOne() {
+        new Metrics(configuration().metricsEnabled(true));
+
+        // a throwing or non-positive supplier degrades to the single-node default
+        Metrics.setClusterMemberCountSupplier(() -> {
+            throw new RuntimeException("backend unavailable");
+        });
+        assertThat(scrapeGaugeValue("mock_server_cluster_members"), is(1.0));
+
+        Metrics.setClusterMemberCountSupplier(() -> 0);
+        assertThat(scrapeGaugeValue("mock_server_cluster_members"), is(1.0));
+    }
+
+    private static double scrapeGaugeValue(String name) {
+        MetricSnapshots snapshots = PrometheusRegistry.defaultRegistry.scrape();
+        for (MetricSnapshot snapshot : snapshots) {
+            if (snapshot.getMetadata().getName().equals(name) && snapshot instanceof GaugeSnapshot gaugeSnapshot) {
+                for (GaugeSnapshot.GaugeDataPointSnapshot dataPoint : gaugeSnapshot.getDataPoints()) {
+                    return dataPoint.getValue();
+                }
+            }
+        }
+        return 0.0;
     }
 
     private static boolean scrapeContains(String name) {

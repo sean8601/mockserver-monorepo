@@ -81,6 +81,11 @@ public class Metrics {
     // expectations-by-type GaugeWithCallback can read live state at scrape time
     // without a core->netty dependency.
     private static final AtomicReference<Supplier<List<Expectation>>> activeExpectationsSupplier = new AtomicReference<>();
+    // Supplier of the current cluster member count, set by HttpState at startup
+    // so the cluster_members GaugeWithCallback can read live membership at scrape
+    // time from the StateBackend without Metrics depending on the state package.
+    // Defaults to 1 (single local node) until a supplier is registered.
+    private static final AtomicReference<Supplier<Integer>> clusterMemberCountSupplier = new AtomicReference<>();
     // OTel histogram for OTLP export. Set by OtelMetricsExporter when enabled; null otherwise.
     private static volatile io.opentelemetry.api.metrics.DoubleHistogram otelRequestDurationHistogram;
 
@@ -196,6 +201,15 @@ public class Metrics {
                             getActiveServiceChaosCountByFaultType().forEach((faultType, count) ->
                                 callback.call(count, faultType)))
                         .register();
+                    // Callback gauge: report the live cluster member count at scrape
+                    // time. For a single-node / in-memory deployment this is 1; for a
+                    // clustered backend it reflects the current fleet size read from
+                    // the StateBackend via the registered supplier.
+                    GaugeWithCallback.builder()
+                        .name("mock_server_cluster_members")
+                        .help("Number of members in the MockServer cluster (1 for a single-node deployment)")
+                        .callback(callback -> callback.call(getClusterMemberCount()))
+                        .register();
                     if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
                         requestDurationByMethodSeconds = Histogram.builder()
                             .name("mock_server_request_duration_by_method_seconds")
@@ -263,6 +277,7 @@ public class Metrics {
             expectationMatchedTotal = null;
             otelRequestDurationHistogram = null;
             activeExpectationsSupplier.set(null);
+            clusterMemberCountSupplier.set(null);
             metrics.clear();
             PrometheusRegistry.defaultRegistry.clear();
         }
@@ -781,6 +796,38 @@ public class Metrics {
      */
     public static Map<String, Integer> getActiveServiceChaosCountByFaultType() {
         return ServiceChaosRegistry.getInstance().activeCountByFaultType();
+    }
+
+    /**
+     * Set the supplier of the current cluster member count. Called by HttpState
+     * at startup so the {@code mock_server_cluster_members} GaugeWithCallback can
+     * read live membership from the StateBackend at scrape time without Metrics
+     * depending on the state package.
+     *
+     * @param supplier returns the current number of cluster members
+     */
+    public static void setClusterMemberCountSupplier(Supplier<Integer> supplier) {
+        clusterMemberCountSupplier.set(supplier);
+    }
+
+    /**
+     * Current cluster member count, backing the {@code mock_server_cluster_members}
+     * gauge. Returns 1 (single local node) when no supplier is registered or the
+     * supplier fails/returns a non-positive value.
+     */
+    public static int getClusterMemberCount() {
+        Supplier<Integer> supplier = clusterMemberCountSupplier.get();
+        if (supplier != null) {
+            try {
+                Integer count = supplier.get();
+                if (count != null && count > 0) {
+                    return count;
+                }
+            } catch (Exception ignored) {
+                // fail-soft: fall through to the single-node default
+            }
+        }
+        return 1;
     }
 
     public void increment(Name name) {

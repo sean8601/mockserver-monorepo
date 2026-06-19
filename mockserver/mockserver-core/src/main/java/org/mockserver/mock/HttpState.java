@@ -226,6 +226,7 @@ public class HttpState {
             });
         }
         Metrics.setActiveExpectationsSupplier(() -> requestMatchers.retrieveActiveExpectations(null));
+        Metrics.setClusterMemberCountSupplier(() -> stateBackend.clusterInfo().members().size());
         if (configuration.persistExpectations()) {
             this.expectationFileSystemPersistence = new ExpectationFileSystemPersistence(configuration, mockServerLogger, requestMatchers, stateBackend.blobs());
         }
@@ -2602,6 +2603,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/cluster", "/cluster")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleClusterGet()), true);
+                }
+                return true;
+            }
             if (request.matches("GET") && request.getPath() != null
                 && request.getPath().getValue() != null
                 && (request.getPath().getValue().startsWith(PATH_PREFIX + "/scenario/")
@@ -3871,6 +3878,35 @@ public class HttpState {
         } catch (Exception e) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get gRPC health status\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleClusterGet() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.state.ClusterInfo clusterInfo = stateBackend.clusterInfo();
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("clustered", clusterInfo.clustered());
+            result.put("nodeId", clusterInfo.nodeId());
+            result.put("coordinator", clusterInfo.coordinator());
+            if (clusterInfo.clusterName() != null) {
+                result.put("clusterName", clusterInfo.clusterName());
+            }
+            result.put("memberCount", clusterInfo.members().size());
+            com.fasterxml.jackson.databind.node.ArrayNode membersArray = objectMapper.createArrayNode();
+            for (org.mockserver.state.ClusterInfo.Member member : clusterInfo.members()) {
+                com.fasterxml.jackson.databind.node.ObjectNode memberNode = objectMapper.createObjectNode();
+                memberNode.put("id", member.id());
+                memberNode.put("coordinator", member.coordinator());
+                memberNode.put("local", member.local());
+                membersArray.add(memberNode);
+            }
+            result.set("members", membersArray);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get cluster status\"}", MediaType.JSON_UTF_8);
         }
     }
 

@@ -237,6 +237,38 @@ class ClusteredTwoNodeTest {
     }
 
     @Test
+    void clusterInfoShouldReportBothMembersWithSingleCoordinator() {
+        // clusterInfo() reads real JGroups membership from the cache manager
+        ClusterInfo infoA = nodeA.clusterInfo();
+        ClusterInfo infoB = nodeB.clusterInfo();
+
+        assertTrue(infoA.clustered(), "node A reports clustered");
+        assertTrue(infoB.clustered(), "node B reports clustered");
+
+        // both nodes see the full 2-member fleet
+        assertThat(infoA.members(), hasSize(2));
+        assertThat(infoB.members(), hasSize(2));
+
+        // exactly one coordinator across the fleet, agreed by both nodes
+        assertThat(infoA.members().stream().filter(ClusterInfo.Member::coordinator).count(), is(1L));
+        assertThat(infoB.members().stream().filter(ClusterInfo.Member::coordinator).count(), is(1L));
+        assertThat("both nodes agree on the coordinator", infoA.coordinator(), is(infoB.coordinator()));
+
+        // each node flags exactly one member (itself) as local, and the two
+        // nodes' local members are distinct
+        assertThat(infoA.members().stream().filter(ClusterInfo.Member::local).count(), is(1L));
+        assertThat(infoB.members().stream().filter(ClusterInfo.Member::local).count(), is(1L));
+        String localOnA = infoA.members().stream().filter(ClusterInfo.Member::local).findFirst().get().id();
+        String localOnB = infoB.members().stream().filter(ClusterInfo.Member::local).findFirst().get().id();
+        assertNotEquals(localOnA, localOnB, "each node's local member is its own address");
+        assertThat(infoA.nodeId(), is(localOnA));
+        assertThat(infoB.nodeId(), is(localOnB));
+
+        // the cluster name is reported
+        assertThat(infoA.clusterName(), is(clusterName));
+    }
+
+    @Test
     void clearOnNodeAShouldClearNodeB() {
         nodeA.scenarioStates().put("s1", "v1");
         nodeA.scenarioStates().put("s2", "v2");

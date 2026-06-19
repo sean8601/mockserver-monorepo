@@ -150,6 +150,27 @@ For the default `InMemoryStateBackend`, this is backed by a `ConcurrentHashMap` 
 
 `ScenarioManager` uses no node-local cache for scenario state; all reads go through `KeyValueStore.get()` and all writes through `put()` or `compareAndSet()`. This read-through design means no `InvalidationListener` is needed for scenario state (unlike expectations, which maintain a node-local compiled-matcher cache).
 
+## Cluster Status Endpoint
+
+`GET /mockserver/cluster` (control-plane, gated by `controlPlaneRequestAuthenticated`) returns a JSON snapshot of cluster membership and health, backed by the `StateBackend.clusterInfo()` SPI method.
+
+```mermaid
+flowchart LR
+    GET["GET /mockserver/cluster"]
+    HS["HttpState.handleClusterGet()"]
+    SB["StateBackend.clusterInfo()"]
+    IM["InMemory / LOCAL\n(default): singleNode()"]
+    INF["Infinispan CLUSTERED:\nreal JGroups members"]
+    GET --> HS --> SB
+    SB --> IM
+    SB --> INF
+```
+
+- **SPI method** — `StateBackend.clusterInfo()` returns a `ClusterInfo` record (`clustered`, `nodeId`, `coordinator`, `clusterName`, `members[]`; each `Member` has `id`, `coordinator`, `local`). The interface provides a **default** that returns the degenerate single-node snapshot (`ClusterInfo.singleNode(nodeId())`), so `InMemoryStateBackend` and any other backend compile unchanged.
+- **Single-node / in-memory / LOCAL mode** — `clustered=false`, exactly one member (this node), which is its own coordinator. `InfinispanStateBackend` in LOCAL mode (no transport) also falls back to this snapshot.
+- **Infinispan CLUSTERED mode** — `InfinispanStateBackend.clusterInfo()` reads `EmbeddedCacheManager.getMembers()`, `getAddress()`, `getCoordinator()`, and `getClusterName()` to report the real fleet, flagging the coordinator and the local node. It is fail-soft: any error degrades to the single-node snapshot rather than failing the endpoint.
+- **Metric** — when metrics are enabled, the `mock_server_cluster_members` Prometheus gauge (a `GaugeWithCallback`) reports the live member count at scrape time via a supplier `HttpState` registers (`Metrics.setClusterMemberCountSupplier`), reading `stateBackend.clusterInfo().members().size()`. Defaults to `1` (single local node) when no supplier is set or the supplier fails.
+
 ## Factory and Classpath Discovery
 
 `StateBackendFactory` in `mockserver-core` manages backend creation without a compile-time dependency on Infinispan:
@@ -426,6 +447,7 @@ This is gated narrowly — only when the backend is clustered **and** the expect
 | `org.mockserver.state.BlobStore` | `mockserver-core` | Blob store abstraction |
 | `org.mockserver.state.InvalidationListener` | `mockserver-core` | Change notification callback |
 | `org.mockserver.state.ExpectationEntry` | `mockserver-core` | Serializable expectation carrier |
+| `org.mockserver.state.ClusterInfo` | `mockserver-core` | Cluster membership/health snapshot for `GET /mockserver/cluster` |
 | `org.mockserver.state.InMemoryStateBackend` | `mockserver-core` | Default in-memory implementation |
 | `org.mockserver.state.StateBackendFactory` | `mockserver-core` | Pluggable factory with classpath auto-discovery |
 | `org.mockserver.mock.RequestMatchers` | `mockserver-core` | Node-local matcher cache; `reconcileFromBackend()` |

@@ -4001,6 +4001,44 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldReturnSingleNodeClusterStatusForInMemoryBackend() throws Exception {
+        // given — the default backend is the in-memory single-node backend
+        FakeResponseWriter getWriter = new FakeResponseWriter();
+        HttpRequest getRequest = request("/mockserver/cluster").withMethod("GET");
+
+        // when
+        assertThat(httpState.handle(getRequest, getWriter, false), is(true));
+
+        // then — a sensible degenerate JSON response (single local member, clustered=false)
+        assertThat(getWriter.response.getStatusCode(), is(200));
+        com.fasterxml.jackson.databind.JsonNode body =
+            org.mockserver.serialization.ObjectMapperFactory.createObjectMapper()
+                .readTree(getWriter.response.getBodyAsString());
+        assertThat(body.get("clustered").asBoolean(), is(false));
+        assertThat(body.get("memberCount").asInt(), is(1));
+        assertThat(body.get("nodeId").asText(), is(not(emptyOrNullString())));
+        assertThat(body.get("coordinator").asText(), is(body.get("nodeId").asText()));
+        com.fasterxml.jackson.databind.JsonNode members = body.get("members");
+        assertThat(members.isArray(), is(true));
+        assertThat(members.size(), is(1));
+        assertThat(members.get(0).get("id").asText(), is(body.get("nodeId").asText()));
+        assertThat(members.get(0).get("coordinator").asBoolean(), is(true));
+        assertThat(members.get(0).get("local").asBoolean(), is(true));
+    }
+
+    @Test
+    public void shouldAddCorsHeadersToClusterResponse() {
+        // the dashboard GETs /mockserver/cluster cross-origin from the UI dev server
+        FakeResponseWriter getWriter = new FakeResponseWriter();
+        HttpRequest getRequest = request("/mockserver/cluster")
+            .withMethod("GET")
+            .withHeader("Origin", "http://localhost:3000");
+        assertThat(httpState.handle(getRequest, getWriter, false), is(true));
+        assertThat(getWriter.response.getStatusCode(), is(200));
+        assertThat(getWriter.response.getFirstHeader("access-control-allow-origin"), is("http://localhost:3000"));
+    }
+
+    @Test
     public void shouldRejectServiceChaosWithTtlBelowOne() throws Exception {
         FakeResponseWriter writer = new FakeResponseWriter();
         HttpRequest putRequest = request("/mockserver/serviceChaos")
