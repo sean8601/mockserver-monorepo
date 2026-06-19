@@ -97,7 +97,13 @@ public class LlmOptimisationReportService {
                     continue;
                 }
                 String key = "host:" + (host != null ? host : "unknown");
-                if (f.session != null && !f.session.equalsIgnoreCase(key)) {
+                // Accept either the composite grouping key ("host:<host>") or the
+                // bare host the dashboard's session picker sends. The picker may
+                // include a port from the raw Host header, so strip it before
+                // comparing (the server-side host is already port-stripped).
+                if (f.session != null
+                    && !f.session.equalsIgnoreCase(key)
+                    && !(host != null && stripPort(f.session).equalsIgnoreCase(host))) {
                     continue;
                 }
                 if (groupingKey == null) {

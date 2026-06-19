@@ -19,7 +19,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useDashboardStore } from '../store';
-import { groupBySession, shortenScenarioName } from '../lib/sessionGrouping';
+import { groupBySession } from '../lib/sessionGrouping';
 import {
   fetchOptimisationReport,
   fetchOptimisationBrief,
@@ -85,16 +85,16 @@ function useSessionOptions(): SessionOption[] {
     const options: SessionOption[] = [{ value: ALL_SESSIONS, label: 'All captured LLM traffic' }];
     const seen = new Set<string>();
     for (const session of sessions) {
-      // Mirror the server grouping key: isolation key when scoped, else the
-      // upstream host. The contract's `session.key` is a free-form grouping
-      // key, so we send the human isolation/host value the picker shows.
+      // v1 optimisation groups proxied LLM traffic by upstream host. Isolation-
+      // scoped (mocked-conversation) sessions are not cost-relevant and the
+      // server groups only by host, so we offer host-grouped sessions only —
+      // otherwise selecting an isolation-scoped option would silently return an
+      // empty report. See docs/code/llm-mocking.md (optimisation export, v1).
+      if (session.scenarioName !== '<unscoped>') continue;
       const key = session.isolationKey;
-      if (!key || seen.has(key)) continue;
+      if (!key || key === '<unscoped>' || seen.has(key)) continue;
       seen.add(key);
-      const base = session.scenarioName === '<unscoped>'
-        ? key
-        : `${shortenScenarioName(session.scenarioName)} / ${key}`;
-      options.push({ value: key, label: base });
+      options.push({ value: key, label: key });
     }
     return options;
   }, [proxiedRequests, recordedRequests, activeExpectations]);
@@ -273,7 +273,7 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
   const hasReport = report != null;
   const isEmpty = hasReport && totals != null && totals.callCount === 0;
   const sortedSignals = useMemo(
-    () => (report ? sortSignalsBySeverity(report.signals) : []),
+    () => (report ? sortSignalsBySeverity(report.signals ?? []) : []),
     [report],
   );
 
@@ -359,10 +359,10 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
 
           {/* Provider / model summary + actions */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
-            {report.session.providers.map((p) => (
+            {(report.session.providers ?? []).map((p) => (
               <Chip key={`prov-${p}`} size="small" variant="outlined" label={p} sx={{ height: 20, fontSize: '0.65rem' }} />
             ))}
-            {report.session.models.map((m) => (
+            {(report.session.models ?? []).map((m) => (
               <Chip key={`model-${m}`} size="small" variant="outlined" color="primary" label={m} sx={{ height: 20, fontSize: '0.65rem', fontFamily: monospaceFontFamily }} />
             ))}
             <Box sx={{ flex: 1 }} />
@@ -422,7 +422,7 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {report.calls.map((call) => (
+                  {(report.calls ?? []).map((call) => (
                     <TableRow key={call.index} hover>
                       <TableCell>{call.index}</TableCell>
                       <TableCell sx={{ fontFamily: monospaceFontFamily, fontSize: '0.72rem' }}>{call.model}</TableCell>
@@ -430,7 +430,7 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
                       <TableCell align="right">{call.outputTokens.toLocaleString()}</TableCell>
                       <TableCell align="right">{formatCost(call.estimatedCostUsd)}</TableCell>
                       <TableCell align="right">{formatMs(call.latencyMs)}</TableCell>
-                      <TableCell align="right">{call.toolCalls.length}</TableCell>
+                      <TableCell align="right">{call.toolCalls?.length ?? 0}</TableCell>
                       <TableCell>{call.finishReason ?? '—'}</TableCell>
                     </TableRow>
                   ))}

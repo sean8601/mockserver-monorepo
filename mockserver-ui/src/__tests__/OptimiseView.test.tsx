@@ -154,14 +154,23 @@ describe('OptimiseView', () => {
     }
   });
 
-  it('shows the empty state for a report with no calls', async () => {
-    const empty = {
-      ...sample,
-      totals: { ...sample.totals, callCount: 0 },
-      calls: [],
-      signals: [],
+  it('shows the empty state for the real empty-report wire shape (omitted arrays)', async () => {
+    // The server's NON_EMPTY JSON mapper OMITS empty collections entirely, so an
+    // empty report arrives with no `calls`, `signals`, `session.providers`,
+    // `session.models` or `redaction.*` keys at all. The view must not crash —
+    // this is the first thing a user sees before any traffic is captured.
+    const emptyWire = {
+      schemaVersion: 1,
+      generatedBy: 'mockserver',
+      session: { key: 'all', groupingBasis: 'PROXY_HOST' },
+      totals: {
+        callCount: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0,
+        reasoningTokens: 0, estimatedCostUsd: 0, costIsEstimated: false,
+        totalLatencyMs: 0, toolCallCount: 0,
+      },
+      redaction: { applied: true },
     };
-    stubFetch(empty);
+    stubFetch(emptyWire);
     renderView();
     expect(await screen.findByText('No LLM traffic captured')).toBeInTheDocument();
   });

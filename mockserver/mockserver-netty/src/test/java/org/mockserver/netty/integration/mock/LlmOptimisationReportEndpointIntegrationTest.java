@@ -80,4 +80,36 @@ public class LlmOptimisationReportEndpointIntegrationTest {
         HttpResponse<String> response = get("?format=xml");
         assertThat(response.statusCode(), is(400));
     }
+
+    @Test
+    public void responseCarriesCorsHeadersForCrossOriginDashboard() throws Exception {
+        // The dashboard UI may be served from a different host/port than the API,
+        // so the control-plane response must carry CORS headers (this endpoint
+        // routes through the standard apiResponse=true path that always adds them).
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/mockserver/llm/optimisationReport?format=json"))
+            .header("Origin", "http://localhost:1234")
+            .GET()
+            .build();
+        HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode(), is(200));
+        // MockServer echoes the requesting origin back (more secure than a bare "*"),
+        // which is what a cross-origin dashboard needs to read the response.
+        assertThat(response.headers().firstValue("access-control-allow-origin").orElse(""), is("http://localhost:1234"));
+    }
+
+    @Test
+    public void preflightOptionsRequestIsAllowedForControlPlane() throws Exception {
+        // A browser preflights the cross-origin request with OPTIONS; control-plane
+        // paths (under /mockserver) answer the preflight even without enableCORSForAPI.
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/mockserver/llm/optimisationReport"))
+            .header("Origin", "http://localhost:1234")
+            .header("Access-Control-Request-Method", "GET")
+            .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+            .build();
+        HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode(), is(200));
+        assertThat(response.headers().firstValue("access-control-allow-methods").orElse(""), containsString("GET"));
+    }
 }

@@ -136,6 +136,30 @@ public class LlmOptimisationReportServiceTest {
     }
 
     @Test
+    public void sessionFilterMatchesBareHostFromDashboardPicker() {
+        // The dashboard session picker sends the bare host (e.g. "api.openai.com"),
+        // not the composite "host:<host>" grouping key — the filter accepts both.
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(
+            openAiPair("api.openai.com", "gpt-4o-2024-08-06", 100, 10));
+        LlmOptimisationReportService.Result match = service.build(pairs,
+            new LlmOptimisationReportService.Filter("api.openai.com", null, null));
+        assertEquals(1, match.getReport().getCalls().size());
+
+        // The picker derives its value from the raw Host header, which may carry a
+        // port; the server strips the port from both sides before comparing.
+        LlmOptimisationReportService.Result withPort = service.build(pairs,
+            new LlmOptimisationReportService.Filter("api.openai.com:443", null, null));
+        assertEquals(1, withPort.getReport().getCalls().size());
+
+        // A value that matches neither the composite key nor the host (e.g. an
+        // isolation key the host-grouped v1 server can't resolve) returns an
+        // empty report gracefully rather than throwing.
+        LlmOptimisationReportService.Result noMatch = service.build(pairs,
+            new LlmOptimisationReportService.Filter("agent-7f3a", null, null));
+        assertThat(noMatch.getReport().getCalls(), is(empty()));
+    }
+
+    @Test
     public void maxCallsBoundsReportToMostRecent() {
         ConfigurationProperties.llmOptimisationMaxCalls(2);
         List<LogEventRequestAndResponse> pairs = new ArrayList<>();

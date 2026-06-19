@@ -23,8 +23,9 @@ export type SignalSeverity = 'HIGH' | 'MEDIUM' | 'LOW';
 export interface OptimisationSession {
   key: string;
   groupingBasis: GroupingBasis;
-  providers: string[];
-  models: string[];
+  // May be omitted by the server's JSON mapper when empty (e.g. empty report).
+  providers?: string[];
+  models?: string[];
 }
 
 export interface OptimisationTotals {
@@ -61,7 +62,8 @@ export interface OptimisationCall {
   messageCount?: number | null;
   systemPromptTokens?: number | null;
   systemPromptFingerprint?: string | null;
-  toolCalls: OptimisationToolCall[];
+  // May be omitted by the server's JSON mapper when empty — treat as optional.
+  toolCalls?: OptimisationToolCall[];
 }
 
 export interface OptimisationSignal {
@@ -77,8 +79,9 @@ export interface OptimisationSignal {
 
 export interface OptimisationRedaction {
   applied: boolean;
-  redactedHeaders: string[];
-  redactedBodyFields: string[];
+  // Either list may be omitted by the server's JSON mapper when empty.
+  redactedHeaders?: string[];
+  redactedBodyFields?: string[];
 }
 
 export interface OptimisationReport {
@@ -86,9 +89,34 @@ export interface OptimisationReport {
   generatedBy: string;
   session: OptimisationSession;
   totals: OptimisationTotals;
-  calls: OptimisationCall[];
-  signals: OptimisationSignal[];
+  // calls/signals may be omitted by the server's JSON mapper when empty
+  // (NON_EMPTY inclusion) — e.g. the empty-report path before any traffic.
+  calls?: OptimisationCall[];
+  signals?: OptimisationSignal[];
   redaction: OptimisationRedaction;
+}
+
+/**
+ * Fill in any collections the server's NON_EMPTY JSON mapper omitted when empty,
+ * so consumers can rely on arrays always being present. Called by the fetch
+ * helper; the component additionally guards at use sites (defence in depth).
+ */
+export function normalizeReport(report: OptimisationReport): OptimisationReport {
+  return {
+    ...report,
+    calls: report.calls ?? [],
+    signals: report.signals ?? [],
+    session: {
+      ...report.session,
+      providers: report.session?.providers ?? [],
+      models: report.session?.models ?? [],
+    },
+    redaction: {
+      applied: report.redaction?.applied ?? false,
+      redactedHeaders: report.redaction?.redactedHeaders ?? [],
+      redactedBodyFields: report.redaction?.redactedBodyFields ?? [],
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +187,7 @@ export async function fetchOptimisationReport(
   const base = buildBaseUrl(params);
   const res = await fetch(`${base}/mockserver/llm/optimisationReport?${buildQuery('json', query)}`, { signal });
   await ensureOk(res);
-  return res.json() as Promise<OptimisationReport>;
+  return normalizeReport(await res.json() as OptimisationReport);
 }
 
 /** Fetch the Markdown optimisation brief (for copy / download). */
