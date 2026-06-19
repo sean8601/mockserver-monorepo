@@ -126,7 +126,7 @@ export function useDragResize(options: UseDragResizeOptions): UseDragResize {
     initial,
     min,
     max,
-    step = orientation === 'vertical' ? 0.02 : 0.02,
+    step = 0.02,
     storageKey,
     computeFromPointer,
     ariaLabel,
@@ -204,10 +204,10 @@ export function useDragResize(options: UseDragResizeOptions): UseDragResize {
       const incKey = orientation === 'vertical' ? 'ArrowRight' : 'ArrowDown';
       if (event.key === decKey) {
         event.preventDefault();
-        setValueState((prev) => apply(prev - step));
+        apply(clampedValue - step);
       } else if (event.key === incKey) {
         event.preventDefault();
-        setValueState((prev) => apply(prev + step));
+        apply(clampedValue + step);
       } else if (event.key === 'Home') {
         event.preventDefault();
         apply(boundsRef.current.min);
@@ -216,7 +216,7 @@ export function useDragResize(options: UseDragResizeOptions): UseDragResize {
         apply(boundsRef.current.max);
       }
     },
-    [orientation, step, apply],
+    [orientation, step, apply, clampedValue],
   );
 
   const getHandleProps = useCallback(
