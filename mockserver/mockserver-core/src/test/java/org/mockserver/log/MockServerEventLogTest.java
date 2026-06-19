@@ -484,6 +484,44 @@ public class MockServerEventLogTest {
     }
 
     @Test
+    public void shouldClearWithNullRequestMatcherButPreserveRequestLessEntries() {
+        // pins the preserved behaviour: clear(null) auto-clears entries that carry >= 1 request,
+        // but a request-less entry (getHttpRequests() is the length-0 array, e.g. SERVER_CONFIGURATION
+        // logged without a request) SURVIVES the clear - exactly as before the efficiency change.
+        // given
+        configuration.logLevel(Level.INFO);
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setType(SERVER_CONFIGURATION)
+                .setLogLevel(INFO)
+                .setMessageFormat("some random{}configuration message")
+                .setArguments("argument_one")
+        );
+        mockServerLogger.logEvent(
+            new LogEntry()
+                .setLogLevel(INFO)
+                .setType(EXPECTATION_RESPONSE)
+                .setHttpRequest(request("request_one"))
+                .setHttpResponse(response("response_one"))
+                .setMessageFormat("returning response:{}for request:{}")
+                .setArguments(response("response_one"), request("request_one"))
+        );
+
+        // when
+        mockServerEventLog.clear(null);
+
+        // then - the request-bearing entry is gone, the request-less entry survives
+        assertThat(retrieveRequests(null), empty());
+        List<LogEntry.LogMessageType> survivingTypes = retrieveMessageLogEntries(null).stream()
+            .map(LogEntry::getType)
+            .collect(Collectors.toList());
+        assertThat("request-less SERVER_CONFIGURATION entry must survive clear(null)",
+            survivingTypes.contains(SERVER_CONFIGURATION), is(true));
+        assertThat("request-bearing EXPECTATION_RESPONSE entry must be cleared by clear(null)",
+            survivingTypes.contains(EXPECTATION_RESPONSE), is(false));
+    }
+
+    @Test
     public void shouldClearWithNullRequestMatcherWhenWhenLogLevelDebug() {
         // given
         configuration.logLevel(Level.DEBUG);

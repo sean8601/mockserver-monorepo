@@ -435,7 +435,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Efficiency: fewer allocations on hot expectation/log paths** (behaviour-preserving): clearing the
   whole event log (a `clear` with no filter) no longer rebuilds an uncached request matcher per call and
-  no longer scans each entry through a matcher — an empty filter now short-circuits to "match all";
+  no longer scans each entry through a matcher — an empty filter now short-circuits to clearing exactly
+  the entries that carry at least one request, leaving request-less entries (e.g. `SERVER_CONFIGURATION`)
+  in place exactly as the previous matcher-based scan did;
   compiling a request expectation only allocates the JSON-schema body decoder when the body matcher is a
   JSON-type matcher (the control-plane path still always carries it); and `ObjectMapperFactory` now caches
   the custom-serializer export `ObjectMapper`s by serializer-set signature instead of rebuilding one per

@@ -264,10 +264,14 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 // A null filter means "clear everything". The previous code built a fresh empty
                 // request().withLogCorrelationId(uuid) matcher for this case, but the unique
                 // correlation id made it miss the matcher LRU cache on every clear, forcing an
-                // uncached matcher rebuild — and an empty matcher matches every entry anyway. So
-                // short-circuit the whole scan to "match all" rather than building and running a
-                // matcher. When a real filter is supplied the matcher is built once (cached by the
-                // filter) and matched fail-fast (single-arg matches => context == null => no
+                // uncached matcher rebuild — and an empty matcher matches every entry that carries
+                // at least one request. So short-circuit the whole scan rather than building and
+                // running a matcher. Note getHttpRequests() returns a length-0 array (never null)
+                // for request-less entries (SERVER_CONFIGURATION, TRACE/WARN/EXCEPTION/CLEARED logged
+                // without a request); the old per-request loop never set matches for those, so they
+                // SURVIVED clear(null). The `length > 0` guard reproduces that exactly while keeping
+                // the perf win. When a real filter is supplied the matcher is built once (cached by
+                // the filter) and matched fail-fast (single-arg matches => context == null => no
                 // MatchDifference allocation) exactly as before.
                 final boolean clearEverything = requestDefinition == null;
                 HttpRequestMatcher requestMatcher = clearEverything ? null : matcherBuilder.transformsToMatcher(requestDefinition);
@@ -280,7 +284,7 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                     RequestDefinition[] requests = logEntry.getHttpRequests();
                     boolean matches = false;
                     if (clearEverything) {
-                        matches = true;
+                        matches = requests.length > 0;
                     } else if (requests != null) {
                         for (RequestDefinition request : requests) {
                             if (requestMatcher.matches(request.cloneWithLogCorrelationId())) {
