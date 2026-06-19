@@ -158,8 +158,11 @@ function MermaidDiagram({ source, themeMode, showSource }: MermaidDiagramProps) 
         if (!cancelled) {
           setState({ status: 'rendered', svg });
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
+          // The UI falls back to showing the Mermaid source; log the underlying
+          // reason so a render failure can still be diagnosed.
+          console.warn('AgentRunGraph: Mermaid render failed, showing source instead', err);
           setState({ status: 'failed' });
         }
       }
