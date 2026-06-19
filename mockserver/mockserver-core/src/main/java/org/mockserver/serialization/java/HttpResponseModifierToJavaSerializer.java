@@ -2,6 +2,7 @@ package org.mockserver.serialization.java;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
+import org.apache.commons.text.StringEscapeUtils;
 import org.mockserver.model.Cookies;
 import org.mockserver.model.Headers;
 import org.mockserver.model.HttpResponseModifier;
@@ -69,6 +70,14 @@ public class HttpResponseModifierToJavaSerializer implements ToJavaSerializer<Ht
                     first = false;
                 }
                 appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output).append("))");
+            }
+            if (response.getJsonPatch() != null) {
+                appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output)
+                    .append(".withJsonPatch(\"").append(StringEscapeUtils.escapeJava(response.getJsonPatch().toString())).append("\")");
+            }
+            if (response.getJsonMergePatch() != null) {
+                appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output)
+                    .append(".withJsonMergePatch(\"").append(StringEscapeUtils.escapeJava(response.getJsonMergePatch().toString())).append("\")");
             }
         }
 

@@ -49,4 +49,17 @@ public class HttpResponseModifierToJavaSerializerTest {
         assertThat(java, containsString(".withModifiers(Arrays.asList("));
         assertThat(java, containsString("X-Child"));
     }
+
+    @Test
+    public void serializesJsonPatchAndMergePatch() {
+        String java = new HttpResponseModifierToJavaSerializer().serialize(0, responseModifier()
+            .withJsonPatch("[ { \"op\": \"replace\", \"path\": \"/name\", \"value\": \"masked\" } ]")
+            .withJsonMergePatch("{ \"active\": false }"));
+
+        // emitted via the String overloads so the generated DSL compiles and round-trips
+        assertThat(java, containsString(".withJsonPatch(\""));
+        assertThat(java, containsString("\\\"op\\\":\\\"replace\\\""));
+        assertThat(java, containsString(".withJsonMergePatch(\""));
+        assertThat(java, containsString("\\\"active\\\":false"));
+    }
 }

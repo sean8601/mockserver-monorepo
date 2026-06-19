@@ -114,6 +114,15 @@ public class HttpResponseModifier extends ObjectWithJsonToString {
         return this;
     }
 
+    /**
+     * Convenience overload accepting the RFC 6902 JSON Patch document as a JSON string.
+     *
+     * @throws IllegalArgumentException if the string is not valid JSON
+     */
+    public HttpResponseModifier withJsonPatch(String jsonPatch) {
+        return withJsonPatch(parseJson(jsonPatch));
+    }
+
     public JsonNode getJsonMergePatch() {
         return jsonMergePatch;
     }
@@ -128,6 +137,23 @@ public class HttpResponseModifier extends ObjectWithJsonToString {
         this.jsonMergePatch = jsonMergePatch;
         this.hashCode = 0;
         return this;
+    }
+
+    /**
+     * Convenience overload accepting the RFC 7386 JSON Merge Patch document as a JSON string.
+     *
+     * @throws IllegalArgumentException if the string is not valid JSON
+     */
+    public HttpResponseModifier withJsonMergePatch(String jsonMergePatch) {
+        return withJsonMergePatch(parseJson(jsonMergePatch));
+    }
+
+    private static JsonNode parseJson(String json) {
+        try {
+            return objectMapper().readTree(json);
+        } catch (Throwable throwable) {
+            throw new IllegalArgumentException("Unable to parse JSON [" + json + "]", throwable);
+        }
     }
 
     /**

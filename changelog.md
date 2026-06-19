@@ -672,6 +672,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
+- **Response-modifier fidelity in codegen and the Node typedef**: `retrieve?format=JAVA` now emits the response
+  modifier's `condition`, `modifiers` chain, `jsonPatch`, and `jsonMergePatch` (the patch fields are emitted via
+  new `withJsonPatch(String)` / `withJsonMergePatch(String)` convenience overloads, so the generated DSL
+  compiles and round-trips); and the Node client `mockServer.d.ts` `responseModifier` type now declares
+  `condition`, `modifiers`, `jsonPatch`, and `jsonMergePatch`.
 - **Response body matching now has full parity with request body matching**: matching a proxied/forwarded
   upstream response body previously used a stripped-down copy of the request body dispatch that was missing
   several behaviours — it did not convert an XML or form actual body to JSON before applying a JSON / JSON

@@ -149,12 +149,33 @@ export type HttpOverrideForwardedRequest =
         cookies?: { add?: KeyToValue; replace?: KeyToValue; remove?: string[] };
       };
       responseOverride?: HttpResponse;
-      responseModifier?: {
-        headers?: { add?: KeyToMultiValue; replace?: KeyToMultiValue; remove?: string[] };
-        cookies?: { add?: KeyToValue; replace?: KeyToValue; remove?: string[] };
-      };
+      responseModifier?: HttpResponseModifier;
     }
   | { delay?: Delay; primary?: boolean; httpRequest?: HttpRequest; httpResponse?: HttpResponse };
+
+export interface HttpResponseModifierCondition {
+  /** apply only when the response status code equals this value */
+  statusCode?: number;
+  /** apply only when the response status code is in this class range, e.g. "2xx" or "5xx" */
+  statusCodeRange?: string;
+  /** apply only when the response has this header */
+  responseHasHeader?: string;
+  /** apply only when the request had this header */
+  requestHasHeader?: string;
+}
+
+export interface HttpResponseModifier {
+  headers?: { add?: KeyToMultiValue; replace?: KeyToMultiValue; remove?: string[] };
+  cookies?: { add?: KeyToValue; replace?: KeyToValue; remove?: string[] };
+  /** gate this modifier on a condition over the request/response */
+  condition?: HttpResponseModifierCondition;
+  /** ordered chain of modifiers, each applied to the output of the previous */
+  modifiers?: HttpResponseModifier[];
+  /** RFC 6902 JSON Patch document applied to a forwarded JSON response body */
+  jsonPatch?: unknown[];
+  /** RFC 7386 JSON Merge Patch document applied to a forwarded JSON response body */
+  jsonMergePatch?: object;
+}
 
 export interface HttpError {
   /** response delay */
