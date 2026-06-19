@@ -21,7 +21,9 @@ vi.mock('../hooks/useWebSocket', () => ({
 vi.mock('../hooks/useDebugMismatch', () => ({ useDebugMismatch: () => ({ debugMismatch: null }) }));
 vi.mock('../hooks/useGenerateStub', () => ({ useGenerateStub: () => ({ generateStub: null }) }));
 // The AppBar measures real DOM widths and pulls in many dialogs; stub it.
-vi.mock('../components/AppBar', () => ({ default: () => null }));
+// NAV_TAB_DESCRIPTIONS is re-exported from AppBar and read by App for the
+// per-view description bar; provide an empty map so the import resolves.
+vi.mock('../components/AppBar', () => ({ default: () => null, NAV_TAB_DESCRIPTIONS: {} }));
 vi.mock('../components/OnboardingPanel', () => ({ default: () => null }));
 
 import App from '../App';
