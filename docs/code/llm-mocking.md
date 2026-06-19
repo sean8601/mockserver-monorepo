@@ -641,7 +641,7 @@ CORS is enabled on this endpoint so the dashboard UI can call it even when the d
 
 **MCP tool** — `export_optimisation_report` (registered in `McpToolRegistry.registerExportOptimisationReport`), same parameters as the REST endpoint. Returns the brief text or JSON bundle as a tool result.
 
-**Dashboard** — the Optimise screen (`OptimiseView.tsx`) fetches `format=json` for display and `format=markdown` for the "Copy optimisation brief" and "Download bundle" buttons.
+**Dashboard** — the LLM Optimise screen (`OptimiseView.tsx`, the **LLM Optimise** nav tab, positioned immediately after **Chaos**) fetches `format=json` for display and `format=markdown` for the "Copy optimisation brief" and "Download bundle" buttons.
 
 ### Optimisation signals
 

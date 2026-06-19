@@ -283,7 +283,7 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
       {/* Header + session picker */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Optimise</Typography>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>LLM Optimise</Typography>
         <Tooltip title="Captured LLM traffic, analysed for deterministic cost-saving opportunities. Export a brief to paste into any LLM.">
           <Chip size="small" label="LLM cost" variant="outlined" />
         </Tooltip>

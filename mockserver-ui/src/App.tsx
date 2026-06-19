@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import Snackbar from '@mui/material/Snackbar';
 import { useDashboardStore } from './store';
@@ -13,7 +14,7 @@ import { DebugMismatchContext } from './hooks/DebugMismatchContext';
 import { useGenerateStub } from './hooks/useGenerateStub';
 import { GenerateStubContext } from './hooks/GenerateStubContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import AppBar from './components/AppBar';
+import AppBar, { NAV_TAB_DESCRIPTIONS } from './components/AppBar';
 import FilterPanel from './components/FilterPanel';
 import DashboardGrid from './components/DashboardGrid';
 import TrafficInspector from './components/TrafficInspector';
@@ -42,8 +43,8 @@ const MetricsView = lazy(() => import('./components/MetricsView'));
 // Composer tab is opened, keeping it off the initial dashboard load.
 const ComposerView = lazy(() => import('./components/ComposerView'));
 
-// Lazy-loaded so the Optimise screen's report rendering stays off the initial
-// dashboard load (it is only needed when the Optimise tab is opened).
+// Lazy-loaded so the LLM Optimise screen's report rendering stays off the initial
+// dashboard load (it is only needed when the LLM Optimise tab is opened).
 const OptimiseView = lazy(() => import('./components/OptimiseView'));
 
 export default function App() {
@@ -125,6 +126,24 @@ export default function App() {
             onClearLogs={handleClearLogs}
             onClearExpectations={handleClearExpectations}
           />
+          {NAV_TAB_DESCRIPTIONS[view] && (
+            <Typography
+              variant="body2"
+              data-testid="view-description"
+              sx={{
+                flexShrink: 0,
+                px: 1.5,
+                py: 0.5,
+                color: 'text.secondary',
+                bgcolor: 'action.hover',
+                borderBottom: 1,
+                borderColor: 'divider',
+                fontSize: '0.8rem',
+              }}
+            >
+              {NAV_TAB_DESCRIPTIONS[view]}
+            </Typography>
+          )}
           {(view === 'dashboard' || view === 'traffic' || view === 'sessions') && (
             <FilterPanel onFilterChange={handleFilterChange} />
           )}
@@ -157,7 +176,7 @@ export default function App() {
               </Suspense>
             )}
             {view === 'optimise' && (
-              <Suspense fallback={<Box sx={{ p: 2 }}>Loading optimise…</Box>}>
+              <Suspense fallback={<Box sx={{ p: 2 }}>Loading LLM Optimise…</Box>}>
                 <OptimiseView connectionParams={params} />
               </Suspense>
             )}

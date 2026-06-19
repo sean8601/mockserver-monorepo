@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from '../theme';
-import AppBar from '../components/AppBar';
+import AppBar, { NAV_TAB_DESCRIPTIONS } from '../components/AppBar';
 import { useDashboardStore } from '../store';
 import * as http3StatusModule from '../lib/http3Status';
 
@@ -235,9 +235,22 @@ describe('AppBar responsive navigation', () => {
     // Previously-"overflow" tabs (e.g. gRPC, Metrics) are now inline too.
     expect(screen.getByRole('button', { name: 'gRPC services view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Metrics view' })).toBeInTheDocument();
+    // The renamed LLM Optimise tab is present (regression guard for the rename).
+    expect(screen.getByRole('button', { name: 'LLM Optimise view' })).toBeInTheDocument();
     // No "More" overflow button (nothing overflows) and no hamburger.
     expect(screen.queryByRole('button', { name: 'More views' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument();
+  });
+
+  it('exposes a one-line description for every nav tab, including LLM Optimise', () => {
+    // The description bar under the nav reads from this map, so every tab must
+    // carry a non-empty summary and the LLM Optimise tab must mention what it does.
+    const views = Object.keys(NAV_TAB_DESCRIPTIONS);
+    expect(views.length).toBeGreaterThan(0);
+    for (const v of views) {
+      expect(NAV_TAB_DESCRIPTIONS[v as keyof typeof NAV_TAB_DESCRIPTIONS]?.length ?? 0).toBeGreaterThan(0);
+    }
+    expect(NAV_TAB_DESCRIPTIONS.optimise).toMatch(/prompts.*inference cost.*safety.*speed/i);
   });
 
   it('does not render the keyboard-shortcut caption (the ? dialog replaces it)', () => {

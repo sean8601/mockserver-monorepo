@@ -133,7 +133,7 @@ opencode run "summarise the README and suggest one improvement"</code></pre>
 
 <p>
     OpenCode's LLM calls are now captured by MockServer. Open the dashboard
-    <strong>Optimise</strong> tab, or curl the report, to see signals computed from your real run:
+    <strong>LLM Optimise</strong> tab (immediately after <strong>Chaos</strong> in the navigation bar), or curl the report, to see signals computed from your real run:
 </p>
 
 <pre class="prettyprint lang-bash code"><code class="code">curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown"</code></pre>
@@ -144,21 +144,21 @@ opencode run "summarise the README and suggest one improvement"</code></pre>
 
 <p>Three ways to export — choose whichever fits your workflow:</p>
 
-<h3>Dashboard — Optimise Screen</h3>
+<h3>Dashboard — LLM Optimise Screen</h3>
 
-<p>Open the MockServer dashboard and click <strong>Optimise</strong> in the navigation bar:</p>
+<p>Open the MockServer dashboard and click <strong>LLM Optimise</strong> in the navigation bar (it sits immediately after <strong>Chaos</strong>):</p>
 
 <pre class="prettyprint code"><code class="code">http://localhost:1080/mockserver/dashboard</code></pre>
 
 <!-- SCREENSHOT PLACEHOLDER (add before release):
-     The MockServer dashboard "Optimise" screen showing the session picker,
+     The MockServer dashboard "LLM Optimise" screen showing the session picker,
      hero cards (total cost / tokens / calls / avg latency), the
      "Detected Opportunities" panel, the per-call table, and the
      "Copy optimisation brief" / "Download bundle" buttons.
      Suggested: <p><img src="/mock_server/images/optimise_screen.png"
-       alt="MockServer dashboard Optimise screen" class="screenshot"/></p> -->
+       alt="MockServer dashboard LLM Optimise screen" class="screenshot"/></p> -->
 
-<p>The Optimise screen shows:</p>
+<p>The LLM Optimise screen shows:</p>
 <ul>
     <li>A session picker — pick a single upstream host, or <strong>All captured LLM traffic</strong> (the default)</li>
     <li>Hero cards — total estimated cost, input/output tokens, call count, average latency</li>
@@ -445,7 +445,7 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
     </li>
     <li>
         <strong>Session grouping</strong> — in v1, the optimisation report groups proxied LLM
-        traffic by upstream host, so the dashboard <strong>Optimise</strong> session picker offers
+        traffic by upstream host, so the dashboard <strong>LLM Optimise</strong> session picker offers
         host-based sessions (and "All captured LLM traffic"). The <code class="code inline">session</code>
         REST parameter accepts either the composite <code class="code inline">host:&lt;host&gt;</code>
         key or the bare host.

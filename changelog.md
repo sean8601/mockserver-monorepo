@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repeated system prompts, large static context resent every turn, deterministic tool calls,
   oversized tool results, output token bloat, and duplicate consecutive calls — each with token
   counts, estimated USD saving, and a concrete recommended lever (prompt caching, retrieval tool,
-  direct HTTP/MCP endpoint, `max_tokens` constraint). New **Optimise** dashboard screen, new
+  direct HTTP/MCP endpoint, `max_tokens` constraint). New **LLM Optimise** dashboard screen
+  (in the navigation immediately after **Chaos**), new
   `GET /mockserver/llm/optimisationReport?format=markdown|json` control-plane endpoint, and new
   `export_optimisation_report` MCP tool. Export-only and fully deterministic — MockServer never
   calls an LLM. Secrets (auth headers, API keys, configured body fields) are redacted before export.
@@ -613,11 +614,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
 
 ### Changed
+- **Dashboard navigation**: the **Optimise** tab is renamed **LLM Optimise** and moved to sit
+  immediately after **Chaos**, and every dashboard tab now shows a one-line description bar beneath
+  the navigation explaining what the screen is for (for example, LLM Optimise: "Analyse captured LLM
+  traffic to optimise prompts, inference cost, safety, and speed").
 - **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
   support-agent run (mocked OpenAI Chat Completions with realistic token usage) designed to fire all
   six optimisation signals (`REPEATED_SYSTEM_PROMPT`, `LARGE_STATIC_CONTEXT_RESENT`,
   `DETERMINISTIC_TOOL_CALL`, `OVERSIZED_TOOL_RESULT`, `OUTPUT_TOKEN_BLOAT`,
-  `DUPLICATE_CONSECUTIVE_CALL`), so the dashboard **Optimise** tab (and
+  `DUPLICATE_CONSECUTIVE_CALL`), so the dashboard **LLM Optimise** tab (and
   `GET /mockserver/llm/optimisationReport`) is populated out of the box. An optional, documented
   recipe — `mockserver-ui/scripts/demo-opencode-proxy.sh` plus the "Generate real traffic with
   OpenCode" section of the AI optimisation docs — shows how to capture **real** agent traffic by
