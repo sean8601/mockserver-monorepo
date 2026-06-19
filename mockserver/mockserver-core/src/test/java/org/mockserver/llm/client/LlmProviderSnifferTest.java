@@ -282,4 +282,67 @@ public class LlmProviderSnifferTest {
             .withBody("{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}");
         assertThat(LlmProviderSniffer.extractModelFromRequest(request) == null, is(true));
     }
+
+    // --- Offline analysis detection (detectForAnalysis / sniffByPath) ---
+    // Recognises MOCKED LLM traffic on localhost that host-based sniff() misses,
+    // so the optimisation report matches the Sessions view.
+
+    @Test
+    public void sniffByPathDetectsAnthropicMessages() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/v1/messages")), is(Optional.of(Provider.ANTHROPIC)));
+    }
+
+    @Test
+    public void sniffByPathDetectsOpenAiChatCompletions() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/v1/chat/completions")), is(Optional.of(Provider.OPENAI)));
+    }
+
+    @Test
+    public void sniffByPathDetectsOpenAiResponsesBeforeChatCompletions() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/v1/responses")), is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
+    public void sniffByPathDetectsAzureBeforeGenericOpenAi() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/openai/deployments/gpt4o/chat/completions")),
+            is(Optional.of(Provider.AZURE_OPENAI)));
+    }
+
+    @Test
+    public void sniffByPathDetectsBedrockAnthropic() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/model/anthropic.claude-3/invoke")),
+            is(Optional.of(Provider.BEDROCK)));
+    }
+
+    @Test
+    public void sniffByPathDetectsGemini() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/v1beta/models/gemini-2.0-flash:generateContent")),
+            is(Optional.of(Provider.GEMINI)));
+    }
+
+    @Test
+    public void sniffByPathDetectsOllamaChat() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/api/chat")), is(Optional.of(Provider.OLLAMA)));
+    }
+
+    @Test
+    public void sniffByPathReturnsEmptyForNonLlmPath() {
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/api/chatbot")), is(Optional.empty()));
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/health")), is(Optional.empty()));
+    }
+
+    @Test
+    public void detectForAnalysisRecognisesMockedLocalhostTraffic() {
+        // No provider configured, host is localhost (mocked LLM response). sniff() returns
+        // empty; detectForAnalysis falls back to the path shape.
+        HttpRequest mocked = request().withHeader("Host", "localhost:1080").withPath("/v1/messages");
+        assertThat(LlmProviderSniffer.sniff(mocked), is(Optional.empty()));
+        assertThat(LlmProviderSniffer.detectForAnalysis(mocked), is(Optional.of(Provider.ANTHROPIC)));
+    }
+
+    @Test
+    public void detectForAnalysisPrefersHostWhenKnown() {
+        HttpRequest req = request().withHeader("Host", "api.openai.com").withPath("/v1/chat/completions");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req), is(Optional.of(Provider.OPENAI)));
+    }
 }

@@ -60,6 +60,22 @@ public class LlmOptimisationReportServiceTest {
     }
 
     @Test
+    public void includesMockedLocalhostLlmTraffic() {
+        // Regression: MOCKED LLM traffic (served by MockServer on localhost, as in
+        // `npm run demo`) has no provider host, so host-based sniff() misses it. The
+        // report must still include it via path-based detection — matching the
+        // Sessions view, which is what the user sees populated.
+        List<LogEventRequestAndResponse> pairs = java.util.Arrays.asList(
+            openAiPair("localhost:1080", "gpt-4o-2024-08-06", 100, 10));
+        LlmOptimisationReportService.Result result = service.build(pairs, noFilter());
+
+        LlmOptimisationReport report = result.getReport();
+        assertEquals(1, report.getTotals().getCallCount());
+        assertEquals("OPENAI", report.getCalls().get(0).getProvider());
+        assertEquals("host:localhost", report.getSession().getKey());
+    }
+
+    @Test
     public void emptyCaptureYieldsEmptyReportAndBrief() {
         LlmOptimisationReportService.Result result = service.build(Collections.emptyList(), noFilter());
         assertThat(result.getReport().getCalls(), is(empty()));

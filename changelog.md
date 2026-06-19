@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `export_optimisation_report` MCP tool. Export-only and fully deterministic — MockServer never
   calls an LLM. Secrets (auth headers, API keys, configured body fields) are redacted before export.
   Configured via `mockserver.llmOptimisationMaxCalls` (default 200); body-field redaction reuses
-  `mockserver.fixtureBodyRedactFields`.
+  `mockserver.fixtureBodyRedactFields`. The report analyses both proxied/forwarded and **mocked**
+  LLM traffic (recognised by API path shape), so mocked conversations — e.g. `npm run demo` — are
+  included, consistent with the dashboard Sessions view. Per-call latency shows the measured
+  upstream round-trip (full-stream duration for streaming responses), carried internally and never
+  leaked to the client response.
 - **GraphQL and AsyncAPI spec import**: `PUT /mockserver/graphql` imports a GraphQL SDL / introspection document
   and generates an expectation per root operation type whose responses are schema-valid (built on the GraphQL
   response synthesizer); `PUT /mockserver/asyncapi/http` turns an AsyncAPI document's channels into GET

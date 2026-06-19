@@ -46,6 +46,15 @@ public final class LlmProviderSniffer {
         "/api/chat",
     };
 
+    // Path-shape patterns for offline analysis detection (sniffByPath), mirroring
+    // the dashboard's llmTraffic.ts. Matched against the original (case-sensitive)
+    // path because the model name and method are case-sensitive.
+    private static final java.util.regex.Pattern GEMINI_PATH_PATTERN = java.util.regex.Pattern.compile(
+        "/v1beta/models/[^/]+:(generateContent|streamGenerateContent)"
+            + "|/v1/models/gemini-[^/]+:(generateContent|streamGenerateContent)");
+    private static final java.util.regex.Pattern OLLAMA_CHAT_PATTERN = java.util.regex.Pattern.compile(
+        "(^|/)api/chat(/?$|\\?)");
+
     /**
      * Sniff the LLM provider from a forwarded request's target host.
      *
@@ -59,6 +68,60 @@ public final class LlmProviderSniffer {
         String path = forwardedRequest.getPath() != null
             ? forwardedRequest.getPath().getValue() : null;
         return sniffByHostAndPath(extractHost(forwardedRequest), path);
+    }
+
+    /**
+     * Detect the LLM provider for OFFLINE analysis of already-captured traffic
+     * (e.g. the optimisation report). Recognises LLM traffic that {@link #sniff}
+     * cannot — most importantly MOCKED traffic served by MockServer itself on
+     * localhost, where there is no upstream provider host. Tries the host-based
+     * {@link #sniff} first, then falls back to {@link #sniffByPath}, which mirrors
+     * the dashboard's client-side path detection so the SAME traffic appears in
+     * both the Sessions view and the optimisation report.
+     *
+     * <p>Intended only for read-only analysis. The live forward/span path must
+     * keep using host-gated {@link #sniff} so forwarded non-LLM traffic is never
+     * mis-classified.
+     */
+    public static Optional<Provider> detectForAnalysis(HttpRequest request) {
+        Optional<Provider> byHost = sniff(request);
+        return byHost.isPresent() ? byHost : sniffByPath(request);
+    }
+
+    /**
+     * Path-shape based provider detection, mirroring the dashboard's
+     * {@code llmTraffic.ts} ordering (Anthropic, Azure, Bedrock, OpenAI Responses,
+     * OpenAI, Gemini, Ollama). Used to analyse captured traffic whose host is not a
+     * known provider (e.g. mocked LLM responses on localhost).
+     */
+    public static Optional<Provider> sniffByPath(HttpRequest request) {
+        if (request == null || request.getPath() == null || request.getPath().getValue() == null) {
+            return Optional.empty();
+        }
+        String path = request.getPath().getValue();
+        String lower = path.toLowerCase();
+        if (lower.contains("/v1/messages")) {
+            return Optional.of(Provider.ANTHROPIC);
+        }
+        if (lower.contains("/openai/deployments/") && lower.contains("/chat/completions")) {
+            return Optional.of(Provider.AZURE_OPENAI);
+        }
+        if (lower.contains("/model/anthropic.") && lower.contains("/invoke")) {
+            return Optional.of(Provider.BEDROCK);
+        }
+        if (lower.contains("/v1/responses")) {
+            return Optional.of(Provider.OPENAI_RESPONSES);
+        }
+        if (lower.contains("/chat/completions")) {
+            return Optional.of(Provider.OPENAI);
+        }
+        if (GEMINI_PATH_PATTERN.matcher(path).find()) {
+            return Optional.of(Provider.GEMINI);
+        }
+        if (OLLAMA_CHAT_PATTERN.matcher(path).find()) {
+            return Optional.of(Provider.OLLAMA);
+        }
+        return Optional.empty();
     }
 
     /**

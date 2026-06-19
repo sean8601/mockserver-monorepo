@@ -117,7 +117,9 @@ public class LlmOptimisationReportBuilder {
             if (request == null) {
                 continue;
             }
-            Optional<Provider> providerOpt = LlmProviderSniffer.sniff(request);
+            // detectForAnalysis (not sniff) so mocked LLM traffic on localhost is included,
+            // consistent with the gate in LlmOptimisationReportService.
+            Optional<Provider> providerOpt = LlmProviderSniffer.detectForAnalysis(request);
             if (!providerOpt.isPresent()) {
                 continue; // not LLM traffic
             }

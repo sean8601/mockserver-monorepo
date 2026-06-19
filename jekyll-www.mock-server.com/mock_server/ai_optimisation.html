@@ -69,8 +69,12 @@ claude   # or: opencode, python my_agent.py, etc.</code></pre>
 
 <p>
     MockServer captures every LLM request/response pair (including SSE-streamed completions)
-    as a <code class="code inline">FORWARDED_REQUEST</code> log entry. These entries are the
-    source the optimisation report is built from.
+    in its event log, and these are the source the optimisation report is built from. Both
+    <strong>proxied/forwarded</strong> traffic (to a real provider) and <strong>mocked</strong>
+    LLM responses served by MockServer itself are analysed — so you can optimise against real
+    captured runs <em>or</em> against mocked conversations (for example, the data created by
+    <code class="code inline">npm run demo</code>). LLM traffic is recognised by request shape
+    (the provider's API path), so it works regardless of the upstream host.
 </p>
 
 <a id="export-brief" class="anchor" href="#export-brief">&nbsp;</a>
@@ -375,8 +379,8 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
     </li>
     <li>
         <strong>Non-LLM traffic</strong> — only traffic where MockServer can detect a supported LLM
-        provider (OpenAI, Anthropic, Gemini, Bedrock, Azure OpenAI, Ollama) is included. Other
-        proxied traffic is ignored.
+        provider (OpenAI, Anthropic, Gemini, Bedrock, Azure OpenAI, Ollama), by API path shape, is
+        included — whether mocked or proxied. Other traffic is ignored.
     </li>
     <li>
         <strong>Session grouping</strong> — in v1, the optimisation report groups proxied LLM

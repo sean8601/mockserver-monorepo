@@ -83,7 +83,9 @@ public class LlmOptimisationReportService {
                     continue;
                 }
                 HttpRequest request = pair.getHttpRequest();
-                Optional<Provider> providerOpt = LlmProviderSniffer.sniff(request);
+                // detectForAnalysis (not sniff) so MOCKED LLM traffic on localhost — e.g. the
+                // demo, and any mocked conversations — is included, matching the Sessions view.
+                Optional<Provider> providerOpt = LlmProviderSniffer.detectForAnalysis(request);
                 if (!providerOpt.isPresent()) {
                     continue; // not LLM traffic
                 }
