@@ -2701,6 +2701,29 @@ components:
                       additionalProperties: false
                       items:
                         type: string
+                condition:
+                  description: "apply this modifier only when the in-flight response (and optionally the original request) match"
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    statusCode:
+                      type: integer
+                      description: "response status code must equal this value"
+                    statusCodeRange:
+                      type: string
+                      description: "response status code must fall in this class range, e.g. 2xx or 5xx"
+                    responseHasHeader:
+                      type: string
+                      description: "response must carry a header with this name (any value, case-insensitive)"
+                    requestHasHeader:
+                      type: string
+                      description: "request must carry a header with this name (any value, case-insensitive)"
+                modifiers:
+                  description: "ordered chain of modifiers, each applied in turn so a later modifier sees the earlier one's output"
+                  type: array
+                  additionalProperties: false
+                  items:
+                    "$ref": "#/components/schemas/ResponseModifier"
         - type: object
           additionalProperties: false
           properties:
@@ -2753,6 +2776,60 @@ components:
           type: integer
         unlimited:
           type: boolean
+    ResponseModifier:
+      description: "a response modifier; may itself be conditional and/or wrap a further chain"
+      type: object
+      additionalProperties: false
+      properties:
+        headers:
+          type: object
+          additionalProperties: false
+          properties:
+            add:
+              "$ref": "#/components/schemas/KeyToMultiValue"
+            replace:
+              "$ref": "#/components/schemas/KeyToMultiValue"
+            remove:
+              type: array
+              additionalProperties: false
+              items:
+                type: string
+        cookies:
+          type: object
+          additionalProperties: false
+          properties:
+            add:
+              "$ref": "#/components/schemas/KeyToValue"
+            replace:
+              "$ref": "#/components/schemas/KeyToValue"
+            remove:
+              type: array
+              additionalProperties: false
+              items:
+                type: string
+        condition:
+          description: "apply this modifier only when the in-flight response (and optionally the original request) match"
+          type: object
+          additionalProperties: false
+          properties:
+            statusCode:
+              type: integer
+              description: "response status code must equal this value"
+            statusCodeRange:
+              type: string
+              description: "response status code must fall in this class range, e.g. 2xx or 5xx"
+            responseHasHeader:
+              type: string
+              description: "response must carry a header with this name (any value, case-insensitive)"
+            requestHasHeader:
+              type: string
+              description: "request must carry a header with this name (any value, case-insensitive)"
+        modifiers:
+          description: "ordered chain of modifiers, each applied in turn so a later modifier sees the earlier one's output"
+          type: array
+          additionalProperties: false
+          items:
+            "$ref": "#/components/schemas/ResponseModifier"
     KeyToMultiValue:
       oneOf:
         - type: array

@@ -965,4 +965,77 @@ public class JsonSchemaExpectationValidatorTest {
         assertThat(result, containsString("$.httpResponse.headers[0]: string found, object expected"));
         assertThat(result, containsString("$.httpResponse.headers[1]: string found, object expected"));
     }
+
+    @Test
+    public void shouldValidateLegacyResponseModifierShape() {
+        // a plain (unconditional, single) response modifier still validates — backward compatible
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/some/path\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpOverrideForwardedRequest\" : {" + NEW_LINE +
+            "    \"responseModifier\" : {" + NEW_LINE +
+            "      \"headers\" : {" + NEW_LINE +
+            "        \"add\" : { \"X-Added\" : [ \"value\" ] }" + NEW_LINE +
+            "      }" + NEW_LINE +
+            "    }" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldValidateConditionalResponseModifier() {
+        // a response modifier gated by a condition validates
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/some/path\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpOverrideForwardedRequest\" : {" + NEW_LINE +
+            "    \"responseModifier\" : {" + NEW_LINE +
+            "      \"condition\" : {" + NEW_LINE +
+            "        \"statusCodeRange\" : \"5xx\"," + NEW_LINE +
+            "        \"responseHasHeader\" : \"Content-Type\"" + NEW_LINE +
+            "      }," + NEW_LINE +
+            "      \"headers\" : {" + NEW_LINE +
+            "        \"add\" : { \"X-Server-Error\" : [ \"true\" ] }" + NEW_LINE +
+            "      }" + NEW_LINE +
+            "    }" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldValidateChainedResponseModifiers() {
+        // an ordered chain of modifiers validates
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/some/path\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpOverrideForwardedRequest\" : {" + NEW_LINE +
+            "    \"responseModifier\" : {" + NEW_LINE +
+            "      \"modifiers\" : [ {" + NEW_LINE +
+            "        \"headers\" : { \"add\" : { \"X-Stage\" : [ \"a\" ] } }" + NEW_LINE +
+            "      }, {" + NEW_LINE +
+            "        \"condition\" : { \"statusCode\" : 200 }," + NEW_LINE +
+            "        \"headers\" : { \"replace\" : { \"X-Stage\" : [ \"b\" ] } }" + NEW_LINE +
+            "      } ]" + NEW_LINE +
+            "    }" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldRejectResponseModifierConditionWithUnknownProperty() {
+        // additionalProperties:false on the condition rejects unknown keys
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/some/path\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpOverrideForwardedRequest\" : {" + NEW_LINE +
+            "    \"responseModifier\" : {" + NEW_LINE +
+            "      \"condition\" : { \"notAReal\" : \"x\" }" + NEW_LINE +
+            "    }" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(not("")));
+    }
 }

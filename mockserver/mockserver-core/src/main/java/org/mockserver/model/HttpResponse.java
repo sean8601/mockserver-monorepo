@@ -778,6 +778,10 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     }
 
     public HttpResponse update(HttpResponse responseOverride, HttpResponseModifier responseModifier) {
+        return update(responseOverride, responseModifier, null);
+    }
+
+    public HttpResponse update(HttpResponse responseOverride, HttpResponseModifier responseModifier, HttpRequest request) {
         if (responseOverride != null) {
             if (responseOverride.getStatusCode() != null) {
                 withStatusCode(responseOverride.getStatusCode());
@@ -809,12 +813,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             this.hashCode = 0;
         }
         if (responseModifier != null) {
-            if (responseModifier.getHeaders() != null) {
-                withHeaders(responseModifier.getHeaders().update(getHeaders()));
-            }
-            if (responseModifier.getCookies() != null) {
-                withCookies(responseModifier.getCookies().update(getCookies()));
-            }
+            responseModifier.applyTo(this, request);
         }
         return this;
     }

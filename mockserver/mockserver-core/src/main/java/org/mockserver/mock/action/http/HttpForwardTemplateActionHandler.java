@@ -63,7 +63,7 @@ public class HttpForwardTemplateActionHandler extends HttpForwardAction {
                         if (httpResponse == null) {
                             return responseOverride;
                         } else {
-                            return httpResponse.update(responseOverride, responseModifier);
+                            return httpResponse.update(responseOverride, responseModifier, originalRequest);
                         }
                     });
                 }
