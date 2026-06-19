@@ -19,7 +19,7 @@ sitemap:
 <p>MockServer converts gRPC (protobuf over HTTP/2) to JSON internally so you can mock gRPC services with the same expectation format used for REST. Here is the minimal end-to-end flow:</p>
 
 <ol>
-    <li><strong>Compile your <span class="inline_code">.proto</span> to a descriptor set</strong> and mount it in Docker (or point at the directory with <span class="inline_code">MOCKSERVER_GRPC_PROTO_DIRECTORY</span>):</li>
+    <li><strong>Compile your <span class="inline_code">.proto</span> to a descriptor set</strong> and mount it in Docker (or point at the directory with <span class="inline_code">MOCKSERVER_GRPC_DESCRIPTOR_DIRECTORY</span>):</li>
 </ol>
 
 <pre class="prettyprint code"><code class="code">protoc --descriptor_set_out=service.dsc --include_imports service.proto
@@ -57,6 +57,6 @@ docker run -d --rm \
     <li><strong>Call the gRPC endpoint</strong> from your application or a gRPC client &mdash; MockServer encodes the JSON response back to protobuf binary and returns it as a valid gRPC response.</li>
 </ol>
 
-<p>For runnable Java, Python, and Ruby code examples see the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/java" rel="noopener noreferrer">examples folder</a>. The detailed reference (streaming RPCs, descriptor upload, Docker configuration) follows below.</p>
+<p>See the gRPC examples in the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/bruno/grpc" rel="noopener noreferrer">examples/bruno/grpc</a> and <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/curl/grpc_stream" rel="noopener noreferrer">examples/curl/grpc_stream</a> folders. The detailed reference (streaming RPCs, descriptor upload, Docker configuration) follows below.</p>
 
 {% include_subpage _includes/grpc_mocking.html %}
