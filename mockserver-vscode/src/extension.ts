@@ -105,6 +105,8 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     const loadCmd = vscode.commands.registerCommand("mockserver.loadExpectations", loadExpectations);
     const diffCmd = vscode.commands.registerCommand("mockserver.diffAgainstLive", diffAgainstLive);
+    const verifyCmd = vscode.commands.registerCommand("mockserver.verifyExpectations", verifyExpectations);
+    const deleteCmd = vscode.commands.registerCommand("mockserver.deleteExpectations", deleteExpectations);
     const recordCmd = vscode.commands.registerCommand("mockserver.saveRecorded", saveRecordedExpectations);
     const openApiCmd = vscode.commands.registerCommand("mockserver.generateFromOpenApi", generateFromOpenApi);
     const sendRequestCmd = vscode.commands.registerCommand("mockserver.sendRequest", sendRequest);
@@ -169,6 +171,8 @@ export function activate(context: vscode.ExtensionContext): void {
         dashboardInEditorCmd,
         loadCmd,
         diffCmd,
+        verifyCmd,
+        deleteCmd,
         recordCmd,
         openApiCmd,
         sendRequestCmd,
@@ -341,6 +345,111 @@ async function diffAgainstLive(uri?: vscode.Uri): Promise<void> {
     }
 }
 
+// Verify that every request declared in the expectation file was received by the
+// running server (each at least once), via PUT /mockserver/verify. Reports the
+// first unmet verification's reason, or success when all are satisfied. Useful
+// after a test run to confirm the mocked endpoints were actually exercised.
+async function verifyExpectations(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("No expectation file is open.");
+        return;
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const definitions = client.extractRequestDefinitions(doc.getText());
+        if (definitions.length === 0) {
+            vscode.window.showInformationMessage(
+                "No request definitions found in this file to verify."
+            );
+            return;
+        }
+        const baseUrl = client.buildBaseUrl(port);
+        for (let i = 0; i < definitions.length; i++) {
+            const { verified, reason } = await client.verifyRequestReceived(
+                baseUrl,
+                definitions[i],
+                httpFetch
+            );
+            if (!verified) {
+                vscode.window.showWarningMessage(
+                    `MockServer: declared request ${i + 1} of ${definitions.length} was not received — ` +
+                        `${reason.split("\n")[0]}`
+                );
+                return;
+            }
+        }
+        vscode.window.showInformationMessage(
+            `Verified: all ${definitions.length} declared request(s) were received.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to verify — ${(e as Error).message}`);
+    }
+}
+
+// Remove from the running server the expectations declared in this file (matched by
+// each declared request), via PUT /mockserver/clear?type=expectations. Confirms
+// first so a stray CodeLens click cannot silently delete live state.
+async function deleteExpectations(uri?: vscode.Uri): Promise<void> {
+    const target = resolveTargetUri(uri);
+    if (!target) {
+        vscode.window.showErrorMessage("No expectation file is open.");
+        return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+        "Delete these expectations from the running MockServer?",
+        { modal: true },
+        "Delete"
+    );
+    if (choice !== "Delete") {
+        return; // user cancelled
+    }
+    const { port } = getConfig();
+    try {
+        const doc = await vscode.workspace.openTextDocument(target);
+        const count = await client.clearExpectations(client.buildBaseUrl(port), doc.getText(), httpFetch);
+        if (count === 0) {
+            vscode.window.showInformationMessage(
+                "No request definitions found in this file to delete."
+            );
+            return;
+        }
+        vscode.window.showInformationMessage(
+            `Cleared ${count} expectation matcher(s) from MockServer on port ${port}.`
+        );
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to delete expectations — ${(e as Error).message}`);
+    }
+}
+
+// Offer to write generated/recorded content to a new workspace file (so the user
+// can keep the artifact in the repo), defaulting the name and extension to the
+// suggested values. Returns true when a file was written. Falls back to nothing
+// (the caller already opened an editor tab) when there is no workspace folder or
+// the user cancels.
+async function offerToSaveToWorkspace(
+    suggestedName: string,
+    content: string
+): Promise<boolean> {
+    const folders = vscode.workspace.workspaceFolders;
+    const defaultUri =
+        folders && folders.length > 0
+            ? vscode.Uri.joinPath(folders[0].uri, suggestedName)
+            : undefined;
+    const dest = await vscode.window.showSaveDialog({
+        defaultUri,
+        saveLabel: "Save to Workspace",
+    });
+    if (!dest) {
+        return false; // user cancelled — the editor tab is still open
+    }
+    await vscode.workspace.fs.writeFile(dest, Buffer.from(content, "utf8"));
+    const saved = await vscode.workspace.openTextDocument(dest);
+    await vscode.window.showTextDocument(saved);
+    return true;
+}
+
 async function saveRecordedExpectations(): Promise<void> {
     const pick = await vscode.window.showQuickPick(
         [
@@ -371,6 +480,11 @@ async function saveRecordedExpectations(): Promise<void> {
             language: pick.format === "java" ? "java" : "json",
         });
         await vscode.window.showTextDocument(doc);
+        // Record-to-code: offer to drop the artifact straight into the repo as a
+        // *.mockserver.json (JSON) or *.java (Java DSL) workspace file.
+        const suggestedName =
+            pick.format === "java" ? "RecordedExpectations.java" : "recorded.mockserver.json";
+        await offerToSaveToWorkspace(suggestedName, recorded.content);
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to retrieve recorded expectations — ${(e as Error).message}`);
     }
@@ -406,9 +520,15 @@ async function generateFromOpenApi(uri?: vscode.Uri): Promise<void> {
         }
         const out = await vscode.workspace.openTextDocument({ content: generated, language: "json" });
         await vscode.window.showTextDocument(out);
-        vscode.window.showInformationMessage(
-            "Generated MockServer expectations from the OpenAPI spec. Save as a *.mockserver.json file to keep them."
-        );
+        // Contract→stub: offer to write the generated expectations into a new
+        // *.mockserver.json workspace file (schema-validated, loadable, in-repo).
+        const baseName = path.basename(target.fsPath).replace(/\.(json|ya?ml)$/i, "");
+        const saved = await offerToSaveToWorkspace(`${baseName || "openapi"}.mockserver.json`, generated);
+        if (!saved) {
+            vscode.window.showInformationMessage(
+                "Generated MockServer expectations from the OpenAPI spec. Save as a *.mockserver.json file to keep them."
+            );
+        }
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to generate from OpenAPI — ${(e as Error).message}`);
     }
@@ -424,13 +544,19 @@ async function sendRequest(uri?: vscode.Uri): Promise<void> {
     try {
         const doc = await vscode.workspace.openTextDocument(target);
         const spec = client.parseRequestSpec(doc.getText());
-        const response = await client.sendScratchRequest(
-            client.buildBaseUrl(port),
-            spec,
-            httpFetch
-        );
+        const baseUrl = client.buildBaseUrl(port);
+        const response = await client.sendScratchRequest(baseUrl, spec, httpFetch);
+        // Also ask the server whether the request matched a registered expectation,
+        // and — on a miss — the nearest-miss reason. Best-effort: a server without the
+        // debugMismatch endpoint must not break the (already-useful) response view.
+        let analysis: client.MatchAnalysis | undefined;
+        try {
+            analysis = await client.analyseMatch(baseUrl, spec, httpFetch);
+        } catch {
+            analysis = undefined;
+        }
         const out = await vscode.workspace.openTextDocument({
-            content: formatScratchResponse(response),
+            content: formatScratchResponse(response, analysis),
             language: "text",
         });
         await vscode.window.showTextDocument(out);
@@ -656,14 +782,19 @@ async function listWasm(): Promise<void> {
     }
 }
 
-// Render a scratch response as a small text summary: `HTTP <status>` then the
-// body, pretty-printed when it parses as JSON.
-function formatScratchResponse(response: client.ScratchResponse): string {
+// Render a scratch response as a small text summary: the match analysis (whether
+// the request matched a registered expectation, and if not the nearest miss) when
+// available, then `HTTP <status>` and the body, pretty-printed when it is JSON.
+function formatScratchResponse(
+    response: client.ScratchResponse,
+    analysis?: client.MatchAnalysis
+): string {
     let body = response.body;
     try {
         body = JSON.stringify(JSON.parse(body), null, 2);
     } catch {
         // not JSON — show the body verbatim
     }
-    return `HTTP ${response.status}\n\n${body}`;
+    const header = analysis ? client.formatMatchAnalysis(analysis) + "\n\n" : "";
+    return `${header}HTTP ${response.status}\n\n${body}`;
 }

@@ -162,6 +162,53 @@ object MockServerRestClient {
             .GET()
             .build()
 
+    /**
+     * `PUT /mockserver/debugMismatch` — ask the server whether [requestDefinitionJson]
+     * (an `httpRequest` definition: `{ method, path, headers, body }`) would match any
+     * registered expectation, and — when it would not — the per-field differences of
+     * the closest non-matching expectation. The body is the request definition JSON.
+     */
+    fun buildDebugMismatchRequest(baseUrl: String, requestDefinitionJson: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/debugMismatch"))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(requestDefinitionJson))
+            .build()
+
+    /**
+     * `PUT /mockserver/verify` — verify the server received a request matching
+     * [requestDefinitionJson] at least once. The body wraps the request definition in
+     * `{ "httpRequest": <def>, "times": { "atLeast": 1 } }`. A 202 means verified; a
+     * 406 carries the human-readable failure reason in its body.
+     */
+    fun buildVerifyRequest(baseUrl: String, requestDefinitionJson: String): HttpRequest {
+        val definition = tryParseJson(requestDefinitionJson) ?: COMPACT.toJsonTree(requestDefinitionJson)
+        // atMost -1 = no upper bound. The server's VerificationTimesDTO.atMost is a
+        // primitive int defaulting to 0 when omitted, which makes `times <= atMost`
+        // false for any real receipt — so an absent atMost would always 406.
+        val times = JsonObject().apply { addProperty("atLeast", 1); addProperty("atMost", -1) }
+        val wrapper = JsonObject().apply {
+            add("httpRequest", definition)
+            add("times", times)
+        }
+        return HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/verify"))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(COMPACT.toJson(wrapper)))
+            .build()
+    }
+
+    /**
+     * `PUT /mockserver/clear?type=expectations` — clear the expectation(s) whose
+     * request matches [requestDefinitionJson]. The body is the request definition JSON.
+     */
+    fun buildClearExpectationsRequest(baseUrl: String, requestDefinitionJson: String): HttpRequest =
+        HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/clear?type=expectations"))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(requestDefinitionJson))
+            .build()
+
     // ---------------------------------------------------------------------
     // Ad-hoc ("scratch") request support — pure + unit-testable.
     // ---------------------------------------------------------------------
@@ -258,6 +305,170 @@ object MockServerRestClient {
             else HttpRequest.BodyPublishers.ofString(spec.body)
         builder.method(spec.method, bodyPublisher)
         return builder.build()
+    }
+
+    /**
+     * Convert a parsed [spec] into the `httpRequest` definition JSON the
+     * `debugMismatch`, `verify`, and `clear` endpoints understand: `{ method, path,
+     * headers, body }`, with headers in the object-map form `{ name: [value] }`. An
+     * empty header map / null body is omitted.
+     */
+    fun requestSpecToDefinitionJson(spec: RequestSpec): String {
+        val definition = JsonObject()
+        definition.addProperty("method", spec.method)
+        definition.addProperty("path", spec.path)
+        if (spec.headers.isNotEmpty()) {
+            val headers = JsonObject()
+            for ((name, value) in spec.headers) {
+                val values = JsonArray()
+                values.add(value)
+                headers.add(name, values)
+            }
+            definition.add("headers", headers)
+        }
+        if (spec.body != null) {
+            definition.addProperty("body", spec.body)
+        }
+        return COMPACT.toJson(definition)
+    }
+
+    /**
+     * The outcome of a `debugMismatch` analysis: whether the request [matched] a
+     * registered expectation, the [expectationId] of the matched/closest expectation,
+     * the closest expectation's matched/total field counts, its per-field [differences]
+     * (field name → messages) on a miss, and whether the server had [noExpectations].
+     */
+    data class MatchAnalysis(
+        val matched: Boolean,
+        val expectationId: String?,
+        val matchedFields: Int?,
+        val totalFields: Int?,
+        val differences: Map<String, List<String>>,
+        val noExpectations: Boolean,
+    )
+
+    /**
+     * Reduce a `debugMismatch` response [body] into a [MatchAnalysis]. The body shape
+     * is `{ totalExpectations, results: [{ matches, differences, ... }], closestMatch? }`.
+     * Defensive against missing fields and non-JSON input.
+     */
+    fun parseMatchAnalysis(body: String): MatchAnalysis {
+        val parsed = tryParseJson(body)
+        if (parsed == null || !parsed.isJsonObject) {
+            return MatchAnalysis(false, null, null, null, emptyMap(), false)
+        }
+        val root = parsed.asJsonObject
+        val results = if (root.has("results") && root.get("results").isJsonArray) root.getAsJsonArray("results") else JsonArray()
+        val hasTotal = root.has("totalExpectations") && root.get("totalExpectations").isJsonPrimitive
+        val totalExpectations = if (hasTotal) {
+            try { root.get("totalExpectations").asInt } catch (_: Exception) { results.size() }
+        } else {
+            results.size()
+        }
+        // "No expectations" only when the server genuinely has none. A positive
+        // totalExpectations with an empty results array (all truncated) is a miss.
+        val noExpectations = if (hasTotal) totalExpectations == 0 else results.size() == 0
+
+        for (element in results) {
+            if (element.isJsonObject && element.asJsonObject.let { it.has("matches") && it.get("matches").isJsonPrimitive && it.get("matches").asBoolean }) {
+                val matched = element.asJsonObject
+                return MatchAnalysis(
+                    matched = true,
+                    expectationId = if (matched.has("expectationId") && matched.get("expectationId").isJsonPrimitive) matched.get("expectationId").asString else null,
+                    matchedFields = intOrNull(matched, "matchedFieldCount"),
+                    totalFields = intOrNull(matched, "totalFieldCount"),
+                    differences = emptyMap(),
+                    noExpectations = false,
+                )
+            }
+        }
+
+        val closest = if (root.has("closestMatch") && root.get("closestMatch").isJsonObject) root.getAsJsonObject("closestMatch") else null
+        val closestId = if (closest != null && closest.has("expectationId") && closest.get("expectationId").isJsonPrimitive) closest.get("expectationId").asString else null
+        val differences = LinkedHashMap<String, List<String>>()
+        if (closestId != null) {
+            for (element in results) {
+                if (!element.isJsonObject) continue
+                val result = element.asJsonObject
+                val id = if (result.has("expectationId") && result.get("expectationId").isJsonPrimitive) result.get("expectationId").asString else continue
+                if (id != closestId) continue
+                if (result.has("differences") && result.get("differences").isJsonObject) {
+                    for ((field, value) in result.getAsJsonObject("differences").entrySet()) {
+                        if (value.isJsonArray) {
+                            differences[field] = value.asJsonArray.filter { it.isJsonPrimitive }.map { it.asString }
+                        }
+                    }
+                }
+            }
+        }
+        return MatchAnalysis(
+            matched = false,
+            expectationId = closestId,
+            matchedFields = if (closest != null) intOrNull(closest, "matchedFields") else null,
+            totalFields = if (closest != null) intOrNull(closest, "totalFields") else null,
+            differences = differences,
+            noExpectations = noExpectations,
+        )
+    }
+
+    /** Read [field] from [obj] as an int (the server emits these as JSON numbers), or null when absent/non-numeric. */
+    private fun intOrNull(obj: JsonObject, field: String): Int? {
+        if (!obj.has(field) || !obj.get(field).isJsonPrimitive) return null
+        return try { obj.get(field).asInt } catch (_: Exception) { null }
+    }
+
+    /**
+     * Render a [MatchAnalysis] into a readable summary for the scratch-response view:
+     * a clear matched / not-matched headline and, on a miss, the closest expectation
+     * and its per-field differences (the "nearest miss").
+     */
+    fun formatMatchAnalysis(analysis: MatchAnalysis): String {
+        if (analysis.matched) {
+            val id = analysis.expectationId?.let { " (expectation $it)" } ?: ""
+            return "MATCHED a registered expectation$id."
+        }
+        if (analysis.noExpectations) {
+            return "NOT MATCHED — no registered expectations to match against."
+        }
+        val builder = StringBuilder("NOT MATCHED any registered expectation.")
+        if (analysis.expectationId != null) {
+            val fields = if (analysis.matchedFields != null && analysis.totalFields != null) {
+                " (${analysis.matchedFields}/${analysis.totalFields} fields matched)"
+            } else {
+                ""
+            }
+            builder.append("\nClosest: expectation ").append(analysis.expectationId).append(fields)
+        }
+        for ((field, messages) in analysis.differences) {
+            for (message in messages) {
+                builder.append("\n  - ").append(field).append(": ").append(message)
+            }
+        }
+        return builder.toString()
+    }
+
+    /**
+     * Extract each expectation's `httpRequest` definition from an expectation file's
+     * [text] (a single object or an array), as compact JSON strings — for verifying or
+     * clearing every declared request. Expectations with no object `httpRequest` are
+     * skipped. Returns an empty list when none are found or the text is not JSON.
+     */
+    fun extractRequestDefinitions(text: String): List<String> {
+        val parsed = tryParseJson(text) ?: return emptyList()
+        val expectations: List<JsonElement> = when {
+            parsed.isJsonArray -> parsed.asJsonArray.toList()
+            parsed.isJsonObject -> listOf(parsed)
+            else -> emptyList()
+        }
+        val definitions = ArrayList<String>()
+        for (element in expectations) {
+            if (!element.isJsonObject) continue
+            val obj = element.asJsonObject
+            if (obj.has("httpRequest") && obj.get("httpRequest").isJsonObject) {
+                definitions.add(COMPACT.toJson(obj.getAsJsonObject("httpRequest")))
+            }
+        }
+        return definitions
     }
 
     // ---------------------------------------------------------------------

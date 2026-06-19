@@ -81,6 +81,14 @@
         "title": "MockServer: Diff Expectations Against Live Server"
       },
       {
+        "command": "mockserver.verifyExpectations",
+        "title": "MockServer: Verify Declared Requests Were Received"
+      },
+      {
+        "command": "mockserver.deleteExpectations",
+        "title": "MockServer: Delete Expectations From Running Server"
+      },
+      {
         "command": "mockserver.saveRecorded",
         "title": "MockServer: Save Recorded Expectations (JSON or Java)"
       },
@@ -200,6 +208,14 @@
           "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
         },
         {
+          "command": "mockserver.verifyExpectations",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
+        },
+        {
+          "command": "mockserver.deleteExpectations",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
+        },
+        {
           "command": "mockserver.showDriftDiagnostics",
           "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/"
         },
@@ -232,19 +248,29 @@
           "group": "mockserver@1"
         },
         {
-          "command": "mockserver.diffAgainstLive",
+          "command": "mockserver.verifyExpectations",
           "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
           "group": "mockserver@2"
         },
         {
-          "command": "mockserver.showDrift",
+          "command": "mockserver.diffAgainstLive",
           "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
           "group": "mockserver@3"
         },
         {
-          "command": "mockserver.showDriftDiagnostics",
+          "command": "mockserver.deleteExpectations",
           "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
           "group": "mockserver@4"
+        },
+        {
+          "command": "mockserver.showDrift",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "mockserver@5"
+        },
+        {
+          "command": "mockserver.showDriftDiagnostics",
+          "when": "resourceFilename =~ /\\.mockserver\\.jsonc?$/",
+          "group": "mockserver@6"
         },
         {
           "command": "mockserver.sendRequest",

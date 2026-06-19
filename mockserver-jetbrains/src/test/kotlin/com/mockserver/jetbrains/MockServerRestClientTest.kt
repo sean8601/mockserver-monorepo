@@ -532,4 +532,135 @@ class MockServerRestClientTest {
         assertEquals("4bf92f3577b34da6a3ce929d0e0e4736", result.traceId)
         assertEquals("[]", result.matchesJson)
     }
+
+    // --- debugMismatch / match analysis ---------------------------------
+
+    @Test
+    fun `debugMismatch PUTs the request definition json to the debugMismatch endpoint`() {
+        val definition = """{"method":"GET","path":"/a"}"""
+        val req = MockServerRestClient.buildDebugMismatchRequest("http://localhost:1080", definition)
+        assertEquals("PUT", req.method())
+        assertEquals("http://localhost:1080/mockserver/debugMismatch", req.uri().toString())
+        assertEquals("application/json", req.headers().firstValue("Content-Type").orElse(""))
+        assertEquals(definition, bodyOf(req))
+    }
+
+    @Test
+    fun `requestSpecToDefinitionJson maps headers to the object-map form and omits empty parts`() {
+        val full = MockServerRestClient.requestSpecToDefinitionJson(
+            MockServerRestClient.RequestSpec("POST", "/api/x", linkedMapOf("Accept" to "application/json"), "hi")
+        )
+        val obj = JsonParser.parseString(full).asJsonObject
+        assertEquals("POST", obj.get("method").asString)
+        assertEquals("/api/x", obj.get("path").asString)
+        assertEquals("application/json", obj.getAsJsonObject("headers").getAsJsonArray("Accept").get(0).asString)
+        assertEquals("hi", obj.get("body").asString)
+
+        val minimal = JsonParser.parseString(
+            MockServerRestClient.requestSpecToDefinitionJson(MockServerRestClient.RequestSpec("GET", "/a"))
+        ).asJsonObject
+        assertFalse(minimal.has("headers"))
+        assertFalse(minimal.has("body"))
+    }
+
+    @Test
+    fun `parseMatchAnalysis reports a match when any result matches`() {
+        val body = """{"totalExpectations":2,"results":[{"expectationId":"e1","matches":false},{"expectationId":"e2","matches":true}]}"""
+        val analysis = MockServerRestClient.parseMatchAnalysis(body)
+        assertTrue(analysis.matched)
+        assertEquals("e2", analysis.expectationId)
+        assertFalse(analysis.noExpectations)
+    }
+
+    @Test
+    fun `parseMatchAnalysis surfaces the closest miss with its differences`() {
+        val body = """
+            {"totalExpectations":1,
+             "results":[{"expectationId":"e1","matches":false,"differences":{"path":["expected /a but was /b"]}}],
+             "closestMatch":{"expectationId":"e1","matchedFields":4,"totalFields":5}}
+        """.trimIndent()
+        val analysis = MockServerRestClient.parseMatchAnalysis(body)
+        assertFalse(analysis.matched)
+        assertEquals("e1", analysis.expectationId)
+        assertEquals(4, analysis.matchedFields)
+        assertEquals(listOf("expected /a but was /b"), analysis.differences["path"])
+    }
+
+    @Test
+    fun `parseMatchAnalysis flags noExpectations when the server has none`() {
+        val analysis = MockServerRestClient.parseMatchAnalysis("""{"totalExpectations":0,"results":[]}""")
+        assertFalse(analysis.matched)
+        assertTrue(analysis.noExpectations)
+    }
+
+    @Test
+    fun `formatMatchAnalysis renders matched, no-expectations, and nearest-miss summaries`() {
+        assertTrue(
+            MockServerRestClient.formatMatchAnalysis(
+                MockServerRestClient.MatchAnalysis(true, "e2", null, null, emptyMap(), false)
+            ).contains("MATCHED")
+        )
+        assertTrue(
+            MockServerRestClient.formatMatchAnalysis(
+                MockServerRestClient.MatchAnalysis(false, null, null, null, emptyMap(), true)
+            ).contains("no registered expectations")
+        )
+        val miss = MockServerRestClient.formatMatchAnalysis(
+            MockServerRestClient.MatchAnalysis(false, "e1", 4, 5, mapOf("path" to listOf("expected /a but was /b")), false)
+        )
+        assertTrue(miss.contains("NOT MATCHED"))
+        assertTrue(miss.contains("Closest: expectation e1"))
+        assertTrue(miss.contains("path: expected /a but was /b"))
+    }
+
+    // --- verify / clear -------------------------------------------------
+
+    @Test
+    fun `verify wraps the request definition in httpRequest and times atLeast one`() {
+        val req = MockServerRestClient.buildVerifyRequest("http://localhost:1080", """{"path":"/a"}""")
+        assertEquals("PUT", req.method())
+        assertEquals("http://localhost:1080/mockserver/verify", req.uri().toString())
+        val obj = JsonParser.parseString(bodyOf(req)).asJsonObject
+        assertEquals("/a", obj.getAsJsonObject("httpRequest").get("path").asString)
+        assertEquals(1, obj.getAsJsonObject("times").get("atLeast").asInt)
+        // atMost -1 = no upper bound; an absent/0 atMost would make the server always 406.
+        assertEquals(-1, obj.getAsJsonObject("times").get("atMost").asInt)
+    }
+
+    @Test
+    fun `clear expectations PUTs the request definition to clear with type expectations`() {
+        val definition = """{"path":"/a"}"""
+        val req = MockServerRestClient.buildClearExpectationsRequest("http://localhost:1080", definition)
+        assertEquals("PUT", req.method())
+        assertEquals("http://localhost:1080/mockserver/clear?type=expectations", req.uri().toString())
+        assertEquals(definition, bodyOf(req))
+    }
+
+    @Test
+    fun `extractRequestDefinitions pulls each httpRequest and skips request-less expectations`() {
+        val text = """
+            [
+              { "httpRequest": { "method": "GET", "path": "/a" }, "httpResponse": { "statusCode": 200 } },
+              { "httpResponse": { "statusCode": 204 } },
+              { "httpRequest": { "path": "/b" } }
+            ]
+        """.trimIndent()
+        val defs = MockServerRestClient.extractRequestDefinitions(text)
+        assertEquals(2, defs.size)
+        assertEquals("/a", JsonParser.parseString(defs[0]).asJsonObject.get("path").asString)
+        assertEquals("/b", JsonParser.parseString(defs[1]).asJsonObject.get("path").asString)
+    }
+
+    @Test
+    fun `extractRequestDefinitions accepts a single expectation object`() {
+        val defs = MockServerRestClient.extractRequestDefinitions("""{ "httpRequest": { "path": "/a" }, "httpResponse": {} }""")
+        assertEquals(1, defs.size)
+        assertEquals("/a", JsonParser.parseString(defs[0]).asJsonObject.get("path").asString)
+    }
+
+    @Test
+    fun `extractRequestDefinitions returns empty for non-json or request-less input`() {
+        assertTrue(MockServerRestClient.extractRequestDefinitions("not json").isEmpty())
+        assertTrue(MockServerRestClient.extractRequestDefinitions("""[{ "httpResponse": {} }]""").isEmpty())
+    }
 }

@@ -228,16 +228,16 @@ sequenceDiagram
 
 ## Phased roadmap
 
-| Phase | Outcome | Risk class |
-|-------|---------|------------|
-| 0 | Fix image-tag drift; make container/port/image configurable (incl. multiple named instances); remove stale `.vsix` | act-autonomously |
-| 1 | Publish the bundled `expectation.schema.json` as a release artifact; wire `jsonValidation` (VS Code) + JSON Schema mapping (JetBrains) | gated-approval (release-pipeline change) |
-| 2 | Contract→stub generation; scratch-request client; CodeLens load/verify/diff | act-autonomously |
-| 3 | **Record-to-code** (flagship) | act-autonomously |
-| 4 | Drift diagnostics + quick-fix; test/code-aware gutter integration | act-autonomously |
-| 5 | Debugger (REQUEST/RESPONSE pause/inspect/modify), scoped per the prerequisite above | act-autonomously |
-| 6 | LLM authoring + call-graph; chaos panel; contract/resiliency runner | act-autonomously |
-| 7 | Stream-frame breakpoint editing; WASM authoring; trace correlation | act-autonomously |
+| Phase | Outcome | Status | Risk class |
+|-------|---------|--------|------------|
+| 0 | Fix image-tag drift; make container/port/image configurable (incl. multiple named instances); remove stale `.vsix` | **done** — image tag derives from the extension/plugin version; container/port configurable; no stale `.vsix` checked in | act-autonomously |
+| 1 | Publish the bundled `expectation.schema.json` as a release artifact; wire `jsonValidation` (VS Code) + JSON Schema mapping (JetBrains) | **done** — bundled schema wired via `contributes.jsonValidation` (VS Code) and the `JavaScript.JsonSchema.ProviderFactory` (JetBrains) | gated-approval (release-pipeline change) |
+| 2 | Contract→stub generation; scratch-request client; CodeLens load/verify/diff | **done** — generate-from-OpenAPI writes a `*.mockserver.json` workspace file; scratch-request now reports match / nearest-miss via `debugMismatch`; CodeLens/actions cover Load, **Verify**, Diff, **Delete** | act-autonomously |
+| 3 | **Record-to-code** (flagship) | **done** — recorded expectations (JSON or Java DSL) written to a new workspace file (VS Code) / opened as a `*.mockserver.json` / `.java` tab (JetBrains) | act-autonomously |
+| 4 | Drift diagnostics + quick-fix; test/code-aware gutter integration | **partial** — drift diagnostics shipped (VS Code inline diagnostics + JetBrains drift report); quick-fix and test/code-aware gutters remain | act-autonomously |
+| 5 | Debugger (REQUEST/RESPONSE pause/inspect/modify), scoped per the prerequisite above | not started | act-autonomously |
+| 6 | LLM authoring + call-graph; chaos panel; contract/resiliency runner | not started | act-autonomously |
+| 7 | Stream-frame breakpoint editing; WASM authoring; trace correlation | **partial** — WASM upload/list and trace correlation shipped; stream-frame breakpoint editing remains | act-autonomously |
 
 Ship the **Phase 1 schema-validation slice first** as the smallest real proof, then
 **record-to-code** as the feature that makes users say "now I need this."

@@ -46,8 +46,28 @@ class SendRequestAction : AnAction() {
                     val result = MockServerRestClient.send(
                         MockServerRestClient.buildScratchRequest(baseUrl, spec)
                     )
+                    // Also ask the server whether the request matched a registered
+                    // expectation (and the nearest miss). Best-effort: a server without
+                    // the debugMismatch endpoint must not break the response view.
+                    val analysisHeader = try {
+                        val debug = MockServerRestClient.send(
+                            MockServerRestClient.buildDebugMismatchRequest(
+                                baseUrl,
+                                MockServerRestClient.requestSpecToDefinitionJson(spec)
+                            )
+                        )
+                        if (debug.ok) {
+                            MockServerRestClient.formatMatchAnalysis(
+                                MockServerRestClient.parseMatchAnalysis(debug.body)
+                            ) + "\n\n"
+                        } else {
+                            ""
+                        }
+                    } catch (_: Exception) {
+                        ""
+                    }
                     val body = MockServerRestClient.prettyPrintJson(result.body)
-                    val summary = "HTTP ${result.status}\n\n$body"
+                    val summary = "${analysisHeader}HTTP ${result.status}\n\n$body"
                     runOnEdt(project) { MockServerEditors.openTextInEditor(project, "mockserver-response.txt", summary) }
                 } catch (ex: Exception) {
                     runOnEdt(project) {

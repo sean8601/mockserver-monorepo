@@ -1,22 +1,32 @@
 import * as vscode from "vscode";
 
 /**
- * Adds "Load into running MockServer" and "Diff against live" actions at the top
- * of every `*.mockserver.json(c)` file, turning a static expectation file into a
- * live control surface.
+ * Adds "Load into running MockServer", "Verify", "Diff against live", and "Delete"
+ * actions at the top of every `*.mockserver.json(c)` file, turning a static
+ * expectation file into a live control surface.
  */
 export class ExpectationCodeLensProvider implements vscode.CodeLensProvider {
     provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
         const topOfFile = new vscode.Range(0, 0, 0, 0);
         return [
             new vscode.CodeLens(topOfFile, {
-                title: "$(cloud-upload) Load into running MockServer",
+                title: "$(cloud-upload) Load into running server",
                 command: "mockserver.loadExpectations",
+                arguments: [document.uri],
+            }),
+            new vscode.CodeLens(topOfFile, {
+                title: "$(verified) Verify",
+                command: "mockserver.verifyExpectations",
                 arguments: [document.uri],
             }),
             new vscode.CodeLens(topOfFile, {
                 title: "$(diff) Diff against live",
                 command: "mockserver.diffAgainstLive",
+                arguments: [document.uri],
+            }),
+            new vscode.CodeLens(topOfFile, {
+                title: "$(trash) Delete",
+                command: "mockserver.deleteExpectations",
                 arguments: [document.uri],
             }),
         ];

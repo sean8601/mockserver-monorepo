@@ -100,6 +100,16 @@
                     text="Load Expectations Into Running Server"
                     description="Sends the active editor file to PUT /mockserver/expectation on the running MockServer"
                     icon="AllIcons.Actions.Upload"/>
+            <action id="MockServer.VerifyExpectations"
+                    class="com.mockserver.jetbrains.VerifyExpectationsAction"
+                    text="Verify Declared Requests Were Received"
+                    description="Verifies every request declared in the active expectation file was received at least once (PUT /mockserver/verify)"
+                    icon="AllIcons.Actions.Selectall"/>
+            <action id="MockServer.DeleteExpectations"
+                    class="com.mockserver.jetbrains.DeleteExpectationsAction"
+                    text="Delete Expectations From Running Server"
+                    description="Clears the expectations declared in the active file from the running MockServer (PUT /mockserver/clear?type=expectations)"
+                    icon="AllIcons.Actions.GC"/>
             <action id="MockServer.SaveRecordedExpectations"
                     class="com.mockserver.jetbrains.SaveRecordedExpectationsAction"
                     text="Save Recorded Expectations"

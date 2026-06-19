@@ -325,6 +325,17 @@ async function runTests(): Promise<void> {
         assert.ok(registeredCommands.has("mockserver.sendRequest"), "sendRequest command not registered");
     });
 
+    await test("activate registers the verify + delete expectation commands", () => {
+        assert.ok(
+            registeredCommands.has("mockserver.verifyExpectations"),
+            "verifyExpectations command not registered"
+        );
+        assert.ok(
+            registeredCommands.has("mockserver.deleteExpectations"),
+            "deleteExpectations command not registered"
+        );
+    });
+
     await test("activate registers the mockserver.showDrift command", () => {
         assert.ok(registeredCommands.has("mockserver.showDrift"), "showDrift command not registered");
     });
@@ -810,6 +821,163 @@ async function runTests(): Promise<void> {
         assert.strictEqual(response.body, '{"ok":true}');
     });
 
+    await test("toRequestDefinition maps headers to the object-map form and omits empty parts", () => {
+        const full = client.toRequestDefinition({
+            method: "POST",
+            path: "/api/x",
+            headers: { Accept: "application/json" },
+            body: "hi",
+        });
+        assert.strictEqual(full.method, "POST");
+        assert.strictEqual(full.path, "/api/x");
+        assert.deepStrictEqual(full.headers, { Accept: ["application/json"] });
+        assert.strictEqual(full.body, "hi");
+        const minimal = client.toRequestDefinition({ method: "GET", path: "/a" });
+        assert.ok(!("headers" in minimal), "empty headers should be omitted");
+        assert.ok(!("body" in minimal), "absent body should be omitted");
+    });
+
+    await test("parseMatchAnalysis reports a match when any result matches", () => {
+        const body = JSON.stringify({
+            totalExpectations: 2,
+            results: [
+                { expectationId: "e1", matches: false, differences: { path: ["no"] } },
+                { expectationId: "e2", matches: true },
+            ],
+        });
+        const analysis = client.parseMatchAnalysis(body);
+        assert.strictEqual(analysis.matched, true);
+        assert.strictEqual(analysis.expectationId, "e2");
+        assert.strictEqual(analysis.noExpectations, false);
+    });
+
+    await test("parseMatchAnalysis surfaces the closest miss with its differences", () => {
+        const body = JSON.stringify({
+            totalExpectations: 1,
+            results: [
+                {
+                    expectationId: "e1",
+                    matches: false,
+                    differences: { path: ["expected /a but was /b"] },
+                },
+            ],
+            closestMatch: { expectationId: "e1", matchedFields: 4, totalFields: 5 },
+        });
+        const analysis = client.parseMatchAnalysis(body);
+        assert.strictEqual(analysis.matched, false);
+        assert.strictEqual(analysis.expectationId, "e1");
+        assert.strictEqual(analysis.matchedFields, 4);
+        assert.deepStrictEqual(analysis.differences.path, ["expected /a but was /b"]);
+    });
+
+    await test("parseMatchAnalysis flags noExpectations when the server has none", () => {
+        const analysis = client.parseMatchAnalysis(JSON.stringify({ totalExpectations: 0, results: [] }));
+        assert.strictEqual(analysis.matched, false);
+        assert.strictEqual(analysis.noExpectations, true);
+    });
+
+    await test("formatMatchAnalysis renders matched, no-expectations, and nearest-miss summaries", () => {
+        assert.ok(
+            client.formatMatchAnalysis({ matched: true, expectationId: "e2", differences: {}, noExpectations: false })
+                .includes("Matched"),
+            "matched summary should say Matched"
+        );
+        assert.ok(
+            client.formatMatchAnalysis({ matched: false, differences: {}, noExpectations: true })
+                .includes("No registered expectations"),
+            "no-expectations summary should be explicit"
+        );
+        const miss = client.formatMatchAnalysis({
+            matched: false,
+            expectationId: "e1",
+            matchedFields: 4,
+            totalFields: 5,
+            differences: { path: ["expected /a but was /b"] },
+            noExpectations: false,
+        });
+        assert.ok(miss.includes("Did not match"), "miss summary should say it did not match");
+        assert.ok(miss.includes("Closest: expectation e1"), "miss summary should name the closest expectation");
+        assert.ok(miss.includes("path: expected /a but was /b"), "miss summary should list the field difference");
+    });
+
+    await test("analyseMatch PUTs the request definition to debugMismatch", async () => {
+        let captured: any = {};
+        const fakeFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                text: () => Promise.resolve(JSON.stringify({ totalExpectations: 1, results: [{ matches: true }] })),
+            });
+        };
+        const analysis = await client.analyseMatch(
+            "http://localhost:1080",
+            { method: "GET", path: "/a" },
+            fakeFetch
+        );
+        assert.ok(captured.url.endsWith("/mockserver/debugMismatch"), `url=${captured.url}`);
+        assert.strictEqual(captured.init.method, "PUT");
+        assert.strictEqual(JSON.parse(captured.init.body).path, "/a");
+        assert.strictEqual(analysis.matched, true);
+    });
+
+    await test("analyseMatch throws with status on a non-ok response (e.g. endpoint missing)", async () => {
+        const fakeFetch = () =>
+            Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("no such endpoint") });
+        await assert.rejects(
+            () => client.analyseMatch("http://localhost:1080", { method: "GET", path: "/a" }, fakeFetch),
+            /404: no such endpoint/
+        );
+    });
+
+    await test("extractRequestDefinitions pulls each expectation's httpRequest and skips request-less ones", () => {
+        const text = JSON.stringify([
+            { httpRequest: { method: "GET", path: "/a" }, httpResponse: { statusCode: 200 } },
+            { httpResponse: { statusCode: 204 } },
+            { httpRequest: { path: "/b" } },
+        ]);
+        const defs = client.extractRequestDefinitions(text);
+        assert.strictEqual(defs.length, 2, "should extract two request definitions");
+        assert.strictEqual(defs[0].path, "/a");
+        assert.strictEqual(defs[1].path, "/b");
+    });
+
+    await test("verifyRequestReceived returns verified on 202 and a reason on 406", async () => {
+        let captured: any = {};
+        const okFetch = (url: string, init: any) => {
+            captured = { url, init };
+            return Promise.resolve({ ok: true, status: 202, text: () => Promise.resolve("") });
+        };
+        const ok = await client.verifyRequestReceived("http://localhost:1080", { path: "/a" }, okFetch);
+        assert.strictEqual(ok.verified, true);
+        assert.ok(captured.url.endsWith("/mockserver/verify"), `url=${captured.url}`);
+        const sent = JSON.parse(captured.init.body);
+        assert.deepStrictEqual(sent.httpRequest, { path: "/a" });
+        assert.strictEqual(sent.times.atLeast, 1);
+        assert.strictEqual(sent.times.atMost, -1, "atMost must be -1 (no upper bound) or the server always 406s");
+
+        const failFetch = () =>
+            Promise.resolve({ ok: false, status: 406, text: () => Promise.resolve("Request not found at least once") });
+        const failed = await client.verifyRequestReceived("http://localhost:1080", { path: "/a" }, failFetch);
+        assert.strictEqual(failed.verified, false);
+        assert.ok(failed.reason.includes("not found"), "should carry the failure reason");
+    });
+
+    await test("clearExpectations clears each declared request via clear?type=expectations", async () => {
+        const urls: string[] = [];
+        const fakeFetch = (url: string) => {
+            urls.push(url);
+            return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("") });
+        };
+        const text = JSON.stringify([
+            { httpRequest: { path: "/a" }, httpResponse: {} },
+            { httpRequest: { path: "/b" }, httpResponse: {} },
+        ]);
+        const count = await client.clearExpectations("http://localhost:1080", text, fakeFetch);
+        assert.strictEqual(count, 2);
+        assert.ok(urls.every((u) => u.includes("/mockserver/clear?type=expectations")), `urls=${urls.join(",")}`);
+    });
+
     await test("retrieveDrift flags the empty state (count 0, no drifts)", async () => {
         const fakeFetch = () =>
             Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"count":0,"drifts":[]}') });
@@ -1038,12 +1206,16 @@ async function runTests(): Promise<void> {
     // --- CodeLens providers ---
     const { ExpectationCodeLensProvider, ScratchRequestCodeLensProvider } = require("../codeLens");
 
-    await test("CodeLens provider offers load + diff lenses", () => {
+    await test("CodeLens provider offers load + verify + diff + delete lenses", () => {
         const provider = new ExpectationCodeLensProvider();
         const lenses = provider.provideCodeLenses({ uri: { toString: () => "file:///x.mockserver.json" } });
-        assert.strictEqual(lenses.length, 2);
-        assert.strictEqual(lenses[0].command.command, "mockserver.loadExpectations");
-        assert.strictEqual(lenses[1].command.command, "mockserver.diffAgainstLive");
+        const commands = lenses.map((l: any) => l.command.command);
+        assert.deepStrictEqual(commands, [
+            "mockserver.loadExpectations",
+            "mockserver.verifyExpectations",
+            "mockserver.diffAgainstLive",
+            "mockserver.deleteExpectations",
+        ]);
     });
 
     await test("scratch-request CodeLens provider offers a send lens", () => {

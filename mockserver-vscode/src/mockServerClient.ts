@@ -63,6 +63,31 @@ export interface ScratchResponse {
 }
 
 /**
+ * The outcome of analysing a scratch request against the server's registered
+ * expectations via `PUT /mockserver/debugMismatch`: whether the request matched a
+ * registered expectation, and — when it did not — the nearest-miss summary (the
+ * closest expectation by matched-field count, with its per-field differences).
+ */
+export interface MatchAnalysis {
+    /** True when the request matched at least one registered expectation. */
+    matched: boolean;
+    /** The id of the matched expectation (when `matched`), or the closest one. */
+    expectationId?: string;
+    /** Matched field count of the matched/closest expectation, when known. */
+    matchedFields?: number;
+    /** Total field count compared, when known. */
+    totalFields?: number;
+    /**
+     * Per-field difference messages from the closest non-matching expectation,
+     * keyed by field name (e.g. `path`, `method`, `body`). Empty when matched or
+     * when the server returned no differences.
+     */
+    differences: Record<string, string[]>;
+    /** True when the server has no registered expectations to compare against. */
+    noExpectations: boolean;
+}
+
+/**
  * Parse a scratch request file's text into a {@link RequestSpec}. Throws a clear
  * error if the JSON is invalid, the top level is not an object, or `method`/`path`
  * are missing or not strings.
@@ -142,6 +167,224 @@ export async function sendScratchRequest(
         body: spec.body,
     });
     return { status: res.status, body: await res.text() };
+}
+
+/**
+ * Convert a {@link RequestSpec} into the `httpRequest` definition shape MockServer's
+ * `debugMismatch` endpoint deserialises: `{ method, path, headers, body }`. Headers
+ * become the object-map form (`{ name: [value] }`) the server understands; an absent
+ * header map / body is simply omitted.
+ */
+export function toRequestDefinition(spec: RequestSpec): Record<string, unknown> {
+    const definition: Record<string, unknown> = { method: spec.method, path: spec.path };
+    if (spec.headers && Object.keys(spec.headers).length > 0) {
+        const headers: Record<string, string[]> = {};
+        for (const [name, value] of Object.entries(spec.headers)) {
+            headers[name] = [value];
+        }
+        definition.headers = headers;
+    }
+    if (spec.body !== undefined) {
+        definition.body = spec.body;
+    }
+    return definition;
+}
+
+/**
+ * Reduce a raw `debugMismatch` response body into a {@link MatchAnalysis}. The body
+ * shape is `{ totalExpectations, results: [{ matches, differences, ... }], closestMatch? }`.
+ * `matched` is true when any result matched; otherwise the closest non-matching
+ * result supplies the nearest-miss differences. Defensive against missing fields.
+ */
+export function parseMatchAnalysis(body: string): MatchAnalysis {
+    let parsed: { totalExpectations?: number; results?: unknown[]; closestMatch?: unknown };
+    try {
+        parsed = JSON.parse(body);
+    } catch {
+        return { matched: false, differences: {}, noExpectations: false };
+    }
+    const results = Array.isArray(parsed.results) ? parsed.results : [];
+    // "No expectations" only when the server genuinely has none. When totalExpectations
+    // is unknown, fall back to an empty results array; but a positive totalExpectations
+    // with an empty results array (all truncated) is a miss, not "no expectations".
+    const noExpectations =
+        typeof parsed.totalExpectations === "number"
+            ? parsed.totalExpectations === 0
+            : results.length === 0;
+    const matchedResult = results.find(
+        (r) => r && typeof r === "object" && (r as Record<string, unknown>).matches === true
+    ) as Record<string, unknown> | undefined;
+    if (matchedResult) {
+        return {
+            matched: true,
+            expectationId:
+                typeof matchedResult.expectationId === "string" ? matchedResult.expectationId : undefined,
+            matchedFields:
+                typeof matchedResult.matchedFieldCount === "number"
+                    ? matchedResult.matchedFieldCount
+                    : undefined,
+            totalFields:
+                typeof matchedResult.totalFieldCount === "number"
+                    ? matchedResult.totalFieldCount
+                    : undefined,
+            differences: {},
+            noExpectations: false,
+        };
+    }
+    // No match — surface the closest expectation's differences. The server reports
+    // `closestMatch` with the id/counts; pull the matching result's `differences`.
+    const closest = (parsed.closestMatch ?? {}) as Record<string, unknown>;
+    const closestId = typeof closest.expectationId === "string" ? closest.expectationId : undefined;
+    const closestResult = results.find(
+        (r) =>
+            r &&
+            typeof r === "object" &&
+            (r as Record<string, unknown>).expectationId === closestId
+    ) as Record<string, unknown> | undefined;
+    const differences: Record<string, string[]> = {};
+    const rawDiffs = closestResult?.differences;
+    if (rawDiffs && typeof rawDiffs === "object" && !Array.isArray(rawDiffs)) {
+        for (const [field, value] of Object.entries(rawDiffs as Record<string, unknown>)) {
+            if (Array.isArray(value)) {
+                differences[field] = value.filter((v): v is string => typeof v === "string");
+            }
+        }
+    }
+    return {
+        matched: false,
+        expectationId: closestId,
+        matchedFields: typeof closest.matchedFields === "number" ? closest.matchedFields : undefined,
+        totalFields: typeof closest.totalFields === "number" ? closest.totalFields : undefined,
+        differences,
+        noExpectations,
+    };
+}
+
+/**
+ * Ask the server whether a request would match any registered expectation, and if
+ * not why, via `PUT /mockserver/debugMismatch` (body = the request definition).
+ * Returns a {@link MatchAnalysis}. Throws (with status + body) on a non-ok response
+ * so a server without this endpoint surfaces clearly to the caller.
+ */
+export async function analyseMatch(
+    baseUrl: string,
+    spec: RequestSpec,
+    fetchFn: FetchLike
+): Promise<MatchAnalysis> {
+    const res = await fetchFn(`${baseUrl}/mockserver/debugMismatch`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toRequestDefinition(spec)),
+    });
+    if (!res.ok) {
+        throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+    }
+    return parseMatchAnalysis(await res.text());
+}
+
+/**
+ * Render a {@link MatchAnalysis} as a readable one-or-more-line summary for the
+ * scratch-request response view: a clear matched/not-matched headline, and — on a
+ * miss — the closest expectation and its per-field differences (the "nearest miss").
+ */
+export function formatMatchAnalysis(analysis: MatchAnalysis): string {
+    if (analysis.matched) {
+        const id = analysis.expectationId ? ` (expectation ${analysis.expectationId})` : "";
+        return `✓ Matched a registered expectation${id}.`;
+    }
+    if (analysis.noExpectations) {
+        return "✗ No registered expectations to match against.";
+    }
+    const lines: string[] = ["✗ Did not match any registered expectation."];
+    if (analysis.expectationId) {
+        const fields =
+            typeof analysis.matchedFields === "number" && typeof analysis.totalFields === "number"
+                ? ` (${analysis.matchedFields}/${analysis.totalFields} fields matched)`
+                : "";
+        lines.push(`Closest: expectation ${analysis.expectationId}${fields}`);
+    }
+    for (const [field, messages] of Object.entries(analysis.differences)) {
+        for (const message of messages) {
+            lines.push(`  • ${field}: ${message}`);
+        }
+    }
+    return lines.join("\n");
+}
+
+/**
+ * Verify, via `PUT /mockserver/verify`, that the server received a request matching
+ * `requestDefinition` at least once (`atLeast` 1). Returns `{ verified, reason }`:
+ * a 202 means verified; a 406 carries the human-readable failure reason in its body.
+ * Throws only on an unexpected (non-202/406) status.
+ */
+export async function verifyRequestReceived(
+    baseUrl: string,
+    requestDefinition: Record<string, unknown>,
+    fetchFn: FetchLike
+): Promise<{ verified: boolean; reason: string }> {
+    const res = await fetchFn(`${baseUrl}/mockserver/verify`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            httpRequest: requestDefinition,
+            // atMost -1 = no upper bound. The server's VerificationTimesDTO.atMost is a
+            // primitive int defaulting to 0 when omitted, which makes `times <= atMost`
+            // false for any real receipt — so an absent atMost would always 406.
+            times: { atLeast: 1, atMost: -1 },
+        }),
+    });
+    if (res.status === 202) {
+        return { verified: true, reason: "" };
+    }
+    const body = await res.text();
+    if (res.status === 406) {
+        return { verified: false, reason: body };
+    }
+    throw new Error(`MockServer returned ${res.status}: ${body}`);
+}
+
+/**
+ * Extract the request definitions (`httpRequest`) from an expectation file's text,
+ * for verifying that each was received. Skips expectations whose request is an
+ * `openAPI`/`httpRequest`-less control definition. Returns `[]` when none are found.
+ */
+export function extractRequestDefinitions(text: string): Record<string, unknown>[] {
+    const expectations = parseExpectations(text);
+    const definitions: Record<string, unknown>[] = [];
+    for (const expectation of expectations) {
+        if (expectation && typeof expectation === "object") {
+            const httpRequest = (expectation as Record<string, unknown>).httpRequest;
+            if (httpRequest && typeof httpRequest === "object" && !Array.isArray(httpRequest)) {
+                definitions.push(httpRequest as Record<string, unknown>);
+            }
+        }
+    }
+    return definitions;
+}
+
+/**
+ * Clear from the running server every expectation declared in `text`, via
+ * `PUT /mockserver/clear?type=expectations` with each expectation's `httpRequest`
+ * as the matcher. Returns the number of clear calls issued (one per declared
+ * request). Throws (with status + body) on the first non-ok response.
+ */
+export async function clearExpectations(
+    baseUrl: string,
+    text: string,
+    fetchFn: FetchLike
+): Promise<number> {
+    const definitions = extractRequestDefinitions(text);
+    for (const definition of definitions) {
+        const res = await fetchFn(`${baseUrl}/mockserver/clear?type=expectations`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(definition),
+        });
+        if (!res.ok) {
+            throw new Error(`MockServer returned ${res.status}: ${await res.text()}`);
+        }
+    }
+    return definitions.length;
 }
 
 /**
