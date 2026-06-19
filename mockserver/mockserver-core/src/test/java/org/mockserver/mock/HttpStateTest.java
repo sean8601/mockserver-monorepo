@@ -3652,6 +3652,64 @@ public class HttpStateTest {
         assertThat(httpState.getFileStore().size(), is(0));
     }
 
+    // --- Effective-configuration endpoint test (GET /mockserver/config) ---
+
+    @Test
+    public void shouldReturnEffectiveConfigurationAsJsonWithSourcesAndRedaction() throws Exception {
+        // given — clear any cached maxExpectations so the system-property tier is authoritative
+        // (effectiveConfiguration is cache-first, exactly like the real resolution path).
+        String previousNonSensitive = System.getProperty("mockserver.maxExpectations");
+        String previousSensitive = System.getProperty("mockserver.llmApiKey");
+        java.lang.reflect.Field cacheField = org.mockserver.configuration.ConfigurationProperties.class.getDeclaredField("propertyCache");
+        cacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> cache = (java.util.Map<String, String>) cacheField.get(null);
+        String previousCachedMaxExpectations = cache != null ? cache.get("mockserver.maxExpectations") : null;
+        try {
+            if (cache != null) {
+                cache.remove("mockserver.maxExpectations");
+            }
+            System.setProperty("mockserver.maxExpectations", "4242");
+            System.setProperty("mockserver.llmApiKey", "super-secret-endpoint-value");
+
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+            HttpRequest configRequest = request("/mockserver/config").withMethod("GET");
+
+            // when
+            boolean handle = httpState.handle(configRequest, responseWriter, false);
+
+            // then
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(200));
+            String body = responseWriter.response.getBodyAsString();
+            assertThat(body, containsString("\"name\":\"mockserver.maxExpectations\""));
+            assertThat(body, containsString("\"value\":\"4242\""));
+            assertThat(body, containsString("\"source\":\"system-property\""));
+            // sensitive value redacted, never printed verbatim
+            assertThat(body, containsString("\"name\":\"mockserver.llmApiKey\""));
+            assertThat(body, containsString("\"value\":\"***REDACTED***\""));
+            assertThat(body, not(containsString("super-secret-endpoint-value")));
+        } finally {
+            if (cache != null) {
+                if (previousCachedMaxExpectations != null) {
+                    cache.put("mockserver.maxExpectations", previousCachedMaxExpectations);
+                } else {
+                    cache.remove("mockserver.maxExpectations");
+                }
+            }
+            if (previousNonSensitive != null) {
+                System.setProperty("mockserver.maxExpectations", previousNonSensitive);
+            } else {
+                System.clearProperty("mockserver.maxExpectations");
+            }
+            if (previousSensitive != null) {
+                System.setProperty("mockserver.llmApiKey", previousSensitive);
+            } else {
+                System.clearProperty("mockserver.llmApiKey");
+            }
+        }
+    }
+
     // --- Clock endpoint tests ---
 
     @Test

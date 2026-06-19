@@ -128,6 +128,19 @@ public class Main {
      */
     public static void main(String... arguments) {
         try {
+            // --print-config is a diagnostic that prints the effective configuration (each property's
+            // resolved value and the source tier that supplied it) and exits, like --help/--version.
+            // Handle it before picocli parsing so it works regardless of subcommand position.
+            if (arguments != null) {
+                for (String argument : arguments) {
+                    if ("--print-config".equals(argument)) {
+                        systemOut.print(ConfigurationProperties.effectiveConfigurationAsText());
+                        systemOut.flush();
+                        return;
+                    }
+                }
+            }
+
             // Preprocess: if the first non-option argument is not a known subcommand, prepend "run"
             String[] processedArgs = preprocessArguments(arguments);
 

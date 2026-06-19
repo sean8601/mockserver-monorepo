@@ -4198,4 +4198,291 @@ public class ConfigurationProperties {
             // Never let configuration validation break startup.
         }
     }
+
+    // ------------------------------------------------------------------------
+    // Effective-configuration diagnostic (--print-config / GET /mockserver/config)
+    //
+    // Reports, for every recognised configuration property, the resolved value
+    // together with the tier that supplied it. The reporting is PURELY OBSERVATIONAL:
+    // it inspects the same three tiers in the same precedence order as
+    // readPropertyHierarchically(...) (system property > properties file > env var,
+    // then the built-in default) but NEVER mutates the property cache or changes how
+    // any value resolves. Sensitive values are redacted via isSensitivePropertyName(...).
+    // ------------------------------------------------------------------------
+
+    /** Source-tier labels for a resolved configuration property. */
+    public static final String SOURCE_SYSTEM_PROPERTY = "system-property";
+    public static final String SOURCE_PROPERTIES_FILE = "properties-file";
+    public static final String SOURCE_ENVIRONMENT_VARIABLE = "environment-variable";
+    public static final String SOURCE_DEFAULT = "default";
+    /**
+     * The value was set at runtime (a programmatic {@code ConfigurationProperties} setter) and is
+     * held in the in-memory property cache — which {@link #readPropertyHierarchically} consults
+     * FIRST, so it is what MockServer actually uses regardless of the underlying tiers. Reported
+     * only when the cached value does not also resolve from one of the static tiers.
+     */
+    public static final String SOURCE_RUNTIME_SET = "runtime-set";
+
+    /**
+     * A single resolved configuration property: its {@code mockserver.*} key, the value
+     * actually in effect (already redacted when sensitive), and the {@link #source} tier
+     * that supplied it (one of the {@code SOURCE_*} constants).
+     */
+    public static final class ResolvedProperty {
+        private final String name;
+        private final String value;
+        private final String source;
+
+        ResolvedProperty(String name, String value, String source) {
+            this.name = name;
+            this.value = value;
+            this.source = source;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public String getSource() {
+            return source;
+        }
+    }
+
+    /**
+     * Reports which tier currently supplies the value for the given property WITHOUT
+     * changing resolution. Mirrors the precedence in
+     * {@link #readPropertyHierarchically(Properties, String, String, String)}:
+     * system property &gt; properties file &gt; environment variable &gt; default.
+     *
+     * @param systemPropertyKey      the {@code mockserver.*} key
+     * @param environmentVariableKey the {@code MOCKSERVER_*} environment-variable key
+     * @return one of the {@code SOURCE_*} constants
+     */
+    static String resolveEffectiveSource(String systemPropertyKey, String environmentVariableKey) {
+        return resolveEffectiveSource(
+            System.getProperty(systemPropertyKey),
+            PROPERTIES != null ? PROPERTIES.getProperty(systemPropertyKey) : null,
+            isNotBlank(environmentVariableKey) ? System.getenv(environmentVariableKey) : null
+        );
+    }
+
+    /**
+     * Pure source-resolution: given the raw value found in each tier (any may be
+     * {@code null}/blank), returns the tier that wins, in the SAME precedence order as
+     * {@link #readPropertyHierarchically}: system property &gt; properties file &gt;
+     * environment variable &gt; default. No I/O or global-state reads — used by both the
+     * live {@link #resolveEffectiveSource(String, String)} and the tests.
+     */
+    static String resolveEffectiveSource(String systemPropertyValue, String propertiesFileValue, String environmentVariableValue) {
+        if (isNotBlank(systemPropertyValue)) {
+            return SOURCE_SYSTEM_PROPERTY;
+        }
+        if (isNotBlank(propertiesFileValue)) {
+            return SOURCE_PROPERTIES_FILE;
+        }
+        if (isNotBlank(environmentVariableValue)) {
+            return SOURCE_ENVIRONMENT_VARIABLE;
+        }
+        return SOURCE_DEFAULT;
+    }
+
+    /**
+     * Returns the value an explicitly-set property would resolve to, reading the SAME
+     * tiers in the SAME order as {@link #readPropertyHierarchically} but without touching
+     * the property cache. Returns {@code null} when the key is at its built-in default
+     * (the typed default is computed at the individual read sites, so it is reported as
+     * {@code (default)} rather than guessed here).
+     */
+    private static String resolveExplicitValue(String systemPropertyKey, String environmentVariableKey) {
+        return resolveExplicitValue(
+            System.getProperty(systemPropertyKey),
+            PROPERTIES != null ? PROPERTIES.getProperty(systemPropertyKey) : null,
+            isNotBlank(environmentVariableKey) ? System.getenv(environmentVariableKey) : null
+        );
+    }
+
+    /**
+     * Pure value-resolution mirroring {@link #resolveEffectiveSource(String, String, String)}:
+     * returns the first non-blank tier value (system property &gt; properties file &gt;
+     * environment variable), or {@code null} for a default. Strips surrounding quotes exactly
+     * as {@link #readPropertyHierarchically} does so the reported value matches what MockServer
+     * actually uses.
+     */
+    static String resolveExplicitValue(String systemPropertyValue, String propertiesFileValue, String environmentVariableValue) {
+        String value = null;
+        if (isNotBlank(systemPropertyValue)) {
+            value = systemPropertyValue;
+        } else if (isNotBlank(propertiesFileValue)) {
+            value = propertiesFileValue;
+        } else if (isNotBlank(environmentVariableValue)) {
+            value = environmentVariableValue;
+        }
+        if (value == null) {
+            return null;
+        }
+        if (value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.replaceAll("^\"|\"$", "");
+        }
+        return value;
+    }
+
+    /**
+     * The effective configuration: one {@link ResolvedProperty} per recognised
+     * {@code mockserver.*} property, sorted by name, with sensitive values redacted.
+     * Properties at their built-in default report a {@code (default)} value and the
+     * {@link #SOURCE_DEFAULT} source.
+     *
+     * <p>Cache-first, exactly like {@link #readPropertyHierarchically}: if the in-memory property
+     * cache holds a value for a key (populated by a programmatic setter or by a first read), that
+     * is the value MockServer actually uses and is what is reported. When that cached value also
+     * resolves from one of the static tiers, the originating tier is reported; otherwise it is a
+     * runtime override ({@link #SOURCE_RUNTIME_SET}). Purely observational — reads the cache and
+     * the tiers but never mutates them and never changes how any value resolves.</p>
+     */
+    public static List<ResolvedProperty> effectiveConfiguration() {
+        Map<String, String> cache = getPropertyCache();
+        // Build (systemPropertyKey -> environmentVariableKey) pairs from the MOCKSERVER_*
+        // constants: the constant VALUE is the mockserver.* key and the constant NAME is
+        // the literal MOCKSERVER_* environment-variable key (see enumerateRecognisedKeys()).
+        Map<String, String> systemPropertyKeyToEnvKey = new TreeMap<>();
+        for (Field field : ConfigurationProperties.class.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers())
+                && Modifier.isFinal(field.getModifiers())
+                && field.getType() == String.class
+                && field.getName().startsWith("MOCKSERVER_")) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(null);
+                    if (value instanceof String && ((String) value).startsWith("mockserver.")) {
+                        systemPropertyKeyToEnvKey.put((String) value, field.getName());
+                    }
+                } catch (Throwable throwable) {
+                    // Skip a single inaccessible constant rather than failing the whole report.
+                }
+            }
+        }
+
+        List<ResolvedProperty> resolved = new ArrayList<>();
+        for (Map.Entry<String, String> entry : systemPropertyKeyToEnvKey.entrySet()) {
+            String systemPropertyKey = entry.getKey();
+            String environmentVariableKey = entry.getValue();
+
+            // The cache is what readPropertyHierarchically returns first, so it is authoritative.
+            String cachedValue = cache.get(systemPropertyKey);
+            String tierSource = resolveEffectiveSource(systemPropertyKey, environmentVariableKey);
+            String tierValue = resolveExplicitValue(systemPropertyKey, environmentVariableKey);
+
+            String source;
+            String resolvedValue;
+            if (cachedValue != null) {
+                // A cached value is in effect. Attribute it to the originating tier when the tier
+                // resolution agrees; otherwise it is a programmatic runtime override.
+                resolvedValue = cachedValue;
+                source = cachedValue.equals(tierValue) && !SOURCE_DEFAULT.equals(tierSource)
+                    ? tierSource
+                    : SOURCE_RUNTIME_SET;
+            } else if (SOURCE_DEFAULT.equals(tierSource)) {
+                resolvedValue = null;
+                source = SOURCE_DEFAULT;
+            } else {
+                resolvedValue = tierValue;
+                source = tierSource;
+            }
+
+            String value;
+            if (resolvedValue == null) {
+                value = "(default)";
+            } else if (isSensitivePropertyName(systemPropertyKey)) {
+                value = REDACTED_VALUE;
+            } else {
+                value = resolvedValue;
+            }
+            resolved.add(new ResolvedProperty(systemPropertyKey, value, source));
+        }
+        return resolved;
+    }
+
+    /**
+     * Renders the effective configuration as plain text — one
+     * {@code name = value   [source]} line per property — suitable for the
+     * {@code --print-config} CLI flag.
+     */
+    public static String effectiveConfigurationAsText() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("MockServer effective configuration (value and the source that supplied it):").append(NEW_LINE);
+        for (ResolvedProperty property : effectiveConfiguration()) {
+            builder.append("  ")
+                .append(property.getName())
+                .append(" = ")
+                .append(property.getValue())
+                .append("   [")
+                .append(property.getSource())
+                .append("]")
+                .append(NEW_LINE);
+        }
+        return builder.toString();
+    }
+
+    /**
+     * Renders the effective configuration as a JSON array of
+     * {@code {"name":..,"value":..,"source":..}} objects, suitable for the
+     * {@code GET /mockserver/config} control-plane endpoint. Hand-built (rather than via
+     * Jackson) to keep this diagnostic free of serialization-configuration coupling and
+     * usable from the lowest module layers.
+     */
+    public static String effectiveConfigurationAsJson() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("[");
+        List<ResolvedProperty> properties = effectiveConfiguration();
+        for (int i = 0; i < properties.size(); i++) {
+            ResolvedProperty property = properties.get(i);
+            if (i > 0) {
+                builder.append(",");
+            }
+            builder.append("{\"name\":\"").append(jsonEscape(property.getName()))
+                .append("\",\"value\":\"").append(jsonEscape(property.getValue()))
+                .append("\",\"source\":\"").append(jsonEscape(property.getSource()))
+                .append("\"}");
+        }
+        builder.append("]");
+        return builder.toString();
+    }
+
+    private static String jsonEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            switch (character) {
+                case '"':
+                    escaped.append("\\\"");
+                    break;
+                case '\\':
+                    escaped.append("\\\\");
+                    break;
+                case '\n':
+                    escaped.append("\\n");
+                    break;
+                case '\r':
+                    escaped.append("\\r");
+                    break;
+                case '\t':
+                    escaped.append("\\t");
+                    break;
+                default:
+                    if (character < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) character));
+                    } else {
+                        escaped.append(character);
+                    }
+            }
+        }
+        return escaped.toString();
+    }
 }

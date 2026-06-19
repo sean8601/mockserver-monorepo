@@ -6,6 +6,7 @@ import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.closurecallback.websocketregistry.LocalCallbackRegistry;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.cors.CORSHeaders;
 import org.mockserver.file.FileStore;
 import org.mockserver.grpc.GrpcProtoDescriptorStore;
@@ -2511,6 +2512,16 @@ public class HttpState {
             if (request.matches("GET", PATH_PREFIX + "/clock", "/clock")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, handleClockGet(), true);
+                }
+                return true;
+            }
+            if (request.matches("GET", PATH_PREFIX + "/config", "/config")) {
+                // Effective configuration: each property's resolved value and the source tier that
+                // supplied it, with sensitive values redacted (mirrors the --print-config CLI flag).
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, response()
+                        .withStatusCode(OK.code())
+                        .withBody(ConfigurationProperties.effectiveConfigurationAsJson(), MediaType.JSON_UTF_8)), true);
                 }
                 return true;
             }

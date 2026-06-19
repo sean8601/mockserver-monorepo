@@ -49,6 +49,10 @@ flowchart TD
 
 `ui`, `proxy` and `openapi` are thin wrappers: they construct a `RunCommand` instance, populate the relevant fields (including any `-D` system properties), and call `runCmd.run()`. All actual wiring of `ConfigurationProperties` and server startup lives in `RunCommand`. `ui` additionally opens `http://localhost:<firstPort>/mockserver/dashboard` after startup (only when the server actually started).
 
+### `--print-config` (top-level diagnostic)
+
+`Main.main()` scans the raw arguments for `--print-config` **before** picocli parsing (the same place the legacy `-help`/`-version` single-dash forms are normalised) and, if present, prints the effective configuration and exits without starting a server. The output comes from `ConfigurationProperties.effectiveConfigurationAsText()`: one `name = value   [source]` line per recognised `mockserver.*` property, where `source` is the winning tier (`system-property`, `properties-file`, `environment-variable`, `default`, or `runtime-set` for a value applied at runtime via a programmatic setter). Properties at their built-in default show `(default)`; sensitive values are redacted via the existing `isSensitivePropertyName(...)` check. The reporting is purely observational and **cache-first**, matching `readPropertyHierarchically(...)`: `effectiveConfiguration()` reads the in-memory property cache first (the value the server actually uses) and falls back to `resolveEffectiveSource(...)` / `resolveExplicitValue(...)`, which inspect the same tiers in the same precedence order. It never mutates the cache or changes resolution. The same report is exposed as JSON (`effectiveConfigurationAsJson()`) by the authenticated `GET /mockserver/config` control-plane endpoint in `HttpState.handle()`.
+
 ## Options reference
 
 ### `run` subcommand

@@ -595,6 +595,11 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 			<td><a href="/mock_server/configuration_properties.html#button_configuration_validate_proxy_enforce"><span class="inline_code">mockserver.validateProxyEnforce</span></a></td>
 		</tr>
 		<tr>
+			<td><span class="inline_code">--print-config</span></td>
+			<td>Print the effective configuration and exit. Each known property is listed as <span class="inline_code">name = value   [source]</span>, where <span class="inline_code">source</span> is the tier that supplied the value &mdash; <span class="inline_code">system-property</span>, <span class="inline_code">properties-file</span>, <span class="inline_code">environment-variable</span>, <span class="inline_code">default</span>, or <span class="inline_code">runtime-set</span> (a value applied at runtime in Java code) &mdash; so you can see exactly which value MockServer will use and where it came from. Properties left at their built-in default show <span class="inline_code">(default)</span>. Sensitive values (passwords, API keys, tokens, secrets, private keys, credentials) are redacted as <span class="inline_code">***REDACTED***</span>. The same report is available at runtime as JSON from the authenticated <span class="inline_code">GET /mockserver/config</span> control-plane endpoint.</td>
+			<td>&mdash;</td>
+		</tr>
+		<tr>
 			<td><span class="inline_code">-h, --help</span></td>
 			<td>Print usage and exit.</td>
 			<td>—</td>

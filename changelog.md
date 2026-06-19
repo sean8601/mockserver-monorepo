@@ -52,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mock_server_cluster_members` (read live at scrape time, `1` for single-node) exports the member count when
   metrics are enabled. Backed by a new `StateBackend.clusterInfo()` SPI method with a degenerate default
   implementation and a real Infinispan implementation.
+- **Effective-configuration diagnostic (`--print-config`)**: the command-line launcher now accepts a
+  `--print-config` flag that prints the effective configuration and exits, listing each known property as
+  `name = value   [source]` where `source` is the tier that supplied the value (`system-property`,
+  `properties-file`, `environment-variable`, `default`, or `runtime-set` for a value applied at runtime via a
+  programmatic setter). Properties left at their built-in default show `(default)`, and sensitive values
+  (passwords, API keys, tokens, secrets, private keys, credentials) are redacted as `***REDACTED***` via the
+  existing sensitive-name detection. The same report is available at runtime as JSON from the authenticated
+  `GET /mockserver/config` control-plane endpoint. Source reporting is purely observational — it reads the
+  in-memory property cache first (exactly as the real resolution does) and then the same tiers in the same
+  precedence order, without mutating any state or changing how any value resolves.
 - **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
   containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
   schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched

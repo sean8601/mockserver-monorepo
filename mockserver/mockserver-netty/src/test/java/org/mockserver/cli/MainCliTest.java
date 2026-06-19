@@ -280,6 +280,88 @@ public class MainCliTest {
         }
     }
 
+    // ---- --print-config (effective configuration diagnostic) ----
+
+    @Test
+    public void shouldPrintEffectiveConfigWithSourceAndRedactSecrets() throws Exception {
+        PrintStream originalOut = Main.systemOut;
+        String previousNonSensitive = System.getProperty("mockserver.maxExpectations");
+        String previousSensitive = System.getProperty("mockserver.llmApiKey");
+        // effectiveConfiguration is cache-first; a prior test may have cached maxExpectations, which
+        // would otherwise win over the system property set below. Clear the cache entries so the
+        // system-property tier is authoritative, and restore them afterwards.
+        String previousCachedNonSensitive = getPropertyCacheEntry("mockserver.maxExpectations");
+        String previousCachedSensitive = getPropertyCacheEntry("mockserver.llmApiKey");
+        try {
+            clearPropertyCacheEntry("mockserver.maxExpectations");
+            clearPropertyCacheEntry("mockserver.llmApiKey");
+            System.setProperty("mockserver.maxExpectations", "4242");
+            System.setProperty("mockserver.llmApiKey", "super-secret-cli-value");
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            // --print-config must print the effective config and exit WITHOUT starting a server,
+            // so no port is needed and no MockServer is left running.
+            Main.main("--print-config");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("non-sensitive key shows value and system-property source",
+                output, containsString("mockserver.maxExpectations = 4242   [system-property]"));
+            assertThat("sensitive key is redacted with its source still reported",
+                output, containsString("mockserver.llmApiKey = ***REDACTED***   [system-property]"));
+            assertThat("secret value must never be printed",
+                output, not(containsString("super-secret-cli-value")));
+            assertThat("a never-set key reports the built-in default",
+                output, containsString("[default]"));
+        } finally {
+            Main.systemOut = originalOut;
+            restorePropertyCacheEntry("mockserver.maxExpectations", previousCachedNonSensitive);
+            restorePropertyCacheEntry("mockserver.llmApiKey", previousCachedSensitive);
+            if (previousNonSensitive != null) {
+                System.setProperty("mockserver.maxExpectations", previousNonSensitive);
+            } else {
+                System.clearProperty("mockserver.maxExpectations");
+            }
+            if (previousSensitive != null) {
+                System.setProperty("mockserver.llmApiKey", previousSensitive);
+            } else {
+                System.clearProperty("mockserver.llmApiKey");
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, String> propertyCache() throws Exception {
+        java.lang.reflect.Field cacheField = ConfigurationProperties.class.getDeclaredField("propertyCache");
+        cacheField.setAccessible(true);
+        Object cache = cacheField.get(null);
+        return cache instanceof java.util.Map ? (java.util.Map<String, String>) cache : null;
+    }
+
+    private static String getPropertyCacheEntry(String key) throws Exception {
+        java.util.Map<String, String> cache = propertyCache();
+        return cache != null ? cache.get(key) : null;
+    }
+
+    private static void clearPropertyCacheEntry(String key) throws Exception {
+        java.util.Map<String, String> cache = propertyCache();
+        if (cache != null) {
+            cache.remove(key);
+        }
+    }
+
+    private static void restorePropertyCacheEntry(String key, String previousValue) throws Exception {
+        java.util.Map<String, String> cache = propertyCache();
+        if (cache != null) {
+            if (previousValue != null) {
+                cache.put(key, previousValue);
+            } else {
+                cache.remove(key);
+            }
+        }
+    }
+
     // ---- OpenAPI --init and --persist wire into ConfigurationProperties ----
 
     @Test
