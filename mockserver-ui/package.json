@@ -54,6 +54,7 @@
     "not op_mini all"
   ],
   "overrides": {
-    "@babel/core": "^7.29.6"
+    "@babel/core": "^7.29.6",
+    "dompurify": "^3.4.11"
   }
 }

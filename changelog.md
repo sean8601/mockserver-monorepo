@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Dashboard UI (`mockserver-ui`): forced the transitive `dompurify` dependency to `3.4.11`** via an npm
+  `overrides` entry, resolving all 16 open Dependabot advisories. The `monaco-editor` body-matcher editor
+  (added recently) bundles a pinned `dompurify@3.2.7`; the override hoists every copy to `3.4.11`. Advisories
+  cleared (mostly mXSS / DoM-clobbering / prototype-pollution in DOMPurify's HTML sanitiser): GHSA-cmwh-pvxp-8882,
+  GHSA-vxr8-fq34-vvx9, GHSA-gvmj-g25r-r7wr, GHSA-rp9w-3fw7-7cwq, GHSA-x4vx-rjvf-j5p4, GHSA-76mc-f452-cxcm,
+  GHSA-hpcv-96wg-7vj8, GHSA-r47g-fvhr-h676, GHSA-h7mw-gpvr-xq4m, GHSA-crv5-9vww-q3g8, GHSA-v9jr-rg53-9pgp,
+  GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
+
 ### Added
 - **LLM optimisation export**: proxy your agent's LLM calls through MockServer, then export a one-click
   **optimisation brief** (Markdown, pre-framed for any LLM) or structured **JSON bundle**
