@@ -16,6 +16,7 @@ import org.mockserver.grpc.GrpcBidiRuleMatcher;
 import org.mockserver.grpc.GrpcFrameCodec;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcStatusMapper;
+import org.mockserver.grpc.GrpcStreamMessageTemplateRenderer;
 import org.mockserver.grpc.IncrementalGrpcFrameDecoder;
 import org.mockserver.mock.breakpoint.PausedStreamFrame;
 import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
@@ -88,6 +89,10 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
 
     // Phase 3b mode: GrpcBidiResponse-driven
     private final GrpcBidiResponse config;
+
+    // Renders bidi response messages, applying optional per-message response templating against
+    // the matched inbound message. Static (no templateType) messages pass through unchanged.
+    private final GrpcStreamMessageTemplateRenderer templateRenderer;
 
     // Completion callback: invoked exactly once when the stream finishes (normal or error)
     // or when the channel becomes inactive (client disconnect / abandoned stream).
@@ -264,6 +269,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         this.decoder = decoder;
         this.completionCallback = completionCallback;
         this.configuration = configuration;
+        this.templateRenderer = new GrpcStreamMessageTemplateRenderer(null, configuration);
         this.inboundStreamId = inboundStreamId;
         this.webSocketClientRegistry = webSocketClientRegistry;
         this.finished = false;
@@ -331,9 +337,11 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
 
             ctx.writeAndFlush(new DefaultHttp2HeadersFrame(responseHeaders, false));
 
-            // Send eager messages if configured (Phase 3b), honouring per-message delay
+            // Send eager messages if configured (Phase 3b), honouring per-message delay.
+            // Eager messages have no matched inbound message, so templating (if enabled on an
+            // eager message) renders against an empty request body.
             if (config != null && config.getMessages() != null && !config.getMessages().isEmpty()) {
-                scheduleMessages(config.getMessages(), 0, ctx, () -> {
+                scheduleMessages(config.getMessages(), 0, ctx, null, () -> {
                     if (headersFrame.isEndStream()) {
                         finish(ctx);
                     } else {
@@ -514,7 +522,7 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         for (GrpcBidiRule rule : config.getRules()) {
             if (matchesRule(rule, inboundJson)) {
                 if (rule.getResponses() != null && !rule.getResponses().isEmpty()) {
-                    scheduleMessages(rule.getResponses(), 0, ctx, afterResponses);
+                    scheduleMessages(rule.getResponses(), 0, ctx, inboundJson, afterResponses);
                 } else {
                     afterResponses.run();
                 }
@@ -546,8 +554,11 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
      * <p>
      * Mirrors the recursive scheduling pattern of
      * {@link org.mockserver.mock.action.http.GrpcStreamResponseActionHandler#scheduleMessages}.
+     * <p>
+     * {@code inboundJson} is the matched inbound message (null for eager messages); it is passed to
+     * the template renderer so a templated response can echo/derive fields from the request.
      */
-    private void scheduleMessages(List<GrpcStreamMessage> messages, int index, ChannelHandlerContext ctx, Runnable afterAll) {
+    private void scheduleMessages(List<GrpcStreamMessage> messages, int index, ChannelHandlerContext ctx, String inboundJson, Runnable afterAll) {
         if (index >= messages.size()) {
             afterAll.run();
             return;
@@ -557,15 +568,31 @@ public class GrpcBidiStreamHandler extends ChannelInboundHandlerAdapter {
         long delayMillis = (delay != null) ? delay.sampleValueMillis() : 0;
 
         Runnable writeAndContinue = () -> {
-            writeGrpcMessage(ctx, message.getJson());
-            scheduleMessages(messages, index + 1, ctx, afterAll);
+            writeGrpcMessage(ctx, message, inboundJson);
+            scheduleMessages(messages, index + 1, ctx, inboundJson, afterAll);
         };
 
         if (delayMillis > 0) {
-            ctx.executor().schedule(writeAndContinue, delayMillis, TimeUnit.MILLISECONDS);
+            // Netty does NOT route exceptions thrown by a scheduled task to exceptionCaught,
+            // so a render/toProtobuf failure here would otherwise escape silently and leave the
+            // stream hanging with no grpc-status trailer. Wrap the scheduled body so any failure
+            // terminates the stream cleanly with an INTERNAL trailer (which also runs the
+            // completion-callback bookkeeping via writeTrailer).
+            ctx.executor().schedule(() -> {
+                try {
+                    writeAndContinue.run();
+                } catch (Exception e) {
+                    writeTrailer(ctx, GrpcStatusMapper.GrpcStatusCode.INTERNAL,
+                        e.getMessage() != null ? e.getMessage() : "internal error");
+                }
+            }, delayMillis, TimeUnit.MILLISECONDS);
         } else {
             writeAndContinue.run();
         }
+    }
+
+    private void writeGrpcMessage(ChannelHandlerContext ctx, GrpcStreamMessage message, String inboundJson) {
+        writeGrpcMessage(ctx, templateRenderer.render(message, inboundJson));
     }
 
     private void writeGrpcMessage(ChannelHandlerContext ctx, String json) {

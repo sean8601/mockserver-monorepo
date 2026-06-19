@@ -13,6 +13,7 @@ import org.mockserver.grpc.GrpcException;
 import org.mockserver.grpc.GrpcFrameCodec;
 import org.mockserver.grpc.GrpcJsonMessageConverter;
 import org.mockserver.grpc.GrpcStatusMapper;
+import org.mockserver.grpc.GrpcStreamMessageTemplateRenderer;
 import org.mockserver.grpc.IncrementalGrpcFrameDecoder;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -93,6 +94,9 @@ public class Http3GrpcBidiStreamHandler {
     private final Runnable completionCallback;
     private final MockServerLogger mockServerLogger;
     private final IncrementalGrpcFrameDecoder decoder = new IncrementalGrpcFrameDecoder();
+    // Renders bidi response messages, applying optional per-message response templating against
+    // the matched inbound message. Static (no templateType) messages pass through unchanged.
+    private final GrpcStreamMessageTemplateRenderer templateRenderer;
 
     private boolean finished;
     private boolean inputClosed;
@@ -163,6 +167,7 @@ public class Http3GrpcBidiStreamHandler {
         this.completionCallback = completionCallback;
         this.mockServerLogger = mockServerLogger;
         this.configuration = configuration;
+        this.templateRenderer = new GrpcStreamMessageTemplateRenderer(mockServerLogger, configuration);
         this.inboundStreamId = inboundStreamId;
         this.inboundBreakpointClientId = inboundBreakpointClientId;
         this.inboundBreakpointId = inboundBreakpointId;
@@ -181,12 +186,26 @@ public class Http3GrpcBidiStreamHandler {
 
         long actionDelayMillis = (config.getDelay() != null) ? config.getDelay().sampleValueMillis() : 0;
         activeChains++; // startup (eager) chain in progress
-        Runnable emitEager = () -> emitSequential(config.getMessages(), 0, () -> {
+        // Eager messages have no matched inbound message, so templating (if enabled on an eager
+        // message) renders against an empty request body.
+        Runnable emitEager = () -> emitSequential(config.getMessages(), 0, null, () -> {
             activeChains--;
             maybeFinish();
         });
         if (actionDelayMillis > 0) {
-            ctx.executor().schedule(emitEager, actionDelayMillis, TimeUnit.MILLISECONDS);
+            // A scheduled task's exception is NOT routed to exceptionCaught by Netty, so guard the
+            // scheduled eager emit: on failure write an INTERNAL trailer and still run the chain
+            // bookkeeping (activeChains--) so the stream terminates instead of hanging.
+            ctx.executor().schedule(() -> {
+                try {
+                    emitEager.run();
+                } catch (Exception e) {
+                    writeErrorTrailer(GrpcStatusMapper.GrpcStatusCode.INTERNAL,
+                        e.getMessage() != null ? e.getMessage() : "internal error");
+                    activeChains--;
+                    maybeFinish();
+                }
+            }, actionDelayMillis, TimeUnit.MILLISECONDS);
         } else {
             emitEager.run();
         }
@@ -227,7 +246,7 @@ public class Http3GrpcBidiStreamHandler {
                 List<GrpcStreamMessage> responses = firstMatchingResponses(inboundJson);
                 if (responses != null && !responses.isEmpty()) {
                     activeChains++;
-                    emitSequential(responses, 0, () -> {
+                    emitSequential(responses, 0, inboundJson, () -> {
                         activeChains--;
                         maybeFinish();
                     });
@@ -403,7 +422,7 @@ public class Http3GrpcBidiStreamHandler {
      * Emit a list of messages sequentially, honouring per-message {@link Delay}, then run
      * {@code onDone}. Chaining preserves ordering even when delays differ.
      */
-    private void emitSequential(List<GrpcStreamMessage> messages, int index, Runnable onDone) {
+    private void emitSequential(List<GrpcStreamMessage> messages, int index, String inboundJson, Runnable onDone) {
         if (messages == null || index >= messages.size() || !ctx.channel().isActive()) {
             onDone.run();
             return;
@@ -411,11 +430,24 @@ public class Http3GrpcBidiStreamHandler {
         GrpcStreamMessage message = messages.get(index);
         long delayMillis = (message.getDelay() != null) ? message.getDelay().sampleValueMillis() : 0;
         Runnable writeNext = () -> {
-            writeResponseMessage(message.getJson());
-            emitSequential(messages, index + 1, onDone);
+            writeResponseMessage(templateRenderer.render(message, inboundJson));
+            emitSequential(messages, index + 1, inboundJson, onDone);
         };
         if (delayMillis > 0) {
-            ctx.executor().schedule(writeNext, delayMillis, TimeUnit.MILLISECONDS);
+            // Netty does NOT route exceptions thrown by a scheduled task to exceptionCaught,
+            // so a render/toProtobuf failure here would otherwise escape silently and leave the
+            // stream hanging with no grpc-status trailer (and with activeChains never decremented).
+            // Wrap the scheduled body so any failure writes an INTERNAL trailer and still runs the
+            // chain bookkeeping (onDone -> activeChains--), terminating the stream cleanly.
+            ctx.executor().schedule(() -> {
+                try {
+                    writeNext.run();
+                } catch (Exception e) {
+                    writeErrorTrailer(GrpcStatusMapper.GrpcStatusCode.INTERNAL,
+                        e.getMessage() != null ? e.getMessage() : "internal error");
+                    onDone.run();
+                }
+            }, delayMillis, TimeUnit.MILLISECONDS);
         } else {
             writeNext.run();
         }

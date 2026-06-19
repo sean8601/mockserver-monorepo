@@ -1038,4 +1038,55 @@ public class JsonSchemaExpectationValidatorTest {
             "  }" + NEW_LINE +
             "}"), is(not("")));
     }
+
+    @Test
+    public void shouldValidateGrpcBidiResponseWithTemplatedEagerMessages() {
+        // when — a bidi response with a templateType on an eager message (WS2.6) validates against the schema
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/grpc.Service/BidiStream\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"grpcBidiResponse\" : {" + NEW_LINE +
+            "    \"messages\" : [ {" + NEW_LINE +
+            "      \"json\" : \"{ \\\"text\\\": \\\"$!request.body\\\" }\"," + NEW_LINE +
+            "      \"templateType\" : \"VELOCITY\"" + NEW_LINE +
+            "    } ]" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldValidateGrpcBidiResponseWithTemplatedRuleResponses() {
+        // when — a bidi response with a templateType on a rule response message (WS2.6) validates against the schema
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/grpc.Service/BidiStream\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"grpcBidiResponse\" : {" + NEW_LINE +
+            "    \"rules\" : [ {" + NEW_LINE +
+            "      \"matchJson\" : \"{ \\\"name\\\": \\\"ping\\\" }\"," + NEW_LINE +
+            "      \"responses\" : [ {" + NEW_LINE +
+            "        \"json\" : \"{ \\\"reply\\\": \\\"{{ request.body }}\\\" }\"," + NEW_LINE +
+            "        \"templateType\" : \"MUSTACHE\"" + NEW_LINE +
+            "      } ]" + NEW_LINE +
+            "    } ]" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
+    public void shouldRejectGrpcBidiResponseWithUnknownTemplateType() {
+        // when — an unknown templateType is rejected by the schema enum
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/grpc.Service/BidiStream\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"grpcBidiResponse\" : {" + NEW_LINE +
+            "    \"messages\" : [ {" + NEW_LINE +
+            "      \"json\" : \"{ }\"," + NEW_LINE +
+            "      \"templateType\" : \"NOT_A_REAL_TEMPLATE\"" + NEW_LINE +
+            "    } ]" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(not("")));
+    }
 }
