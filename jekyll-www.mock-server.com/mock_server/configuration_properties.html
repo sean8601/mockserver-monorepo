@@ -990,6 +990,88 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolIdleTimeoutMillis="60000"</code></pre>
 </div>
 
+<button id="button_configuration_forward_proxy_retry_count" class="accordion title"><strong>Retry Forwarded Requests On Transient Failure</strong></button>
+<div class="panel title">
+    <p>The maximum number of times MockServer retries a forwarded or proxied request to an upstream after a transient failure — a connection error (refused/reset), a timeout, or an upstream response of 502, 503 or 504. Retries reduce flakiness when the real upstream is briefly unavailable.</p>
+    <p>To avoid executing a request twice, only requests using an <span class="inline_code">idempotent</span> HTTP method (GET, HEAD, OPTIONS, PUT, DELETE, TRACE) are retried; non-idempotent methods (POST, PATCH) are never retried. The default (0) forwards each request exactly once, unchanged from previous behaviour.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">0</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardProxyRetryCount(int retryCount)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyRetryCount=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_PROXY_RETRY_COUNT=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardProxyRetryCount=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyRetryCount="3"</code></pre>
+</div>
+
+<button id="button_configuration_forward_proxy_retry_backoff_millis" class="accordion title"><strong>Retry Back-Off In Millis</strong></button>
+<div class="panel title">
+    <p>The base back-off in milliseconds applied between forward/proxy retry attempts. The delay grows linearly with the attempt number (the first retry waits one base delay, the second waits two, and so on) so a flaky upstream is not hammered. Set to 0 to retry immediately. Only relevant when <span class="inline_code">forwardProxyRetryCount</span> is greater than 0.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">100</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardProxyRetryBackoffMillis(long backoffMillis)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyRetryBackoffMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardProxyRetryBackoffMillis=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyRetryBackoffMillis="250"</code></pre>
+</div>
+
+<button id="button_configuration_forward_proxy_circuit_breaker_enabled" class="accordion title"><strong>Upstream Circuit Breaker</strong></button>
+<div class="panel title">
+    <p>By default every forwarded or proxied request is attempted against its upstream, however many previous requests failed. Enable this setting to add a per-upstream circuit breaker (keyed by host and port): after <span class="inline_code">forwardProxyCircuitBreakerFailureThreshold</span> consecutive failures to one upstream the breaker trips <strong>open</strong> and subsequent requests fail fast with a 503 for <span class="inline_code">forwardProxyCircuitBreakerWindowMillis</span> milliseconds, instead of waiting on a dead upstream. After the window a single trial request is allowed through (half-open); a success closes the breaker, a failure re-opens it for another window.</p>
+    <p>When metrics are enabled the number of currently-open upstreams is exported as the <span class="inline_code">mock_server_upstream_circuit_open</span> Prometheus gauge. The default (off) is unchanged from previous behaviour.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardProxyCircuitBreakerEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyCircuitBreakerEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_ENABLED=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardProxyCircuitBreakerEnabled=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyCircuitBreakerEnabled="true"</code></pre>
+</div>
+
+<button id="button_configuration_forward_proxy_circuit_breaker_failure_threshold" class="accordion title"><strong>Circuit Breaker Failure Threshold</strong></button>
+<div class="panel title">
+    <p>The number of consecutive failures to a single upstream (host and port) that trips the forward/proxy circuit breaker open. Only relevant when <span class="inline_code">forwardProxyCircuitBreakerEnabled</span> is true. Values below 1 are treated as 1.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">5</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold(int failureThreshold)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyCircuitBreakerFailureThreshold=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardProxyCircuitBreakerFailureThreshold=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyCircuitBreakerFailureThreshold="10"</code></pre>
+</div>
+
+<button id="button_configuration_forward_proxy_circuit_breaker_window_millis" class="accordion title"><strong>Circuit Breaker Open Window In Millis</strong></button>
+<div class="panel title">
+    <p>How long in milliseconds the forward/proxy circuit breaker stays open (failing requests fast with a 503) for an upstream before it transitions to half-open and lets a single trial request through. Only relevant when <span class="inline_code">forwardProxyCircuitBreakerEnabled</span> is true. Values below 1 are treated as 1.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">30000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis(long windowMillis)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyCircuitBreakerWindowMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardProxyCircuitBreakerWindowMillis=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardProxyCircuitBreakerWindowMillis="45000"</code></pre>
+</div>
+
 <button id="button_configuration_http_proxy" class="accordion title"><strong>HTTP Proxy For Forwarded Requests</strong></button>
 <div class="panel title">
     <p>Use HTTP proxy (i.e. via Host header) for all outbound / forwarded requests</p>

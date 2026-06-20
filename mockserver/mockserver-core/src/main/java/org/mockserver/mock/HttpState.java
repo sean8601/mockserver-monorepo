@@ -473,6 +473,7 @@ public class HttpState {
         org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
         org.mockserver.slo.SloSampleStore.getInstance().reset();
         org.mockserver.mock.action.http.LlmCostBudgetMonitor.getInstance().reset();
+        org.mockserver.mock.action.http.ForwardCircuitBreaker.getInstance().reset();
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.PreemptionSimulator.getInstance().reset();
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();

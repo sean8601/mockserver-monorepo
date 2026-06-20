@@ -438,6 +438,27 @@ Configuration via `HttpForwardWithFallback`:
 - `fallbackOnStatusCodes` -- list of status codes that trigger fallback (default: 500-599)
 - `fallbackOnTimeout` -- whether to fall back on connection errors/timeouts (default: true)
 
+### Forward Retry & Per-Upstream Circuit Breaker
+
+All matched FORWARD-class actions (`FORWARD`, `FORWARD_TEMPLATE`, `FORWARD_CLASS_CALLBACK`, `FORWARD_REPLACE`, `FORWARD_VALIDATE`, `FORWARD_WITH_FALLBACK`, `FORWARD_OBJECT_CALLBACK`) funnel through `HttpForwardAction.sendRequest(...)`, the single place that calls `NettyHttpClient`. Two **opt-in, default-off** resilience controls wrap that call so existing behaviour (forward exactly once, always attempt) is byte-for-byte unchanged unless configured.
+
+```mermaid
+flowchart TD
+    REQ([FORWARD-class action]) --> CB{"Circuit breaker open\nfor host:port?"}
+    CB -->|Yes enabled and open| FAST[503 fail fast]
+    CB -->|No or disabled| ATTEMPT[Attempt forward via NettyHttpClient]
+    ATTEMPT --> RES{"Transient failure?\nconn error / 502 / 503 / 504"}
+    RES -->|No| OK[Return response, record success]
+    RES -->|Yes, idempotent and retries left| BACKOFF[Linear back-off, retry]
+    BACKOFF --> ATTEMPT
+    RES -->|Yes, out of retries or non-idempotent| FAIL[Return failure, record failure]
+```
+
+- **Retry** (`ForwardRetryPolicy`, config `forwardProxyRetryCount` / `forwardProxyRetryBackoffMillis`): re-issues the upstream call up to *N* times when an attempt is a transient failure — a connection-level exception or an upstream **502/503/504**. Only **idempotent** methods (GET, HEAD, OPTIONS, PUT, DELETE, TRACE) are retried; POST/PATCH are never retried so a request is never executed twice. Retries are chained asynchronously off the response future (never blocking the event loop) with a linear back-off (`backoff × attemptNumber`). Default `forwardProxyRetryCount=0` = forward exactly once.
+- **Circuit breaker** (`ForwardCircuitBreaker`, config `forwardProxyCircuitBreakerEnabled` + threshold/window): a process-wide singleton keyed by upstream `host:port`. After `forwardProxyCircuitBreakerFailureThreshold` consecutive failures the breaker trips **open** and `sendRequest` fails fast with a 503 (no upstream attempt) for `forwardProxyCircuitBreakerWindowMillis`; then **half-open** admits a single trial request — a success closes it, a failure re-opens it. The retry policy and breaker compose: a request's final outcome (after any retries) feeds `recordSuccess`/`recordFailure`. The open-upstream count is exported as the `mock_server_upstream_circuit_open` gauge (see [metrics.md](metrics.md)) and reset on `HttpState.reset()`.
+
+The unmatched speculative-proxy path (`HttpActionHandler`, which calls `NettyHttpClient` directly) is intentionally **not** wrapped by these controls; they apply to matched forward expectations. Self-loopback relay and the HTTP/2/HTTP/3 forward paths are unaffected (the breaker only keys on a resolvable host, and retry only engages for idempotent methods when explicitly configured).
+
 ### Host Header Auto-Adjustment
 
 When forwarding requests via `FORWARD_REPLACE` or `FORWARD_TEMPLATE` actions, MockServer can automatically adjust the `Host` header to match the target server. This is controlled by the `forwardAdjustHostHeader` configuration property (default: `true`).

@@ -10,6 +10,7 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.action.http.ChaosAutoHaltMonitor;
+import org.mockserver.mock.action.http.ForwardCircuitBreaker;
 import org.mockserver.mock.action.http.ServiceChaosRegistry;
 import org.mockserver.model.Action;
 
@@ -209,6 +210,14 @@ public class Metrics {
                         .name("mock_server_cluster_members")
                         .help("Number of members in the MockServer cluster (1 for a single-node deployment)")
                         .callback(callback -> callback.call(getClusterMemberCount()))
+                        .register();
+                    // Callback gauge: number of upstreams whose forward/proxy circuit breaker is
+                    // currently open. Read live at scrape time so half-open recovery is reflected
+                    // without imperative plumbing. Always 0 when the breaker is disabled.
+                    GaugeWithCallback.builder()
+                        .name("mock_server_upstream_circuit_open")
+                        .help("Number of upstreams whose forward/proxy circuit breaker is currently open")
+                        .callback(callback -> callback.call(getOpenUpstreamCircuitCount()))
                         .register();
                     if (Boolean.TRUE.equals(configuration.metricsRequestDurationRouteLabels())) {
                         requestDurationByMethodSeconds = Histogram.builder()
@@ -828,6 +837,19 @@ public class Metrics {
             }
         }
         return 1;
+    }
+
+    /**
+     * Number of upstreams whose forward/proxy circuit breaker is currently open, backing the
+     * {@code mock_server_upstream_circuit_open} gauge. Reads the live {@link ForwardCircuitBreaker}
+     * registry at scrape time; returns 0 when the breaker is disabled or no upstream is open.
+     */
+    public static int getOpenUpstreamCircuitCount() {
+        try {
+            return ForwardCircuitBreaker.getInstance().openCircuitCount();
+        } catch (Exception ignored) {
+            return 0;
+        }
     }
 
     public void increment(Name name) {

@@ -62,6 +62,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auto-uncordons after a TTL — without stopping the JVM. Destructive RSTs feed the chaos auto-halt
   circuit-breaker (which now also clears the TCP chaos registry); graceful drain signals do not. Off by
   default; zero cost on the normal response path when inactive.
+- **Upstream forward retry policy and per-upstream circuit breaker** (`mockserver-core`). Matched
+  FORWARD-class actions can now retry transient upstream failures and fail fast on a dead upstream, both
+  **opt-in and off by default** (existing forward behaviour is unchanged). Retry (`forwardProxyRetryCount`,
+  `forwardProxyRetryBackoffMillis`) re-issues the upstream call on a connection error or a 502/503/504, but
+  only for idempotent methods (GET/HEAD/OPTIONS/PUT/DELETE/TRACE) so a request is never executed twice, with
+  a non-blocking linear back-off. The per-upstream circuit breaker (`forwardProxyCircuitBreakerEnabled`,
+  `forwardProxyCircuitBreakerFailureThreshold`, `forwardProxyCircuitBreakerWindowMillis`) trips open (fail-fast
+  503) after N consecutive failures to a `host:port`, then half-opens after a window to probe recovery. When
+  metrics are enabled the number of currently-open upstreams is exported as the new
+  `mock_server_upstream_circuit_open` Prometheus gauge. Healthy upstreams are evicted from the per-upstream
+  state on success so the breaker's memory stays bounded to currently-degraded upstreams. The breaker state
+  resets on `HttpState.reset()`. All five properties have the usual equivalent system-property /
+  environment-variable / property-file forms.
 - **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
   `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
   `closest match diff:` block for the specific sequence step that failed to match — listing which fields

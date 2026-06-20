@@ -147,6 +147,21 @@ Example PromQL (5xx rate per upstream):
 sum by (upstream_host) (rate(mock_server_forward_requests{status_class="5xx"}[5m]))
 ```
 
+### Upstream Circuit Breaker Gauge
+
+`mock_server_upstream_circuit_open` is a Prometheus `GaugeWithCallback` reporting the number of upstreams whose forward/proxy circuit breaker is currently **open** (open or half-open state). It backs the per-upstream circuit breaker (`ForwardCircuitBreaker`) that is enabled by `forwardProxyCircuitBreakerEnabled` (see [configuration-reference](configuration-reference.md)). Like the other callback gauges it reads live state at scrape time (`Metrics.getOpenUpstreamCircuitCount()` → `ForwardCircuitBreaker.getInstance().openCircuitCount()`), so half-open recovery is reflected without imperative plumbing. It is registered once when `metricsEnabled` is `true`, and reads **0** whenever the circuit breaker is disabled (the default) or no upstream is currently open.
+
+| Metric Name | Type | Labels | Description |
+|-------------|------|--------|-------------|
+| `mock_server_upstream_circuit_open` | GaugeWithCallback | — | Number of upstreams whose forward/proxy circuit breaker is currently open |
+
+A non-zero, sustained value means one or more upstreams are being failed fast (a 503 is returned without attempting the forward) because they crossed `forwardProxyCircuitBreakerFailureThreshold` consecutive failures. The breaker state is reset on `HttpState.reset()`.
+
+Example PromQL alert rule:
+```promql
+mock_server_upstream_circuit_open > 0
+```
+
 ### HTTP Chaos Fault Counter
 
 `mock_server_http_chaos_injected_total` is a Prometheus `Counter` with a `fault_type` label (values: `"drop"`, `"error"`, `"latency"`, `"truncate"`, `"malformed"`, `"slow"`, `"quota"`, `"graphql"`) that tracks every HTTP chaos fault injected by the chaos profile subsystem. It is registered once when `metricsEnabled` is `true`.

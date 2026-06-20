@@ -645,6 +645,101 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetForwardProxyRetryCount() {
+        int original = ConfigurationProperties.forwardProxyRetryCount();
+        try {
+            assertThat(configuration.forwardProxyRetryCount(), equalTo(0));
+
+            ConfigurationProperties.forwardProxyRetryCount(3);
+            assertThat(ConfigurationProperties.forwardProxyRetryCount(), equalTo(3));
+            assertThat(System.getProperty("mockserver.forwardProxyRetryCount"), equalTo("3"));
+            assertThat(configuration.forwardProxyRetryCount(), equalTo(3));
+            ConfigurationProperties.forwardProxyRetryCount(original);
+
+            configuration.forwardProxyRetryCount(5);
+            assertThat(configuration.forwardProxyRetryCount(), equalTo(5));
+        } finally {
+            ConfigurationProperties.forwardProxyRetryCount(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardProxyRetryBackoffMillis() {
+        long original = ConfigurationProperties.forwardProxyRetryBackoffMillis();
+        try {
+            assertThat(configuration.forwardProxyRetryBackoffMillis(), equalTo(100L));
+
+            ConfigurationProperties.forwardProxyRetryBackoffMillis(250L);
+            assertThat(ConfigurationProperties.forwardProxyRetryBackoffMillis(), equalTo(250L));
+            assertThat(System.getProperty("mockserver.forwardProxyRetryBackoffMillis"), equalTo("250"));
+            assertThat(configuration.forwardProxyRetryBackoffMillis(), equalTo(250L));
+            ConfigurationProperties.forwardProxyRetryBackoffMillis(original);
+
+            configuration.forwardProxyRetryBackoffMillis(75L);
+            assertThat(configuration.forwardProxyRetryBackoffMillis(), equalTo(75L));
+        } finally {
+            ConfigurationProperties.forwardProxyRetryBackoffMillis(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardProxyCircuitBreakerEnabled() {
+        boolean original = ConfigurationProperties.forwardProxyCircuitBreakerEnabled();
+        try {
+            assertThat(configuration.forwardProxyCircuitBreakerEnabled(), equalTo(false));
+
+            ConfigurationProperties.forwardProxyCircuitBreakerEnabled(true);
+            assertThat(ConfigurationProperties.forwardProxyCircuitBreakerEnabled(), equalTo(true));
+            assertThat(System.getProperty("mockserver.forwardProxyCircuitBreakerEnabled"), equalTo("true"));
+            assertThat(configuration.forwardProxyCircuitBreakerEnabled(), equalTo(true));
+            ConfigurationProperties.forwardProxyCircuitBreakerEnabled(original);
+
+            configuration.forwardProxyCircuitBreakerEnabled(true);
+            assertThat(configuration.forwardProxyCircuitBreakerEnabled(), equalTo(true));
+        } finally {
+            ConfigurationProperties.forwardProxyCircuitBreakerEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardProxyCircuitBreakerFailureThreshold() {
+        int original = ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold();
+        try {
+            assertThat(configuration.forwardProxyCircuitBreakerFailureThreshold(), equalTo(5));
+
+            ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold(10);
+            assertThat(ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold(), equalTo(10));
+            assertThat(System.getProperty("mockserver.forwardProxyCircuitBreakerFailureThreshold"), equalTo("10"));
+            assertThat(configuration.forwardProxyCircuitBreakerFailureThreshold(), equalTo(10));
+            ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold(original);
+
+            configuration.forwardProxyCircuitBreakerFailureThreshold(2);
+            assertThat(configuration.forwardProxyCircuitBreakerFailureThreshold(), equalTo(2));
+        } finally {
+            ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardProxyCircuitBreakerWindowMillis() {
+        long original = ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis();
+        try {
+            assertThat(configuration.forwardProxyCircuitBreakerWindowMillis(), equalTo(30_000L));
+
+            ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis(45_000L);
+            assertThat(ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis(), equalTo(45_000L));
+            assertThat(System.getProperty("mockserver.forwardProxyCircuitBreakerWindowMillis"), equalTo("45000"));
+            assertThat(configuration.forwardProxyCircuitBreakerWindowMillis(), equalTo(45_000L));
+            ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis(original);
+
+            configuration.forwardProxyCircuitBreakerWindowMillis(5_000L);
+            assertThat(configuration.forwardProxyCircuitBreakerWindowMillis(), equalTo(5_000L));
+        } finally {
+            ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetMatchersFailFast() {
         boolean original = ConfigurationProperties.matchersFailFast();
         try {

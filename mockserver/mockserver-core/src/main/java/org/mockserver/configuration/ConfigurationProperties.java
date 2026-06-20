@@ -100,6 +100,11 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED = "mockserver.forwardConnectionPoolEnabled";
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY = "mockserver.forwardConnectionPoolMaxIdlePerKey";
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS = "mockserver.forwardConnectionPoolIdleTimeoutMillis";
+    private static final String MOCKSERVER_FORWARD_PROXY_RETRY_COUNT = "mockserver.forwardProxyRetryCount";
+    private static final String MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS = "mockserver.forwardProxyRetryBackoffMillis";
+    private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_ENABLED = "mockserver.forwardProxyCircuitBreakerEnabled";
+    private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD = "mockserver.forwardProxyCircuitBreakerFailureThreshold";
+    private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS = "mockserver.forwardProxyCircuitBreakerWindowMillis";
     private static final String MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS = "mockserver.enforceResponseValidationForMocks";
 
     // socket
@@ -1552,6 +1557,98 @@ public class ConfigurationProperties {
      */
     public static void forwardConnectionPoolIdleTimeoutMillis(long idleTimeoutMillis) {
         setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS, "" + idleTimeoutMillis);
+    }
+
+    public static int forwardProxyRetryCount() {
+        return Math.max(0, readIntegerProperty(MOCKSERVER_FORWARD_PROXY_RETRY_COUNT, "MOCKSERVER_FORWARD_PROXY_RETRY_COUNT", 0));
+    }
+
+    /**
+     * The maximum number of times a forwarded or proxied request to an upstream is retried after a
+     * transient failure (connection refused, connection reset, timeout, or a 502/503/504 from the
+     * upstream). Only requests using an idempotent HTTP method (GET, HEAD, OPTIONS, PUT, DELETE,
+     * TRACE) are retried; non-idempotent methods (POST, PATCH) are never retried so a request is
+     * not silently executed twice.
+     * <p>
+     * Default is 0, which preserves the historical behaviour of forwarding each request exactly
+     * once with no retry. Negative values are treated as 0.
+     *
+     * @param retryCount maximum number of retries for idempotent forwarded/proxied requests, 0 to disable
+     */
+    public static void forwardProxyRetryCount(int retryCount) {
+        setProperty(MOCKSERVER_FORWARD_PROXY_RETRY_COUNT, "" + retryCount);
+    }
+
+    public static long forwardProxyRetryBackoffMillis() {
+        return Math.max(0L, readLongProperty(MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS, "MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS", 100L));
+    }
+
+    /**
+     * The base back-off in milliseconds applied between forward/proxy retry attempts. The delay
+     * grows linearly with the attempt number (attempt 1 waits one base delay, attempt 2 waits two,
+     * and so on) so a flaky upstream is not hammered. Only relevant when
+     * {@code forwardProxyRetryCount} is greater than 0.
+     * <p>
+     * Default is 100 ms. Set to 0 to retry immediately with no back-off. Negative values are
+     * treated as 0.
+     *
+     * @param backoffMillis base linear back-off in milliseconds between retry attempts, 0 to disable
+     */
+    public static void forwardProxyRetryBackoffMillis(long backoffMillis) {
+        setProperty(MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS, "" + backoffMillis);
+    }
+
+    public static boolean forwardProxyCircuitBreakerEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_ENABLED, "MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_ENABLED", "" + false));
+    }
+
+    /**
+     * If false (the default) every forwarded or proxied request is attempted against its upstream
+     * regardless of how many previous requests to that upstream failed, matching the historical
+     * behaviour. If true a per-upstream circuit breaker (keyed by host and port) trips open after
+     * {@code forwardProxyCircuitBreakerFailureThreshold} consecutive failures, failing subsequent
+     * requests fast with a 503 for {@code forwardProxyCircuitBreakerWindowMillis} milliseconds
+     * before allowing a single trial (half-open) request through. A successful trial closes the
+     * breaker; a failed trial re-opens it for another window.
+     *
+     * @param enable enable the per-upstream forward/proxy circuit breaker
+     */
+    public static void forwardProxyCircuitBreakerEnabled(boolean enable) {
+        setProperty(MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_ENABLED, "" + enable);
+    }
+
+    public static int forwardProxyCircuitBreakerFailureThreshold() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD, "MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", 5));
+    }
+
+    /**
+     * The number of consecutive failures to a single upstream (host and port) that trips the
+     * forward/proxy circuit breaker open. Only relevant when
+     * {@code forwardProxyCircuitBreakerEnabled} is true.
+     * <p>
+     * Default is 5. Values below 1 are treated as 1.
+     *
+     * @param failureThreshold consecutive failures that open the breaker for an upstream
+     */
+    public static void forwardProxyCircuitBreakerFailureThreshold(int failureThreshold) {
+        setProperty(MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD, "" + failureThreshold);
+    }
+
+    public static long forwardProxyCircuitBreakerWindowMillis() {
+        return Math.max(1L, readLongProperty(MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS, "MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS", 30_000L));
+    }
+
+    /**
+     * How long in milliseconds the forward/proxy circuit breaker stays open (failing requests fast
+     * with a 503) for an upstream before it transitions to half-open and lets a single trial
+     * request through. Only relevant when {@code forwardProxyCircuitBreakerEnabled} is true.
+     * <p>
+     * Default is 30,000 ms. Values below 1 are treated as 1.
+     *
+     * @param windowMillis open-state duration in milliseconds before a half-open trial
+     */
+    public static void forwardProxyCircuitBreakerWindowMillis(long windowMillis) {
+        setProperty(MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS, "" + windowMillis);
     }
 
     public static boolean enforceResponseValidationForMocks() {

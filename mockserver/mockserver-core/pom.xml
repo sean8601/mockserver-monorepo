@@ -613,6 +613,8 @@
                         <exclude>**/ConfigurationPropertiesEffectiveConfigGlobalStateTest.java</exclude>
                         <!-- Mutates mockserver.llmOptimisationMaxCalls / fixtureBodyRedactFields global config -->
                         <exclude>**/LlmOptimisationReportServiceTest.java</exclude>
+                        <!-- Resets the ForwardCircuitBreaker singleton (shared with the upstream_circuit_open gauge) -->
+                        <exclude>**/HttpForwardActionResilienceTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -707,6 +709,7 @@
                                 <include>**/HttpStateReadinessTest.java</include>
                                 <include>**/ConfigurationPropertiesEffectiveConfigGlobalStateTest.java</include>
                                 <include>**/LlmOptimisationReportServiceTest.java</include>
+                                <include>**/HttpForwardActionResilienceTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

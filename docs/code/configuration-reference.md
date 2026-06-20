@@ -58,6 +58,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | CORS | `enableCORSForAPI`, `enableCORSForAllResponses`, `corsAllowOrigin`, `corsAllowMethods`, `corsAllowHeaders`, `corsAllowCredentials` |
 | Default response headers | `defaultResponseHeaders` |
 | Proxy auth | `forwardHttpsProxy`, `forwardSocksProxy`, `proxyAuthenticationUsername`, `proxyAuthenticationPassword`, `proxyAuthenticationRealm` |
+| Forward resilience | `forwardConnectionPoolEnabled`, `forwardConnectionPoolMaxIdlePerKey`, `forwardConnectionPoolIdleTimeoutMillis`, `forwardProxyRetryCount`, `forwardProxyRetryBackoffMillis`, `forwardProxyCircuitBreakerEnabled`, `forwardProxyCircuitBreakerFailureThreshold`, `forwardProxyCircuitBreakerWindowMillis` (retry + per-upstream circuit breaker for matched FORWARD-class actions; all default to today's behaviour — retry off, breaker off) |
 | Control-plane JWT auth | `controlPlaneJWTAuthenticationRequired`, `controlPlaneJWTAuthenticationJWKSource`, `controlPlaneJWTAuthenticationExpectedAudience` |
 | TLS inbound — dynamic | `certificateAuthorityPrivateKey`, `certificateAuthorityCertificate`, `dynamicallyCreateCertificateAuthorityCertificate`, `directoryToSaveDynamicSSLCertificate`, `preventCertificateDynamicUpdate`, `sslCertificateDomainName`, `sslSubjectAlternativeNameDomains`, `sslSubjectAlternativeNameIps` |
 | TLS inbound — fixed | `privateKeyPath`, `x509CertificatePath` |

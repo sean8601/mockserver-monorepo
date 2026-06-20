@@ -105,6 +105,11 @@ public class Configuration {
     private Boolean forwardConnectionPoolEnabled;
     private Integer forwardConnectionPoolMaxIdlePerKey;
     private Long forwardConnectionPoolIdleTimeoutMillis;
+    private Integer forwardProxyRetryCount;
+    private Long forwardProxyRetryBackoffMillis;
+    private Boolean forwardProxyCircuitBreakerEnabled;
+    private Integer forwardProxyCircuitBreakerFailureThreshold;
+    private Long forwardProxyCircuitBreakerWindowMillis;
     private Boolean enforceResponseValidationForMocks;
 
     // socket
@@ -1402,6 +1407,104 @@ public class Configuration {
      */
     public Configuration forwardConnectionPoolIdleTimeoutMillis(Long forwardConnectionPoolIdleTimeoutMillis) {
         this.forwardConnectionPoolIdleTimeoutMillis = forwardConnectionPoolIdleTimeoutMillis;
+        return this;
+    }
+
+    public Integer forwardProxyRetryCount() {
+        if (forwardProxyRetryCount == null) {
+            return ConfigurationProperties.forwardProxyRetryCount();
+        }
+        return forwardProxyRetryCount;
+    }
+
+    /**
+     * Maximum number of times a forwarded or proxied request to an upstream is retried after a
+     * transient failure (connection refused/reset, timeout, or a 502/503/504 from the upstream).
+     * Only idempotent HTTP methods (GET, HEAD, OPTIONS, PUT, DELETE, TRACE) are retried. Default is
+     * 0 (no retry — each request is forwarded exactly once, as before).
+     *
+     * @param forwardProxyRetryCount maximum retries for idempotent forwarded/proxied requests, 0 to disable
+     */
+    public Configuration forwardProxyRetryCount(Integer forwardProxyRetryCount) {
+        this.forwardProxyRetryCount = forwardProxyRetryCount;
+        return this;
+    }
+
+    public Long forwardProxyRetryBackoffMillis() {
+        if (forwardProxyRetryBackoffMillis == null) {
+            return ConfigurationProperties.forwardProxyRetryBackoffMillis();
+        }
+        return forwardProxyRetryBackoffMillis;
+    }
+
+    /**
+     * Base linear back-off in milliseconds between forward/proxy retry attempts (attempt n waits n
+     * base delays). Only relevant when {@code forwardProxyRetryCount} is greater than 0. Default is
+     * 100 ms; 0 retries immediately with no back-off.
+     *
+     * @param forwardProxyRetryBackoffMillis base back-off in milliseconds, 0 to disable
+     */
+    public Configuration forwardProxyRetryBackoffMillis(Long forwardProxyRetryBackoffMillis) {
+        this.forwardProxyRetryBackoffMillis = forwardProxyRetryBackoffMillis;
+        return this;
+    }
+
+    public Boolean forwardProxyCircuitBreakerEnabled() {
+        if (forwardProxyCircuitBreakerEnabled == null) {
+            return ConfigurationProperties.forwardProxyCircuitBreakerEnabled();
+        }
+        return forwardProxyCircuitBreakerEnabled;
+    }
+
+    /**
+     * If false (the default) every forwarded or proxied request is attempted against its upstream.
+     * If true a per-upstream circuit breaker (keyed by host and port) trips open after
+     * {@code forwardProxyCircuitBreakerFailureThreshold} consecutive failures, failing subsequent
+     * requests fast with a 503 for {@code forwardProxyCircuitBreakerWindowMillis} before allowing a
+     * single half-open trial request.
+     *
+     * @param forwardProxyCircuitBreakerEnabled enable the per-upstream forward/proxy circuit breaker
+     */
+    public Configuration forwardProxyCircuitBreakerEnabled(Boolean forwardProxyCircuitBreakerEnabled) {
+        this.forwardProxyCircuitBreakerEnabled = forwardProxyCircuitBreakerEnabled;
+        return this;
+    }
+
+    public Integer forwardProxyCircuitBreakerFailureThreshold() {
+        if (forwardProxyCircuitBreakerFailureThreshold == null) {
+            return ConfigurationProperties.forwardProxyCircuitBreakerFailureThreshold();
+        }
+        return forwardProxyCircuitBreakerFailureThreshold;
+    }
+
+    /**
+     * Number of consecutive failures to a single upstream (host and port) that trips the
+     * forward/proxy circuit breaker open. Only relevant when
+     * {@code forwardProxyCircuitBreakerEnabled} is true. Default is 5.
+     *
+     * @param forwardProxyCircuitBreakerFailureThreshold consecutive failures that open the breaker
+     */
+    public Configuration forwardProxyCircuitBreakerFailureThreshold(Integer forwardProxyCircuitBreakerFailureThreshold) {
+        this.forwardProxyCircuitBreakerFailureThreshold = forwardProxyCircuitBreakerFailureThreshold;
+        return this;
+    }
+
+    public Long forwardProxyCircuitBreakerWindowMillis() {
+        if (forwardProxyCircuitBreakerWindowMillis == null) {
+            return ConfigurationProperties.forwardProxyCircuitBreakerWindowMillis();
+        }
+        return forwardProxyCircuitBreakerWindowMillis;
+    }
+
+    /**
+     * How long in milliseconds the forward/proxy circuit breaker stays open (failing requests fast
+     * with a 503) for an upstream before transitioning to half-open. Only relevant when
+     * {@code forwardProxyCircuitBreakerEnabled} is true. Default is 30,000 ms.
+     *
+     * @param forwardProxyCircuitBreakerWindowMillis open-state duration in milliseconds
+     */
+    public Configuration forwardProxyCircuitBreakerWindowMillis(Long forwardProxyCircuitBreakerWindowMillis) {
+        this.forwardProxyCircuitBreakerWindowMillis = forwardProxyCircuitBreakerWindowMillis;
         return this;
     }
 
