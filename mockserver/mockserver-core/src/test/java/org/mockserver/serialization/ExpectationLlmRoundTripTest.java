@@ -139,6 +139,30 @@ public class ExpectationLlmRoundTripTest {
     }
 
     @Test
+    public void shouldRoundTripCompletionWithModel() {
+        // given — a completion carrying a model identifier (set on the proxied/forwarded parse path)
+        Expectation original = when(request().withPath("/v1/chat/completions"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.OPENAI)
+                    .withCompletion(
+                        completion()
+                            .withText("Hello, world!")
+                            .withModel("gpt-4o")
+                    )
+            );
+
+        // when — serialize + deserialize through the schema-validated path
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then — the completion model survives the round-trip without a validation error
+        assertThat(deserialized, is(notNullValue()));
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getHttpLlmResponse().getCompletion().getModel(), is("gpt-4o"));
+    }
+
+    @Test
     public void shouldRoundTripEmbeddingExpectation() {
         // given
         Expectation original = when(request().withPath("/v1/embeddings"))

@@ -1408,6 +1408,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### AI / LLM
+- The `model` field on an LLM response `completion` now round-trips through expectation
+  serialization: it is permitted by the `httpLlmResponse` JSON schema, so a captured completion
+  carrying a `model` no longer fails schema validation on `PUT /mockserver/expectation`.
+
 #### Dashboard UI
 - **Dashboard UI correctness fixes** (from an adversarial review):
   - The dashboard no longer crashes to a blank white screen when a view fails to load (e.g. the Metrics
