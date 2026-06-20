@@ -6,6 +6,7 @@ import { buildTheme } from '../theme';
 import BreakpointsPanel from '../components/BreakpointsPanel';
 import { _resetBreakpointCallbackClient } from '../lib/breakpointCallbackClient';
 import type { BreakpointMatcherListResponse } from '../lib/breakpoints';
+import { useDashboardStore } from '../store';
 
 const params = { host: '127.0.0.1', port: '1080', secure: false };
 
@@ -91,6 +92,9 @@ beforeEach(() => {
 
   // Reset the singleton callback client
   _resetBreakpointCallbackClient();
+
+  // Clear any cross-view breakpoint prefill handoff left over from another test.
+  useDashboardStore.setState({ pendingBreakpointPrefill: null });
 });
 
 afterEach(() => {
@@ -872,5 +876,57 @@ describe('BreakpointsPanel — sort by requestTimestamp', () => {
     expect(earlierIdx).toBeGreaterThanOrEqual(0);
     expect(laterIdx).toBeGreaterThanOrEqual(0);
     expect(earlierIdx).toBeLessThan(laterIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Set breakpoint" handoff — the panel pre-fills the form from a log row
+// ---------------------------------------------------------------------------
+
+describe('BreakpointsPanel — "Set breakpoint" prefill from a log row', () => {
+  it('pre-fills the matcher form method + path from the store handoff and lands on the Matchers tab', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    // Simulate a click on a log row's "Set breakpoint": the store action seeds
+    // the prefill and switches the view (here we only mount the panel directly).
+    useDashboardStore.getState().setBreakpointPrefill({ method: 'POST', path: '/api/orders' });
+
+    renderPanel();
+
+    // The path field is populated from the handoff...
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Path/)).toHaveValue('/api/orders');
+    });
+    // ...and the recognized method is selected on the (hidden) select input.
+    const methodInput = document.querySelector('input[name="Method"], input[aria-hidden]') as HTMLInputElement | null;
+    // The MUI select stores its value on a hidden input; assert the visible text instead.
+    expect(screen.getByText('POST')).toBeInTheDocument();
+    void methodInput;
+
+    // The Matchers tab (index 0) is selected so the seeded form is visible.
+    const matchersTab = screen.getByRole('tab', { name: /Matchers/ });
+    expect(matchersTab).toHaveAttribute('aria-selected', 'true');
+
+    // The handoff is consumed exactly once.
+    expect(useDashboardStore.getState().pendingBreakpointPrefill).toBeNull();
+  });
+
+  it('ignores an unrecognized HTTP method but still applies the path', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => emptyMatchers,
+    })));
+
+    useDashboardStore.getState().setBreakpointPrefill({ method: 'PROPFIND', path: '/dav' });
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Path/)).toHaveValue('/dav');
+    });
+    // Method falls back to "(any)" since PROPFIND is not in the dropdown.
+    expect(screen.getByText('(any)')).toBeInTheDocument();
+    expect(useDashboardStore.getState().pendingBreakpointPrefill).toBeNull();
   });
 });

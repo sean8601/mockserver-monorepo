@@ -7,12 +7,14 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import PauseCircleIcon from '@mui/icons-material/PauseCircle';
 import type { LogEntryValue, MessagePart } from '../types';
 import JsonViewer from './JsonViewer';
 import BecauseSection from './BecauseSection';
 import CopyButton from './CopyButton';
 import { useDebugMismatchContext } from '../hooks/DebugMismatchContext';
 import { useGenerateStubContext } from '../hooks/GenerateStubContext';
+import { useSetBreakpointContext } from '../hooks/SetBreakpointContext';
 import { entryToText } from '../lib/logEntryText';
 import { parseLogTimestamp, formatCompactTime, formatAbsoluteTime } from '../lib/logEntryTime';
 import { monospaceFontFamily } from '../theme';
@@ -303,6 +305,26 @@ function extractRequestFromEntry(entry: LogEntryValue): Record<string, unknown> 
   return null;
 }
 
+/**
+ * Derive a breakpoint prefill (method + path) from a log row's request. Handles
+ * both a flat request object (`{method, path}`) and one nested under
+ * `httpRequest` — the two shapes the log message parts use. Returns `null` when
+ * neither a method nor a path can be read, so the "Set breakpoint" action is
+ * only offered on rows that carry a request.
+ */
+function extractBreakpointPrefill(entry: LogEntryValue): { method?: string; path?: string } | null {
+  const found = extractRequestFromEntry(entry);
+  if (!found) return null;
+  const nested = found['httpRequest'];
+  const request = (nested && typeof nested === 'object' && !Array.isArray(nested)
+    ? (nested as Record<string, unknown>)
+    : found);
+  const method = typeof request['method'] === 'string' ? (request['method'] as string) : undefined;
+  const path = typeof request['path'] === 'string' ? (request['path'] as string) : undefined;
+  if (!method && !path) return null;
+  return { method, path };
+}
+
 function LogEntry({ entry, indent = false, divider = false, collapsible = false, entryKey, expanded: expandedProp, onToggleExpand }: LogEntryProps) {
   const style = entry.style ?? {};
   const hasBody = entry.messageParts && entry.messageParts.length > 0;
@@ -319,10 +341,15 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
   const showBody = useDeferredValue(expanded);
   const debugMismatch = useDebugMismatchContext();
   const generateStub = useGenerateStubContext();
+  const setBreakpoint = useSetBreakpointContext();
   const isUnmatched = isNotMatchedEntry(entry);
   const showWhyButton = isUnmatched && debugMismatch !== null;
   const showGenerateStubButton = isUnmatched && generateStub !== null;
   const traceparent = useMemo(() => extractTraceparent(entry), [entry]);
+  // A breakpoint can be seeded from any row that carries a request (matched or
+  // not), so the user can pause future occurrences of this exact method+path.
+  const breakpointPrefill = useMemo(() => extractBreakpointPrefill(entry), [entry]);
+  const showSetBreakpointButton = setBreakpoint !== null && breakpointPrefill !== null;
 
   return (
     <Box
@@ -407,6 +434,23 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
                   }}
                 >
                   <AutoFixHighIcon sx={{ color: 'info.main' }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {showSetBreakpointButton && (
+              <Tooltip title="Set a breakpoint on this request (method + path)">
+                <IconButton
+                  size="small"
+                  aria-label="Set breakpoint on this request"
+                  sx={{ p: 0, ml: 0.5, '& .MuiSvgIcon-root': { fontSize: '0.9rem' } }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (breakpointPrefill && setBreakpoint) {
+                      setBreakpoint(breakpointPrefill);
+                    }
+                  }}
+                >
+                  <PauseCircleIcon sx={{ color: 'secondary.main' }} />
                 </IconButton>
               </Tooltip>
             )}

@@ -99,6 +99,17 @@ interface DashboardState {
   /** Clear the pending edit handoff (called by the Composer once consumed). */
   clearPendingEditExpectation: () => void;
 
+  /**
+   * Pre-filled method/path to seed a new breakpoint matcher form, set when the
+   * user clicks "Set breakpoint" on a log row. Consumed (and cleared) by the
+   * Breakpoints panel once it has applied it to the registration form.
+   */
+  pendingBreakpointPrefill: { method?: string; path?: string } | null;
+  /** Seed the breakpoint matcher form from a request and switch to that view. */
+  setBreakpointPrefill: (prefill: { method?: string; path?: string }) => void;
+  /** Clear the pending breakpoint prefill (called by the panel once consumed). */
+  clearPendingBreakpointPrefill: () => void;
+
   applyMessage: (message: WebSocketMessage) => void;
   clearUI: () => void;
   setView: (view: ViewMode) => void;
@@ -181,6 +192,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   selectedTrafficKey: null,
 
   pendingEditExpectation: null,
+  pendingBreakpointPrefill: null,
 
   actionTypeFilter: [],
   llmProviderFilter: [],
@@ -215,6 +227,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       proxiedRequests: [],
       selectedTrafficKey: null,
       pendingEditExpectation: null,
+      pendingBreakpointPrefill: null,
       error: null,
       notification: null,
       view: 'get-started' as ViewMode,
@@ -261,6 +274,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   setSelectedTrafficKey: (key) => set({ selectedTrafficKey: key }),
   editExpectation: (expectation) => set({ pendingEditExpectation: expectation, view: 'composer' as ViewMode, selectedTrafficKey: null }),
   clearPendingEditExpectation: () => set({ pendingEditExpectation: null }),
+  setBreakpointPrefill: (prefill) => set({ pendingBreakpointPrefill: prefill, view: 'breakpoints' as ViewMode, selectedTrafficKey: null }),
+  clearPendingBreakpointPrefill: () => set({ pendingBreakpointPrefill: null }),
   setError: (error) => set({ error }),
   setNotification: (notification) => set({ notification }),
   openDebugMismatch: (result) =>

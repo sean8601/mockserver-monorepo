@@ -14,6 +14,7 @@ import { useDebugMismatch } from './hooks/useDebugMismatch';
 import { DebugMismatchContext } from './hooks/DebugMismatchContext';
 import { useGenerateStub } from './hooks/useGenerateStub';
 import { GenerateStubContext } from './hooks/GenerateStubContext';
+import { SetBreakpointContext } from './hooks/SetBreakpointContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import AppBar, { NAV_TAB_DESCRIPTIONS } from './components/AppBar';
 import FilterPanel from './components/FilterPanel';
@@ -93,6 +94,9 @@ export default function App() {
   const { connect, sendFilter, clearServer } = useWebSocket(params);
   const { debugMismatch } = useDebugMismatch(params);
   const { generateStub } = useGenerateStub(params);
+  // "Set breakpoint" from a log row: seed the matcher form + switch to the
+  // Breakpoints view. The store action is stable, so this provider value is too.
+  const setBreakpointPrefill = useDashboardStore((s) => s.setBreakpointPrefill);
 
   // Open the WebSocket on mount. `connect` is stable (its deps — params and the
   // Zustand actions — are all stable), so this runs once per mount rather than
@@ -149,6 +153,7 @@ export default function App() {
       <CssBaseline />
       <DebugMismatchContext.Provider value={debugMismatch}>
       <GenerateStubContext.Provider value={generateStub}>
+      <SetBreakpointContext.Provider value={setBreakpointPrefill}>
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
           <AppBar
             onClearServer={handleClearServer}
@@ -267,6 +272,7 @@ export default function App() {
           onConfirm={() => { void clearServer('log'); }}
           onClose={() => setClearLogsConfirm(false)}
         />
+      </SetBreakpointContext.Provider>
       </GenerateStubContext.Provider>
       </DebugMismatchContext.Provider>
     </ThemeProvider>

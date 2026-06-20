@@ -58,6 +58,7 @@ import ConfirmDialog from './ConfirmDialog';
 import TruncatedText from './TruncatedText';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError } from '../lib/errorMessage';
+import { useDashboardStore } from '../store';
 
 const MATCHERS_POLL_INTERVAL_MS = 5000;
 
@@ -215,6 +216,39 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   const refreshMatchers = useCallback(() => {
     void loadMatchers();
   }, [loadMatchers]);
+
+  // -------------------------------------------------------------------------
+  // "Set breakpoint" handoff from a log row
+  // -------------------------------------------------------------------------
+  // When the user clicks "Set breakpoint" on a log entry, the store carries the
+  // request's method + path here. Seed the registration form with it, jump to the
+  // Matchers tab so the form is visible, and clear the handoff so it applies once.
+  const breakpointPrefill = useDashboardStore((s) => s.pendingBreakpointPrefill);
+  const clearBreakpointPrefill = useDashboardStore((s) => s.clearPendingBreakpointPrefill);
+
+  useEffect(() => {
+    // Always clear the one-shot hand-off when this effect tears down (unmount or
+    // a new prefill), so a prefill can never survive the panel being unmounted
+    // mid-apply and get re-applied on a later re-mount.
+    if (!breakpointPrefill) return clearBreakpointPrefill;
+    const { method, path } = breakpointPrefill;
+    // Consuming a one-shot hand-off from the Zustand store IS the legitimate
+    // "sync React state from an external system" case the rule exempts; the
+    // effect clears the signal at the end so it runs exactly once per hand-off.
+    // (Same pattern the Composer uses to consume its pending-edit hand-off.)
+    // setTab/setFormMethod/setFormPath are all this same deliberate sync.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setTab(0);
+    // Only adopt a method the form's dropdown actually offers; otherwise leave it
+    // as "(any)" rather than setting an unselectable value.
+    if (method && (HTTP_METHODS as readonly string[]).includes(method.toUpperCase())) {
+      setFormMethod(method.toUpperCase());
+    }
+    if (path) setFormPath(path);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    clearBreakpointPrefill();
+    return clearBreakpointPrefill;
+  }, [breakpointPrefill, clearBreakpointPrefill]);
 
   // -------------------------------------------------------------------------
   // Matcher registration

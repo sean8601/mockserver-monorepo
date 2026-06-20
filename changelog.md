@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chaos, which a reset clears) and **replicate across the fleet** when a clustered backend is configured. The existing
   `/mockserver/chaosExperiment` endpoint is unchanged. The dashboard Chaos panel gains a **Saved Profiles** list with a
   "Save as Profile" button (saves the current experiment editor) and one-click apply / delete chips.
+- **Dashboard UI (`mockserver-ui`): "Set breakpoint" from a log row.** Each log entry that carries a request now
+  shows a pause-circle action that pre-fills a new breakpoint matcher from that request's method and path and jumps
+  to the Breakpoints view's structured matcher form (method dropdown, path field, phase checkboxes) — so you can go
+  from "I saw this request in the log" to "pause it next time" in one click. The prefill is a one-shot store hand-off
+  (mirroring the existing edit-expectation and generate-stub hand-offs); an unrecognised HTTP method falls back to
+  "(any)" while still applying the path.
 - **LLM embeddings for Gemini/Ollama/Bedrock, plus rerank mocking (Cohere/Voyage)**: `httpLlmResponse` embeddings
   now work for three more providers (previously only OpenAI/Azure-OpenAI returned a real embedding response):
   - **Gemini** — emits the `embedContent` shape (`{"embedding":{"values":[...]}}`, default 768 dimensions).
