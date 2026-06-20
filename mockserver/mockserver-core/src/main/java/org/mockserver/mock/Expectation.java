@@ -64,6 +64,7 @@ public class Expectation extends ObjectWithJsonToString {
     private List<HttpResponse> httpResponses;
     private ResponseMode responseMode;
     private List<Integer> responseWeights;
+    private Integer switchAfter;
     private List<CrossProtocolScenario> crossProtocolScenarios;
     private List<CaptureRule> capture;
     private String namespace;
@@ -666,6 +667,32 @@ public class Expectation extends ObjectWithJsonToString {
         return this;
     }
 
+    public Integer getSwitchAfter() {
+        return switchAfter;
+    }
+
+    /**
+     * Lightweight per-expectation hit-count branching, used when {@link ResponseMode#SWITCH} selection is active.
+     * <p>
+     * With an index-aligned {@code httpResponses} list and a positive {@code switchAfter} of {@code N}, the
+     * expectation serves the first response for its first {@code N} matches, then advances one index for every
+     * further block of {@code N} matches, clamping at the last response. The common case — a list of two
+     * responses — therefore serves the first response for {@code N} calls and the second response for every
+     * call after that, letting a single expectation "respond differently after the Nth call" without a full
+     * scenario. A {@code null} or non-positive {@code switchAfter} (or a response mode other than {@code SWITCH})
+     * leaves behaviour unchanged.
+     *
+     * @param switchAfter the number of matches served by each response before advancing to the next (must be &gt;= 1)
+     */
+    public Expectation withSwitchAfter(Integer switchAfter) {
+        if (switchAfter != null && switchAfter < 1) {
+            throw new IllegalArgumentException("switchAfter must be greater than or equal to 1");
+        }
+        this.switchAfter = switchAfter;
+        this.hashCode = 0;
+        return this;
+    }
+
     public Expectation withBeforeActions(AfterAction... beforeActions) {
         if (beforeActions != null && beforeActions.length > 0) {
             this.beforeActions = new ArrayList<>(Arrays.asList(beforeActions));
@@ -941,6 +968,9 @@ public class Expectation extends ObjectWithJsonToString {
         }
         Integer consumed = lastConsumedCount.get();
         int count = Math.max(0, (consumed != null ? consumed : matchCount.get()) - 1);
+        if (responseMode == ResponseMode.SWITCH) {
+            return selectSwitchedResponse(count);
+        }
         return httpResponses.get(count % httpResponses.size());
     }
 
@@ -975,6 +1005,22 @@ public class Expectation extends ObjectWithJsonToString {
         }
         // unreachable given target < total, but keep the compiler and edge-cases happy
         return httpResponses.get(size - 1);
+    }
+
+    /**
+     * Selects a response using lightweight hit-count branching ({@link ResponseMode#SWITCH}). The first
+     * {@code switchAfter} matches return the first response; each subsequent block of {@code switchAfter}
+     * matches advances one index, clamping at the last response. When {@code switchAfter} is unset or
+     * non-positive the threshold defaults to 1, so each match advances one index (clamped) — equivalent to
+     * serving the first response once and the second response thereafter for a two-element list.
+     *
+     * @param zeroBasedCount the zero-based index of this match (0 for the first match)
+     */
+    @JsonIgnore
+    private HttpResponse selectSwitchedResponse(int zeroBasedCount) {
+        int threshold = (switchAfter != null && switchAfter > 0) ? switchAfter : 1;
+        int index = Math.min(zeroBasedCount / threshold, httpResponses.size() - 1);
+        return httpResponses.get(index);
     }
 
     @JsonIgnore
@@ -1326,7 +1372,8 @@ public class Expectation extends ObjectWithJsonToString {
             .thenError(httpError)
             .thenRespond(httpResponses)
             .withResponseMode(responseMode)
-            .withResponseWeights(responseWeights);
+            .withResponseWeights(responseWeights)
+            .withSwitchAfter(switchAfter);
         if (beforeActions != null) {
             clone.beforeActions = new ArrayList<>(beforeActions);
         }
@@ -1394,6 +1441,7 @@ public class Expectation extends ObjectWithJsonToString {
             Objects.equals(httpResponses, that.httpResponses) &&
             Objects.equals(responseMode, that.responseMode) &&
             Objects.equals(responseWeights, that.responseWeights) &&
+            Objects.equals(switchAfter, that.switchAfter) &&
             Objects.equals(namespace, that.namespace) &&
             Objects.equals(scenarioName, that.scenarioName) &&
             Objects.equals(scenarioState, that.scenarioState) &&
@@ -1405,7 +1453,7 @@ public class Expectation extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, responseWeights, namespace, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios, capture);
+            hashCode = Objects.hash(priority, percentage, chaos, httpRequest, times, timeToLive, httpResponse, httpResponseTemplate, httpResponseClassCallback, httpResponseObjectCallback, httpForward, httpForwardTemplate, httpForwardClassCallback, httpForwardObjectCallback, httpOverrideForwardedRequest, httpForwardValidateAction, httpForwardWithFallback, httpSseResponse, httpLlmResponse, httpWebSocketResponse, grpcStreamResponse, grpcBidiResponse, binaryResponse, dnsResponse, httpError, beforeActions, afterActions, steps, httpResponses, responseMode, responseWeights, switchAfter, namespace, scenarioName, scenarioState, newScenarioState, crossProtocolScenarios, capture);
         }
         return hashCode;
     }

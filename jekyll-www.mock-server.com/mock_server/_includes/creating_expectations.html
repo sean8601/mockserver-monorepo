@@ -618,6 +618,7 @@ curl -X PUT http://localhost:1080/mockserver/scenario/DeployFlow/trigger \
 <ul>
     <li><strong>SEQUENTIAL</strong> (default) - responses are returned in order, cycling back to the first after the last</li>
     <li><strong>RANDOM</strong> - a random response is selected from the list for each request</li>
+    <li><strong>SWITCH</strong> - serve the first response for the first <span class="inline_code">switchAfter</span> requests, then switch to the next response (and so on), staying on the last response thereafter - lets a single expectation respond differently after the Nth call without a full scenario</li>
 </ul>
 
 <p><strong>Note:</strong> Use <span class="inline_code">httpResponses</span> instead of <span class="inline_code">httpResponse</span> (singular) when you want multiple responses. If both are set, <span class="inline_code">httpResponses</span> takes priority.</p>
@@ -647,6 +648,20 @@ curl -X PUT http://localhost:1080/mockserver/scenario/DeployFlow/trigger \
     ],
     "responseMode": "RANDOM"
 }</code></pre>
+
+<p><strong>Example - Switch After N Calls:</strong> Respond differently after the Nth request (without a full scenario). With <span class="inline_code">switchAfter</span> set to 3, the first three requests succeed and every request after that fails - useful for modelling a service that works for a while then degrades.</p>
+<pre class="prettyprint lang-java code"><code class="code">{
+    "httpRequest": {
+        "path": "/api/orders"
+    },
+    "httpResponses": [
+        { "statusCode": 200, "body": "{\"status\": \"ok\"}" },
+        { "statusCode": 503, "body": "{\"status\": \"unavailable\"}" }
+    ],
+    "responseMode": "SWITCH",
+    "switchAfter": 3
+}</code></pre>
+<p>The first three requests return 200, then every subsequent request returns 503. With more than two responses, each block of <span class="inline_code">switchAfter</span> requests advances to the next response, staying on the last response once it is reached. When <span class="inline_code">switchAfter</span> is omitted it defaults to 1 (advance on every request).</p>
 
 <p><strong>Example - Java Client:</strong></p>
 <pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.HttpRequest.request;

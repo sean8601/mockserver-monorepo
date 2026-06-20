@@ -534,6 +534,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAPI import, and `verifyZeroInteractions`.
 
 #### Request matching & response generation
+- **Lightweight per-expectation hit-count response branching** (`mockserver-core`). A single expectation can now
+  "respond differently after the Nth call" without a full scenario, via a new `SWITCH` response mode plus an
+  optional `switchAfter` threshold. With an index-aligned `httpResponses` list, `withResponseMode(ResponseMode.SWITCH)`
+  and `withSwitchAfter(N)` (or the `responseMode: "SWITCH"` / `switchAfter` expectation-JSON fields), the expectation
+  serves the first response for its first `N` matches, then advances one index for every further block of `N`
+  matches, clamping at the last response. The common two-response case therefore serves the first response for
+  `N` calls and the second for every call after — ideal for modelling "succeed, then start failing" (or the
+  reverse) for a single endpoint. This reuses the existing sequential/weighted response machinery and is fully
+  additive: `switchAfter` is ignored outside `SWITCH` mode, an unset threshold defaults to `1` (advance each
+  call), and an expectation without `SWITCH` behaves byte-for-byte as before. For complex multi-endpoint flows a
+  full scenario (`scenarioName` / `scenarioState`) is still the right tool; `SWITCH` is the minimal option for a
+  single expectation.
 - **Generate a schema-valid response body from an inline JSON Schema** (`mockserver-core`). An HTTP response
   can now carry a plain inline [JSON Schema](https://json-schema.org) (not a full OpenAPI document) via a new
   `generateFromSchema` response field (`HttpResponse.withGenerateFromSchema(...)` in Java, or the

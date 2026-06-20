@@ -367,11 +367,15 @@ components:
             - SEQUENTIAL
             - RANDOM
             - WEIGHTED
+            - SWITCH
         responseWeights:
           type: array
           items:
             type: integer
             minimum: 1
+        switchAfter:
+          type: integer
+          minimum: 1
       oneOf:
         - required:
             - httpResponse

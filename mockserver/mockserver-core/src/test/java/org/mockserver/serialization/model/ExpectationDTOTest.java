@@ -626,6 +626,37 @@ public class ExpectationDTOTest {
     }
 
     @Test
+    public void shouldRoundTripSwitchResponseModeAndSwitchAfter() {
+        HttpResponse r1 = new HttpResponse().withStatusCode(200);
+        HttpResponse r2 = new HttpResponse().withStatusCode(503);
+        Expectation original = new Expectation(request(), Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(Arrays.asList(r1, r2))
+            .withResponseMode(ResponseMode.SWITCH)
+            .withSwitchAfter(3);
+
+        ExpectationDTO dto = new ExpectationDTO(original);
+        assertThat(dto.getResponseMode(), is(ResponseMode.SWITCH));
+        assertThat(dto.getSwitchAfter(), is(3));
+
+        Expectation rebuilt = dto.buildObject();
+        assertThat(rebuilt.getResponseMode(), is(ResponseMode.SWITCH));
+        assertThat(rebuilt.getSwitchAfter(), is(3));
+    }
+
+    @Test
+    public void shouldRoundTripNullSwitchAfter() {
+        Expectation original = new Expectation(request(), Times.unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(Arrays.asList(new HttpResponse().withBody("one"), new HttpResponse().withBody("two")))
+            .withResponseMode(ResponseMode.SWITCH);
+
+        ExpectationDTO dto = new ExpectationDTO(original);
+        assertThat(dto.getSwitchAfter(), is(nullValue()));
+
+        Expectation rebuilt = dto.buildObject();
+        assertThat(rebuilt.getSwitchAfter(), is(nullValue()));
+    }
+
+    @Test
     public void shouldRoundTripNullResponseWeights() {
         Expectation original = new Expectation(request(), Times.unlimited(), TimeToLive.unlimited(), 0)
             .thenRespond(Arrays.asList(new HttpResponse().withBody("one"), new HttpResponse().withBody("two")))

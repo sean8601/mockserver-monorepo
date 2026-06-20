@@ -122,7 +122,8 @@
       "enum": [
         "SEQUENTIAL",
         "RANDOM",
-        "WEIGHTED"
+        "WEIGHTED",
+        "SWITCH"
       ]
     },
     "responseWeights": {
@@ -131,6 +132,10 @@
         "type": "integer",
         "minimum": 1
       }
+    },
+    "switchAfter": {
+      "type": "integer",
+      "minimum": 1
     },
     "times": {
       "$ref": "#/definitions/times"

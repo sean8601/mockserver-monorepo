@@ -55,6 +55,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private ResponseMode responseMode;
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private List<Integer> responseWeights;
+    private Integer switchAfter;
     private org.mockserver.serialization.model.TimesDTO times;
     private TimeToLiveDTO timeToLive;
     private String namespace;
@@ -185,6 +186,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             if (responseWeightsList != null && !responseWeightsList.isEmpty()) {
                 this.responseWeights = new java.util.ArrayList<>(responseWeightsList);
             }
+            this.switchAfter = expectation.getSwitchAfter();
             Times times = expectation.getTimes();
             if (times != null) {
                 this.times = new org.mockserver.serialization.model.TimesDTO(times);
@@ -359,6 +361,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .thenRespond(this.httpResponses != null ? this.httpResponses.stream().map(HttpResponseDTO::buildObject).collect(Collectors.toList()) : null)
             .withResponseMode(this.responseMode)
             .withResponseWeights(this.responseWeights)
+            .withSwitchAfter(this.switchAfter)
             .withCrossProtocolScenarios(this.crossProtocolScenarios)
             .withCapture(this.capture != null ? this.capture.stream().map(CaptureRuleDTO::buildObject).collect(Collectors.toList()) : null);
         if (this.crossProtocolScenarios != null) {
@@ -668,6 +671,15 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     @JsonSetter("responseWeights")
     public ExpectationDTO setResponseWeights(List<Integer> responseWeights) {
         this.responseWeights = responseWeights;
+        return this;
+    }
+
+    public Integer getSwitchAfter() {
+        return switchAfter;
+    }
+
+    public ExpectationDTO setSwitchAfter(Integer switchAfter) {
+        this.switchAfter = switchAfter;
         return this;
     }
 
