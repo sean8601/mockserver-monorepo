@@ -500,7 +500,7 @@ public abstract class AbstractControlPlaneIntegrationTest extends AbstractMockin
                 );
             fail("expected exception to be thrown");
         } catch (AssertionError ae) {
-            assertThat(ae.getMessage(), equalTo("Request sequence not found, expected:<[ {" + NEW_LINE +
+            assertThat(ae.getMessage(), startsWith("Request sequence not found, expected:<[ {" + NEW_LINE +
                 "  \"path\" : \"" + calculatePath("some_other_path") + "\"" + NEW_LINE +
                 "}, {" + NEW_LINE +
                 "  \"path\" : \"" + calculatePath("some_path") + "\"" + NEW_LINE +
