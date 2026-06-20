@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Coarse role-based authorization of the control plane** (`mockserver-core`). New configuration
+  properties `mockserver.controlPlaneAuthorizationEnabled` (env `MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED`,
+  default `false`) and `mockserver.controlPlaneScopeMapping` (env `MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING`,
+  default empty). When enabled, after a control-plane request is authenticated its verified principal's
+  scopes/groups are mapped — via a comma-separated `value=role` mapping such as
+  `platform-admins=admin,qa-team=mutate,viewers=read` — to one of three hierarchical roles
+  (`admin` ⊇ `mutate` ⊇ `read`). Reads (retrieve/verify/diff and all GETs) require `read`; every other
+  (mutating) operation requires `mutate`. A principal whose granted roles do not satisfy the required role
+  is rejected with `403 Forbidden` (generic body; the granted-vs-required detail is logged server-side
+  only) and the denial is recorded in the control-plane audit log with `outcome=FORBIDDEN`. Fail-closed:
+  a principal with no mapped scope is denied every mutation, so authorization should be used together with
+  control-plane OIDC authentication (it requires a verified principal). Off by default — with authorization
+  disabled, authenticated requests behave byte-for-byte as before.
+  **Coverage:** the check covers every operation dispatched through `HttpState.handle` (all expectation
+  CRUD, clear/reset, retrieve/verify, mode, drift/chaos/SLO, replay, contract-test, …) **and** the
+  Netty-serviced control-plane reads/writes `PUT/GET /mockserver/configuration`,
+  `GET /mockserver/openapi.yaml` and `GET /mockserver/llm/optimisationReport`, which now route through the
+  same authn+authz+audit gate (so `PUT /configuration` is `MUTATE` and a read-only principal is `403`'d,
+  while the three reads classify `READ` and a verified principal with no mapped role is `403`'d). **Not**
+  covered: the lifecycle endpoints `PUT /mockserver/bind`, `PUT /mockserver/stop` and `PUT /mockserver/status`
+  are neither authenticated nor authorized (pre-existing — anyone who can reach the port can bind/stop the
+  server regardless of roles); and the MCP control plane (`/mockserver/mcp`, all transports) is authenticated
+  but its per-tool read/mutate authorization is **not yet enforced**, so a verified read-only principal can
+  still invoke a mutating MCP tool — treat MCP access as mutate-capable when authorization is enabled. See
+  `docs/code/tls-and-security.md` for the full coverage table.
 - **Opt-in secret redaction in the event log and dashboard** (`mockserver-core`). New configuration
   property `mockserver.redactSecretsInLog` (env `MOCKSERVER_REDACT_SECRETS_IN_LOG`, default `false`).
   When enabled, sensitive request/response header values (`Authorization`, `Proxy-Authorization`,

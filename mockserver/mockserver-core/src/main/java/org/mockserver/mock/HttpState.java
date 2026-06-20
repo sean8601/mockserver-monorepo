@@ -131,6 +131,29 @@ public class HttpState {
     private HttpResponseSerializer httpResponseSerializer;
     private org.mockserver.serialization.curl.HttpRequestToCurlSerializer httpRequestToCurlSerializer;
     private AuthenticationHandler controlPlaneAuthenticationHandler;
+    // Memoized control-plane authorizer, keyed on the raw scope-mapping it was built
+    // from, so the mapping is parsed (and the authorizer allocated) once and reused
+    // across requests, but stays correct if configuration reload changes the mapping.
+    // The (authorizer, mapping) pair is held in a single immutable holder behind ONE
+    // volatile field so a concurrent reader can never observe a torn (authorizer,
+    // mismatched-mapping) pair — it reads the holder once and compares its own mapping.
+    private volatile AuthorizerHolder cachedAuthorizerHolder;
+
+    /**
+     * Immutable pairing of a {@link org.mockserver.authentication.authorization.ControlPlaneAuthorizer}
+     * with the scope mapping it was built from. Published atomically through one volatile
+     * field so a reader always sees a self-consistent pair.
+     */
+    private static final class AuthorizerHolder {
+        final java.util.Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> mapping;
+        final org.mockserver.authentication.authorization.ControlPlaneAuthorizer authorizer;
+
+        AuthorizerHolder(java.util.Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> mapping,
+                         org.mockserver.authentication.authorization.ControlPlaneAuthorizer authorizer) {
+            this.mapping = mapping;
+            this.authorizer = authorizer;
+        }
+    }
     private GrpcProtoDescriptorStore grpcDescriptorStore;
     private final FileStore fileStore = new FileStore();
     private final CrudDispatcher crudDispatcher = new CrudDispatcher();
@@ -4666,14 +4689,36 @@ public class HttpState {
         }
     }
 
-    private boolean controlPlaneRequestAuthenticated(HttpRequest request, ResponseWriter responseWriter) {
+    /**
+     * The single control-plane gate: authenticates the request and, when
+     * {@code controlPlaneAuthorizationEnabled} is on, authorizes it (coarse read/mutate
+     * role check), auditing the outcome. Returns true to proceed; on failure writes the
+     * 401/403 response itself and returns false.
+     * <p>
+     * Public so control-plane choke points serviced directly in the Netty layer (e.g.
+     * {@code PUT /mockserver/configuration}, which mutates live configuration outside
+     * {@link #handle}) route through the SAME authn + authz + audit decision rather than
+     * calling the legacy boolean authentication SPI directly — which would authenticate
+     * but skip Wave-2 authorization, letting a read-only principal mutate. Operations
+     * dispatched through {@link #handle} already call this internally.
+     */
+    public boolean controlPlaneRequestAuthenticated(HttpRequest request, ResponseWriter responseWriter) {
         try {
             org.mockserver.authentication.AuthenticationResult authenticationResult =
                 controlPlaneAuthenticationHandler == null
                     ? org.mockserver.authentication.AuthenticationResult.authenticated(null, "none", java.util.Map.of(), java.util.Set.of())
                     : controlPlaneAuthenticationHandler.authenticate(request);
             if (authenticationResult.isAuthenticated()) {
-                recordAudit(request, authenticationResult);
+                if (configuration.controlPlaneAuthorizationEnabled() && !controlPlaneAuthorized(request, authenticationResult)) {
+                    // verified principal, but its scopes/groups do not grant a role that
+                    // satisfies the operation's required role: deny with a generic 403 and
+                    // record the denial. The detail (granted vs required role) is logged
+                    // server-side only so authorization policy is not disclosed to the client.
+                    recordAudit(request, authenticationResult, "FORBIDDEN");
+                    responseWriter.writeResponse(request, FORBIDDEN, "Forbidden for control plane", MediaType.create("text", "plain").toString());
+                    return false;
+                }
+                recordAudit(request, authenticationResult, "AUTHORIZED");
                 return true;
             }
         } catch (AuthenticationException authenticationException) {
@@ -4703,25 +4748,78 @@ public class HttpState {
     ));
 
     /**
-     * Best-effort, fail-soft audit of an authorised control-plane operation. Records
-     * redacted, structural metadata only (never headers or bodies) into the bounded
-     * in-memory {@link org.mockserver.mock.audit.AuditStore}. Off by default — when
-     * {@code controlPlaneAuditEnabled} is false this is a no-op and the control-plane
-     * operation behaves byte-for-byte identically. Never throws into the request path.
+     * Coarse role-based authorization decision for an already-AUTHENTICATED control-plane
+     * request, gated by {@code controlPlaneAuthorizationEnabled}. Maps the verified
+     * principal's scopes/groups through {@code controlPlaneScopeMapping} into granted
+     * roles, computes the operation's required role from the existing read/mutate split
+     * ({@link #isControlPlaneRead}), and returns whether the granted roles satisfy it.
+     * <p>
+     * Fail-closed: a principal with no mapped role is denied every mutation (and every
+     * read unless it has a READ-or-higher role). Authorization therefore requires a
+     * verified principal whose scopes are mapped — i.e. control-plane OIDC authentication
+     * should be enabled. The denial detail is logged at INFO server-side only.
      */
-    private void recordAudit(HttpRequest request) {
-        recordAudit(request, null);
+    private boolean controlPlaneAuthorized(HttpRequest request, org.mockserver.authentication.AuthenticationResult authenticationResult) {
+        org.mockserver.authentication.authorization.ControlPlaneAuthorizer authorizer = controlPlaneAuthorizer();
+        String method = request.getMethod() != null ? request.getMethod().getValue() : "";
+        String operation = auditOperation(request.getPath() != null ? request.getPath().getValue() : "");
+        boolean isRead = isControlPlaneRead(method, operation);
+        java.util.Set<String> scopes = authenticationResult != null ? authenticationResult.getScopes() : java.util.Set.of();
+        boolean authorized = authorizer.isAuthorized(scopes, isRead);
+        if (!authorized && mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.INFO)
+                    .setHttpRequest(request)
+                    .setMessageFormat("control plane request forbidden:{}")
+                    .setArguments("principal granted roles " + authorizer.grantedRoles(scopes) + " do not satisfy required role " + authorizer.requiredRole(isRead) + " for " + method + " " + operation)
+            );
+        }
+        return authorized;
     }
 
     /**
-     * As {@link #recordAudit(HttpRequest)} but, when the authentication handler produced
-     * a VERIFIED principal (e.g. an OIDC-verified {@code sub} with source
-     * {@code verified-oidc}), records that principal/source instead of the unverified
-     * best-effort extraction. When {@code authenticationResult} is null or carries no
-     * principal (e.g. auth disabled, or a legacy boolean handler), falls back to the
-     * unchanged {@link #bestEffortPrincipal} behaviour. Remains fail-soft.
+     * Returns the {@link org.mockserver.authentication.authorization.ControlPlaneAuthorizer}
+     * for the current scope mapping, parsing the mapping (and allocating the authorizer)
+     * once and reusing it across requests. Re-derives only when the mapping the cached
+     * authorizer was built from differs (by value) from the current mapping, so a
+     * configuration reload that changes the mapping is honoured without re-parsing on
+     * every control-plane request. Cheap reference-equality fast path for the common case
+     * where {@code controlPlaneScopeMapping()} returns the same instance each call.
      */
-    private void recordAudit(HttpRequest request, org.mockserver.authentication.AuthenticationResult authenticationResult) {
+    private org.mockserver.authentication.authorization.ControlPlaneAuthorizer controlPlaneAuthorizer() {
+        java.util.Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> mapping = configuration.controlPlaneScopeMapping();
+        // Read the holder ONCE: its (authorizer, mapping) pair is always self-consistent.
+        AuthorizerHolder holder = cachedAuthorizerHolder;
+        if (holder != null && (holder.mapping == mapping || (holder.mapping != null && holder.mapping.equals(mapping)))) {
+            return holder.authorizer;
+        }
+        // Mapping changed (or first use): rebuild the immutable holder and publish it
+        // atomically through the single volatile field. The rebuild is idempotent and the
+        // authorizer immutable, so a concurrent racing rebuild is harmless.
+        org.mockserver.authentication.authorization.ControlPlaneAuthorizer authorizer =
+            new org.mockserver.authentication.authorization.ControlPlaneAuthorizer(mapping);
+        cachedAuthorizerHolder = new AuthorizerHolder(mapping, authorizer);
+        return authorizer;
+    }
+
+    /**
+     * Best-effort, fail-soft audit of a control-plane operation. Records redacted,
+     * structural metadata only (never headers or bodies) into the bounded in-memory
+     * {@link org.mockserver.mock.audit.AuditStore}. Off by default — when
+     * {@code controlPlaneAuditEnabled} is false this is a no-op and the control-plane
+     * operation behaves byte-for-byte identically. Never throws into the request path.
+     * <p>
+     * When the authentication handler produced a VERIFIED principal (e.g. an OIDC-verified
+     * {@code sub} with source {@code verified-oidc}), records that principal/source instead
+     * of the unverified best-effort extraction. When {@code authenticationResult} is null or
+     * carries no principal (e.g. auth disabled, or a legacy boolean handler), falls back to
+     * the unchanged {@link #bestEffortPrincipal} behaviour.
+     * <p>
+     * The {@code outcome} is "AUTHORIZED" for a permitted operation or "FORBIDDEN" when
+     * control-plane authorization denied an authenticated principal.
+     */
+    private void recordAudit(HttpRequest request, org.mockserver.authentication.AuthenticationResult authenticationResult, String outcome) {
         try {
             if (request == null || !configuration.controlPlaneAuditEnabled()) {
                 return;
@@ -4729,7 +4827,10 @@ public class HttpState {
             String method = request.getMethod() != null ? request.getMethod().getValue() : "";
             String rawPath = request.getPath() != null ? request.getPath().getValue() : "";
             String operation = auditOperation(rawPath);
-            if (!configuration.controlPlaneAuditReads() && isControlPlaneRead(method, operation)) {
+            // Reads are skipped by default (controlPlaneAuditReads), but a FORBIDDEN
+            // outcome is a security-relevant denial and is always recorded when auditing
+            // is enabled, even for a read.
+            if (!"FORBIDDEN".equals(outcome) && !configuration.controlPlaneAuditReads() && isControlPlaneRead(method, operation)) {
                 return;
             }
             String sourceAddress = request.getRemoteAddress();
@@ -4748,7 +4849,7 @@ public class HttpState {
                 sourceAddress,
                 principalAndSource[0],
                 principalAndSource[1],
-                "AUTHORIZED",
+                outcome,
                 null
             );
             org.mockserver.mock.audit.AuditStore.getInstance().add(entry);
@@ -4759,7 +4860,7 @@ public class HttpState {
                         .setLogLevel(Level.INFO)
                         .setHttpRequest(request())
                         .setMessageFormat("control-plane audit{}")
-                        .setArguments(" " + method + " " + operation + " from " + sourceAddress + " as " + principalAndSource[0] + " (" + principalAndSource[1] + ") -> AUTHORIZED")
+                        .setArguments(" " + method + " " + operation + " from " + sourceAddress + " as " + principalAndSource[0] + " (" + principalAndSource[1] + ") -> " + outcome)
                 );
             }
         } catch (Throwable throwable) {

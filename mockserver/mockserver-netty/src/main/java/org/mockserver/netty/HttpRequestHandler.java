@@ -271,16 +271,14 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
                 } else if (request.matches("GET", PATH_PREFIX + "/configuration", "/configuration")
                     || request.matches("PUT", PATH_PREFIX + "/configuration", "/configuration")) {
 
-                    if (httpState.getControlPlaneAuthenticationHandler() != null) {
-                        try {
-                            if (!httpState.getControlPlaneAuthenticationHandler().controlPlaneRequestAuthenticated(request)) {
-                                responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
-                                return;
-                            }
-                        } catch (org.mockserver.authentication.AuthenticationException e) {
-                            responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
-                            return;
-                        }
+                    // /configuration is serviced here, outside HttpState.handle, but PUT mutates
+                    // live configuration — so it must take the SAME authn + authorization + audit
+                    // decision as the operations dispatched through HttpState.handle. Route through
+                    // the shared core gate (which writes the 401/403 and audits on failure) rather
+                    // than the legacy boolean authentication SPI, so an enabled Wave-2 authorization
+                    // policy applies here too (e.g. a read-only principal cannot PUT configuration).
+                    if (!httpState.controlPlaneRequestAuthenticated(request, responseWriter)) {
+                        return;
                     }
                     if (request.getMethod().getValue().equals("GET")) {
                         responseWriter.writeResponse(request, OK, configurationSerializer.serialize(configuration), "application/json");
@@ -309,16 +307,13 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
                 } else if (request.matches("GET", PATH_PREFIX + "/llm/optimisationReport", "/llm/optimisationReport")) {
 
-                    if (httpState.getControlPlaneAuthenticationHandler() != null) {
-                        try {
-                            if (!httpState.getControlPlaneAuthenticationHandler().controlPlaneRequestAuthenticated(request)) {
-                                responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
-                                return;
-                            }
-                        } catch (org.mockserver.authentication.AuthenticationException e) {
-                            responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
-                            return;
-                        }
+                    // This GET is serviced here, outside HttpState.handle. Route it through the
+                    // shared core gate (which writes the 401/403 and audits on failure) rather than
+                    // the legacy authenticate-only SPI, so an enabled Wave-2 authorization policy
+                    // applies here too: it is a READ, so a verified principal whose scopes map to NO
+                    // role is 403'd while read-only/mutate/admin proceed (default-off unchanged).
+                    if (!httpState.controlPlaneRequestAuthenticated(request, responseWriter)) {
+                        return;
                     }
                     handleOptimisationReport(request, responseWriter);
 
@@ -339,18 +334,17 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
                 } else if (request.getMethod().getValue().equals("GET") && request.getPath().getValue().equals(PATH_PREFIX + "/openapi.yaml")) {
 
-                    if (httpState.getControlPlaneAuthenticationHandler() != null) {
-                        try {
-                            if (!httpState.getControlPlaneAuthenticationHandler().controlPlaneRequestAuthenticated(request)) {
-                                responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
-                                return;
-                            }
-                        } catch (org.mockserver.authentication.AuthenticationException e) {
-                            responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
-                            return;
-                        }
+                    // This GET is serviced here, outside HttpState.handle. Route it through the
+                    // shared core gate (which writes the 401/403 and audits on failure) rather than
+                    // the legacy authenticate-only SPI, so an enabled Wave-2 authorization policy
+                    // applies here too: it is a READ, so a verified principal whose scopes map to NO
+                    // role is 403'd while read-only/mutate/admin proceed (default-off unchanged).
+                    // Call the gate FIRST and return on false (the gate writes the 401/403); only
+                    // do the direct ctx write — which bypasses NettyResponseWriter, so the in-flight
+                    // token must be completed explicitly — once the gate has granted access.
+                    if (!httpState.controlPlaneRequestAuthenticated(request, responseWriter)) {
+                        return;
                     }
-                    // Direct ctx write bypasses NettyResponseWriter — complete the in-flight token.
                     completeInFlight(inFlightRequest);
                     openAPISpecHandler.renderOpenAPISpec(ctx, request);
 

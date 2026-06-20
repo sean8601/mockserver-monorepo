@@ -279,6 +279,8 @@ public class Configuration {
     private String controlPlaneOidcAudience;
     private Set<String> controlPlaneOidcRequiredScopes;
     private String controlPlaneOidcScopeClaim;
+    private Boolean controlPlaneAuthorizationEnabled;
+    private Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping;
 
     // TLS
     private Boolean proactivelyInitialiseTLS;
@@ -3834,6 +3836,47 @@ public class Configuration {
      */
     public Configuration controlPlaneOidcScopeClaim(String controlPlaneOidcScopeClaim) {
         this.controlPlaneOidcScopeClaim = controlPlaneOidcScopeClaim;
+        return this;
+    }
+
+    public Boolean controlPlaneAuthorizationEnabled() {
+        if (controlPlaneAuthorizationEnabled == null) {
+            return ConfigurationProperties.controlPlaneAuthorizationEnabled();
+        }
+        return controlPlaneAuthorizationEnabled;
+    }
+
+    /**
+     * <p>
+     * Enable coarse role-based authorization of control plane requests, mapping a verified principal's scopes/groups to read/mutate/admin roles via controlPlaneScopeMapping; requires a verified principal (i.e. control plane OIDC authentication should be enabled). Default false.
+     * </p>
+     *
+     * @param controlPlaneAuthorizationEnabled true to enforce control plane authorization
+     */
+    public Configuration controlPlaneAuthorizationEnabled(Boolean controlPlaneAuthorizationEnabled) {
+        this.controlPlaneAuthorizationEnabled = controlPlaneAuthorizationEnabled;
+        return this;
+    }
+
+    public Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping() {
+        if (controlPlaneScopeMapping == null) {
+            return ConfigurationProperties.controlPlaneScopeMapping();
+        }
+        return controlPlaneScopeMapping;
+    }
+
+    /**
+     * <p>
+     * Mapping from a verified scope/group value to a coarse control plane role (read, mutate or admin). Roles are hierarchical: admin satisfies mutate satisfies read.
+     * </p>
+     * <p>
+     * Value should be a comma separated list of value=role pairs, for example: platform-admins=admin,qa-team=mutate,viewers=read
+     * </p>
+     *
+     * @param controlPlaneScopeMapping mapping from scope/group value to role
+     */
+    public Configuration controlPlaneScopeMapping(Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping) {
+        this.controlPlaneScopeMapping = controlPlaneScopeMapping;
         return this;
     }
 

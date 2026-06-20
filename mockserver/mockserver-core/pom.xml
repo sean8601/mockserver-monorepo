@@ -522,6 +522,7 @@
                         <exclude>**/MockServerEventLogVerifyByDispositionTest.java</exclude>
                         <exclude>**/HttpStateTest.java</exclude>
                         <exclude>**/HttpStateAuditTest.java</exclude>
+                        <exclude>**/HttpStateAuthorizationTest.java</exclude>
                         <exclude>**/HttpStateAuditEndpointTest.java</exclude>
                         <exclude>**/OtelMetricsExporterTest.java</exclude>
                         <exclude>**/TimeServiceTest.java</exclude>
@@ -658,6 +659,7 @@
                                 <include>**/MockServerEventLogVerifyByDispositionTest.java</include>
                                 <include>**/HttpStateTest.java</include>
                                 <include>**/HttpStateAuditTest.java</include>
+                                <include>**/HttpStateAuthorizationTest.java</include>
                                 <include>**/HttpStateAuditEndpointTest.java</include>
                                 <include>**/OtelMetricsExporterTest.java</include>
                                 <include>**/TimeServiceTest.java</include>

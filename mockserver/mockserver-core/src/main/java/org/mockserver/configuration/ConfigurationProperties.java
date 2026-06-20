@@ -309,6 +309,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CONTROL_PLANE_OIDC_AUDIENCE = "mockserver.controlPlaneOidcAudience";
     private static final String MOCKSERVER_CONTROL_PLANE_OIDC_REQUIRED_SCOPES = "mockserver.controlPlaneOidcRequiredScopes";
     private static final String MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM = "mockserver.controlPlaneOidcScopeClaim";
+    private static final String MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED = "mockserver.controlPlaneAuthorizationEnabled";
+    private static final String MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING = "mockserver.controlPlaneScopeMapping";
 
     // TLS
     private static final String MOCKSERVER_PROACTIVELY_INITIALISE_TLS = "mockserver.proactivelyInitialiseTLS";
@@ -4034,6 +4036,77 @@ public class ConfigurationProperties {
      */
     public static void controlPlaneOidcScopeClaim(String controlPlaneOidcScopeClaim) {
         setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM, "" + controlPlaneOidcScopeClaim);
+    }
+
+    public static boolean controlPlaneAuthorizationEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED, "MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED", "false"));
+    }
+
+    /**
+     * <p>
+     * Enable coarse role-based authorization of control plane requests, mapping a verified principal's scopes/groups to read/mutate/admin roles via controlPlaneScopeMapping
+     * </p>
+     *
+     * @param enable enforce control plane authorization
+     */
+    public static void controlPlaneAuthorizationEnabled(boolean enable) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED, "" + enable);
+    }
+
+    public static Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping() {
+        String mapping = readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING, "MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING", "");
+        return parseScopeMapping(mapping);
+    }
+
+    /**
+     * Parses a comma-separated list of {@code value=role} pairs into a scope-to-role map.
+     * Unrecognised roles (anything other than read/mutate/admin, case-insensitive) and
+     * malformed pairs (missing {@code =} or a blank key/value) are skipped so a typo can
+     * never silently widen access. Returns an empty (never null) map for a blank value.
+     */
+    static Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> parseScopeMapping(String mapping) {
+        Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> result = new LinkedHashMap<>();
+        if (isNotBlank(mapping)) {
+            for (String pair : mapping.split(",")) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0 || eq >= pair.length() - 1) {
+                    continue;
+                }
+                String value = pair.substring(0, eq).trim();
+                org.mockserver.authentication.authorization.ControlPlaneRole role =
+                    org.mockserver.authentication.authorization.ControlPlaneRole.parse(pair.substring(eq + 1));
+                if (isNotBlank(value) && role != null) {
+                    result.put(value, role);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * <p>
+     * Mapping from a verified scope/group value to a coarse control plane role (read, mutate or admin)
+     * </p>
+     * <p>
+     * Value should be a comma separated list of value=role pairs, for example: platform-admins=admin,qa-team=mutate,viewers=read
+     * </p>
+     *
+     * @param controlPlaneScopeMapping mapping from scope/group value to role
+     */
+    public static void controlPlaneScopeMapping(Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping) {
+        StringBuilder serialized = new StringBuilder();
+        if (controlPlaneScopeMapping != null) {
+            for (Map.Entry<String, org.mockserver.authentication.authorization.ControlPlaneRole> entry : controlPlaneScopeMapping.entrySet()) {
+                if (entry.getValue() == null) {
+                    continue;
+                }
+                if (serialized.length() > 0) {
+                    serialized.append(",");
+                }
+                serialized.append(entry.getKey()).append("=").append(entry.getValue().name().toLowerCase());
+            }
+        }
+        setProperty(MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING, serialized.toString());
     }
 
     // TLS
