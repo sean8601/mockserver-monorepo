@@ -3559,9 +3559,6 @@ public class HttpActionHandler {
 
     private void recordForwardMetrics(Action action, HttpResponse response,
                                       InetSocketAddress upstreamAddress, long responseTimeMs) {
-        if (!org.mockserver.metrics.Metrics.isForwardMetricsActive()) {
-            return;
-        }
         try {
             String host = resolveUpstreamHost(action, upstreamAddress);
             Integer statusCode = response != null ? response.getStatusCode() : null;
@@ -3571,7 +3568,19 @@ public class HttpActionHandler {
             if (response != null && response.getTiming() != null && response.getTiming().getTotalTimeInMillis() != null) {
                 latencyMillis = response.getTiming().getTotalTimeInMillis();
             }
-            org.mockserver.metrics.Metrics.observeForwardRequest(host, statusCode, latencyMillis / 1000.0);
+            // SLO sample tracking is independent of the metrics feature: it has its
+            // own sloTrackingEnabled gate (a no-op inside record(...) when off), so
+            // it must run even when forward metrics are inactive.
+            org.mockserver.slo.SloSampleStore.getInstance().record(
+                org.mockserver.time.TimeService.currentTimeMillis(),
+                latencyMillis,
+                statusCode == null || statusCode >= 500,
+                org.mockserver.slo.Scope.FORWARD,
+                host
+            );
+            if (org.mockserver.metrics.Metrics.isForwardMetricsActive()) {
+                org.mockserver.metrics.Metrics.observeForwardRequest(host, statusCode, latencyMillis / 1000.0);
+            }
         } catch (Exception e) {
             // fail-soft: metrics must never affect the served response
         }

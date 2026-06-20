@@ -583,6 +583,10 @@
                         <exclude>**/ChaosExperimentOrchestratorTest.java</exclude>
                         <!-- Resets the ChaosExperimentOrchestrator singleton in @After -->
                         <exclude>**/HttpStateChaosProfileEndpointTest.java</exclude>
+                        <!-- Mutate global sloTrackingEnabled / sloWindow* ConfigurationProperties, the SloSampleStore singleton and the controllable clock -->
+                        <exclude>**/SloSampleStoreTest.java</exclude>
+                        <exclude>**/SloEvaluatorTest.java</exclude>
+                        <exclude>**/HttpStateVerifySloEndpointTest.java</exclude>
                         <!-- Mutate global ConfigurationProperties / singleton registries / Metrics (detected by GlobalStateMutationGuardTest) -->
                         <exclude>**/MaxLlmConversationBodySizeTest.java</exclude>
                         <exclude>**/SlowRequestConfigurationTest.java</exclude>
@@ -678,6 +682,9 @@
                                 <include>**/MockStreamBreakpointTest.java</include>
                                 <include>**/ChaosExperimentOrchestratorTest.java</include>
                                 <include>**/HttpStateChaosProfileEndpointTest.java</include>
+                                <include>**/SloSampleStoreTest.java</include>
+                                <include>**/SloEvaluatorTest.java</include>
+                                <include>**/HttpStateVerifySloEndpointTest.java</include>
                                 <include>**/MaxLlmConversationBodySizeTest.java</include>
                                 <include>**/SlowRequestConfigurationTest.java</include>
                                 <include>**/HttpActionHandlerLlmCostBudgetTest.java</include>

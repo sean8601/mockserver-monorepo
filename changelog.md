@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Live Streams** list where each can be Continued, Modified (with a new Base64 payload), or Dropped, replying
   over the frozen callback WebSocket with a `StreamFrameDecisionDTO` — completing parity with the dashboard and
   the VS Code extension's stream-frame contract.
+- **SLO resilience verdicts (`mockserver-core`)** — assert pass/fail service-level objectives over observed
+  forwarded traffic. A new opt-in windowed sample store (`sloTrackingEnabled`, off by default; a true no-op on
+  the request path when disabled) records latency + error per forwarded round-trip, and `PUT /mockserver/verifySLO`
+  evaluates `SloCriteria` (latency percentile + error-rate objectives over a `LOOKBACK`/`EXPLICIT` window against
+  optional upstream hosts) and returns a structured `SloVerdict` — `200` PASS / `406` FAIL / `400` when malformed or
+  tracking is disabled. Bounded by `sloWindowMaxSamples` (50000) and `sloWindowRetentionMillis` (600000). Pairs with
+  chaos experiments: drive faults, then assert the system stayed within objectives.
 - **Connection-lifecycle fault injection + preemption simulation** (`mockserver-core`, `mockserver-netty`).
   Extends the per-host TCP chaos profile with response-path lifecycle faults — mid-response TCP RST
   (`resetMidResponse`), host-scoped jittered slow-close (`slowCloseDelay`), and HTTP/2 GOAWAY (`http2GoAway`) —

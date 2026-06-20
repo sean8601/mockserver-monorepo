@@ -37,6 +37,7 @@ Deep-dive documentation of MockServer's codebase, from high-level module structu
 | [Chaos Experiments](code/chaos.md) | Low | Scheduled multi-stage chaos experiments: ChaosExperimentOrchestrator, ordered stages, auto-halt integration, PUT/GET/DELETE /chaosExperiment |
 | [Breakpoints](code/breakpoints.md) | Low | Request/response/stream breakpoints: BreakpointRegistry, PausedExchange, request and response phases, stream frame interception |
 | [Drift Detection](code/drift-detection.md) | Low | Mock drift detection: comparing forwarded responses against stub expectations |
+| [SLO Verdicts](code/slo-verdicts.md) | Low | Synchronous SLO verdicts over forwarded traffic: SloSampleStore, SloEvaluator, PUT /mockserver/verifySLO (200 PASS / 406 FAIL) |
 | [WASM Rules](code/wasm-rules.md) | Low | WASM custom rule engine: chicory interpreter, module ABI, REST endpoints, configuration |
 | [Async Messaging](code/async-messaging.md) | Low | AsyncAPI broker mocking: spec parsing, example generation, Kafka/MQTT publisher adapters, orchestrator |
 | [HTTP/3 (QUIC)](code/http3.md) | Low | Experimental HTTP/3 support: Http3Server, QUIC native dependency, MVP boundaries |

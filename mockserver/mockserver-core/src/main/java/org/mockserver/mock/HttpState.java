@@ -121,6 +121,7 @@ public class HttpState {
     private org.mockserver.serialization.ExpectationExportSerializer expectationExportSerializer;
     private VerificationSerializer verificationSerializer;
     private VerificationSequenceSerializer verificationSequenceSerializer;
+    private SloCriteriaSerializer sloCriteriaSerializer;
     private LogEntrySerializer logEntrySerializer;
     private final MemoryMonitoring memoryMonitoring;
     private OpenAPIConverter openAPIConverter;
@@ -470,6 +471,7 @@ public class HttpState {
         org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ChaosAutoHaltMonitor.getInstance().reset();
         org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
+        org.mockserver.slo.SloSampleStore.getInstance().reset();
         org.mockserver.mock.action.http.LlmCostBudgetMonitor.getInstance().reset();
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.PreemptionSimulator.getInstance().reset();
@@ -2281,6 +2283,13 @@ public class HttpState {
                     canHandle.complete(true);
                 }
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/verifySLO", "/verifySLO")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleVerifySlo(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/crud", "/crud")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -3114,6 +3123,49 @@ public class HttpState {
         } catch (Exception e) {
             return chaosExperimentError(objectMapper, "failed to process chaos experiment request: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle {@code PUT /mockserver/verifySLO}: parse the body into an
+     * {@link org.mockserver.slo.SloCriteria}, evaluate it against the recorded
+     * samples, and respond with the {@link org.mockserver.slo.SloVerdict} JSON.
+     *
+     * <p>Status mapping: {@code 200 OK} for a PASS or INCONCLUSIVE verdict,
+     * {@code 406 NOT_ACCEPTABLE} for a FAIL verdict (so a CI gate can assert on
+     * the status code alone), {@code 400 BAD_REQUEST} for a malformed body or
+     * when SLO tracking is disabled. The body is always JSON.
+     */
+    private HttpResponse handleVerifySlo(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            if (!configuration.sloTrackingEnabled()) {
+                return sloError(objectMapper, "SLO tracking not enabled (set sloTrackingEnabled=true)");
+            }
+            org.mockserver.slo.SloCriteria criteria = getSloCriteriaSerializer().deserialize(request.getBodyAsJsonOrXmlString());
+            org.mockserver.slo.SloVerdict verdict = new org.mockserver.slo.SloEvaluator().evaluate(criteria);
+            int statusCode = verdict.getResult() == org.mockserver.slo.SloVerdict.Result.FAIL
+                ? NOT_ACCEPTABLE.code()
+                : OK.code();
+            return response().withStatusCode(statusCode)
+                .withBody(getSloCriteriaSerializer().serialize(verdict), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return sloError(objectMapper, "invalid SLO criteria: " + e.getMessage());
+        } catch (Exception e) {
+            return sloError(objectMapper, "failed to process SLO verify request: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse sloError(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String message) {
+        com.fasterxml.jackson.databind.node.ObjectNode errorNode = objectMapper.createObjectNode();
+        errorNode.put("error", message);
+        String body;
+        try {
+            body = objectMapper.writeValueAsString(errorNode);
+        } catch (Exception e) {
+            body = "{\"error\":\"failed to render SLO error\"}";
+        }
+        return response().withStatusCode(BAD_REQUEST.code())
+            .withBody(body, MediaType.JSON_UTF_8);
     }
 
     private HttpResponse handleChaosExperimentGet() {
@@ -5029,6 +5081,13 @@ public class HttpState {
             this.verificationSequenceSerializer = new VerificationSequenceSerializer(mockServerLogger);
         }
         return verificationSequenceSerializer;
+    }
+
+    private SloCriteriaSerializer getSloCriteriaSerializer() {
+        if (this.sloCriteriaSerializer == null) {
+            this.sloCriteriaSerializer = new SloCriteriaSerializer(mockServerLogger);
+        }
+        return sloCriteriaSerializer;
     }
 
     private LogEntrySerializer getLogEntrySerializer() {

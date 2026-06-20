@@ -72,6 +72,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Service mesh / transparent proxy | `transparentProxyEnabled`, `transparentProxyTproxy`, `transparentProxyEbpf`, `transparentProxyEbpfMapPath` |
 | OpenTelemetry | `otelMetricsEnabled`, `otelTracesEnabled`, `otelEndpoint`, `otelMetricsExportIntervalSeconds`, `otelPropagateTraceContext`, `otelGenerateTraceId` |
 | Chaos auto-halt | `chaosAutoHaltEnabled`, `chaosAutoHaltErrorThreshold`, `chaosAutoHaltWindowMillis` |
+| SLO verdicts | `sloTrackingEnabled`, `sloWindowRetentionMillis`, `sloWindowMaxSamples` |
 | Breakpoints | `breakpointTimeoutMillis`, `breakpointMaxHeld` (breakpoint activation is now via the matcher-based registry REST API) |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs` |
 | Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig`, `clusterSharedTimesEnabled` |
@@ -90,6 +91,18 @@ The example file documents the most commonly tuned properties (≈220 lines). Fo
 Opt-in (default `false`). When `true`, MockServer masks sensitive header values — `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` (which also covers bearer/token credentials carried in those headers) — with `***REDACTED***` on the recorded-expectation retrieval path (`HttpState.postProcessRecordedExpectations`). Because that path feeds every retrieve format, redaction covers retrieve-as-JSON, retrieve-as-code (generated client code), and persisted recorded JSON. Redaction reuses `FixtureRedactor` (the same masking already applied on the import path) and operates on copies, so the live event log is never mutated. On this path it uses the constraint-preserving variant (`redact(..., preserveConstraints=true)`), so the redacted recordings keep their original `times`, `timeToLive`, `priority`, and `id` — only the sensitive values are masked.
 
 **Trade-off:** a redacted recorded expectation can no longer replay against an upstream that requires the masked credential, so this is off by default — enable it only when you want to share or persist recordings without leaking proxied secrets.
+
+### `sloTrackingEnabled`, `sloWindowRetentionMillis`, `sloWindowMaxSamples`
+
+Opt-in SLO sample tracking that backs `PUT /mockserver/verifySLO` (see [docs/code/slo-verdicts.md](slo-verdicts.md)).
+
+| Property | Default | Meaning |
+|----------|---------|---------|
+| `sloTrackingEnabled` | `false` | When `true`, MockServer records a windowed sample (latency, error flag, upstream host) for every forwarded upstream round-trip so a verdict can be computed. When `false` the recording funnel is a no-op, so the forward hot path pays nothing. |
+| `sloWindowRetentionMillis` | `600000` (10 min) | Maximum age of a retained sample, measured relative to the newest recorded sample. Older samples are evicted lazily on record and on query. Set the trailing window of history you want verdicts to draw on. |
+| `sloWindowMaxSamples` | `50000` | Hard cap on retained samples; the oldest is evicted when the cap is exceeded. Bounds memory regardless of throughput. |
+
+Because tracking is off by default, the `verifySLO` endpoint returns `400` with `SLO tracking not enabled (set sloTrackingEnabled=true)` until you enable it.
 
 ### `failOnInitializationError`
 

@@ -264,6 +264,29 @@ A single Prometheus `Counter` makes the event-log ring-buffer saturation cliff o
 
 Under sustained load the event-log ring buffer can saturate and drop events. Previously only WARN/ERROR drops were logged, so INFO/DEBUG drops were silent and the cliff was undetectable. `MockServerEventLog.add(...)` now counts every drop on an always-available `AtomicLong` (readable via `getDroppedLogEventCount()` regardless of whether metrics are enabled), mirrors it to this Prometheus counter via the null-safe static `Metrics.incrementDroppedLogEvents()` (a no-op when metrics are off), and logs a single WARN on the first drop pointing at `ringBufferSize` / log verbosity as the remedy. A non-zero, growing value means the event log cannot keep up — raise `ringBufferSize` (derived from `maxLogEntries`) or reduce log verbosity.
 
+### SLO Sample Tracking
+
+Independent of the Prometheus metrics feature, MockServer can record a windowed
+sample for every forwarded upstream round-trip so that resilience verdicts can be
+computed on demand via `PUT /mockserver/verifySLO` (see
+[docs/code/slo-verdicts.md](slo-verdicts.md)).
+
+The recording funnel lives in the **same place** as the forward-metrics funnel —
+`HttpActionHandler.recordForwardMetrics(...)` — but has its own independent gate:
+
+```text
+recordForwardMetrics(action, response, upstreamAddress, responseTimeMs)
+  ├─ SloSampleStore.getInstance().record(now, latency, isError, FORWARD, host)   // gated by sloTrackingEnabled (no-op when off)
+  └─ Metrics.observeForwardRequest(host, status, latencySeconds)                 // gated by isForwardMetricsActive()
+```
+
+Because `SloSampleStore.record(...)` is a no-op when `sloTrackingEnabled` is
+`false` (the default), SLO tracking runs even when forward metrics are inactive and
+costs nothing on the hot path when disabled. The store is bounded by
+`sloWindowMaxSamples` (count) and `sloWindowRetentionMillis` (age), and is cleared
+on server reset. A sample's error flag is set when the upstream status is `null` or
+`>= 500` — the same definition used by the forward metrics counters.
+
 ### How Metrics Are Incremented
 
 - `HttpActionHandler` calls `metrics.increment(action.getType())` after dispatching each action, which maps the `Action.Type` enum to the corresponding `*_ACTIONS_COUNT` gauge
@@ -319,6 +342,7 @@ Under sustained load the event-log ring buffer can saturate and drop events. Pre
 | `JvmMetricsCollector` | mockserver-core | `org.mockserver.metrics.JvmMetricsCollector` |
 | `ChaosAutoHaltMonitor` | mockserver-core | `org.mockserver.mock.action.http.ChaosAutoHaltMonitor` |
 | `LlmCostBudgetMonitor` | mockserver-core | `org.mockserver.mock.action.http.LlmCostBudgetMonitor` |
+| `SloSampleStore` | mockserver-core | `org.mockserver.slo.SloSampleStore` (see [slo-verdicts.md](slo-verdicts.md)) |
 | `MemoryMonitoring` | mockserver-core | `org.mockserver.memory.MemoryMonitoring` |
 | `Summary` | mockserver-core | `org.mockserver.memory.Summary` |
 | `Detail` | mockserver-core | `org.mockserver.memory.Detail` |

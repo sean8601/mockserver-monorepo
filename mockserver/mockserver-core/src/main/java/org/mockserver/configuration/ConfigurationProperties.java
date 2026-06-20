@@ -66,6 +66,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED = "mockserver.connectionLifecycleChaosEnabled";
     private static final String MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS = "mockserver.preemptionSimulationMaxDrainMillis";
     private static final String MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST = "mockserver.connectionLifecycleAutoHaltCountsRst";
+    private static final String MOCKSERVER_SLO_TRACKING_ENABLED = "mockserver.sloTrackingEnabled";
+    private static final String MOCKSERVER_SLO_WINDOW_RETENTION_MILLIS = "mockserver.sloWindowRetentionMillis";
+    private static final String MOCKSERVER_SLO_WINDOW_MAX_SAMPLES = "mockserver.sloWindowMaxSamples";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
@@ -715,6 +718,52 @@ public class ConfigurationProperties {
      */
     public static void connectionLifecycleAutoHaltCountsRst(boolean enable) {
         setProperty(MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST, "" + enable);
+    }
+
+    public static boolean sloTrackingEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_SLO_TRACKING_ENABLED, "MOCKSERVER_SLO_TRACKING_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable SLO sample tracking. When enabled, MockServer records a windowed
+     * sample (latency, error flag, scope, host) for each forwarded upstream
+     * round-trip so that {@code PUT /mockserver/verifySLO} can compute resilience
+     * verdicts. Default is false (feature off) — when disabled the forward path
+     * records nothing.
+     *
+     * @param enable enable SLO sample tracking
+     */
+    public static void sloTrackingEnabled(boolean enable) {
+        setProperty(MOCKSERVER_SLO_TRACKING_ENABLED, "" + enable);
+    }
+
+    public static long sloWindowRetentionMillis() {
+        return readLongProperty(MOCKSERVER_SLO_WINDOW_RETENTION_MILLIS, "MOCKSERVER_SLO_WINDOW_RETENTION_MILLIS", 600_000L);
+    }
+
+    /**
+     * The maximum age in milliseconds of SLO samples retained for verdict
+     * evaluation. Samples older than this (relative to the newest sample) are
+     * evicted. Default is 600000 (10 minutes).
+     *
+     * @param millis sample retention window in milliseconds
+     */
+    public static void sloWindowRetentionMillis(long millis) {
+        setProperty(MOCKSERVER_SLO_WINDOW_RETENTION_MILLIS, "" + millis);
+    }
+
+    public static int sloWindowMaxSamples() {
+        return readIntegerProperty(MOCKSERVER_SLO_WINDOW_MAX_SAMPLES, "MOCKSERVER_SLO_WINDOW_MAX_SAMPLES", 50_000);
+    }
+
+    /**
+     * The maximum number of SLO samples retained for verdict evaluation. When the
+     * store is full the oldest sample is evicted. Default is 50000.
+     *
+     * @param maxSamples maximum number of retained samples
+     */
+    public static void sloWindowMaxSamples(int maxSamples) {
+        setProperty(MOCKSERVER_SLO_WINDOW_MAX_SAMPLES, "" + maxSamples);
     }
 
     public static boolean mcpEnabled() {

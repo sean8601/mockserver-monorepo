@@ -49,6 +49,9 @@ public class Configuration {
     private Boolean connectionLifecycleChaosEnabled;
     private Long preemptionSimulationMaxDrainMillis;
     private Boolean connectionLifecycleAutoHaltCountsRst;
+    private Boolean sloTrackingEnabled;
+    private Long sloWindowRetentionMillis;
+    private Integer sloWindowMaxSamples;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
@@ -668,6 +671,63 @@ public class Configuration {
      */
     public Configuration connectionLifecycleAutoHaltCountsRst(Boolean connectionLifecycleAutoHaltCountsRst) {
         this.connectionLifecycleAutoHaltCountsRst = connectionLifecycleAutoHaltCountsRst;
+        return this;
+    }
+
+    public Boolean sloTrackingEnabled() {
+        if (sloTrackingEnabled == null) {
+            return ConfigurationProperties.sloTrackingEnabled();
+        }
+        return sloTrackingEnabled;
+    }
+
+    /**
+     * Enable SLO sample tracking. When enabled, MockServer records a windowed
+     * sample (latency, error flag, scope, host) for each forwarded upstream
+     * round-trip so that {@code PUT /mockserver/verifySLO} can compute resilience
+     * verdicts. Off by default — when disabled the forward path records nothing.
+     *
+     * @param sloTrackingEnabled enable SLO sample tracking
+     */
+    public Configuration sloTrackingEnabled(Boolean sloTrackingEnabled) {
+        this.sloTrackingEnabled = sloTrackingEnabled;
+        return this;
+    }
+
+    public Long sloWindowRetentionMillis() {
+        if (sloWindowRetentionMillis == null) {
+            return ConfigurationProperties.sloWindowRetentionMillis();
+        }
+        return sloWindowRetentionMillis;
+    }
+
+    /**
+     * The maximum age in milliseconds of SLO samples retained for verdict
+     * evaluation. Samples older than this (relative to the newest sample) are
+     * evicted. Default is 600000 (10 minutes).
+     *
+     * @param sloWindowRetentionMillis sample retention window in milliseconds
+     */
+    public Configuration sloWindowRetentionMillis(Long sloWindowRetentionMillis) {
+        this.sloWindowRetentionMillis = sloWindowRetentionMillis;
+        return this;
+    }
+
+    public Integer sloWindowMaxSamples() {
+        if (sloWindowMaxSamples == null) {
+            return ConfigurationProperties.sloWindowMaxSamples();
+        }
+        return sloWindowMaxSamples;
+    }
+
+    /**
+     * The maximum number of SLO samples retained for verdict evaluation. When the
+     * store is full the oldest sample is evicted. Default is 50000.
+     *
+     * @param sloWindowMaxSamples maximum number of retained samples
+     */
+    public Configuration sloWindowMaxSamples(Integer sloWindowMaxSamples) {
+        this.sloWindowMaxSamples = sloWindowMaxSamples;
         return this;
     }
 
