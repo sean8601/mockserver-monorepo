@@ -135,6 +135,24 @@ public class HttpResponseSerializerTest {
     }
 
     @Test
+    public void shouldRoundTripGenerateFromSchema() {
+        // given a real serializer (not the mock-injected one)
+        HttpResponseSerializer serializer = new HttpResponseSerializer(new MockServerLogger());
+        HttpResponse original = new HttpResponse()
+            .withStatusCode(200)
+            .withGenerateFromSchema("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}}}");
+
+        // when serialised then deserialised
+        String json = serializer.serialize(original);
+        HttpResponse roundTripped = serializer.deserialize(json);
+
+        // then the inline schema survives the round trip
+        assertThat(json.contains("\"generateFromSchema\""), is(true));
+        assertThat(roundTripped.getGenerateFromSchema(), is("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}}}"));
+        assertThat(roundTripped, is(original));
+    }
+
+    @Test
     public void shouldOmitStatusCodeRangeWhenNull() {
         HttpResponseSerializer serializer = new HttpResponseSerializer(new MockServerLogger());
         HttpResponse original = new HttpResponse().withStatusCode(200);

@@ -115,6 +115,20 @@ public class JsonSchemaExpectationValidatorTest {
     }
 
     @Test
+    public void shouldValidateExpectationWithGenerateFromSchemaResponse() {
+        // when — an httpResponse carrying an inline JSON schema is accepted by the schema
+        assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +
+            "  \"httpRequest\" : {" + NEW_LINE +
+            "    \"path\" : \"/users\"" + NEW_LINE +
+            "  }," + NEW_LINE +
+            "  \"httpResponse\" : {" + NEW_LINE +
+            "    \"statusCode\" : 200," + NEW_LINE +
+            "    \"generateFromSchema\" : \"{\\\"type\\\":\\\"object\\\"}\"" + NEW_LINE +
+            "  }" + NEW_LINE +
+            "}"), is(""));
+    }
+
+    @Test
     public void shouldValidateValidCompleteExpectationWithHttpResponse() {
         // when
         assertThat(jsonSchemaValidator.isValid("{" + NEW_LINE +

@@ -55,6 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Both are implemented purely client-side (a poll loop over the standard `PUT /mockserver/verify` endpoint);
   no server change is involved. The existing snapshot `verify(...)` methods are unchanged.
+- **Generate a schema-valid response body from an inline JSON Schema** (`mockserver-core`). An HTTP response
+  can now carry a plain inline [JSON Schema](https://json-schema.org) (not a full OpenAPI document) via a new
+  `generateFromSchema` response field (`HttpResponse.withGenerateFromSchema(...)` in Java, or the
+  `generateFromSchema` expectation-JSON field). At response time MockServer synthesizes a schema-valid JSON body
+  from it, reusing the same example-generation engine used for OpenAPI responses, so the generated body honours
+  `type`, `required`, `enum`, `default`, arrays and nested objects. This is additive and fully back-compatible:
+  it only fires when the response has no explicit body (an explicit `body` always wins), and a schema that cannot
+  be parsed leaves the response body unset (logged at WARN) rather than failing the request. Inline-schema
+  `$ref` resolution follows the OpenAPI-spec trust model (control-plane, remote refs resolved), not the
+  `jsonSchemaAllowRemoteRefs` matching-path model. Lets you return realistic, type-correct mock data from a bare
+  schema without hand-authoring response JSON or attaching a whole OpenAPI spec.
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,

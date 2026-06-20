@@ -9,6 +9,9 @@
     "body": {
       "$ref": "#/definitions/bodyWithContentType"
     },
+    "generateFromSchema": {
+      "type": "string"
+    },
     "cookies": {
       "$ref": "#/definitions/keyToValue"
     },

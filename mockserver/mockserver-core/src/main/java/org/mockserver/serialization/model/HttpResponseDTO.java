@@ -14,6 +14,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private String statusCodeRange;
     private String reasonPhrase;
     private BodyWithContentTypeDTO body;
+    private String generateFromSchema;
     private Cookies cookies;
     private Headers headers;
     private Headers trailers;
@@ -31,6 +32,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             statusCodeRange = httpResponse.getStatusCodeRange();
             reasonPhrase = httpResponse.getReasonPhrase();
             body = BodyWithContentTypeDTO.createWithContentTypeDTO(httpResponse.getBody());
+            generateFromSchema = httpResponse.getGenerateFromSchema();
             headers = httpResponse.getHeaders();
             trailers = httpResponse.getTrailers();
             cookies = httpResponse.getCookies();
@@ -46,6 +48,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withStatusCodeRange(statusCodeRange)
             .withReasonPhrase(reasonPhrase)
             .withBody(body != null ? body.buildObject() : null)
+            .withGenerateFromSchema(generateFromSchema)
             .withHeaders(headers)
             .withTrailers(trailers)
             .withCookies(cookies)
@@ -87,6 +90,15 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public HttpResponseDTO setBody(BodyWithContentTypeDTO body) {
         this.body = body;
+        return this;
+    }
+
+    public String getGenerateFromSchema() {
+        return generateFromSchema;
+    }
+
+    public HttpResponseDTO setGenerateFromSchema(String generateFromSchema) {
+        this.generateFromSchema = generateFromSchema;
         return this;
     }
 

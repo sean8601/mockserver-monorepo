@@ -143,6 +143,72 @@ public class HttpResponseActionHandlerTest {
     }
 
     @Test
+    public void shouldGenerateSchemaValidResponseFromInlineJsonSchemaWithoutRequest() throws Exception {
+        // given - a response configured with only an inline JSON schema (no full OpenAPI spec, no request)
+        HttpResponse responseAction = response().withGenerateFromSchema(
+            "{\"type\":\"object\",\"required\":[\"id\",\"status\"]," +
+                "\"properties\":{" +
+                "\"id\":{\"type\":\"integer\"}," +
+                "\"status\":{\"type\":\"string\",\"enum\":[\"ACTIVE\",\"DISABLED\"]}," +
+                "\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}," +
+                "\"address\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}" +
+                "}}");
+
+        // when - handled with no request (schema generation does not depend on the request)
+        HttpResponse actual = httpResponseActionHandler.handle(responseAction);
+
+        // then - a schema-valid JSON body is generated honouring types, enum, array and nested object
+        assertThat(actual.getBody().getContentType(), containsString("application/json"));
+        JsonNode body = MAPPER.readTree(actual.getBodyAsString());
+        assertTrue("id is required and integer-typed", body.get("id").isInt());
+        assertThat("status uses the first enum value", body.get("status").asText(), is("ACTIVE"));
+        assertTrue("tags is an array", body.get("tags").isArray());
+        assertTrue("tags items are strings", body.get("tags").get(0).isTextual());
+        assertTrue("address is a nested object", body.get("address").isObject());
+        assertTrue("nested city is a string", body.get("address").get("city").isTextual());
+    }
+
+    @Test
+    public void shouldNotGenerateFromSchemaWhenResponseAlreadyHasExplicitBody() {
+        // given - an explicit body alongside an inline schema must win
+        HttpResponse responseAction = response()
+            .withBody("{\"explicit\":true}")
+            .withGenerateFromSchema("{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}}}");
+
+        // when
+        HttpResponse actual = httpResponseActionHandler.handle(responseAction, request().withMethod("GET").withPath("/x"));
+
+        // then - the explicit body is preserved verbatim
+        assertThat(actual.getBodyAsString(), is("{\"explicit\":true}"));
+    }
+
+    @Test
+    public void shouldLeaveBodyUnsetWhenInlineSchemaIsInvalid() {
+        // given - an unparseable inline schema must not fail the request (fail-soft)
+        HttpResponse responseAction = response().withGenerateFromSchema("this is not valid json schema <<<");
+
+        // when
+        HttpResponse actual = httpResponseActionHandler.handle(responseAction);
+
+        // then - body remains unset rather than throwing
+        assertThat(actual.getBody(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldNotFailRequestWhenInlineSchemaRefIsUnresolvable() {
+        // given - a schema whose $ref points at an unreachable file (exercises the OpenAPIParser $ref-resolution
+        // path); resolution must not throw out of the handler - the request stays serviceable (fail-soft)
+        HttpResponse responseAction = response().withGenerateFromSchema(
+            "{\"$ref\":\"file:///nonexistent/" + System.nanoTime() + "/schema.json#/Thing\"}");
+
+        // when
+        HttpResponse actual = httpResponseActionHandler.handle(responseAction);
+
+        // then - no exception escapes; the body is simply left unset
+        assertThat(actual.getBody(), is(nullValue()));
+    }
+
+    @Test
     public void shouldLeaveBodyUnsetWhenSchemaIsInvalid() {
         // given - an unparseable schema must not fail the request (fail-soft)
         GraphQLBody matchedRequestBody = new GraphQLBody("{ user { name } }")

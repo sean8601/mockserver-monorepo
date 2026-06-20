@@ -28,6 +28,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     private String statusCodeRange;
     private String reasonPhrase;
     private BodyWithContentType body;
+    private String generateFromSchema;
     private Headers headers;
     private Headers trailers;
     private Cookies cookies;
@@ -234,6 +235,29 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
         } else {
             return null;
         }
+    }
+
+    /**
+     * Provide an inline <a href="https://json-schema.org">JSON Schema</a> (a plain JSON Schema object,
+     * <b>not</b> a full OpenAPI document) from which a schema-valid response body is generated at
+     * response time. The same example-generation engine used for OpenAPI responses is reused, so the
+     * generated body honours {@code type}, {@code required}, {@code enum}, {@code default}, arrays and
+     * nested objects.
+     * <p>
+     * This is additive: it only takes effect when the response has no explicit body. An explicit body
+     * (set via any {@code withBody(...)} overload) always wins.
+     *
+     * @param generateFromSchema an inline JSON Schema, e.g.
+     *                           {@code "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}}}"}
+     */
+    public HttpResponse withGenerateFromSchema(String generateFromSchema) {
+        this.generateFromSchema = generateFromSchema;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public String getGenerateFromSchema() {
+        return generateFromSchema;
     }
 
     public Headers getHeaders() {
@@ -750,6 +774,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withStatusCodeRange(statusCodeRange)
             .withReasonPhrase(reasonPhrase)
             .withBody(body)
+            .withGenerateFromSchema(generateFromSchema)
             .withHeaders(headers)
             .withTrailers(trailers)
             .withCookies(cookies)
@@ -767,6 +792,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withStatusCodeRange(statusCodeRange)
             .withReasonPhrase(reasonPhrase)
             .withBody(body)
+            .withGenerateFromSchema(generateFromSchema)
             .withHeaders(headers != null ? headers.clone() : null)
             .withTrailers(trailers != null ? trailers.clone() : null)
             .withCookies(cookies != null ? cookies.clone() : null)
@@ -800,6 +826,9 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             }
             if (responseOverride.getBody() != null) {
                 withBody(responseOverride.getBody());
+            }
+            if (responseOverride.getGenerateFromSchema() != null) {
+                withGenerateFromSchema(responseOverride.getGenerateFromSchema());
             }
             if (responseOverride.getConnectionOptions() != null) {
                 withConnectionOptions(responseOverride.getConnectionOptions());
@@ -837,6 +866,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             Objects.equals(statusCodeRange, that.statusCodeRange) &&
             Objects.equals(reasonPhrase, that.reasonPhrase) &&
             Objects.equals(body, that.body) &&
+            Objects.equals(generateFromSchema, that.generateFromSchema) &&
             Objects.equals(headers, that.headers) &&
             Objects.equals(trailers, that.trailers) &&
             Objects.equals(cookies, that.cookies) &&
@@ -847,7 +877,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), statusCode, statusCodeRange, reasonPhrase, body, headers, trailers, cookies, connectionOptions, streamId);
+            hashCode = Objects.hash(super.hashCode(), statusCode, statusCodeRange, reasonPhrase, body, generateFromSchema, headers, trailers, cookies, connectionOptions, streamId);
         }
         return hashCode;
     }

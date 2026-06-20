@@ -15,6 +15,8 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.MediaType;
 import org.mockserver.model.RequestDefinition;
 import org.mockserver.model.StringBody;
+import org.mockserver.openapi.JsonSchemaResponseSynthesisException;
+import org.mockserver.openapi.JsonSchemaResponseSynthesizer;
 import org.mockserver.templates.engine.TemplateEngine;
 import org.mockserver.templates.engine.mustache.MustacheTemplateEngine;
 import org.mockserver.templates.engine.velocity.VelocityTemplateEngine;
@@ -56,11 +58,19 @@ public class HttpResponseActionHandler {
      */
     public HttpResponse handle(HttpResponse httpResponse, HttpRequest httpRequest, RequestDefinition matchedRequest) {
         HttpResponse response = httpResponse.clone();
-        if (httpRequest != null) {
-            BodyWithContentType body = response.getBody();
-            if (body instanceof FileBody && ((FileBody) body).getTemplateType() != null) {
-                response.withBody(renderTemplatedFileBody((FileBody) body, httpRequest));
-            } else if (body == null) {
+        if (response == null) {
+            return null;
+        }
+        BodyWithContentType body = response.getBody();
+        if (httpRequest != null && body instanceof FileBody && ((FileBody) body).getTemplateType() != null) {
+            response.withBody(renderTemplatedFileBody((FileBody) body, httpRequest));
+        } else if (body == null) {
+            // an explicit body always wins; schema/GraphQL synthesis only fills an unset body.
+            // schema-valid generation from an inline JSON schema does not depend on the request, so it
+            // runs even when no request is supplied (GraphQL synthesis still requires the request query).
+            if (isNotBlank(response.getGenerateFromSchema())) {
+                synthesizeSchemaResponse(response);
+            } else if (httpRequest != null) {
                 String graphQLSchema = graphQLSchemaOf(matchedRequest);
                 if (graphQLSchema != null) {
                     synthesizeGraphQLResponse(response, httpRequest, graphQLSchema);
@@ -68,6 +78,29 @@ public class HttpResponseActionHandler {
             }
         }
         return response;
+    }
+
+    /**
+     * Generates a schema-valid JSON body from the response's inline JSON Schema and sets it as a JSON
+     * body. Reuses the OpenAPI example-generation engine (see {@link JsonSchemaResponseSynthesizer}).
+     * Generation failures (an unparseable schema, or a schema that yields no example) are logged and
+     * leave the response body unset rather than failing the request.
+     */
+    private void synthesizeSchemaResponse(HttpResponse response) {
+        try {
+            String generated = new JsonSchemaResponseSynthesizer(mockServerLogger).synthesizeResponse(response.getGenerateFromSchema());
+            if (isNotBlank(generated)) {
+                response.withBody(new StringBody(generated, MediaType.APPLICATION_JSON));
+            }
+        } catch (JsonSchemaResponseSynthesisException schemaException) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(WARN)
+                    .setMessageFormat("unable to generate a schema-valid response from the inline JSON schema, leaving response body unset because:{}")
+                    .setArguments(schemaException.getCause() != null ? schemaException.getCause().getMessage() : schemaException.getMessage())
+                    .setThrowable(schemaException)
+            );
+        }
     }
 
     private static String graphQLSchemaOf(RequestDefinition matchedRequest) {

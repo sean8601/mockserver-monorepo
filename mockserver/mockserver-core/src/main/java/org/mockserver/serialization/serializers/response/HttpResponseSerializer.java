@@ -54,6 +54,9 @@ public class HttpResponseSerializer extends StdSerializer<HttpResponse> {
                 jgen.writeObjectField("body", body);
             }
         }
+        if (httpResponse.getGenerateFromSchema() != null) {
+            jgen.writeObjectField("generateFromSchema", httpResponse.getGenerateFromSchema());
+        }
         if (httpResponse.getDelay() != null) {
             jgen.writeObjectField("delay", httpResponse.getDelay());
         }
