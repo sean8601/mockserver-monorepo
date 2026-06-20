@@ -74,6 +74,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | OpenTelemetry | `otelMetricsEnabled`, `otelTracesEnabled`, `otelEndpoint`, `otelMetricsExportIntervalSeconds`, `otelPropagateTraceContext`, `otelGenerateTraceId` |
 | Chaos auto-halt | `chaosAutoHaltEnabled`, `chaosAutoHaltErrorThreshold`, `chaosAutoHaltWindowMillis` |
 | SLO verdicts | `sloTrackingEnabled`, `sloWindowRetentionMillis`, `sloWindowMaxSamples` |
+| Load generation | `loadGenerationEnabled`, `loadGenerationMaxVirtualUsers`, `loadGenerationMaxInFlightRequests`, `loadGenerationMaxRequestsPerSecond`, `loadGenerationMaxDurationMillis`, `loadGenerationMaxSteps` |
 | Breakpoints | `breakpointTimeoutMillis`, `breakpointMaxHeld` (breakpoint activation is now via the matcher-based registry REST API) |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs` |
 | Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig`, `clusterSharedTimesEnabled` |
@@ -104,6 +105,21 @@ Opt-in SLO sample tracking that backs `PUT /mockserver/verifySLO` (see [docs/cod
 | `sloWindowMaxSamples` | `50000` | Hard cap on retained samples; the oldest is evicted when the cap is exceeded. Bounds memory regardless of throughput. |
 
 Because tracking is off by default, the `verifySLO` endpoint returns `400` with `SLO tracking not enabled (set sloTrackingEnabled=true)` until you enable it.
+
+### `loadGeneration*`
+
+Opt-in API-driven load generation that backs `PUT /mockserver/loadScenario` (see [docs/code/load-generation.md](load-generation.md)).
+
+| Property | Default | Meaning |
+|----------|---------|---------|
+| `loadGenerationEnabled` | `false` | When `false`, `PUT /mockserver/loadScenario` returns `403`. Must be set to `true` to opt in — MockServer never self-generates traffic unless explicitly enabled. |
+| `loadGenerationMaxVirtualUsers` | `50` | Hard cap on the concurrent virtual users a scenario may drive; a profile requesting more is rejected at validation. |
+| `loadGenerationMaxInFlightRequests` | `200` | Hard cap on outstanding (not-yet-completed) requests, enforced live by an in-flight semaphore so a slow target cannot let the scenario queue unbounded work. |
+| `loadGenerationMaxRequestsPerSecond` | `500` | Hard cap on dispatch rate, enforced live by a token bucket. |
+| `loadGenerationMaxDurationMillis` | `3600000` (1 h) | Hard cap on how long a scenario may run; a longer profile is rejected at validation, so a forgotten scenario cannot drive traffic indefinitely. |
+| `loadGenerationMaxSteps` | `50` | Hard cap on the number of request steps a single scenario may define. |
+
+The caps are enforced both at validation (VU count, duration, step count) and live at dispatch (in-flight, RPS), so the feature cannot self-DoS the server even when enabled.
 
 ### `failOnInitializationError`
 

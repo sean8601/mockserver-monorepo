@@ -73,12 +73,20 @@ public class MustacheTemplateEngine implements TemplateEngine {
 
     @Override
     public String renderTemplate(String template, HttpRequest request) {
+        return renderTemplate(template, request, null);
+    }
+
+    @Override
+    public String renderTemplate(String template, HttpRequest request, org.mockserver.load.IterationContext iteration) {
         try {
             validateTemplate(template);
             Writer writer = new StringWriter();
             Template compiledTemplate = compiler.compile(template);
             Map<String, Object> data = new ConcurrentHashMap<>();
             data.put("request", new HttpRequestTemplateObject(request));
+            if (iteration != null) {
+                data.put("iteration", iteration);
+            }
             data.putAll(TemplateFunctions.BUILT_IN_FUNCTIONS);
             data.putAll(TemplateFunctions.BUILT_IN_HELPERS);
             data.put("xPath", (Mustache.Lambda) (frag, out) -> evaluatedXPath(frag.execute(), request, out));

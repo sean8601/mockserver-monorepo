@@ -78,6 +78,30 @@ public class VelocityTemplateEngineTest {
     }
 
     @Test
+    public void shouldRenderLoadIterationContextVariable() {
+        // given a load-generation iteration context injected under "iteration"
+        HttpRequest request = request().withPath("/item");
+        org.mockserver.load.IterationContext iteration =
+            new org.mockserver.load.IterationContext(7, 2, 3, 1234, 42);
+
+        // when
+        String rendered = new VelocityTemplateEngine(mockServerLogger, configuration)
+            .renderTemplate("/item/$iteration.index/vu/$iteration.vuId/count/$iteration.count", request, iteration);
+
+        // then the iteration bean getters resolve
+        assertThat(rendered, org.hamcrest.Matchers.is("/item/7/vu/2/count/42"));
+    }
+
+    @Test
+    public void shouldRenderWithoutIterationContextWhenNull() {
+        // when iteration is null the render is identical to the no-iteration overload
+        HttpRequest request = request().withPath("/item").withMethod("GET");
+        String rendered = new VelocityTemplateEngine(mockServerLogger, configuration)
+            .renderTemplate("method=$request.method", request, null);
+        assertThat(rendered, org.hamcrest.Matchers.is("method=GET"));
+    }
+
+    @Test
     public void shouldHandleHttpRequestsWithVelocityResponseTemplateWithMethodPathAndHeader() throws JsonProcessingException {
         // given
         String template = "{" + NEW_LINE +

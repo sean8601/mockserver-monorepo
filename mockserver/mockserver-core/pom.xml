@@ -587,6 +587,9 @@
                         <exclude>**/SloSampleStoreTest.java</exclude>
                         <exclude>**/SloEvaluatorTest.java</exclude>
                         <exclude>**/HttpStateVerifySloEndpointTest.java</exclude>
+                        <!-- Mutate the LoadScenarioOrchestrator singleton, Metrics, the SloSampleStore singleton and global loadGeneration* ConfigurationProperties -->
+                        <exclude>**/LoadScenarioOrchestratorTest.java</exclude>
+                        <exclude>**/HttpStateLoadScenarioEndpointTest.java</exclude>
                         <!-- Mutate global ConfigurationProperties / singleton registries / Metrics (detected by GlobalStateMutationGuardTest) -->
                         <exclude>**/MaxLlmConversationBodySizeTest.java</exclude>
                         <exclude>**/SlowRequestConfigurationTest.java</exclude>
@@ -688,6 +691,8 @@
                                 <include>**/SloSampleStoreTest.java</include>
                                 <include>**/SloEvaluatorTest.java</include>
                                 <include>**/HttpStateVerifySloEndpointTest.java</include>
+                                <include>**/LoadScenarioOrchestratorTest.java</include>
+                                <include>**/HttpStateLoadScenarioEndpointTest.java</include>
                                 <include>**/MaxLlmConversationBodySizeTest.java</include>
                                 <include>**/SlowRequestConfigurationTest.java</include>
                                 <include>**/HttpActionHandlerLlmCostBudgetTest.java</include>

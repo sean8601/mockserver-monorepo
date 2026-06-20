@@ -58,6 +58,8 @@ Two enable-it-once-then-leave-it knobs:
 
 The repo has a k6 harness in `mockserver-performance-test/` (`k6/load.js` with thresholds as gates). Use it as a starting point for your own scenarios — don't read the numbers as canonical (they're agent-class-dependent).
 
+MockServer can also drive load itself via a **load scenario** (`PUT /mockserver/loadScenario`, off by default; see [docs/code/load-generation.md](../code/load-generation.md)). This is **dual-purpose with the forward path**: a load scenario sends through the same `NettyHttpClient` the forward/proxy actions use and records into the same forward metrics histograms, so the tuning here (worker threads, the forward client, metrics overhead) applies equally whether the forward traffic comes from a proxied client or from a load scenario. The scenario's own safety caps — `loadGenerationMaxVirtualUsers`, `loadGenerationMaxInFlightRequests`, `loadGenerationMaxRequestsPerSecond` — bound how hard it can push and exist to stop the generator self-DoSing the server, not to tune throughput; raise them deliberately and watch the same metrics you would for any forward load.
+
 ## What's deliberately not tuned
 
 These look like knobs but are not — changing them rarely helps and often hurts:

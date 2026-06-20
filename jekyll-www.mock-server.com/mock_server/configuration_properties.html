@@ -1578,6 +1578,42 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.sloTrackingEnabled="true" -Dmockserver.sloWindowRetentionMillis="300000" -Dmockserver.sloWindowMaxSamples="10000"</code></pre>
 </div>
 
+<button id="button_configuration_load_generation" class="accordion title"><strong>Load Generation</strong></button>
+<div class="panel title">
+    <p>Lets MockServer drive load at a target on demand. Send a <strong>load scenario</strong> to <span class="inline_code">PUT /mockserver/loadScenario</span> &mdash; an ordered list of request steps fired at a target concurrency described by a ramp profile (constant or linear), with per-iteration data variation via templates (for example <span class="inline_code">$iteration.index</span> in a path or body). MockServer reports progress (requests sent, success/failure counts, p50/p95/p99 latency) via <span class="inline_code">GET /mockserver/loadScenario</span> and stops on <span class="inline_code">DELETE /mockserver/loadScenario</span>. The generated traffic feeds the same samples used by <span class="inline_code">PUT /mockserver/verifySLO</span>, so you can generate load and then assert a resilience verdict over the same window.</p>
+    <p>Load generation is <strong>off by default</strong>: the endpoint returns <code>403</code> until you enable it, so MockServer never self-generates traffic unless asked. Even when enabled, hard caps plus a live in-flight limit and request-rate limit prevent a scenario from overloading the server.</p>
+    <p><strong>Load Generation Enabled</strong> &mdash; master switch. When <span class="this_value">false</span>, <span class="inline_code">PUT /mockserver/loadScenario</span> returns <code>403</code>. Default is <span class="this_value">false</span>.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_LOAD_GENERATION_ENABLED=...</code></pre>
+    <p><strong>Max Virtual Users</strong> &mdash; hard cap on the concurrent virtual users a scenario may drive; a profile asking for more is rejected. Default is <span class="this_value">50</span>.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">50</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxVirtualUsers(int maxVirtualUsers)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxVirtualUsers=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_VIRTUAL_USERS=...</code></pre>
+    <p><strong>Max In-Flight Requests</strong> &mdash; hard cap on outstanding (not-yet-completed) requests, enforced live so a slow target cannot let the scenario queue unbounded work. Default is <span class="this_value">200</span>.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">200</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxInFlightRequests(int maxInFlightRequests)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxInFlightRequests=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_IN_FLIGHT_REQUESTS=...</code></pre>
+    <p><strong>Max Requests Per Second</strong> &mdash; hard cap on dispatch rate, enforced live by a token bucket. Default is <span class="this_value">500</span>.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">500</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxRequestsPerSecond(int maxRequestsPerSecond)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxRequestsPerSecond=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND=...</code></pre>
+    <p><strong>Max Duration</strong> &mdash; hard cap (milliseconds) on how long a scenario may run; a longer profile is rejected, so a forgotten scenario cannot drive traffic indefinitely. Default is <span class="this_value">3600000</span> (1 hour).</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">3600000</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxDurationMillis(long millis)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxDurationMillis=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS=...</code></pre>
+    <p><strong>Max Steps</strong> &mdash; hard cap on the number of request steps a single scenario may define. Default is <span class="this_value">50</span>.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">50</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxSteps(int maxSteps)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxSteps=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_STEPS=...</code></pre>
+    <p>Example (enable load generation with a lower concurrency ceiling):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationEnabled="true" -Dmockserver.loadGenerationMaxVirtualUsers="20" -Dmockserver.loadGenerationMaxRequestsPerSecond="200"</code></pre>
+</div>
+
 <button id="button_configuration_llm_metrics" class="accordion title"><strong>LLM Token &amp; Cost Metrics</strong></button>
 <div class="panel title">
     <p>When enabled (alongside <span class="inline_code">metricsEnabled</span>), MockServer parses forwarded LLM responses to extract token usage and estimated cost, incrementing Prometheus counters labeled by provider and model. The parse is the same one used for GenAI span export; enabling this property activates the forward-path response parse even when OTLP tracing is off.</p>

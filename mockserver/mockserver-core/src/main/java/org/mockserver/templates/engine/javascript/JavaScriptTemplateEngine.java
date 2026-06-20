@@ -82,12 +82,22 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
 
     @Override
     public synchronized <T> T executeTemplate(String template, HttpRequest request, Class<? extends DTO<T>> dtoClass) {
-        return executeTemplateInternal(template, request, null, dtoClass, false);
+        return executeTemplateInternal(template, request, null, null, dtoClass, false);
     }
 
     @Override
     public synchronized <T> T executeTemplate(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass) {
-        return executeTemplateInternal(template, request, response, dtoClass, true);
+        return executeTemplateInternal(template, request, response, null, dtoClass, true);
+    }
+
+    /**
+     * Load-generation only: execute a JavaScript template with a per-iteration variable
+     * ({@code iteration}) bound in the script scope. Used by the load executor so a JavaScript
+     * load-scenario step can vary its output per iteration. Identical to
+     * {@link #executeTemplate(String, HttpRequest, Class)} when {@code iteration} is null.
+     */
+    public synchronized <T> T executeTemplate(String template, HttpRequest request, org.mockserver.load.IterationContext iteration, Class<? extends DTO<T>> dtoClass) {
+        return executeTemplateInternal(template, request, null, iteration, dtoClass, false);
     }
 
     @Override
@@ -98,7 +108,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         throw new UnsupportedOperationException("JavaScript templates are not supported for file body templating; use a Velocity or Mustache templateType, or an httpResponseTemplate for JavaScript");
     }
 
-    private <T> T executeTemplateInternal(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass, boolean includeResponse) {
+    private <T> T executeTemplateInternal(String template, HttpRequest request, HttpResponse response, org.mockserver.load.IterationContext iteration, Class<? extends DTO<T>> dtoClass, boolean includeResponse) {
         String script = includeResponse ? wrapTemplateWithResponse(template) : wrapTemplate(template);
         try {
             validateTemplate(template);
@@ -112,6 +122,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
                     includeResponse,
                     request,
                     response,
+                    iteration,
                     classFilter,
                     objectMapper,
                     mockServerLogger,

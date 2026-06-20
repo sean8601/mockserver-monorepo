@@ -86,6 +86,12 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         // Wire the replay handler so PUT /mockserver/replay can re-issue
         // requests using the existing NettyHttpClient (forward/proxy client).
         httpState.setReplayHandler(req -> httpActionHandler.getHttpClient().sendRequest(req));
+        // Wire the load-scenario sender similarly so PUT /mockserver/loadScenario can drive
+        // traffic using the existing NettyHttpClient, without core depending on it directly.
+        org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance()
+            .setSender(req -> httpActionHandler.getHttpClient().sendRequest(req));
+        org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance()
+            .setConfiguration(configuration);
         // Wire the preemption simulator's in-flight count to the live LifeCycle gauge so
         // GET /mockserver/preemption reports the real number of draining requests (not 0).
         org.mockserver.mock.action.http.PreemptionSimulator.getInstance().setInFlightSupplier(server::getRequestsInFlight);

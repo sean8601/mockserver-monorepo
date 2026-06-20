@@ -122,6 +122,7 @@ public class HttpState {
     private VerificationSerializer verificationSerializer;
     private VerificationSequenceSerializer verificationSequenceSerializer;
     private SloCriteriaSerializer sloCriteriaSerializer;
+    private org.mockserver.serialization.LoadScenarioSerializer loadScenarioSerializer;
     private LogEntrySerializer logEntrySerializer;
     private final MemoryMonitoring memoryMonitoring;
     private OpenAPIConverter openAPIConverter;
@@ -471,6 +472,7 @@ public class HttpState {
         org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ChaosAutoHaltMonitor.getInstance().reset();
         org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
+        org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().reset();
         org.mockserver.slo.SloSampleStore.getInstance().reset();
         org.mockserver.mock.action.http.LlmCostBudgetMonitor.getInstance().reset();
         org.mockserver.mock.action.http.ForwardCircuitBreaker.getInstance().reset();
@@ -2156,6 +2158,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioPut(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2625,6 +2634,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioGet()), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleServiceChaosGet()), true);
@@ -2772,6 +2787,12 @@ public class HttpState {
             if (request.matches("DELETE", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosExperimentDelete()), true);
+                }
+                return true;
+            }
+            if (request.matches("DELETE", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioDelete()), true);
                 }
                 return true;
             }
@@ -3221,6 +3242,125 @@ public class HttpState {
         } catch (Exception jsonError) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to process chaos experiment request\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    // --- Load Scenario endpoint helpers ---
+
+    /**
+     * Handle {@code PUT /mockserver/loadScenario}: deserialize the body into a
+     * {@link org.mockserver.load.LoadScenario} and start it. Returns 403 when
+     * {@code loadGenerationEnabled} is false (so MockServer never self-loads unless opted in),
+     * 200 with {@code {status:started,...}} on success, or 400 with {@code {error}} when the
+     * scenario is invalid or exceeds a configured cap.
+     */
+    private HttpResponse handleLoadScenarioPut(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            if (!configuration.loadGenerationEnabled()) {
+                return response().withStatusCode(FORBIDDEN.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        objectMapper.createObjectNode().put("error", "load generation not enabled (set loadGenerationEnabled=true)")), MediaType.JSON_UTF_8);
+            }
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return loadScenarioError(objectMapper, "request body is required with a load scenario definition");
+            }
+            org.mockserver.load.LoadScenario scenario = getLoadScenarioSerializer().deserialize(body);
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.setConfiguration(configuration);
+            String error = orchestrator.start(scenario, null);
+            if (error != null) {
+                return loadScenarioError(objectMapper, error);
+            }
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("started load scenario:{}")
+                        .setArguments(scenario.getName())
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "started");
+            result.put("name", scenario.getName());
+            result.put("steps", scenario.getSteps().size());
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return loadScenarioError(objectMapper, "invalid load scenario definition: " + e.getMessage());
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to process load scenario request: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleLoadScenarioGet() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.getStatus();
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            if (status == null) {
+                result.put("state", "none");
+            } else {
+                result.put("name", status.name);
+                result.put("state", status.state);
+                result.put("elapsedMillis", status.elapsedMillis);
+                result.put("currentVus", status.currentVus);
+                result.put("requestsSent", status.requestsSent);
+                result.put("succeeded", status.succeeded);
+                result.put("failed", status.failed);
+                result.put("p50Millis", status.p50Millis);
+                result.put("p95Millis", status.p95Millis);
+                result.put("p99Millis", status.p99Millis);
+                result.put("runId", status.runId);
+                result.put("startedAt", status.startedAtEpochMillis);
+                if (status.endedAtEpochMillis != null) {
+                    result.put("endedAt", status.endedAtEpochMillis);
+                }
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get load scenario status\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handleLoadScenarioDelete() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().stop();
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setMessageFormat("stopped load scenario")
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "stopped");
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to stop load scenario\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse loadScenarioError(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String message) {
+        try {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                    objectMapper.createObjectNode().put("error", message)), MediaType.JSON_UTF_8);
+        } catch (Exception jsonError) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to process load scenario request\"}", MediaType.JSON_UTF_8);
         }
     }
 
@@ -5089,6 +5229,13 @@ public class HttpState {
             this.sloCriteriaSerializer = new SloCriteriaSerializer(mockServerLogger);
         }
         return sloCriteriaSerializer;
+    }
+
+    private org.mockserver.serialization.LoadScenarioSerializer getLoadScenarioSerializer() {
+        if (this.loadScenarioSerializer == null) {
+            this.loadScenarioSerializer = new org.mockserver.serialization.LoadScenarioSerializer(mockServerLogger);
+        }
+        return loadScenarioSerializer;
     }
 
     private LogEntrySerializer getLogEntrySerializer() {

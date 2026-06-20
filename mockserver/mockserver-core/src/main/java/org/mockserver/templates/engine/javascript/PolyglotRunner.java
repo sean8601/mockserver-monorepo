@@ -40,6 +40,7 @@ final class PolyglotRunner {
         boolean includeResponse,
         HttpRequest request,
         HttpResponse response,
+        org.mockserver.load.IterationContext iteration,
         Predicate<String> classFilter,
         ObjectMapper objectMapper,
         MockServerLogger mockServerLogger,
@@ -83,6 +84,14 @@ final class PolyglotRunner {
             RequestBodyExtractionHelper bodyExtractionHelper = new RequestBodyExtractionHelper(request, mockServerLogger);
             jsBindings.putMember("jsonPath", (Function<String, Object>) bodyExtractionHelper::jsonPath);
             jsBindings.putMember("xPath", (Function<String, Object>) bodyExtractionHelper::xPath);
+
+            // Load-generation only: expose the per-iteration variable as a JS host object so a
+            // load-scenario JavaScript step can read iteration.getIndex() etc. Null for every
+            // non-load template execution, so the standard response/forward template path is
+            // byte-for-byte unchanged.
+            if (iteration != null) {
+                jsBindings.putMember("iteration", iteration);
+            }
 
             Source source = Source.create("js", fullScript);
             context.eval(source);

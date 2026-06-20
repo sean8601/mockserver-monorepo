@@ -160,11 +160,19 @@ public class VelocityTemplateEngine implements TemplateEngine {
 
     @Override
     public String renderTemplate(String template, HttpRequest request) {
+        return renderTemplate(template, request, null);
+    }
+
+    @Override
+    public String renderTemplate(String template, HttpRequest request, org.mockserver.load.IterationContext iteration) {
         try {
             validateTemplate(template);
             Writer writer = new StringWriter();
             VelocityContext context = new VelocityContext(toolManager.createContext());
             context.put("request", new HttpRequestTemplateObject(request));
+            if (iteration != null) {
+                context.put("iteration", iteration);
+            }
             TemplateFunctions.BUILT_IN_FUNCTIONS.forEach(context::put);
             TemplateFunctions.BUILT_IN_HELPERS.forEach(context::put);
             RequestBodyExtractionHelper bodyExtractionHelper = new RequestBodyExtractionHelper(request, mockServerLogger);

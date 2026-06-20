@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **API-driven load generation via Load Scenarios** (`mockserver-core`, `mockserver-netty`). A new opt-in
+  control plane (`PUT/GET/DELETE /mockserver/loadScenario`) drives outbound traffic at a target: a
+  `LoadScenario` is an ordered list of request steps (modelled on a verification sequence) with per-step
+  think-time (the existing `Delay` model, including jitter distributions) and a ramp `LoadProfile`
+  (`CONSTANT` or `LINEAR` virtual-user count over a duration). Request fields are template-rendered per
+  iteration with a new `iteration` context object (`iteration.index`/`vuId`/`vuIteration`/`elapsedMillis`)
+  alongside the existing `faker`/`uuid`/`scenario` helpers, so data varies across iterations. Runs in-process
+  on a non-blocking scheduler that fires through the existing forward HTTP client; results feed the metrics
+  histograms and the SLO sample store, so a load run can be asserted with `verifySLO`. Off by default
+  (`loadGenerationEnabled`) and bounded by hard caps on virtual users, in-flight requests, request rate,
+  duration, and steps to prevent a scenario overloading the instance serving mocks.
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,

@@ -69,6 +69,12 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_SLO_TRACKING_ENABLED = "mockserver.sloTrackingEnabled";
     private static final String MOCKSERVER_SLO_WINDOW_RETENTION_MILLIS = "mockserver.sloWindowRetentionMillis";
     private static final String MOCKSERVER_SLO_WINDOW_MAX_SAMPLES = "mockserver.sloWindowMaxSamples";
+    private static final String MOCKSERVER_LOAD_GENERATION_ENABLED = "mockserver.loadGenerationEnabled";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_VIRTUAL_USERS = "mockserver.loadGenerationMaxVirtualUsers";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_IN_FLIGHT_REQUESTS = "mockserver.loadGenerationMaxInFlightRequests";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND = "mockserver.loadGenerationMaxRequestsPerSecond";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS = "mockserver.loadGenerationMaxDurationMillis";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_STEPS = "mockserver.loadGenerationMaxSteps";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
@@ -769,6 +775,96 @@ public class ConfigurationProperties {
      */
     public static void sloWindowMaxSamples(int maxSamples) {
         setProperty(MOCKSERVER_SLO_WINDOW_MAX_SAMPLES, "" + maxSamples);
+    }
+
+    public static boolean loadGenerationEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_LOAD_GENERATION_ENABLED, "MOCKSERVER_LOAD_GENERATION_ENABLED", "" + false));
+    }
+
+    /**
+     * Enable API-driven load generation. When enabled, {@code PUT /mockserver/loadScenario}
+     * starts an in-process load scenario that drives templated request steps at a target
+     * concurrency, producing latency/error samples for the SLO verdict feature. Off by
+     * default — when disabled the endpoint returns 403 so MockServer never self-loads
+     * unless explicitly opted in.
+     *
+     * @param enable enable load generation
+     */
+    public static void loadGenerationEnabled(boolean enable) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_ENABLED, "" + enable);
+    }
+
+    public static int loadGenerationMaxVirtualUsers() {
+        return readIntegerProperty(MOCKSERVER_LOAD_GENERATION_MAX_VIRTUAL_USERS, "MOCKSERVER_LOAD_GENERATION_MAX_VIRTUAL_USERS", 50);
+    }
+
+    /**
+     * Hard cap on the number of concurrent virtual users a load scenario may drive. A
+     * scenario profile asking for more is rejected at validation. Default is 50.
+     *
+     * @param maxVirtualUsers maximum concurrent virtual users
+     */
+    public static void loadGenerationMaxVirtualUsers(int maxVirtualUsers) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_VIRTUAL_USERS, "" + maxVirtualUsers);
+    }
+
+    public static int loadGenerationMaxInFlightRequests() {
+        return readIntegerProperty(MOCKSERVER_LOAD_GENERATION_MAX_IN_FLIGHT_REQUESTS, "MOCKSERVER_LOAD_GENERATION_MAX_IN_FLIGHT_REQUESTS", 200);
+    }
+
+    /**
+     * Hard cap on the number of in-flight (not-yet-completed) requests a load scenario may
+     * have outstanding at once. Enforced live by an in-flight semaphore so a slow target
+     * cannot let the scenario queue unbounded work. Default is 200.
+     *
+     * @param maxInFlightRequests maximum concurrent in-flight requests
+     */
+    public static void loadGenerationMaxInFlightRequests(int maxInFlightRequests) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_IN_FLIGHT_REQUESTS, "" + maxInFlightRequests);
+    }
+
+    public static int loadGenerationMaxRequestsPerSecond() {
+        return readIntegerProperty(MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND, "MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND", 500);
+    }
+
+    /**
+     * Hard cap on the request rate (requests per second) a load scenario may dispatch.
+     * Enforced live by a token bucket so a scenario cannot exceed this rate regardless of
+     * concurrency. Default is 500.
+     *
+     * @param maxRequestsPerSecond maximum requests dispatched per second
+     */
+    public static void loadGenerationMaxRequestsPerSecond(int maxRequestsPerSecond) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND, "" + maxRequestsPerSecond);
+    }
+
+    public static long loadGenerationMaxDurationMillis() {
+        return readLongProperty(MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS, "MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS", 3_600_000L);
+    }
+
+    /**
+     * Hard cap on the duration (in milliseconds) a load scenario may run. A profile asking
+     * for a longer run is rejected at validation, so a forgotten scenario cannot drive
+     * traffic indefinitely. Default is 3600000 (1 hour).
+     *
+     * @param millis maximum scenario duration in milliseconds
+     */
+    public static void loadGenerationMaxDurationMillis(long millis) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS, "" + millis);
+    }
+
+    public static int loadGenerationMaxSteps() {
+        return readIntegerProperty(MOCKSERVER_LOAD_GENERATION_MAX_STEPS, "MOCKSERVER_LOAD_GENERATION_MAX_STEPS", 50);
+    }
+
+    /**
+     * Hard cap on the number of request steps a single load scenario may define. A scenario
+     * with more steps is rejected at validation. Default is 50.
+     *
+     * @param maxSteps maximum number of steps per scenario
+     */
+    public static void loadGenerationMaxSteps(int maxSteps) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_STEPS, "" + maxSteps);
     }
 
     public static boolean mcpEnabled() {

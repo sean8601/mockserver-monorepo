@@ -82,6 +82,26 @@ public class JavaScriptTemplateEngineTest {
     }
 
     @Test
+    public void shouldBindLoadIterationContextVariable() {
+        // given a load-generation iteration context exposed to the JS scope as "iteration"
+        graalJsAvailable();
+        String template = "return {" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': 'idx=' + iteration.getIndex() + ',vu=' + iteration.getVuId()" + NEW_LINE +
+            "};";
+        HttpRequest request = request().withPath("/somePath").withMethod("GET");
+        org.mockserver.load.IterationContext iteration =
+            new org.mockserver.load.IterationContext(7, 2, 3, 1234, 42);
+
+        // when
+        HttpResponse actualHttpResponse = new JavaScriptTemplateEngine(mockServerLogger, configuration)
+            .executeTemplate(template, request, iteration, HttpResponseDTO.class);
+
+        // then
+        assertThat(actualHttpResponse, is(response().withStatusCode(200).withBody("idx=7,vu=2")));
+    }
+
+    @Test
     public void shouldHandleHttpRequestsWithJavaScriptResponseTemplateWithECMA6() throws JsonProcessingException {
         // given
         graalJsAvailable();

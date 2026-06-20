@@ -71,6 +71,29 @@ public class MustacheTemplateEngineTest {
     }
 
     @Test
+    public void shouldRenderLoadIterationContextVariable() {
+        // given a load-generation iteration context injected under "iteration"
+        HttpRequest request = request().withPath("/item");
+        org.mockserver.load.IterationContext iteration =
+            new org.mockserver.load.IterationContext(7, 2, 3, 1234, 42);
+
+        // when
+        String rendered = new MustacheTemplateEngine(mockServerLogger, configuration)
+            .renderTemplate("/item/{{iteration.index}}/vu/{{iteration.vuId}}/count/{{iteration.count}}", request, iteration);
+
+        // then the iteration bean getters resolve
+        assertThat(rendered, org.hamcrest.Matchers.is("/item/7/vu/2/count/42"));
+    }
+
+    @Test
+    public void shouldRenderWithoutIterationContextWhenNull() {
+        HttpRequest request = request().withPath("/item").withMethod("GET");
+        String rendered = new MustacheTemplateEngine(mockServerLogger, configuration)
+            .renderTemplate("method={{request.method}}", request, null);
+        assertThat(rendered, org.hamcrest.Matchers.is("method=GET"));
+    }
+
+    @Test
     public void shouldHandleHttpRequestsWithMustacheResponseTemplateWithMethodPathAndHeader() throws JsonProcessingException {
         // given
         String template = "{" + NEW_LINE +

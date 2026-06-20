@@ -52,6 +52,12 @@ public class Configuration {
     private Boolean sloTrackingEnabled;
     private Long sloWindowRetentionMillis;
     private Integer sloWindowMaxSamples;
+    private Boolean loadGenerationEnabled;
+    private Integer loadGenerationMaxVirtualUsers;
+    private Integer loadGenerationMaxInFlightRequests;
+    private Integer loadGenerationMaxRequestsPerSecond;
+    private Long loadGenerationMaxDurationMillis;
+    private Integer loadGenerationMaxSteps;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
@@ -733,6 +739,117 @@ public class Configuration {
      */
     public Configuration sloWindowMaxSamples(Integer sloWindowMaxSamples) {
         this.sloWindowMaxSamples = sloWindowMaxSamples;
+        return this;
+    }
+
+    public Boolean loadGenerationEnabled() {
+        if (loadGenerationEnabled == null) {
+            return ConfigurationProperties.loadGenerationEnabled();
+        }
+        return loadGenerationEnabled;
+    }
+
+    /**
+     * Enable API-driven load generation. When enabled, {@code PUT /mockserver/loadScenario}
+     * starts an in-process load scenario that drives templated request steps at a target
+     * concurrency, producing latency/error samples for the SLO verdict feature. Off by
+     * default — when disabled the endpoint returns 403 so MockServer never self-loads
+     * unless explicitly opted in.
+     *
+     * @param loadGenerationEnabled enable load generation
+     */
+    public Configuration loadGenerationEnabled(Boolean loadGenerationEnabled) {
+        this.loadGenerationEnabled = loadGenerationEnabled;
+        return this;
+    }
+
+    public Integer loadGenerationMaxVirtualUsers() {
+        if (loadGenerationMaxVirtualUsers == null) {
+            return ConfigurationProperties.loadGenerationMaxVirtualUsers();
+        }
+        return loadGenerationMaxVirtualUsers;
+    }
+
+    /**
+     * Hard cap on the number of concurrent virtual users a load scenario may drive. A
+     * scenario profile asking for more is rejected at validation. Default is 50.
+     *
+     * @param loadGenerationMaxVirtualUsers maximum concurrent virtual users
+     */
+    public Configuration loadGenerationMaxVirtualUsers(Integer loadGenerationMaxVirtualUsers) {
+        this.loadGenerationMaxVirtualUsers = loadGenerationMaxVirtualUsers;
+        return this;
+    }
+
+    public Integer loadGenerationMaxInFlightRequests() {
+        if (loadGenerationMaxInFlightRequests == null) {
+            return ConfigurationProperties.loadGenerationMaxInFlightRequests();
+        }
+        return loadGenerationMaxInFlightRequests;
+    }
+
+    /**
+     * Hard cap on the number of in-flight (not-yet-completed) requests a load scenario may
+     * have outstanding at once. Enforced live by an in-flight semaphore. Default is 200.
+     *
+     * @param loadGenerationMaxInFlightRequests maximum concurrent in-flight requests
+     */
+    public Configuration loadGenerationMaxInFlightRequests(Integer loadGenerationMaxInFlightRequests) {
+        this.loadGenerationMaxInFlightRequests = loadGenerationMaxInFlightRequests;
+        return this;
+    }
+
+    public Integer loadGenerationMaxRequestsPerSecond() {
+        if (loadGenerationMaxRequestsPerSecond == null) {
+            return ConfigurationProperties.loadGenerationMaxRequestsPerSecond();
+        }
+        return loadGenerationMaxRequestsPerSecond;
+    }
+
+    /**
+     * Hard cap on the request rate (requests per second) a load scenario may dispatch.
+     * Enforced live by a token bucket. Default is 500.
+     *
+     * @param loadGenerationMaxRequestsPerSecond maximum requests dispatched per second
+     */
+    public Configuration loadGenerationMaxRequestsPerSecond(Integer loadGenerationMaxRequestsPerSecond) {
+        this.loadGenerationMaxRequestsPerSecond = loadGenerationMaxRequestsPerSecond;
+        return this;
+    }
+
+    public Long loadGenerationMaxDurationMillis() {
+        if (loadGenerationMaxDurationMillis == null) {
+            return ConfigurationProperties.loadGenerationMaxDurationMillis();
+        }
+        return loadGenerationMaxDurationMillis;
+    }
+
+    /**
+     * Hard cap on the duration (in milliseconds) a load scenario may run. A profile asking
+     * for a longer run is rejected at validation. Default is 3600000 (1 hour).
+     *
+     * @param loadGenerationMaxDurationMillis maximum scenario duration in milliseconds
+     */
+    public Configuration loadGenerationMaxDurationMillis(Long loadGenerationMaxDurationMillis) {
+        this.loadGenerationMaxDurationMillis = loadGenerationMaxDurationMillis;
+        return this;
+    }
+
+    public Integer loadGenerationMaxSteps() {
+        if (loadGenerationMaxSteps == null) {
+            return ConfigurationProperties.loadGenerationMaxSteps();
+        }
+        return loadGenerationMaxSteps;
+    }
+
+    /**
+     * Hard cap on the number of request steps a single load scenario may define. A scenario
+     * with more steps is rejected at validation. Default is 50.
+     *
+     * @param loadGenerationMaxSteps maximum number of steps per scenario
+     */
+    public Configuration loadGenerationMaxSteps(Integer loadGenerationMaxSteps) {
+        this.loadGenerationMaxSteps = loadGenerationMaxSteps;
         return this;
     }
 
