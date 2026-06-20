@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `withPushNotifications(webhookUrl)` makes `tasks/pushNotificationConfig/set` echo the registered config and
     makes each `tasks/send` additionally POST the completed task to the configured webhook URL (via an
     override-forwarded-request) while still returning the JSON-RPC task response to the caller.
+- **Fluent LLM and MCP mock builders for the Ruby, Go, Rust, .NET and PHP clients**: the idiomatic
+  LLM-mocking and MCP-server-mocking builders that previously shipped only in the Node and Python
+  clients are now available in all five remaining client libraries. Each client gains an LLM builder
+  (`llm_mock`/conversation/failover, provider + model, completions, tool calls, streaming physics,
+  usage and embeddings) and an MCP mock builder (tools, resources and prompts over JSON-RPC 2.0 on the
+  Streamable HTTP transport), producing the same expectation wire JSON as the Java/Node/Python builders
+  so a mock scripted from any client behaves identically. Each port follows its language's conventions
+  (Ruby `MockServer::LLM`/`MockServer::MCP` modules; Go `llm.go`/`mcp.go` builders with an extended
+  `Expectation` struct; Rust `llm`/`mcp` modules returning `serde_json::Value`; .NET `LlmMockBuilder`/
+  `McpMockBuilder` under `MockServer.Client`; PHP `MockServer\Llm`/`MockServer\Mcp` builders) and ships
+  with unit tests asserting the generated wire JSON.
 - **LLM embeddings for Gemini/Ollama/Bedrock, plus rerank mocking (Cohere/Voyage)**: `httpLlmResponse` embeddings
   now work for three more providers (previously only OpenAI/Azure-OpenAI returned a real embedding response):
   - **Gemini** — emits the `embedContent` shape (`{"embedding":{"values":[...]}}`, default 768 dimensions).

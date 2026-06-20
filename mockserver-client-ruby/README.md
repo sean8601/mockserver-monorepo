@@ -99,6 +99,90 @@ All 25 domain model classes are available under the `MockServer` module:
 - `Ports`
 - `RequestDefinition` (alias for `HttpRequest`)
 
+## LLM Mocking
+
+Fluent builders under `MockServer::LLM` mock LLM provider endpoints. They produce
+expectations whose action is carried in the `httpLlmResponse` field; MockServer
+re-encodes the provider-agnostic completion into the configured provider's wire
+shape (OpenAI / Anthropic / Gemini / Bedrock / ...) when serving the request.
+
+```ruby
+require 'mockserver-client'
+
+client = MockServer::Client.new('localhost', 1080)
+
+# A single completion mock
+MockServer::LLM.llm_mock('/v1/chat/completions')
+               .with_provider(MockServer::LLM::Provider::OPENAI)
+               .with_model('gpt-4o')
+               .responding_with(
+                 MockServer::LLM.completion
+                                .with_text('Hello!')
+                                .with_usage(MockServer::LLM.usage.with_input_tokens(10).with_output_tokens(5))
+               )
+               .apply_to(client)
+```
+
+Multi-turn **conversations** use MockServer scenario-state advancement so each
+turn is served once, in order. Add per-turn predicates with `when_*` methods and
+optionally isolate per session with `isolate_by`:
+
+```ruby
+MockServer::LLM.conversation
+               .with_path('/v1/chat/completions')
+               .with_provider(MockServer::LLM::Provider::OPENAI)
+               .isolate_by(MockServer::LLM.header('x-session-id'))
+               .turn.when_latest_message_contains('weather')
+                    .responding_with(MockServer::LLM.completion.with_text('It is sunny.'))
+               .turn.responding_with(MockServer::LLM.completion.with_text('Anything else?'))
+               .apply_to(client)
+```
+
+**Failover** scenarios script N upstream failures (consecutive identical failures
+are coalesced) followed by a success; default JSON error bodies are generated per
+status code unless a custom body is supplied:
+
+```ruby
+MockServer::LLM.llm_failover
+               .with_path('/v1/chat/completions')
+               .with_provider(MockServer::LLM::Provider::OPENAI)
+               .fail_with(429, 2)          # two rate-limit failures
+               .fail_with(503)             # then one service-unavailable
+               .then_respond_with(MockServer::LLM.completion.with_text('Recovered'))
+               .apply_to(client)
+```
+
+Each builder also exposes `build` to obtain the raw expectation Hash(es) without
+registering them.
+
+## MCP Mocking
+
+`MockServer::MCP.mcp_mock` builds the set of expectations needed to emulate a
+Streamable-HTTP MCP (Model Context Protocol) server speaking JSON-RPC 2.0. It
+generates `initialize`, `ping`, `notifications/initialized`, and per-capability
+`tools`, `resources`, and `prompts` handlers.
+
+```ruby
+MockServer::MCP.mcp_mock('/mcp')
+               .with_server_name('MyServer')
+               .with_tool('get_weather')
+                 .with_description('Get the weather for a city')
+                 .with_input_schema('{"type":"object","properties":{"city":{"type":"string"}}}')
+                 .responding_with('72F and sunny')
+               .and_then
+               .with_resource('file:///config.json')
+                 .with_name('config')
+                 .with_content('{"debug":true}')
+               .and_then
+               .with_prompt('greet')
+                 .with_argument('name', 'who to greet', true)
+                 .responding_with('user', 'Hello there')
+               .and_then
+               .apply_to(client)
+```
+
+`build` returns the raw expectation Hashes if you prefer to register them yourself.
+
 ## Interactive Breakpoints
 
 The client supports matcher-driven interactive breakpoints over the callback WebSocket. Register a breakpoint matcher to pause forwarded/proxied exchanges at specific phases and inspect/modify/continue them via callback handlers.

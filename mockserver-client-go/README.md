@@ -211,6 +211,84 @@ client.CloseBreakpointWebSocket()
 
 **Stream frame decisions:** `ContinueFrame`, `ModifyFrame`, `DropFrame`, `InjectFrame`, `CloseFrame`.
 
+### LLM Mocking
+
+Mock LLM provider APIs (OpenAI, Anthropic, Gemini, Bedrock, Azure OpenAI, Ollama) with fluent builders. The action is carried in the `httpLlmResponse` field of an expectation; MockServer re-encodes the provider-agnostic `Completion` into the wire shape of the configured provider. Use the `Provider*` and `Role*` constants.
+
+```go
+// Single completion mock
+_, _ = mockserver.LlmMock("/v1/chat/completions").
+    WithProvider(mockserver.ProviderOpenAI).
+    WithModel("gpt-4o").
+    RespondingWithCompletion(
+        mockserver.NewCompletion().
+            WithText("Hello!").
+            WithStopReason("stop").
+            WithUsage(mockserver.NewUsage().WithInputTokens(10).WithOutputTokens(5)),
+    ).
+    ApplyTo(client)
+
+// Embedding mock
+_, _ = mockserver.LlmMock("/v1/embeddings").
+    WithProvider(mockserver.ProviderOpenAI).
+    RespondingWithEmbedding(
+        mockserver.NewEmbedding().WithDimensions(1536).WithDeterministicFromInput(true),
+    ).
+    ApplyTo(client)
+
+// Multi-turn conversation (scenario state advancement, optional per-session isolation)
+_, _ = mockserver.Conversation().
+    WithPath("/v1/chat/completions").
+    WithProvider(mockserver.ProviderAnthropic).
+    WithModel("claude-3-5-sonnet").
+    IsolateBy(mockserver.IsolateByHeader("x-session-id")).
+    Turn().
+        WhenLatestMessageContains("hello").
+        RespondingWith(mockserver.NewCompletion().WithText("hi there")).
+    Turn().
+        WhenTurnIndex(1).
+        RespondingWith(mockserver.NewCompletion().WithText("bye")).
+    ApplyTo(client)
+
+// Provider failover: N failures, then success. Consecutive identical failures
+// are coalesced; omitted error bodies default per status code.
+_, _ = mockserver.LlmFailover().
+    WithPath("/v1/chat/completions").
+    WithProvider(mockserver.ProviderOpenAI).
+    WithModel("gpt-4o").
+    FailWithCount(429, 2). // two rate-limit attempts (default 429 body)
+    FailWith(503).         // one service-unavailable attempt
+    ThenRespondWith(mockserver.NewCompletion().WithText("recovered")).
+    ApplyTo(client)
+```
+
+`FailWithBody(statusCode, body)` supplies a custom error body. Each builder also has a `Build()` method that returns `[]Expectation` without registering them.
+
+### MCP Mocking
+
+Mock a Model Context Protocol (MCP) server speaking JSON-RPC 2.0 over the Streamable HTTP transport. `McpMock` generates the full set of expectations (`initialize`, `ping`, `notifications/initialized`, plus `tools`, `resources`, and `prompts` list/call handlers). Tool/resource/prompt definitions are configured via closures.
+
+```go
+_, _ = mockserver.McpMock("/mcp").
+    WithServerName("WeatherServer").
+    WithTool("get_weather", func(t *mockserver.McpToolBuilder) {
+        t.WithDescription("Get the weather for a city").
+            WithInputSchema(`{"type":"object","properties":{"city":{"type":"string"}}}`).
+            RespondingWith("72F and sunny", false)
+    }).
+    WithResource("file:///config.json", func(r *mockserver.McpResourceBuilder) {
+        r.WithName("config").WithMimeType("application/json").WithContent(`{"debug":true}`)
+    }).
+    WithPrompt("greeting", func(p *mockserver.McpPromptBuilder) {
+        p.WithDescription("A greeting").
+            WithArgument("name", "the name", true).
+            RespondingWith(mockserver.RoleUser, "Hello {{name}}")
+    }).
+    ApplyTo(client)
+```
+
+Responses use a Velocity template that echoes the inbound JSON-RPC id back via `$!{request.jsonRpcRawId}`. Tool input schemas are validated (invalid JSON panics) and compacted. `McpMock("")` defaults the path to `/mcp`.
+
 ## Start / Launch MockServer
 
 The Go client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.

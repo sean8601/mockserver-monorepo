@@ -136,6 +136,42 @@ impl MockServerClient {
         }
     }
 
+    /// Create one or more expectations from raw JSON values.
+    ///
+    /// This is the lower-level counterpart to [`upsert`](Self::upsert) for
+    /// expectation shapes that the typed [`Expectation`] model does not (yet)
+    /// cover — notably the `httpLlmResponse` action and conversation scenario
+    /// fields produced by the [`crate::llm`] builders, and the Velocity/JSON-RPC
+    /// expectations produced by the [`crate::mcp`] builder.
+    ///
+    /// The `expectations` value should be a JSON object (single expectation) or
+    /// a JSON array of expectation objects. Returns the raw JSON the server
+    /// echoes back (or the submitted value if the server returns an empty body).
+    pub fn upsert_raw(&self, expectations: Value) -> Result<Value> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/expectation"))
+            .json(&expectations)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 | 201 => {
+                let text = resp.text()?;
+                if text.is_empty() {
+                    Ok(expectations)
+                } else {
+                    Ok(serde_json::from_str(&text)?)
+                }
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
     // ------------------------------------------------------------------
     // OpenAPI import
     // ------------------------------------------------------------------

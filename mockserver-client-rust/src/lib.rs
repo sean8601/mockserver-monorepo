@@ -31,6 +31,8 @@ mod client;
 mod error;
 pub mod breakpoint;
 pub mod launcher;
+pub mod llm;
+pub mod mcp;
 
 pub use client::{ClientBuilder, MockServerClient, ForwardChainExpectation};
 pub use error::{Error, Result};

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using MockServer.Client.Llm;
 
 namespace MockServer.Client.Models;
 
@@ -58,6 +59,22 @@ public sealed class Expectation
     [JsonPropertyName("dnsResponse")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DnsResponse? DnsResponse { get; set; }
+
+    [JsonPropertyName("httpLlmResponse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpLlmResponse? HttpLlmResponse { get; set; }
+
+    [JsonPropertyName("scenarioName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ScenarioName { get; set; }
+
+    [JsonPropertyName("scenarioState")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ScenarioState { get; set; }
+
+    [JsonPropertyName("newScenarioState")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NewScenarioState { get; set; }
 
     [JsonPropertyName("times")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

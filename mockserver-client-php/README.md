@@ -148,6 +148,98 @@ if ($client->hasStarted()) {
 }
 ```
 
+## Mocking LLM APIs
+
+Fluent builders under the `MockServer\Llm` namespace mock provider-agnostic LLM
+completions, embeddings, multi-turn conversations and provider failover. The
+wire JSON they produce is identical to the Java, Node and Python clients, so a
+mock scripted from PHP behaves the same as one scripted anywhere else.
+
+```php
+<?php
+
+use MockServer\Llm\Completion;
+use MockServer\Llm\IsolationSource;
+use MockServer\Llm\LlmConversationBuilder;
+use MockServer\Llm\LlmFailoverBuilder;
+use MockServer\Llm\LlmMockBuilder;
+use MockServer\Llm\Provider;
+use MockServer\Llm\Role;
+use MockServer\Llm\Usage;
+
+// Single completion mock
+LlmMockBuilder::llmMock('/v1/chat/completions')
+    ->withProvider(Provider::OPENAI)
+    ->withModel('gpt-4o')
+    ->respondingWith(
+        Completion::completion()
+            ->withText('Hello from a mocked model!')
+            ->withStopReason('stop')
+            ->withUsage(Usage::usage()->withInputTokens(12)->withOutputTokens(8))
+    )
+    ->applyTo($client);
+
+// Multi-turn conversation (advances MockServer scenario state per turn),
+// isolated per session by a request header
+LlmConversationBuilder::conversation()
+    ->withPath('/v1/chat/completions')
+    ->withProvider(Provider::ANTHROPIC)
+    ->isolateBy(IsolationSource::header('x-session-id'))
+    ->turn()
+        ->whenLatestMessageRole(Role::USER)
+        ->respondingWith(Completion::completion()->withText('Hi! How can I help?'))
+    ->turn()
+        ->respondingWith(Completion::completion()->withText('Goodbye!'))
+    ->applyTo($client);
+
+// Provider failover: fail twice, then succeed (consecutive identical failures
+// are coalesced; default JSON error bodies are supplied per status code)
+LlmFailoverBuilder::llmFailover()
+    ->withPath('/v1/chat/completions')
+    ->withProvider(Provider::OPENAI)
+    ->failWith(429)
+    ->failWith(503, 2)
+    ->thenRespondWith(Completion::completion()->withText('Recovered'))
+    ->applyTo($client);
+```
+
+## Mocking MCP Servers
+
+`MockServer\Mcp\McpMockBuilder` emulates a Streamable-HTTP MCP (Model Context
+Protocol) server speaking JSON-RPC 2.0. It generates the full set of
+expectations — `initialize`, `ping`, `notifications/initialized`, plus
+`tools/list` + `tools/call`, `resources/list` + `resources/read` and
+`prompts/list` + `prompts/get` for any tools, resources and prompts declared.
+
+```php
+<?php
+
+use MockServer\Mcp\McpMockBuilder;
+use MockServer\Llm\Role;
+
+McpMockBuilder::mcpMock('/mcp')
+    ->withServerName('WeatherServer')
+    ->withTool('get_weather')
+        ->withDescription('Get the weather for a city')
+        ->withInputSchema('{"type":"object","properties":{"city":{"type":"string"}}}')
+        ->respondingWith('72F and sunny')
+    ->and()
+    ->withResource('file:///config.json')
+        ->withName('config')
+        ->withMimeType('application/json')
+        ->withContent('{"debug":true}')
+    ->and()
+    ->withPrompt('greeting')
+        ->withArgument('name', 'Who to greet', true)
+        ->respondingWith(Role::ASSISTANT, 'Hello there!')
+    ->and()
+    ->applyTo($client);
+```
+
+Every builder also exposes `build()` to obtain the raw `Expectation`
+object(s) without registering them (a single `Expectation` for `llmMock`,
+or an array of `Expectation` for conversations, failover and MCP).
+
 ## Start / Launch MockServer
 
 The PHP client does not include a binary launcher (PHP lacks the native WebSocket and subprocess management required for embedded launch). To start MockServer, use one of the following approaches:

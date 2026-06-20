@@ -130,6 +130,108 @@ client.ClearBreakpointMatchers();
 
 **Stream frame decisions:** `StreamFrameDecision.Continue`, `.Modify`, `.Drop`, `.Inject`, `.Close`.
 
+## Mocking LLM providers
+
+The `MockServer.Client.Llm` namespace provides fluent builders that mock LLM provider
+APIs (Anthropic, OpenAI, Gemini, Bedrock, Azure OpenAI, Ollama). They build
+expectations carrying an `httpLlmResponse` action; the produced wire JSON is
+equivalent to the Java/Node/Python clients, so a mock scripted here behaves
+identically to one scripted elsewhere.
+
+### Single completion / embedding
+
+```csharp
+using MockServer.Client.Llm;
+
+// A single chat completion mock.
+LlmMockBuilder.LlmMock("/v1/chat/completions")
+    .WithProvider(Provider.OPENAI)
+    .WithModel("gpt-4o")
+    .RespondingWith(Completion.Create()
+        .WithText("Hello! How can I help?")
+        .WithStopReason("stop")
+        .WithUsage(Usage.Create().WithInputTokens(12).WithOutputTokens(8)))
+    .ApplyTo(client);
+
+// An embedding mock.
+LlmMockBuilder.LlmMock("/v1/embeddings")
+    .WithProvider(Provider.OPENAI)
+    .RespondingWith(EmbeddingResponse.Create().WithDimensions(1536).WithDeterministicFromInput(true))
+    .ApplyTo(client);
+```
+
+Completions also support tool calls (`WithToolCall(ToolUse.Of("name")...)`), structured
+output (`WithOutputSchema`), and streaming physics (`Stream().WithStreamingPhysics(
+StreamingPhysics.Create().WithTokensPerSecond(50).WithJitter(0.2))`).
+
+### Multi-turn conversations
+
+Conversation mocks advance MockServer scenario state turn-by-turn (`Started` -> `turn_1`
+-> ... -> `__done`). Optionally isolate concurrent sessions by a request header,
+query parameter, or cookie.
+
+```csharp
+LlmConversationBuilder.Conversation()
+    .WithPath("/v1/chat/completions")
+    .WithProvider(Provider.ANTHROPIC)
+    .WithModel("claude-3-5-sonnet")
+    .IsolateBy(IsolationSource.Header("x-session-id"))
+    .Turn().RespondingWith(Completion.Create().WithText("Hi, I'm your assistant."))
+    .Turn().WhenLatestMessageContains("weather")
+        .RespondingWith(Completion.Create().WithText("It's sunny."))
+    .Turn().RespondingWith(Completion.Create().WithText("Anything else?"))
+    .ApplyTo(client);
+```
+
+### Failover / retry scenarios
+
+Emit N failing responses (consumed first) followed by a success. Consecutive identical
+failures are coalesced into a single limited-`times` expectation; each failure gets a
+provider-shaped default error body unless you supply one.
+
+```csharp
+LlmFailoverBuilder.LlmFailover()
+    .WithPath("/v1/chat/completions")
+    .WithProvider(Provider.OPENAI)
+    .WithModel("gpt-4o")
+    .FailWith(429, count: 2)   // two rate-limit responses
+    .FailWith(503)             // then one service-unavailable
+    .ThenRespondWith(Completion.Create().WithText("recovered"))
+    .ApplyTo(client);
+```
+
+## Mocking an MCP server
+
+The `MockServer.Client.Mcp` namespace builds the expectation set needed to emulate a
+Streamable-HTTP MCP (Model Context Protocol) server speaking JSON-RPC 2.0. It wires up
+`initialize`, `ping`, `notifications/initialized`, and per-capability `*/list` and
+`*/call` (or `*/read` / `*/get`) handlers.
+
+```csharp
+using MockServer.Client.Mcp;
+
+McpMockBuilder.McpMock("/mcp")
+    .WithServerName("WeatherServer")
+    .WithTool("get_weather")
+        .WithDescription("Get the weather for a city")
+        .WithInputSchema("{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}")
+        .RespondingWith("72F and sunny")
+    .And()
+    .WithResource("file:///config.json")
+        .WithName("config")
+        .WithMimeType("application/json")
+        .WithContent("{\"debug\":true}")
+    .And()
+    .WithPrompt("greeting")
+        .WithArgument("name", "the name to greet", required: true)
+        .RespondingWith("user", "Hello!")
+    .And()
+    .ApplyTo(client);
+```
+
+Each builder also exposes `Build()` returning the raw `List<Expectation>` if you want to
+inspect or register them yourself.
+
 ## Start / Launch MockServer
 
 The .NET client can download and launch a local MockServer instance directly -- no Java installation and no Docker required. The launcher downloads a self-contained platform bundle (`mockserver-<version>-<os>-<arch>`) from the GitHub Release, verifies its SHA-256, caches it per-user, and starts it.

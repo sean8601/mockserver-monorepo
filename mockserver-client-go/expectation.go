@@ -15,6 +15,10 @@ type Expectation struct {
 	GrpcStreamResponse    *GrpcStreamResponse    `json:"grpcStreamResponse,omitempty"`
 	BinaryResponse        *BinaryResponse        `json:"binaryResponse,omitempty"`
 	DnsResponse           *DnsResponse           `json:"dnsResponse,omitempty"`
+	HttpLlmResponse       *HttpLlmResponse       `json:"httpLlmResponse,omitempty"`
+	ScenarioName          string                 `json:"scenarioName,omitempty"`
+	ScenarioState         string                 `json:"scenarioState,omitempty"`
+	NewScenarioState      string                 `json:"newScenarioState,omitempty"`
 	Times                 *Times                 `json:"times,omitempty"`
 	TimeToLive            *TimeToLive            `json:"timeToLive,omitempty"`
 }

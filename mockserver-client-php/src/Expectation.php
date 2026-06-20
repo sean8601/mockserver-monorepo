@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MockServer;
 
+use MockServer\Llm\HttpLlmResponse;
+
 /**
  * Represents a MockServer expectation (request matcher + action).
  */
@@ -33,6 +35,10 @@ class Expectation implements \JsonSerializable
     private ?GrpcStreamResponse $grpcStreamResponse = null;
     private ?BinaryResponse $binaryResponse = null;
     private ?DnsResponse $dnsResponse = null;
+    private ?HttpLlmResponse $httpLlmResponse = null;
+    private ?string $scenarioName = null;
+    private ?string $scenarioState = null;
+    private ?string $newScenarioState = null;
     private ?Times $times = null;
     private ?TimeToLive $timeToLive = null;
 
@@ -99,6 +105,30 @@ class Expectation implements \JsonSerializable
     public function dnsResponse(DnsResponse $dnsResponse): self
     {
         $this->dnsResponse = $dnsResponse;
+        return $this;
+    }
+
+    public function httpLlmResponse(HttpLlmResponse $httpLlmResponse): self
+    {
+        $this->httpLlmResponse = $httpLlmResponse;
+        return $this;
+    }
+
+    public function scenarioName(string $scenarioName): self
+    {
+        $this->scenarioName = $scenarioName;
+        return $this;
+    }
+
+    public function scenarioState(string $scenarioState): self
+    {
+        $this->scenarioState = $scenarioState;
+        return $this;
+    }
+
+    public function newScenarioState(string $newScenarioState): self
+    {
+        $this->newScenarioState = $newScenarioState;
         return $this;
     }
 
@@ -205,6 +235,18 @@ class Expectation implements \JsonSerializable
         }
         if ($this->dnsResponse !== null) {
             $data['dnsResponse'] = $this->dnsResponse->toArray();
+        }
+        if ($this->httpLlmResponse !== null) {
+            $data['httpLlmResponse'] = $this->httpLlmResponse->toArray();
+        }
+        if ($this->scenarioName !== null) {
+            $data['scenarioName'] = $this->scenarioName;
+        }
+        if ($this->scenarioState !== null) {
+            $data['scenarioState'] = $this->scenarioState;
+        }
+        if ($this->newScenarioState !== null) {
+            $data['newScenarioState'] = $this->newScenarioState;
         }
         if ($this->times !== null) {
             $data['times'] = $this->times->toArray();
