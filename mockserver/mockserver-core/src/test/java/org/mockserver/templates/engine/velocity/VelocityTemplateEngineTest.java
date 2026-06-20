@@ -187,6 +187,31 @@ public class VelocityTemplateEngineTest {
     }
 
     @Test
+    public void shouldHandleHttpRequestsWithVelocityResponseTemplateReferencingPathGroups() {
+        // given
+        String template = "{" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': \"{'whole': '$request.pathGroups[0]', 'first': '$request.pathGroups[1]', 'second': '$request.pathGroups[2]', 'named': '$request.namedPathGroups.userId'}\"" + NEW_LINE +
+            "}";
+        // path groups are populated post-match by the matcher; set them directly here to drive the template
+        HttpRequest request = request()
+            .withPath("/users/42/orders/abc")
+            .withMethod("GET")
+            .withPathGroups(java.util.Arrays.asList("/users/42/orders/abc", "42", "abc"))
+            .withNamedPathGroups(java.util.Collections.singletonMap("userId", "42"));
+
+        // when
+        HttpResponse actualHttpResponse = new VelocityTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+
+        // then
+        assertThat(actualHttpResponse, is(
+            response()
+                .withStatusCode(200)
+                .withBody("{'whole': '/users/42/orders/abc', 'first': '42', 'second': 'abc', 'named': '42'}")
+        ));
+    }
+
+    @Test
     public void shouldHandleHttpRequestsWithVelocityResponseTemplateWithDynamicValuesDateAndUUID() throws JsonProcessingException {
         boolean originalFixedUUID = UUIDService.fixedUUID();
         boolean originalFixedTime = TimeService.fixedTime();

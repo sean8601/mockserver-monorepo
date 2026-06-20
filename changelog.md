@@ -111,6 +111,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`validateProxyOpenAPISpec`). The flag is **off by default and fully back-compatible**: with it unset, or for
   expectations not backed by an OpenAPI spec, behaviour is exactly as before. The validation runs off the Netty
   event loop, mirroring the validation-proxy request path.
+- **Regex path capture groups exposed to response/forward templates** (`mockserver-core`). When an
+  expectation matches a request path with a regular expression containing capture groups, the captured
+  values are now available to Mustache, Velocity and JavaScript templates via two new request-model
+  fields: `request.pathGroups` (the numbered groups, 1&#8209;based aligned with `java.util.regex` group
+  numbering — index `0` is the whole match, index `1` the first capture group) and
+  `request.namedPathGroups` (Java named groups `(?<name>...)`, keyed by name). For example a path matcher
+  `"/users/(\\d+)/orders/(\\w+)"` lets a template echo `{{ request.pathGroups.1 }}` (Mustache),
+  `$!request.pathGroups[1]` (Velocity) or `request.pathGroups[1]` (JavaScript). The groups are populated
+  on a successful data-plane match only and are additive and fully back-compatible: existing template
+  fields are unchanged, both new fields are empty when the matched path had no capture groups, and group
+  extraction is best-effort (it never throws and never affects which expectation matches).
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,

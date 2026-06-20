@@ -102,6 +102,32 @@ public class JavaScriptTemplateEngineTest {
     }
 
     @Test
+    public void shouldHandleHttpRequestsWithJavaScriptResponseTemplateReferencingPathGroups() {
+        // given
+        graalJsAvailable();
+        String template = "return {" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': 'first=' + request.pathGroups[1] + ',second=' + request.pathGroups[2] + ',named=' + request.namedPathGroups.userId" + NEW_LINE +
+            "};";
+        // path groups are populated post-match by the matcher; set them directly here to drive the template
+        HttpRequest request = request()
+            .withPath("/users/42/orders/abc")
+            .withMethod("GET")
+            .withPathGroups(java.util.Arrays.asList("/users/42/orders/abc", "42", "abc"))
+            .withNamedPathGroups(java.util.Collections.singletonMap("userId", "42"));
+
+        // when
+        HttpResponse actualHttpResponse = new JavaScriptTemplateEngine(mockServerLogger, configuration).executeTemplate(template, request, HttpResponseDTO.class);
+
+        // then
+        assertThat(actualHttpResponse, is(
+            response()
+                .withStatusCode(200)
+                .withBody("first=42,second=abc,named=42")
+        ));
+    }
+
+    @Test
     public void shouldHandleHttpRequestsWithJavaScriptResponseTemplateWithECMA6() throws JsonProcessingException {
         // given
         graalJsAvailable();

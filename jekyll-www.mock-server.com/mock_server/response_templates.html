@@ -263,6 +263,46 @@ System.out.println("httpResponse = " + httpResponse);</code></pre>
             </tr>
         </table>
     </li>
+    <li><strong>path regex capture groups</strong>&nbsp;&nbsp;<span>(when the expectation matched the request path with a regular expression containing capture groups; <code class="inline code">pathGroups</code> is 1&#8209;based, so index <code class="inline code">0</code> is the whole match and index <code class="inline code">1</code> is the first capture group, and is empty when the matched path had no capture groups. Path&#8209;parameter <code class="inline code">{name}</code> captures are exposed via <code class="inline code">pathParameters</code> instead, so a path mixing <code class="inline code">{name}</code> templates with regex <code class="inline code">(...)</code> groups does not populate <code class="inline code">pathGroups</code>.)</span>
+        <table>
+            <tr>
+                <td style="padding-left: 20px; width: 100px">mustache:</td>
+                <td><code class="inline code">&lbrace;&lbrace; request.pathGroups.&lt;index&gt; &rbrace;&rbrace;</code></td>
+            </tr>
+        </table>
+        <table>
+            <tr>
+                <td style="padding-left: 20px; width: 100px;">velocity:</td>
+                <td><code class="inline code">$!request.pathGroups[&lt;index&gt;]</code></td>
+            </tr>
+        </table>
+        <table>
+            <tr>
+                <td style="padding-left: 20px; width: 100px;">javascript:</td>
+                <td><code class="inline code">request.pathGroups[&lt;index&gt;]</code></td>
+            </tr>
+        </table>
+    </li>
+    <li><strong>named path regex capture groups</strong>&nbsp;&nbsp;<span>(Java named groups <code class="inline code">(?&lt;name&gt;...)</code> in the matched path regex, keyed by name; empty when the matched path had no named groups)</span>
+        <table>
+            <tr>
+                <td style="padding-left: 20px; width: 100px">mustache:</td>
+                <td><code class="inline code">&lbrace;&lbrace; request.namedPathGroups.&lt;name&gt; &rbrace;&rbrace;</code></td>
+            </tr>
+        </table>
+        <table>
+            <tr>
+                <td style="padding-left: 20px; width: 100px;">velocity:</td>
+                <td><code class="inline code">$!request.namedPathGroups.&lt;name&gt;</code></td>
+            </tr>
+        </table>
+        <table>
+            <tr>
+                <td style="padding-left: 20px; width: 100px;">javascript:</td>
+                <td><code class="inline code">request.namedPathGroups.&lt;name&gt;</code></td>
+            </tr>
+        </table>
+    </li>
     <li><strong>query string parameters</strong>&nbsp;&nbsp;<span>(see below for multi-value map access patterns)</span>
         <table>
             <tr>

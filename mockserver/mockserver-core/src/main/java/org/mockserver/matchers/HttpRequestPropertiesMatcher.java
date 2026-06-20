@@ -441,6 +441,10 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
                     if (!controlPlaneMatcher && finalMatchResult) {
                         // ensure actions have path parameters available to them
                         request.withPathParameters(pathParameters);
+                        // expose the matched expectation's path-pattern regex capture groups (numbered and
+                        // named) on the request so a response/forward template can reference them; best-effort
+                        // and never affects the already-decided match result above
+                        extractPathGroups(httpRequest, request);
                     }
                     return finalMatchResult;
                 } else {
@@ -449,6 +453,44 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             }
         }
         return false;
+    }
+
+    /**
+     * Extract the numbered/named regex capture groups from the matched expectation's path pattern against
+     * the request path and stash them on the request for response/forward templates to read. Only invoked
+     * on the data plane after a successful match.
+     * <p>
+     * The fields are always cleared first so the served request only ever carries groups from the matcher
+     * that ultimately wins. The same live request object is matched against every expectation in a single
+     * scan, and a candidate can fully match here yet still be skipped by a later gate (percentage, scenario
+     * state, conversation matcher); without the reset that skipped candidate's groups would leak onto a
+     * request that is then served by a different expectation. Clearing first also means a winning literal
+     * or no-capture-group path correctly exposes no groups rather than a previous candidate's.
+     * <p>
+     * Extraction itself is skipped (after the reset) when the expectation path has no '(' so cannot contain
+     * a capturing group, keeping the common literal/path-parameter case free of regex work. The
+     * caseSensitive flag mirrors the path matcher (matchExactCase, data plane only) so extraction compiles
+     * with the same flags the match used. Always best-effort: PathGroupExtractor never throws.
+     */
+    private void extractPathGroups(HttpRequest matcherRequest, HttpRequest request) {
+        // reset first so a skipped earlier candidate's groups never leak onto the served request
+        request.withPathGroups(null);
+        request.withNamedPathGroups(null);
+        if (matcherRequest.getPath() == null || request.getPath() == null) {
+            return;
+        }
+        String patternValue = matcherRequest.getPath().getValue();
+        if (patternValue == null || patternValue.indexOf('(') < 0) {
+            return;
+        }
+        boolean caseSensitive = configuration.matchExactCase();
+        PathGroupExtractor.PathGroups pathGroups = PathGroupExtractor.extract(patternValue, request.getPath().getValue(), caseSensitive);
+        if (pathGroups.hasGroups()) {
+            request.withPathGroups(pathGroups.getNumberedGroups());
+            if (!pathGroups.getNamedGroups().isEmpty()) {
+                request.withNamedPathGroups(pathGroups.getNamedGroups());
+            }
+        }
     }
 
     private boolean failFast(Compiled compiled, Matcher<?> matcher, MatchDifference context, MatchDifferenceCount matchDifferenceCount, StringBuilder becauseBuilder, boolean fieldMatches, MatchDifference.Field fieldName) {

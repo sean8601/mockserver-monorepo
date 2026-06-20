@@ -52,6 +52,18 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
     // on a single thread, so this lazy cache is safe without synchronisation.
     @JsonIgnore
     private transient Map<ConvertedBodyType, String> convertedBodyCache;
+    // Regex capture groups extracted from the matched expectation's path pattern when this request
+    // matched. Populated post-match by HttpRequestPropertiesMatcher so a response/forward template can
+    // reference the captured values (e.g. $request.pathGroups[1] in Velocity, {{ request.pathGroups.1 }}
+    // in Mustache, request.pathGroups[1] in JavaScript). pathGroups is 1-based aligned with java.util.regex
+    // group numbering — index 0 is the whole match, index 1 the first capturing group — so a template can
+    // use the same indices a developer would expect from the pattern. namedPathGroups holds Java named
+    // groups (?<name>...). Both are derived, transient, request-scoped state: excluded from
+    // equals/hashCode/clone/JSON and never part of request identity.
+    @JsonIgnore
+    private transient List<String> pathGroups;
+    @JsonIgnore
+    private transient Map<String, String> namedPathGroups;
 
     /**
      * Identifies a memoizable body-conversion target. The conversion result depends only on the
@@ -59,6 +71,37 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
      */
     public enum ConvertedBodyType {
         XML_TO_JSON
+    }
+
+    /**
+     * The numbered regex capture groups from the matched expectation's path pattern, 1-based aligned
+     * with {@link java.util.regex.Matcher} group numbering (index 0 is the whole match). Null until a
+     * match with a regex path populates it; never part of request identity.
+     */
+    @JsonIgnore
+    public List<String> getPathGroups() {
+        return pathGroups;
+    }
+
+    @JsonIgnore
+    public HttpRequest withPathGroups(List<String> pathGroups) {
+        this.pathGroups = pathGroups;
+        return this;
+    }
+
+    /**
+     * The named regex capture groups (?&lt;name&gt;...) from the matched expectation's path pattern.
+     * Null until a match with a named-group regex path populates it; never part of request identity.
+     */
+    @JsonIgnore
+    public Map<String, String> getNamedPathGroups() {
+        return namedPathGroups;
+    }
+
+    @JsonIgnore
+    public HttpRequest withNamedPathGroups(Map<String, String> namedPathGroups) {
+        this.namedPathGroups = namedPathGroups;
+        return this;
     }
 
     public static HttpRequest request() {
