@@ -586,7 +586,60 @@ PATCH /mockserver/serviceChaos
 
 <p>This turns MockServer into a <strong>chaos proxy</strong> — sit it between your application and a dependency (internal service or external API) and test what happens when that dependency becomes unreliable.</p>
 
-<p><strong>Deployment patterns:</strong></p>
+<h3>How HTTP chaos reaches proxied traffic</h3>
+
+<p>The plain proxy fall-through (when no expectation matches a request) does not add HTTP-level chaos. HTTP faults on proxied traffic flow through one of three mechanisms:</p>
+
+<ul>
+    <li><strong>Forwarding expectation with a chaos clause</strong> — an expectation whose action is <code class="inline code">httpForward</code> (pointing at the real upstream) and that carries a <code class="inline code">chaos</code> block. MockServer forwards the request, receives the real upstream response, applies the chaos profile to it, and returns the degraded response to the caller.</li>
+    <li><strong><a href="#service_scoped_chaos">Service-scoped chaos</a></strong> — register a chaos profile for an upstream host with <code class="inline code">PUT /mockserver/serviceChaos</code>. MockServer applies it to all matched forwards to that host without touching any expectation. Useful for live-patching a running deployment.</li>
+    <li><strong><a href="#tcp_layer_chaos">TCP-layer chaos</a></strong> — register connection-level faults with <code class="inline code">PUT /mockserver/tcpChaos</code>. These operate before HTTP is parsed, so they affect all traffic on a connection including proxied responses.</li>
+</ul>
+
+<h3>Pattern 1: catch-all forward expectation with chaos</h3>
+
+<p>The most common "misbehaving upstream" pattern: match everything, forward to the real backend, and degrade every response. Register a single catch-all expectation:</p>
+
+<pre class="prettyprint code"><code class="code">PUT /mockserver/expectation
+{
+  "httpRequest": {},
+  "httpForward": {
+    "host": "payments.example.com",
+    "port": 443,
+    "scheme": "HTTPS"
+  },
+  "chaos": {
+    "errorStatus": 503,
+    "errorProbability": 0.3,
+    "latency": {
+      "timeUnit": "MILLISECONDS",
+      "value": 500
+    }
+  },
+  "times": {
+    "unlimited": true
+  }
+}</code></pre>
+
+<p>This expectation matches <em>all</em> requests, forwards each one to <code class="inline code">payments.example.com:443</code>, and — before returning the response to the caller — injects a 503 error on 30% of responses and adds 500 ms latency to every response. Your application connects to MockServer; MockServer connects to the real backend. No application code changes are required.</p>
+
+<p>To restrict chaos injection to a specific path, add <code class="inline code">path</code> (or any other matcher) to <code class="inline code">httpRequest</code>. Requests that do not match the expectation are forwarded unchanged by the default proxy fall-through (<code class="inline code">attemptToProxyIfNoMatchingExpectation: true</code>).</p>
+
+<h3>Pattern 2: service-scoped chaos (live-patch without an expectation)</h3>
+
+<p>To degrade all forwarded traffic to a host without creating or modifying any expectation, use <a href="#service_scoped_chaos">service-scoped chaos</a>:</p>
+
+<pre class="prettyprint code"><code class="code">// Break payments.example.com for 5 minutes, then auto-heal
+PUT /mockserver/serviceChaos
+{ "host": "payments.example.com", "chaos": { "errorStatus": 503, "errorProbability": 0.3 }, "ttlMillis": 300000 }
+
+// Clear it immediately
+PUT /mockserver/serviceChaos
+{ "host": "payments.example.com", "remove": true }</code></pre>
+
+<p>See the <a href="#service_scoped_chaos">Service-scoped Chaos</a> section below for the full endpoint reference, PATCH live-tuning, TTL countdown, and client library wrappers.</p>
+
+<h3>Deployment patterns</h3>
 <ul>
     <li><strong>Forward proxy:</strong> configure your application's <code class="inline code">HTTP_PROXY</code> / <code class="inline code">HTTPS_PROXY</code> environment variables to point at MockServer, then create forward expectations with chaos profiles for specific hosts/paths</li>
     <li><strong>Reverse proxy:</strong> put MockServer in front of a specific upstream service (using MockServer's <code class="inline code">proxyRemoteHost</code> / <code class="inline code">proxyRemotePort</code> configuration) and add chaos profiles to inject faults</li>

@@ -195,6 +195,14 @@ curl http://localhost:1080/hello
 
 <p>Faults work for <strong>HTTP, gRPC and TCP</strong>, on both mocked and proxied traffic, and can be applied per expectation or as a global <a href="/mock_server/chaos_testing.html">chaos experiment</a> &mdash; including <a href="/mock_server/chaos_testing_orchestrators.html">scheduled experiments with an automatic dead-man's-switch halt</a>, and fleet-wide chaos for <a href="/mock_server/chaos_testing_kubernetes.html">Kubernetes</a> and <a href="/mock_server/service_mesh.html">service meshes</a>. Live experiments can be started, watched and stopped from the <a href="/mock_server/mockserver_ui.html">dashboard</a>.</p>
 
+<p><strong>Injecting chaos into proxied / forwarded real traffic</strong> &mdash; MockServer can sit in front of a real backend and degrade the responses it relays. HTTP-level faults reach proxied traffic through three mechanisms:</p>
+<ul>
+	<li><strong><a href="/mock_server/chaos_testing.html#chaos_proxy">Forwarding expectation with a chaos clause</a></strong> &mdash; attach a <code>chaos</code> block to an <code>httpForward</code> expectation. The expectation forwards to the real upstream; MockServer applies the chaos profile to the upstream response before returning it to the caller. A catch-all forward expectation (match everything, forward to the real backend, inject faults) is the canonical "misbehaving upstream" pattern.</li>
+	<li><strong><a href="/mock_server/chaos_testing.html#service_scoped_chaos">Service-scoped chaos</a></strong> &mdash; register a chaos profile for an upstream host with a single <code>PUT /mockserver/serviceChaos</code> call. MockServer applies it to all matched forwards to that host without touching any expectation. An optional <code>ttlMillis</code> auto-reverts the fault after a fixed window. Useful for live-patching a running deployment.</li>
+	<li><strong><a href="/mock_server/chaos_testing.html#tcp_layer_chaos">TCP-layer chaos</a></strong> &mdash; <code>PUT /mockserver/tcpChaos</code> registers connection-level faults (drop, reset, bandwidth throttle, latency) that operate before HTTP is parsed, so they affect all traffic on a connection including proxied responses.</li>
+</ul>
+<p>Note: the plain proxy fall-through (requests with no matching expectation) does not itself add HTTP-level chaos &mdash; HTTP faults on proxied traffic always flow through a forwarding expectation with a chaos clause or through service-scoped chaos. Connection-level faults flow through TCP chaos.</p>
+
 <a id="proxying_with_mockserver" class="anchor" href="#proxying_with_mockserver">&nbsp;</a>
 
 <h2>Proxying with MockServer</h2>
