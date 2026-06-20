@@ -85,6 +85,49 @@ export function discoverNamedExamples(specOrUrl: string): OperationExamples[] {
 }
 
 /**
+ * Discover every operationId declared by an inline JSON spec, in document order.
+ *
+ * Mirrors {@link discoverNamedExamples} in input handling: only an inline JSON
+ * payload is inspected (a URL or YAML payload is sent untouched and yields an
+ * empty list). Unlike that function this returns ALL operations, not only those
+ * with two or more named examples.
+ *
+ * This is needed because the server treats `operationsAndResponses` as an
+ * operation FILTER (OpenAPIConverter only emits an expectation for an operation
+ * whose id is a key of that map). So when the user pins a named example for one
+ * operation, every other operation must still appear in the map — with a
+ * default-preserving value — or it would be silently dropped from the import.
+ */
+export function discoverAllOperationIds(specOrUrl: string): string[] {
+  const trimmed = specOrUrl.trim();
+  if (!trimmed.startsWith('{')) {
+    return [];
+  }
+  let spec: unknown;
+  try {
+    spec = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!isRecord(spec) || !isRecord(spec.paths)) {
+    return [];
+  }
+  const operationIds: string[] = [];
+  for (const pathItem of Object.values(spec.paths)) {
+    if (!isRecord(pathItem)) {
+      continue;
+    }
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (isRecord(operation) && typeof operation.operationId === 'string') {
+        operationIds.push(operation.operationId);
+      }
+    }
+  }
+  return operationIds;
+}
+
+/**
  * Find the first response status whose first media type declares named examples.
  * Only the first media type is considered, matching the server's content
  * selection (see {@link discoverNamedExamples}).
@@ -118,6 +161,16 @@ function firstResponseWithNamedExamples(
  * is sent to the server as an `operationsAndResponses` value of the form
  * `{ statusCode, exampleName }`, so the generated response uses that example.
  *
+ * IMPORTANT: the server treats `operationsAndResponses` as an operation FILTER —
+ * `OpenAPIConverter` only generates an expectation for operations whose id is a
+ * key of that map. So when one or more examples are pinned, every OTHER operation
+ * in the spec must still be present in the map with a default-preserving value
+ * (an empty-string entry, which the converter resolves to the operation's first
+ * response and no named example) — otherwise those operations would be silently
+ * dropped and only the pinned one(s) imported. When no example is pinned the map
+ * is omitted entirely, leaving the server to import every operation with its
+ * defaults (unchanged behaviour).
+ *
  * @throws Error with the server's message on a non-2xx response.
  */
 export async function importOpenApi(
@@ -127,7 +180,14 @@ export async function importOpenApi(
 ): Promise<unknown[]> {
   const expectation: Record<string, unknown> = { specUrlOrPayload: specOrUrl };
   if (exampleSelections && Object.keys(exampleSelections).length > 0) {
-    const operationsAndResponses: Record<string, { statusCode: string; exampleName: string }> = {};
+    // Default-preserving entry for non-pinned operations. The converter reads a
+    // string value as the response status key; an empty string is blank, so it
+    // selects the first defined response and applies no named example — exactly
+    // the server default for an unspecified operation.
+    const operationsAndResponses: Record<string, string | { statusCode: string; exampleName: string }> = {};
+    for (const operationId of discoverAllOperationIds(specOrUrl)) {
+      operationsAndResponses[operationId] = '';
+    }
     for (const [operationId, selection] of Object.entries(exampleSelections)) {
       operationsAndResponses[operationId] = {
         statusCode: selection.statusCode,

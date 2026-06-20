@@ -92,6 +92,60 @@ describe('OpenApiImportDialog named-example picker', () => {
     });
   });
 
+  it('still imports every operation when an example is pinned for one of several', async () => {
+    const multiOpSpec = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'pets', version: '1.0.0' },
+      paths: {
+        '/pets': {
+          get: {
+            operationId: 'listPets',
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    examples: {
+                      oneCat: { value: [{ name: 'cat' }] },
+                      twoDogs: { value: [{ name: 'dog' }, { name: 'rex' }] },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          post: { operationId: 'createPet', responses: { '201': {} } },
+        },
+        '/pets/{id}': {
+          get: { operationId: 'getPet', responses: { '200': {} } },
+        },
+      },
+    });
+    const user = userEvent.setup();
+    const calls = stubFetch(201, []);
+    render(<OpenApiImportDialog open onClose={() => {}} connectionParams={connectionParams} />);
+
+    await user.click(screen.getByLabelText('OpenAPI spec or URL'));
+    await user.paste(multiOpSpec);
+
+    await waitFor(() => expect(screen.getByText('Named examples')).toBeInTheDocument());
+    await user.click(screen.getByRole('combobox', { name: /listPets \(200\)/ }));
+    await user.click(screen.getByRole('option', { name: 'twoDogs' }));
+
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(calls.length).toBe(1));
+    const sent = JSON.parse(String(calls[0]?.init?.body)) as Array<Record<string, unknown>>;
+    const opsAndResponses = sent[0]?.operationsAndResponses as Record<string, unknown>;
+    // the picked operation AND the others must all be present, or the server
+    // (which treats this map as an operation filter) drops the unpinned ones
+    expect(Object.keys(opsAndResponses).sort()).toEqual(
+      ['createPet', 'getPet', 'listPets'].sort(),
+    );
+    expect(opsAndResponses.listPets).toEqual({ statusCode: '200', exampleName: 'twoDogs' });
+    expect(opsAndResponses.createPet).toBe('');
+    expect(opsAndResponses.getPet).toBe('');
+  });
+
   it('omits operationsAndResponses when the picker is left on Default', async () => {
     const user = userEvent.setup();
     const calls = stubFetch(201, [{ id: 'openapi:pets:listPets' }]);

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { importOpenApi, discoverNamedExamples } from '../lib/openapiImport';
+import {
+  importOpenApi,
+  discoverNamedExamples,
+  discoverAllOperationIds,
+} from '../lib/openapiImport';
 
 const params = { host: '127.0.0.1', port: '1080', secure: false };
 
@@ -68,6 +72,69 @@ describe('importOpenApi', () => {
     await importOpenApi(params, '{"openapi":"3.0.0"}', {});
     const sent = JSON.parse(String(calls[0]?.init?.body)) as Array<Record<string, unknown>>;
     expect(sent[0]).not.toHaveProperty('operationsAndResponses');
+  });
+
+  // Regression: the server treats operationsAndResponses as an operation FILTER
+  // (OpenAPIConverter only generates an expectation for operations present as a
+  // key). Pinning a named example for ONE operation must NOT drop the others.
+  it('includes every operation (pinned + default-preserving) when one example is pinned', async () => {
+    const multiOpSpec = JSON.stringify({
+      openapi: '3.0.0',
+      paths: {
+        '/pets': {
+          get: {
+            operationId: 'listPets',
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    examples: { oneCat: { value: [] }, twoDogs: { value: [] } },
+                  },
+                },
+              },
+            },
+          },
+          post: { operationId: 'createPet', responses: { '201': {} } },
+        },
+        '/pets/{id}': {
+          get: { operationId: 'getPet', responses: { '200': {} } },
+          delete: { operationId: 'deletePet', responses: { '204': {} } },
+        },
+      },
+    });
+    const calls = stubFetch(201, []);
+    await importOpenApi(params, multiOpSpec, {
+      listPets: { statusCode: '200', exampleName: 'twoDogs' },
+    });
+    const sent = JSON.parse(String(calls[0]?.init?.body)) as Array<Record<string, unknown>>;
+    const opsAndResponses = sent[0]?.operationsAndResponses as Record<string, unknown>;
+    // every operation in the spec must be present, or the server drops it
+    expect(Object.keys(opsAndResponses).sort()).toEqual(
+      ['createPet', 'deletePet', 'getPet', 'listPets'].sort(),
+    );
+    // the pinned operation carries its chosen example
+    expect(opsAndResponses.listPets).toEqual({ statusCode: '200', exampleName: 'twoDogs' });
+    // the others carry a default-preserving (blank) value, so the server applies
+    // its own first-response/default-example behaviour for them
+    expect(opsAndResponses.createPet).toBe('');
+    expect(opsAndResponses.getPet).toBe('');
+    expect(opsAndResponses.deletePet).toBe('');
+  });
+});
+
+describe('discoverAllOperationIds', () => {
+  it('returns every operationId declared by an inline JSON spec, in document order', () => {
+    expect(discoverAllOperationIds(specWithNamedExamples)).toEqual(['listPets', 'createPet']);
+  });
+
+  it('returns an empty list for a URL or YAML spec', () => {
+    expect(discoverAllOperationIds('https://example.com/spec.yaml')).toEqual([]);
+    expect(discoverAllOperationIds('openapi: 3.0.0\npaths: {}')).toEqual([]);
+  });
+
+  it('returns an empty list for unparseable JSON or a spec without paths', () => {
+    expect(discoverAllOperationIds('{ not valid json')).toEqual([]);
+    expect(discoverAllOperationIds('{"openapi":"3.0.0"}')).toEqual([]);
   });
 });
 
