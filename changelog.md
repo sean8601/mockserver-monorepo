@@ -40,6 +40,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by `moduleName` for an already-uploaded module) against a sample `request` and returns `{ "matched": true|false }`,
   so IDEs/users can validate a module without creating a live expectation. The endpoint requires `wasmEnabled=true`
   (otherwise 403) and is fail-closed (invalid modules report `matched: false`).
+- **Timeout-aware eventual and negative-within-timeout verification** (`mockserver-client-java`). The Java
+  client gained two additive, back-compatible verification styles for testing **asynchronous** applications
+  (fire-and-forget sends, background workers) without an external retry helper:
+  - **Eventual verification** — `verify(RequestDefinition, VerificationTimes, Duration timeout)` and
+    `verify(Verification, Duration timeout)` poll the event log, re-running the verification with a small
+    backoff (100 ms) until it passes or the timeout expires, throwing the last failure on timeout. This
+    replaces the single-snapshot semantics of the existing `verify(...)` for cases where the request may not
+    have reached MockServer yet.
+  - **Negative-within-timeout verification** — `verifyNever(RequestDefinition, Duration window)` and
+    `verifyNever(Verification, Duration window)` assert the condition stays **unmet** for the whole window
+    (e.g. "no request was made within 2 seconds"), failing the moment a matching request is observed and
+    returning normally if the window elapses with no match.
+
+  Both are implemented purely client-side (a poll loop over the standard `PUT /mockserver/verify` endpoint);
+  no server change is involved. The existing snapshot `verify(...)` methods are unchanged.
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,

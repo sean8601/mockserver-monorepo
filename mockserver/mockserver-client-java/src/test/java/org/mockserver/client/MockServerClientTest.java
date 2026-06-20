@@ -1437,6 +1437,79 @@ public class MockServerClientTest {
     }
 
     @Test
+    public void shouldVerifyWithinTimeoutPassWhenRequestArrivesDuringWindow() {
+        // given - first poll fails (request not yet recorded), second poll passes (empty body)
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("Request not found"))
+            .thenReturn(response().withBody(""));
+        when(mockVerificationSerializer.serialize(any(Verification.class))).thenReturn("verification_json");
+
+        // when - eventual verify polls until it passes
+        mockServerClient.verify(request().withPath("/some_path"), once(), java.time.Duration.ofSeconds(5));
+
+        // then - at least two verify requests were sent (one failing, one passing)
+        verify(mockHttpClient, new AtLeast(2)).sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean());
+    }
+
+    @Test
+    public void shouldVerifyWithinTimeoutFailCleanlyWhenRequestNeverArrives() {
+        // given - every poll fails (request never recorded)
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("Request not found at least once expected:<foo> but was:<bar>"));
+        when(mockVerificationSerializer.serialize(any(Verification.class))).thenReturn("verification_json");
+
+        try {
+            mockServerClient.verify(request().withPath("/some_path"), once(), java.time.Duration.ofMillis(250));
+            fail("expected AssertionError to be thrown after timeout");
+        } catch (AssertionError ae) {
+            // then - the last failure message is surfaced
+            assertThat(ae.getMessage(), containsString("Request not found"));
+        }
+    }
+
+    @Test
+    public void shouldVerifyWithinTimeoutRejectNullDuration() {
+        IllegalArgumentException illegalArgumentException = assertThrows(IllegalArgumentException.class, () -> mockServerClient.verify(request(), once(), (java.time.Duration) null));
+        assertThat(illegalArgumentException.getMessage(), containsString("requires a non null non-negative Duration object"));
+    }
+
+    @Test
+    public void shouldVerifyNeverPassWhenNoMatchingRequestArrivesInWindow() {
+        // given - every poll fails to match (no matching request), so the window completes cleanly
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("Request not found"));
+        when(mockVerificationSerializer.serialize(any(Verification.class))).thenReturn("verification_json");
+
+        // when - negative-within-timeout returns normally because the verification never passed
+        mockServerClient.verifyNever(request().withPath("/should_not_be_called"), java.time.Duration.ofMillis(250));
+
+        // then - it polled at least once during the window
+        verify(mockHttpClient, new AtLeast(1)).sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean());
+    }
+
+    @Test
+    public void shouldVerifyNeverFailWhenMatchingRequestArrives() {
+        // given - the verification passes (empty body) meaning a matching request was observed
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody(""));
+        when(mockVerificationSerializer.serialize(any(Verification.class))).thenReturn("verification_json");
+
+        try {
+            mockServerClient.verifyNever(request().withPath("/should_not_be_called"), java.time.Duration.ofSeconds(5));
+            fail("expected AssertionError to be thrown when a matching request is observed");
+        } catch (AssertionError ae) {
+            // then - the window failed because a match was found
+            assertThat(ae.getMessage(), containsString("window that was expected to find no match"));
+        }
+    }
+
+    @Test
+    public void shouldVerifyNeverRejectNullWindow() {
+        IllegalArgumentException illegalArgumentException = assertThrows(IllegalArgumentException.class, () -> mockServerClient.verifyNever(request(), (java.time.Duration) null));
+        assertThat(illegalArgumentException.getMessage(), containsString("requires a non null non-negative Duration object"));
+    }
+
+    @Test
     public void shouldHandleNullHttpRequest() {
         // when
         IllegalArgumentException illegalArgumentException = assertThrows(IllegalArgumentException.class, () -> mockServerClient.verify((RequestDefinition) null, VerificationTimes.exactly(2)));

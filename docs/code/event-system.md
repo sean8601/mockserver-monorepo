@@ -375,7 +375,15 @@ When `VerificationSequence.httpResponses` is non-empty, sequence verification sw
   - Unique headers or query parameters in matchers
   - Avoid broad matchers like only `path("/api")` in parallel tests
 - **Be careful with `clear()` / `reset()`** — they affect all tests sharing the instance
-- **Retry verification with backoff** if testing asynchronous systems where you need to wait for the application to send requests:
+- **Retry verification with backoff** if testing asynchronous systems where you need to wait for the application to send requests. The Java client has this built in via timeout-aware overloads (no external retry helper needed):
+  ```java
+  // Eventual verification: poll until the request arrives or the timeout expires
+  mockServerClient.verify(request, VerificationTimes.once(), Duration.ofSeconds(5));
+
+  // Negative-within-timeout: assert no matching request arrives during the window
+  mockServerClient.verifyNever(request, Duration.ofSeconds(2));
+  ```
+  These poll the standard `PUT /mockserver/verify` endpoint client-side with a 100 ms backoff (`MockServerClient.verify(Verification, Duration)` / `verifyNever(Verification, Duration)`); there is no server-side wait. The equivalent with an external library is:
   ```java
   // Wait for application under test to send request, not for MockServer to process it
   Awaitility.await()

@@ -44,6 +44,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.*;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,7 @@ import static io.netty.handler.codec.http.HttpResponseStatus.UNAUTHORIZED;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.commons.lang3.StringUtils.*;
+import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.configuration.ClientConfiguration.clientConfiguration;
 import static org.mockserver.formatting.StringFormatter.formatLogMessage;
 import static org.mockserver.mock.HttpState.LOG_SEPARATOR;
@@ -1041,7 +1043,7 @@ public class MockServerClient implements Stoppable {
      */
     @SuppressWarnings("DuplicatedCode")
     public MockServerClient verify(RequestDefinition requestDefinition, VerificationTimes times) throws AssertionError {
-        return verify(requestDefinition, times, null);
+        return verify(requestDefinition, times, (Integer) null);
     }
 
     /**
@@ -1288,6 +1290,195 @@ public class MockServerClient implements Stoppable {
             throw new AssertionError(throwable.getMessage());
         }
         return clientClass.cast(this);
+    }
+
+    /**
+     * Default interval used between verification poll attempts by the timeout-aware
+     * {@code verify(..., Duration)} and {@code verifyNever(..., Duration)} methods.
+     */
+    private static final Duration DEFAULT_VERIFY_POLL_INTERVAL = Duration.ofMillis(100);
+
+    /**
+     * Eventual verification: poll the event log, retrying the supplied verification until it
+     * passes or the timeout expires. This is useful when the application under test sends
+     * requests asynchronously (fire-and-forget, background workers), so the request may not
+     * have arrived at MockServer at the instant the test calls verify. Instead of a single
+     * snapshot check (like {@link #verify(Verification)}), this re-runs the verification with a
+     * small backoff until it passes or the window elapses, throwing the last failure on timeout.
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      request().withPath("/some_path"),
+     *      VerificationTimes.once(),
+     *      Duration.ofSeconds(5)
+     *  );
+     * </pre>
+     * This is implemented purely client-side (a poll loop over the standard verify endpoint);
+     * no server-side change or wait is involved.
+     *
+     * @param requestDefinition the http request that must be matched for this verification to pass
+     * @param times             the number of times this request must be matched
+     * @param timeout           the maximum time to wait for the verification to pass
+     * @throws AssertionError if the verification does not pass before the timeout expires
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public MockServerClient verify(RequestDefinition requestDefinition, VerificationTimes times, Duration timeout) throws AssertionError {
+        if (requestDefinition == null) {
+            throw new IllegalArgumentException("verify(RequestDefinition, VerificationTimes, Duration) requires a non null RequestDefinition object");
+        }
+        if (times == null) {
+            throw new IllegalArgumentException("verify(RequestDefinition, VerificationTimes, Duration) requires a non null VerificationTimes object");
+        }
+        return verify(verification().withRequest(requestDefinition).withTimes(times), timeout);
+    }
+
+    /**
+     * Eventual verification: poll the event log, retrying the supplied {@link Verification} until
+     * it passes or the timeout expires. See {@link #verify(RequestDefinition, VerificationTimes, Duration)}
+     * for the rationale; this generic overload accepts a fully built {@link Verification} (so it
+     * also covers response and expectation-id verifications).
+     * <pre>
+     * mockServerClient
+     *  .verify(
+     *      verification()
+     *          .withRequest(request().withPath("/some_path"))
+     *          .withTimes(VerificationTimes.atLeast(1)),
+     *      Duration.ofSeconds(5)
+     *  );
+     * </pre>
+     *
+     * @param verification the verification object containing the request, response, and/or times to verify
+     * @param timeout      the maximum time to wait for the verification to pass
+     * @throws AssertionError if the verification does not pass before the timeout expires
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public MockServerClient verify(Verification verification, Duration timeout) throws AssertionError {
+        if (verification == null) {
+            throw new IllegalArgumentException("verify(Verification, Duration) requires a non null Verification object");
+        }
+        if (timeout == null || timeout.isNegative()) {
+            throw new IllegalArgumentException("verify(Verification, Duration) requires a non null non-negative Duration object");
+        }
+
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        String lastFailure;
+        while (true) {
+            lastFailure = attemptVerification(verification);
+            if (lastFailure == null) {
+                return clientClass.cast(this);
+            }
+            if (System.nanoTime() - deadlineNanos >= 0) {
+                throw new AssertionError(lastFailure);
+            }
+            sleepBeforeNextPoll(deadlineNanos);
+        }
+    }
+
+    /**
+     * Negative-within-timeout verification: assert that the supplied verification stays
+     * <b>unsatisfied</b> for the whole window. This is useful for asserting "no matching request
+     * was made within N seconds" — the opposite of eventual verification. The verification is
+     * polled repeatedly for the duration of the window; if it ever passes (the condition becomes
+     * met), an {@link AssertionError} is thrown immediately. If the window elapses without the
+     * verification ever passing, the method returns normally.
+     * <pre>
+     * mockServerClient
+     *  .verifyNever(
+     *      request().withPath("/should_not_be_called"),
+     *      Duration.ofSeconds(2)
+     *  );
+     * </pre>
+     * The supplied request is verified with {@link VerificationTimes#atLeast(int)} {@code (1)} —
+     * i.e. the window fails the moment one matching request is observed. Implemented purely
+     * client-side (a poll loop over the standard verify endpoint).
+     *
+     * @param requestDefinition the http request that must <b>not</b> be matched during the window
+     * @param window            the time to keep checking that no matching request arrives
+     * @throws AssertionError if a matching request is observed before the window elapses
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public MockServerClient verifyNever(RequestDefinition requestDefinition, Duration window) throws AssertionError {
+        if (requestDefinition == null) {
+            throw new IllegalArgumentException("verifyNever(RequestDefinition, Duration) requires a non null RequestDefinition object");
+        }
+        return verifyNever(verification().withRequest(requestDefinition).withTimes(VerificationTimes.atLeast(1)), window);
+    }
+
+    /**
+     * Negative-within-timeout verification: assert that the supplied {@link Verification} stays
+     * <b>unsatisfied</b> for the whole window. See {@link #verifyNever(RequestDefinition, Duration)}
+     * for the rationale; this generic overload accepts a fully built {@link Verification} so the
+     * caller controls the matched condition (e.g. {@code atLeast(1)} to fail on the first match,
+     * or another {@link VerificationTimes} to fail when a threshold is reached).
+     *
+     * @param verification the verification that must <b>not</b> pass during the window
+     * @param window       the time to keep checking that the verification does not pass
+     * @throws AssertionError if the verification passes before the window elapses
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public MockServerClient verifyNever(Verification verification, Duration window) throws AssertionError {
+        if (verification == null) {
+            throw new IllegalArgumentException("verifyNever(Verification, Duration) requires a non null Verification object");
+        }
+        if (window == null || window.isNegative()) {
+            throw new IllegalArgumentException("verifyNever(Verification, Duration) requires a non null non-negative Duration object");
+        }
+
+        long deadlineNanos = System.nanoTime() + window.toNanos();
+        while (true) {
+            if (attemptVerification(verification) == null) {
+                throw new AssertionError("Found request matching verification within the " + window + " window that was expected to find no match" + NEW_LINE + verificationSerializer.serialize(verification));
+            }
+            if (System.nanoTime() - deadlineNanos >= 0) {
+                return clientClass.cast(this);
+            }
+            sleepBeforeNextPoll(deadlineNanos);
+        }
+    }
+
+    /**
+     * Run a single verification attempt against the server, returning the failure message
+     * (the verify endpoint's non-empty response body) or {@code null} when the verification passes.
+     * Authentication failures are rethrown rather than treated as a verification failure so that
+     * the poll loop does not silently retry an unauthorized client.
+     */
+    private String attemptVerification(Verification verification) throws AssertionError {
+        try {
+            String result = sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("verify"))
+                    .withBody(verificationSerializer.serialize(verification), StandardCharsets.UTF_8),
+                false
+            ).getBodyAsString();
+            return result == null || result.isEmpty() ? null : result;
+        } catch (AuthenticationException authenticationException) {
+            throw authenticationException;
+        } catch (Throwable throwable) {
+            // never return null here: a null would be read as "verification passed" by the poll loop,
+            // turning an exception into a silent false-positive
+            String message = throwable.getMessage();
+            return message != null ? message : throwable.getClass().getName();
+        }
+    }
+
+    /**
+     * Sleep for the poll interval, clamped so it never overshoots the deadline. Restores the
+     * interrupt flag and aborts the poll loop if the thread is interrupted while waiting.
+     */
+    private void sleepBeforeNextPoll(long deadlineNanos) throws AssertionError {
+        long remainingMillis = (deadlineNanos - System.nanoTime()) / 1_000_000L;
+        long sleepMillis = Math.min(DEFAULT_VERIFY_POLL_INTERVAL.toMillis(), Math.max(0L, remainingMillis));
+        if (sleepMillis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(sleepMillis);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Verification polling was interrupted", interruptedException);
+        }
     }
 
     /**
