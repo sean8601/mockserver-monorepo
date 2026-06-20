@@ -29,6 +29,31 @@ vi.mock('@monaco-editor/react', () => ({
       onChange: (e: { target: { value: string } }) => onChange?.(e.target.value),
     });
   },
+  // The DiffEditor cannot run in jsdom either; render both panes as read-only
+  // text areas so the JsonDiffViewer (capture/composer preview-diff) is testable.
+  DiffEditor: ({
+    original,
+    modified,
+    language,
+  }: {
+    original?: string;
+    modified?: string;
+    language?: string;
+  }) =>
+    createElement('div', { 'data-testid': 'monaco-diff', 'data-language': language }, [
+      createElement('textarea', {
+        key: 'original',
+        'data-testid': 'monaco-diff-original',
+        readOnly: true,
+        value: original ?? '',
+      }),
+      createElement('textarea', {
+        key: 'modified',
+        'data-testid': 'monaco-diff-modified',
+        readOnly: true,
+        value: modified ?? '',
+      }),
+    ]),
 }));
 
 vi.mock('monaco-editor', () => ({

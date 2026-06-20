@@ -16,12 +16,19 @@ import {
   type StandardMatcher,
 } from '../lib/standardCodegen';
 import CopyButton from './CopyButton';
+import JsonDiffViewer from './JsonDiffViewer';
 import { monospaceFontFamily } from '../theme';
 
 export interface StandardReviewProps {
   matcher: StandardMatcher;
   action: StandardActionPayload;
   baseUrl: string;
+  /**
+   * When editing an existing expectation, the JSON of the loaded expectation as
+   * it currently exists on the server. When supplied, a before→after diff is
+   * shown so the user sees exactly what their edits will change before the PUT.
+   */
+  originalJson?: string;
 }
 
 /**
@@ -30,7 +37,7 @@ export interface StandardReviewProps {
  * Step 3 review so both kinds give the user copy-pasteable code before they
  * register on the server.
  */
-export default function StandardReview({ matcher, action, baseUrl }: StandardReviewProps) {
+export default function StandardReview({ matcher, action, baseUrl, originalJson }: StandardReviewProps) {
   const [tab, setTab] = useState(0);
 
   const javaCode = useMemo(() => standardToJava(matcher, action), [matcher, action]);
@@ -50,6 +57,17 @@ export default function StandardReview({ matcher, action, baseUrl }: StandardRev
 
   return (
     <Box sx={{ py: 1 }}>
+      {originalJson !== undefined && (
+        <Box sx={{ mb: 2 }} data-testid="standard-review-diff">
+          <JsonDiffViewer
+            label="Changes vs the existing expectation (left = current, right = after update)"
+            ariaLabel="Changes vs the existing expectation"
+            original={originalJson}
+            modified={jsonCode}
+            height={280}
+          />
+        </Box>
+      )}
       <Tabs
         value={safeTab}
         onChange={(_, v: number) => setTab(v)}

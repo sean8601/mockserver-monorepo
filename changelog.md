@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A new `mockserver demo` subcommand starts a server pre-loaded with a small set of example expectations
   (`GET /hello`, `GET /users/{id}`) and prints a getting-started URL, the dashboard URL, and a sample `curl`
   for instant onboarding. Both are additive and backward-compatible.
+- **Dashboard UI (`mockserver-ui`): before→after preview diff when creating or editing a mock.** The
+  "Capture as Mock" dialog now has a **Preview diff** tab that renders the expectation JSON that will be
+  created (an empty object on the left, the generated mock on the right), so you can see what mock will be
+  created from a captured request before confirming. In the Composer's Review step, editing an existing
+  expectation now shows a side-by-side diff of the loaded expectation versus the outgoing JSON, so the
+  changes your edits will apply are visible before you submit. Both reuse a new read-only Monaco
+  `JsonDiffViewer` component (locally bundled — no runtime CDN), consistent with the existing `JsonEditor`.
 - **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
   `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
   time a stored drift record meets the configured severity threshold, carrying the drift record as JSON

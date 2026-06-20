@@ -99,6 +99,37 @@ describe('CaptureAsMockDialog', () => {
     expect(screen.getByText(/withProvider\(Provider.ANTHROPIC\)/)).toBeInTheDocument();
   });
 
+  it('shows a before→after preview diff of the mock that will be created', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(screen.getByRole('tab', { name: 'Preview diff' }));
+
+    // The diff is rendered (mocked DiffEditor exposes original/modified panes).
+    expect(screen.getByTestId('json-diff-viewer')).toBeInTheDocument();
+    // "before" is an empty object — capture creates a brand-new mock.
+    expect(screen.getByTestId('monaco-diff-original')).toHaveValue('{}');
+    // "after" is the generated expectation JSON that will be registered.
+    const modified = screen.getByTestId('monaco-diff-modified') as HTMLTextAreaElement;
+    expect(modified.value).toMatch(/httpLlmResponse/);
+    expect(modified.value).toMatch(/ANTHROPIC/);
+  });
+
+  it('previewed JSON matches the JSON the Copy tab shows', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(screen.getByRole('tab', { name: 'Preview diff' }));
+    const previewModified = (screen.getByTestId('monaco-diff-modified') as HTMLTextAreaElement).value;
+
+    await user.click(screen.getByRole('tab', { name: 'Copy as JSON' }));
+    const copyJson = screen.getByText(/httpLlmResponse/).textContent ?? '';
+
+    // The diff's "after" pane is exactly what the Copy-as-JSON tab outputs, so the
+    // preview is faithful to what gets PUT.
+    expect(previewModified.trim()).toBe(copyJson.trim());
+  });
+
   it('populates fields from OpenAI traffic', () => {
     const openAiParsed: OpenAiParsed = {
       kind: 'openai',

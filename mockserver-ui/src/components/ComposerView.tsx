@@ -3706,6 +3706,22 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
     return typeof id === 'string' && id.length > 0 ? id : loadFromKey;
   }, [loadFromKey, activeExpectations]);
 
+  // When editing an existing expectation, the JSON of that expectation exactly
+  // as it lives on the server right now. Drives the before→after preview diff in
+  // the Review step. We locate it by the key the user loaded from, falling back
+  // to the (possibly hand-pasted) Expectation ID so the diff still appears when
+  // an ID is typed without selecting from the list. Returns undefined when not
+  // editing, which hides the diff.
+  const originalExpectationJson = useMemo(() => {
+    const id = matcher.id.trim();
+    if (!id) return undefined;
+    const item =
+      activeExpectations.find((e) => e.key === loadFromKey) ??
+      activeExpectations.find((e) => e.value?.['id'] === id);
+    if (!item) return undefined;
+    return JSON.stringify(item.value, null, 2);
+  }, [matcher.id, loadFromKey, activeExpectations]);
+
   // Single register helper — builds a StandardActionPayload from current
   // state and PUTs via registerExpectation, which itself uses
   // buildExpectationJson so the JSON sent matches the Java/JSON/curl preview
@@ -4621,6 +4637,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
                     matcher={effectiveMatcher}
                     action={currentAction}
                     baseUrl={baseUrl(connectionParams)}
+                    originalJson={editingExisting ? originalExpectationJson : undefined}
                   />
                   <Box sx={{ mt: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
                     <Tooltip title={!registering && disabledReason ? disabledReason : ''}>

@@ -45,6 +45,7 @@ import { callMcpTool, buildBaseUrl } from '../lib/mcpClient';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import CopyButton from './CopyButton';
 import HumanErrorAlert from './HumanErrorAlert';
+import JsonDiffViewer from './JsonDiffViewer';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -246,7 +247,7 @@ export default function CaptureAsMockDialog({
     return !draft.path;
   }, [registering, draft]);
 
-  const tabLabels = ['Edit', 'Copy as JSON', 'Copy as Java'];
+  const tabLabels = ['Edit', 'Preview diff', 'Copy as JSON', 'Copy as Java'];
 
   return (
     <>
@@ -455,8 +456,26 @@ export default function CaptureAsMockDialog({
             </Box>
           )}
 
-          {/* Tab 1: JSON */}
+          {/* Tab 1: Preview diff — shows exactly what mock will be created from
+              the captured request. Capture is a creation, so the "before" is an
+              empty object and the diff highlights every field being added. */}
           {tab === 1 && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                The mock below will be created from this captured request. Lines added on
+                the right are the expectation that will be registered.
+              </Typography>
+              <JsonDiffViewer
+                ariaLabel="Mock to be created"
+                original="{}"
+                modified={jsonOutput}
+                height={400}
+              />
+            </Box>
+          )}
+
+          {/* Tab 2: JSON */}
+          {tab === 2 && (
             <Box sx={{ position: 'relative' }}>
               <Box sx={{ position: 'absolute', top: 0, right: 0 }}>
                 <CopyButton text={jsonOutput} />
@@ -481,8 +500,8 @@ export default function CaptureAsMockDialog({
             </Box>
           )}
 
-          {/* Tab 2: Java */}
-          {tab === 2 && (
+          {/* Tab 3: Java */}
+          {tab === 3 && (
             <Box sx={{ position: 'relative' }}>
               <Box sx={{ position: 'absolute', top: 0, right: 0 }}>
                 <CopyButton text={javaOutput} />
