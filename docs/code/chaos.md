@@ -111,8 +111,46 @@ live in `mockserver-ui/src/lib/chaosExperiment.ts`.
 | `name` | Yes | Non-blank display name |
 | `stages` | Yes | Ordered list of stages; 1 – 50 entries |
 | `loop` | No | If `true`, restarts from stage 0 after the last stage completes (default `false`) |
+| `startDelayMillis` | No | Fixed delay before stage 0 is applied; `0` (default) = start immediately. Max 604 800 000 ms (7 days) |
+| `cronSchedule` | No | Standard 5-field cron expression (`minute hour day-of-month month day-of-week`) for the start time; omitted/blank = no cron |
 | `stage.durationMillis` | Yes | Duration > 0 and ≤ 86 400 000 ms (24 h) |
 | `stage.profiles` | Yes | Map of host → `HttpChaosProfile` with at least one entry |
+
+### Scheduled (Deferred / Cron) Start
+
+By default an experiment applies stage 0 the instant it is `PUT`. Setting
+`startDelayMillis` and/or `cronSchedule` defers stage 0 to a future time; until
+then the experiment sits in a new `scheduled` status and applies **no** chaos.
+
+- **`startDelayMillis`** — a fixed delay (e.g. `300000` = start in 5 minutes).
+- **`cronSchedule`** — a standard 5-field cron expression evaluated against the
+  JVM default time zone at minute granularity. Day-of-week is `0–6` with `0` =
+  Sunday (`7` also = Sunday). When both day-of-month and day-of-week are
+  restricted, a time matches if **either** matches (conventional cron rule). The
+  evaluator (`org.mockserver.mock.action.http.CronSchedule`) is self-contained —
+  no third-party cron dependency. Steps, ranges, and comma lists are supported
+  (e.g. `0-59/5`, `9-17`, `0,30`).
+- **Both set** — the **later** of the fixed delay and the next cron boundary
+  wins, so an explicit delay can never start before its cron time.
+
+While `scheduled`, `GET /mockserver/chaosExperiment` reports
+`status: "scheduled"` and `startRemainingMillis` (ms until stage 0 applies). The
+deferred start fires on the same `chaos-experiment-scheduler` thread used for
+stage advancement; `DELETE` (or a replacing `PUT`) cancels a pending start
+before any chaos is applied. No scheduling fields = immediate start
+(back-compatible default), and the JSON status/definition omit the new fields
+entirely when unset.
+
+```json
+PUT /mockserver/chaosExperiment
+{
+  "name": "nightly-error-storm",
+  "cronSchedule": "0 2 * * *",
+  "stages": [
+    { "durationMillis": 600000, "profiles": { "payments.svc": { "errorStatusCode": 503, "errorProbability": 0.3 } } }
+  ]
+}
+```
 
 ## Status Response
 
@@ -135,6 +173,7 @@ live in `mockserver-ui/src/lib/chaosExperiment.ts`.
 | `status` value | Meaning |
 |---------------|---------|
 | `starting` | Experiment object created; stage 0 not yet applied |
+| `scheduled` | A deferred start (`startDelayMillis`/`cronSchedule`) is pending; no chaos applied yet. The status carries `startRemainingMillis` (ms until stage 0). |
 | `running` | A stage is active |
 | `completed` | All stages ran and `loop=false` |
 | `stopped` | Stopped via `DELETE /mockserver/chaosExperiment` or replaced by a new `PUT` |
@@ -150,6 +189,7 @@ is nulled. The field is cleared only by `HttpState.reset()`.
 |-------|-------|----------|
 | Maximum stages per experiment | 50 | `MAX_STAGES` |
 | Maximum stage duration | 86 400 000 ms (24 h) | `MAX_STAGE_DURATION_MILLIS` |
+| Maximum deferred-start delay | 604 800 000 ms (7 days) | `MAX_START_DELAY_MILLIS` |
 | Concurrent experiments | 1 | Enforced by `AtomicReference<RunningExperiment>` |
 
 Starting a new experiment while one is running implicitly stops the existing one
@@ -367,6 +407,7 @@ making manual service-chaos changes.
 | Class | Module | Path |
 |-------|--------|------|
 | `ChaosExperimentOrchestrator` | mockserver-core | `org.mockserver.mock.action.http.ChaosExperimentOrchestrator` |
+| `CronSchedule` | mockserver-core | `org.mockserver.mock.action.http.CronSchedule` (minimal 5-field cron evaluator for deferred starts) |
 | `ChaosAutoHaltMonitor` | mockserver-core | `org.mockserver.mock.action.http.ChaosAutoHaltMonitor` |
 | `ServiceChaosRegistry` | mockserver-core | `org.mockserver.mock.action.http.ServiceChaosRegistry` |
 | `HttpChaosProfile` | mockserver-core | `org.mockserver.model.HttpChaosProfile` |

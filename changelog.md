@@ -956,6 +956,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`signingAlgorithm` RS/ES 256/384/512, optional supplied key + stable `keyId`; JWKS always publishes the
   public half of the signing key). Discovery now reflects the configured algorithm and advertises only
   implemented grants plus PKCE/auth-method/claims metadata. Authorization codes are single-use and TTL-bounded.
+- **Scheduled (delayed / cron) chaos experiment start** (`mockserver-core`). A chaos experiment definition now
+  accepts two optional, additive scheduling fields: `startDelayMillis` (a fixed delay before stage 0 is applied,
+  capped at 7 days) and `cronSchedule` (a standard 5-field cron expression — `minute hour day-of-month month
+  day-of-week` — evaluated against the JVM default time zone at minute granularity, supporting `*`, ranges,
+  comma lists, and steps). When either is set, `ChaosExperimentOrchestrator` defers stage 0 to the scheduled
+  time: the experiment sits in a new `scheduled` status (no chaos applied), and `GET /mockserver/chaosExperiment`
+  reports `startRemainingMillis`. When both are set, the later of the two wins. A pending start is cancelled by
+  `DELETE` or a replacing `PUT` before any chaos is applied. No scheduling fields = immediate start (unchanged
+  default); the status/definition JSON omit the new fields when unset. The deferred start reuses the existing
+  single-thread `chaos-experiment-scheduler`; cron parsing is handled by a self-contained `CronSchedule`
+  evaluator (no third-party cron dependency).
+
 - **Response-content conditional breakpoints** (`mockserver-core`). A `RESPONSE`-phase breakpoint matcher now
   accepts optional `responseStatusCodeMin`/`responseStatusCodeMax` (inclusive status-code range) and
   `responseBodyContains` (regex searched within the response body) fields, so a breakpoint can pause only when

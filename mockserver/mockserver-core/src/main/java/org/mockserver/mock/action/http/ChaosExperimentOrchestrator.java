@@ -65,6 +65,8 @@ public class ChaosExperimentOrchestrator {
     static final int MAX_STAGES = 50;
     /** Maximum duration for a single stage: 24 hours in milliseconds. */
     static final long MAX_STAGE_DURATION_MILLIS = 24L * 60 * 60 * 1000;
+    /** Maximum deferred-start delay: 7 days in milliseconds (runaway-timer bound). */
+    static final long MAX_START_DELAY_MILLIS = 7L * 24 * 60 * 60 * 1000;
 
     private static final ChaosExperimentOrchestrator INSTANCE = new ChaosExperimentOrchestrator(
         TimeService::currentTimeMillis,
@@ -106,9 +108,30 @@ public class ChaosExperimentOrchestrator {
         // Stop any existing experiment
         stopInternal(false);
 
-        RunningExperiment experiment = new RunningExperiment(definition, clock.getAsLong());
+        long now = clock.getAsLong();
+        RunningExperiment experiment = new RunningExperiment(definition, now);
         current.set(experiment);
 
+        long startDelay = resolveStartDelayMillis(definition, now);
+        if (startDelay > 0) {
+            // Deferred start: stage 0 is not applied until the delay elapses.
+            // The registry is left untouched until then (back-compat: no schedule = immediate).
+            experiment.status = "scheduled";
+            scheduleStart(experiment, startDelay);
+            LOG.info("chaos experiment '{}' scheduled to start in {} ms ({} stage(s), loop={})",
+                definition.name, startDelay, definition.stages.size(), definition.loop);
+        } else {
+            beginExperiment(experiment);
+        }
+
+        return null;
+    }
+
+    /**
+     * Applies stage 0 and schedules the first stage advance. Shared by the
+     * immediate-start path and the deferred-start timer.
+     */
+    private void beginExperiment(RunningExperiment experiment) {
         // Apply stage 0
         applyStage(experiment, 0);
 
@@ -116,9 +139,55 @@ public class ChaosExperimentOrchestrator {
         scheduleNextStage(experiment, 0);
 
         LOG.info("chaos experiment '{}' started with {} stage(s), loop={}",
-            definition.name, definition.stages.size(), definition.loop);
+            experiment.definition.name, experiment.definition.stages.size(), experiment.definition.loop);
+    }
 
-        return null;
+    /**
+     * Computes the delay (in ms) before stage 0 should be applied, from the
+     * definition's {@code startDelayMillis} and/or {@code cronSchedule}. Returns
+     * {@code 0} (immediate start) when neither is set. When both are set, the
+     * later of the two wins so an explicit delay can never start before its cron
+     * boundary.
+     */
+    private long resolveStartDelayMillis(ExperimentDefinition definition, long now) {
+        long delay = Math.max(0L, definition.startDelayMillis);
+        if (definition.cronSchedule != null && !definition.cronSchedule.isBlank()) {
+            long cronDelay = CronSchedule.parse(definition.cronSchedule).millisUntilNext(now);
+            delay = Math.max(delay, cronDelay);
+        }
+        return delay;
+    }
+
+    private void scheduleStart(RunningExperiment experiment, long delayMillis) {
+        experiment.scheduledStartAtMillis = clock.getAsLong() + delayMillis;
+        ScheduledFuture<?> future = scheduler.schedule(() -> startNow(experiment), delayMillis, TimeUnit.MILLISECONDS);
+        experiment.pendingAdvance = future;
+    }
+
+    private void startNow(RunningExperiment experiment) {
+        // Ignore if the experiment was stopped or replaced before the timer fired.
+        if (current.get() != experiment || !"scheduled".equals(experiment.status)) {
+            return;
+        }
+        beginExperiment(experiment);
+        LOG.info("chaos experiment '{}' deferred start fired", experiment.definition.name);
+    }
+
+    /**
+     * Forces an immediately-scheduled (deferred-start) experiment to begin,
+     * bypassing the scheduler. Used by tests to drive the deferred-start
+     * transition deterministically without wall-clock sleeps. No-op unless an
+     * experiment is currently in the {@code "scheduled"} state.
+     */
+    void triggerScheduledStartNow() {
+        RunningExperiment exp = current.get();
+        if (exp != null && "scheduled".equals(exp.status)) {
+            ScheduledFuture<?> pending = exp.pendingAdvance;
+            if (pending != null) {
+                pending.cancel(false);
+            }
+            startNow(exp);
+        }
     }
 
     /**
@@ -150,11 +219,19 @@ public class ChaosExperimentOrchestrator {
         if (exp == null) {
             String terminated = lastTerminatedStatus;
             if (terminated != null) {
-                return new ExperimentStatus(null, terminated, 0, 0, 0, 0, 0, 0, null);
+                return new ExperimentStatus(null, terminated, 0, 0, 0, 0, 0, 0, null, 0);
             }
             return null;
         }
         long now = clock.getAsLong();
+        if ("scheduled".equals(exp.status)) {
+            // Deferred start: no stage has been applied yet, so stage elapsed/remaining
+            // are not meaningful. Report startRemainingMillis instead.
+            long startRemaining = Math.max(0, exp.scheduledStartAtMillis - now);
+            return new ExperimentStatus(
+                exp.definition.name, exp.status, 0, exp.definition.stages.size(),
+                0, 0, exp.loopIteration, now - exp.startedAtMillis, exp.definition, startRemaining);
+        }
         long stageElapsed = now - exp.stageStartedAtMillis;
         Stage currentStage = exp.currentStageIndex < exp.definition.stages.size()
             ? exp.definition.stages.get(exp.currentStageIndex) : null;
@@ -169,7 +246,8 @@ public class ChaosExperimentOrchestrator {
             stageRemaining,
             exp.loopIteration,
             now - exp.startedAtMillis,
-            exp.definition
+            exp.definition,
+            0
         );
     }
 
@@ -290,6 +368,27 @@ public class ChaosExperimentOrchestrator {
         if (definition.stages.size() > MAX_STAGES) {
             return "'stages' exceeds maximum of " + MAX_STAGES;
         }
+        if (definition.startDelayMillis < 0) {
+            return "'startDelayMillis' must be >= 0";
+        }
+        if (definition.startDelayMillis > MAX_START_DELAY_MILLIS) {
+            return "'startDelayMillis' exceeds maximum of " + MAX_START_DELAY_MILLIS + " ms (7 days)";
+        }
+        if (definition.cronSchedule != null && !definition.cronSchedule.isBlank()) {
+            CronSchedule cron;
+            try {
+                cron = CronSchedule.parse(definition.cronSchedule);
+            } catch (IllegalArgumentException e) {
+                return "'cronSchedule' is invalid: " + e.getMessage();
+            }
+            // A satisfiable cron always matches some minute within the search horizon, so the
+            // next match is at least one minute away (> 0). A return of 0 means the expression
+            // can never fire (e.g. an impossible date like "0 0 30 2 *") — reject it rather than
+            // silently starting immediately.
+            if (cron.millisUntilNext(clock.getAsLong()) == 0L) {
+                return "'cronSchedule' never matches a valid time";
+            }
+        }
         for (int i = 0; i < definition.stages.size(); i++) {
             Stage stage = definition.stages.get(i);
             if (stage.durationMillis <= 0) {
@@ -308,17 +407,31 @@ public class ChaosExperimentOrchestrator {
     // -- Data classes --
 
     /**
-     * An experiment definition: name, ordered stages, and whether to loop.
+     * An experiment definition: name, ordered stages, whether to loop, and an
+     * optional deferred start ({@code startDelayMillis} and/or {@code cronSchedule}).
+     * When no scheduling fields are set the experiment starts immediately
+     * (back-compatible default).
      */
     public static class ExperimentDefinition {
         public final String name;
         public final List<Stage> stages;
         public final boolean loop;
+        /** Fixed delay before stage 0 is applied; {@code 0} = start immediately. */
+        public final long startDelayMillis;
+        /** Standard 5-field cron expression for the start time; {@code null}/blank = none. */
+        public final String cronSchedule;
 
         public ExperimentDefinition(String name, List<Stage> stages, boolean loop) {
+            this(name, stages, loop, 0L, null);
+        }
+
+        public ExperimentDefinition(String name, List<Stage> stages, boolean loop,
+                                    long startDelayMillis, String cronSchedule) {
             this.name = name;
             this.stages = stages != null ? Collections.unmodifiableList(new ArrayList<>(stages)) : Collections.emptyList();
             this.loop = loop;
+            this.startDelayMillis = startDelayMillis;
+            this.cronSchedule = cronSchedule;
         }
 
         /**
@@ -328,6 +441,9 @@ public class ChaosExperimentOrchestrator {
             ObjectMapper mapper = ObjectMapperFactory.createObjectMapper();
             String name = node.path("name").asText(null);
             boolean loop = node.path("loop").asBoolean(false);
+            long startDelayMillis = node.path("startDelayMillis").asLong(0);
+            JsonNode cronNode = node.path("cronSchedule");
+            String cronSchedule = cronNode.isTextual() ? cronNode.asText() : null;
             List<Stage> stages = new ArrayList<>();
             JsonNode stagesNode = node.path("stages");
             if (stagesNode.isArray()) {
@@ -351,7 +467,7 @@ public class ChaosExperimentOrchestrator {
                     stages.add(new Stage(durationMillis, profiles));
                 }
             }
-            return new ExperimentDefinition(name, stages, loop);
+            return new ExperimentDefinition(name, stages, loop, startDelayMillis, cronSchedule);
         }
 
         /**
@@ -362,6 +478,12 @@ public class ChaosExperimentOrchestrator {
             ObjectNode node = mapper.createObjectNode();
             node.put("name", name);
             node.put("loop", loop);
+            if (startDelayMillis > 0) {
+                node.put("startDelayMillis", startDelayMillis);
+            }
+            if (cronSchedule != null && !cronSchedule.isBlank()) {
+                node.put("cronSchedule", cronSchedule);
+            }
             ArrayNode stagesArray = node.putArray("stages");
             for (Stage stage : stages) {
                 ObjectNode stageNode = mapper.createObjectNode();
@@ -404,11 +526,13 @@ public class ChaosExperimentOrchestrator {
         public final int loopIteration;
         public final long totalElapsedMillis;
         public final ExperimentDefinition definition;
+        /** Milliseconds until a deferred-start experiment begins; {@code 0} unless status is {@code "scheduled"}. */
+        public final long startRemainingMillis;
 
         public ExperimentStatus(String name, String status, int currentStageIndex, int totalStages,
                                 long stageElapsedMillis, long stageRemainingMillis,
                                 int loopIteration, long totalElapsedMillis,
-                                ExperimentDefinition definition) {
+                                ExperimentDefinition definition, long startRemainingMillis) {
             this.name = name;
             this.status = status;
             this.currentStageIndex = currentStageIndex;
@@ -418,6 +542,7 @@ public class ChaosExperimentOrchestrator {
             this.loopIteration = loopIteration;
             this.totalElapsedMillis = totalElapsedMillis;
             this.definition = definition;
+            this.startRemainingMillis = startRemainingMillis;
         }
 
         public ObjectNode toJson() {
@@ -431,6 +556,9 @@ public class ChaosExperimentOrchestrator {
             node.put("stageRemainingMillis", stageRemainingMillis);
             node.put("loopIteration", loopIteration);
             node.put("totalElapsedMillis", totalElapsedMillis);
+            if ("scheduled".equals(status)) {
+                node.put("startRemainingMillis", startRemainingMillis);
+            }
             if (definition != null) {
                 node.set("experiment", definition.toJson());
             }
@@ -449,6 +577,8 @@ public class ChaosExperimentOrchestrator {
         volatile String status;
         volatile int loopIteration;
         volatile ScheduledFuture<?> pendingAdvance;
+        /** Absolute clock time (ms) when a deferred-start experiment is due to begin. */
+        volatile long scheduledStartAtMillis;
 
         RunningExperiment(ExperimentDefinition definition, long startedAtMillis) {
             this.definition = definition;

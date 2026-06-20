@@ -1160,11 +1160,40 @@ new MockServerClient("localhost", 1080)
 
 <p>This experiment progressively degrades <code class="inline code">payments.svc</code>: first light errors and latency for one minute, then heavier errors for another minute, then a complete connection drop for 30 seconds. After the last stage completes, chaos is cleared automatically.</p>
 
+<h3>Scheduling the start (delayed / cron)</h3>
+
+<p>By default an experiment starts the moment you <code class="inline code">PUT</code> it. To start it later instead, add either of two optional fields to the experiment definition:</p>
+
+<ul>
+    <li><code class="inline code">startDelayMillis</code> &mdash; a fixed delay before the first stage is applied (for example <code class="inline code">300000</code> to start in 5 minutes). Maximum 7 days.</li>
+    <li><code class="inline code">cronSchedule</code> &mdash; a standard 5-field cron expression (<code class="inline code">minute hour day-of-month month day-of-week</code>) for the start time, evaluated in the server's local time zone. Supports <code class="inline code">*</code>, ranges (<code class="inline code">9-17</code>), comma lists (<code class="inline code">0,30</code>), and steps (<code class="inline code">0-59/5</code>). Day-of-week is <code class="inline code">0-6</code> with <code class="inline code">0</code> = Sunday.</li>
+</ul>
+
+<p>If you set both, the later of the two start times is used. Until the start time arrives, the experiment applies no chaos and reports <code class="inline code">status: "scheduled"</code> with a <code class="inline code">startRemainingMillis</code> countdown; you can cancel it with <code class="inline code">DELETE /mockserver/chaosExperiment</code> before it begins. Omitting both fields keeps the original behaviour (start immediately).</p>
+
+<pre class="code"><code class="code">curl -sf -X PUT http://mockserver:1080/mockserver/chaosExperiment \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "nightly-error-storm",
+    "cronSchedule": "0 2 * * *",
+    "stages": [
+      {
+        "durationMillis": 600000,
+        "profiles": {
+          "payments.svc": {"errorStatus": 503, "errorProbability": 0.3}
+        }
+      }
+    ]
+  }'</code></pre>
+
+<p>This experiment waits until the next 02:00 (server local time), then injects 503s into <code class="inline code">payments.svc</code> for 10 minutes &mdash; useful for rehearsing an off-peak incident without staying up to trigger it.</p>
+
 <h3>Safety limits</h3>
 
 <ul>
     <li><strong>Maximum 50 stages</strong> per experiment</li>
     <li><strong>Maximum 24 hours</strong> per stage duration</li>
+    <li><strong>Maximum 7 days</strong> for a deferred <code class="inline code">startDelayMillis</code></li>
     <li><strong>Only one experiment at a time</strong> &mdash; starting a new experiment stops the previous one</li>
     <li><strong>Auto-halt integration</strong> &mdash; if the <a href="#chaos_auto_halt">auto-halt circuit-breaker</a> fires while an experiment is running, the experiment stops immediately (status: <code class="inline code">halted_by_auto_halt</code>)</li>
 </ul>
@@ -1178,7 +1207,7 @@ new MockServerClient("localhost", 1080)
 #     "totalStages":3,"stageElapsedMillis":15000,"stageRemainingMillis":45000,
 #     "loopIteration":0,"totalElapsedMillis":75000,"experiment":{...}}</code></pre>
 
-<p>The <code class="inline code">status</code> field is one of: <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, or <code class="inline code">halted_by_auto_halt</code>.</p>
+<p>The <code class="inline code">status</code> field is one of: <code class="inline code">scheduled</code> (a delayed/cron start is pending &mdash; the status also carries <code class="inline code">startRemainingMillis</code>), <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, or <code class="inline code">halted_by_auto_halt</code>.</p>
 
 <h3>Stopping</h3>
 

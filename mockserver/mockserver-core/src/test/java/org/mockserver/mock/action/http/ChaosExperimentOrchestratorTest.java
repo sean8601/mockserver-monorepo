@@ -578,6 +578,231 @@ public class ChaosExperimentOrchestratorTest {
         assertThat(ServiceChaosRegistry.getInstance().get("db.svc"), is(notNullValue()));
     }
 
+    // --- Scheduled (deferred / cron) start ---
+
+    @Test
+    public void shouldStartImmediatelyWhenNoScheduleSet() {
+        // given - definition with no scheduling fields (back-compat default)
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition("immediate", Arrays.asList(stage0), false);
+
+        // when
+        String error = orchestrator.start(def);
+
+        // then - stage 0 applied immediately, status running
+        assertThat(error, is(nullValue()));
+        assertThat(ServiceChaosRegistry.getInstance().get("api.svc"), is(notNullValue()));
+        assertThat(orchestrator.getStatus().status, is("running"));
+    }
+
+    @Test
+    public void shouldNotApplyChaosUntilDelayElapses() {
+        // given - experiment with a 30s deferred start
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "delayed", Arrays.asList(stage0), false, 30_000L, null);
+
+        // when
+        String error = orchestrator.start(def);
+
+        // then - no chaos applied yet; status is "scheduled"
+        assertThat(error, is(nullValue()));
+        assertThat("chaos NOT applied during the delay window",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("scheduled"));
+        assertThat(status.name, is("delayed"));
+        assertThat(status.currentStageIndex, is(0));
+        assertThat(status.startRemainingMillis, is(30_000L));
+
+        // when - the delay elapses and the deferred-start timer fires
+        clock.addAndGet(30_000L);
+        orchestrator.triggerScheduledStartNow();
+
+        // then - stage 0 is now applied and the experiment is running
+        assertThat(ServiceChaosRegistry.getInstance().get("api.svc"), is(notNullValue()));
+        assertThat(ServiceChaosRegistry.getInstance().get("api.svc").getErrorStatus(), is(503));
+        assertThat(orchestrator.getStatus().status, is("running"));
+        assertThat(orchestrator.getStatus().currentStageIndex, is(0));
+    }
+
+    @Test
+    public void shouldReportShrinkingStartRemainingWhileScheduled() {
+        // given
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "delayed-status", Arrays.asList(stage0), false, 10_000L, null);
+        orchestrator.start(def);
+
+        // when - 4s elapses within the delay window
+        clock.addAndGet(4000L);
+
+        // then - startRemainingMillis reflects the remaining delay
+        assertThat(orchestrator.getStatus().startRemainingMillis, is(6000L));
+        assertThat(orchestrator.getStatus().status, is("scheduled"));
+        assertThat("still no chaos applied",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
+    }
+
+    @Test
+    public void shouldStopScheduledExperimentBeforeItStarts() {
+        // given - a deferred experiment that has not started yet
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "cancel-before-start", Arrays.asList(stage0), false, 60_000L, null));
+        assertThat(orchestrator.getStatus().status, is("scheduled"));
+
+        // when
+        orchestrator.stop();
+
+        // then - the deferred start is cancelled and never applies chaos
+        assertThat(orchestrator.getStatus().status, is("stopped"));
+        clock.addAndGet(60_000L);
+        orchestrator.triggerScheduledStartNow();
+        assertThat("a stopped scheduled experiment never applies chaos",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
+    }
+
+    @Test
+    public void shouldReplaceScheduledExperimentWithNewOne() {
+        // given - a deferred experiment that has not started yet
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "scheduled-first", Arrays.asList(stage0), false, 60_000L, null));
+
+        // when - start a second (immediate) experiment
+        ChaosExperimentOrchestrator.Stage stage1 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("db.svc", httpChaosProfile().withErrorStatus(500)));
+        orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "immediate-second", Arrays.asList(stage1), false));
+
+        // then - the second runs now; the first's deferred timer is a no-op when it fires
+        assertThat(orchestrator.getStatus().name, is("immediate-second"));
+        assertThat(orchestrator.getStatus().status, is("running"));
+        assertThat(ServiceChaosRegistry.getInstance().get("db.svc"), is(notNullValue()));
+        clock.addAndGet(60_000L);
+        orchestrator.triggerScheduledStartNow();
+        assertThat("first experiment never starts after being replaced",
+            ServiceChaosRegistry.getInstance().get("api.svc"), is(nullValue()));
+    }
+
+    @Test
+    public void shouldDeferStartViaCronSchedule() {
+        // given - clock at 2026-06-20T10:17:30 (local). A "0 11 * * *" cron is the
+        // next 11:00 boundary, i.e. some positive delay away.
+        long base = java.time.ZonedDateTime.of(2026, 6, 20, 10, 17, 30, 0, java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli();
+        clock.set(base);
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "cron-exp", Arrays.asList(stage0), false, 0L, "0 11 * * *");
+
+        // when
+        String error = orchestrator.start(def);
+
+        // then - scheduled, not yet applied
+        assertThat(error, is(nullValue()));
+        assertThat(orchestrator.getStatus().status, is("scheduled"));
+        assertThat("no chaos before the cron boundary",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
+        // next 11:00 is 42m30s away = 2_550_000 ms
+        assertThat(orchestrator.getStatus().startRemainingMillis, is(2_550_000L));
+
+        // when - the cron boundary arrives
+        clock.addAndGet(2_550_000L);
+        orchestrator.triggerScheduledStartNow();
+
+        // then - chaos applied
+        assertThat(ServiceChaosRegistry.getInstance().get("api.svc"), is(notNullValue()));
+        assertThat(orchestrator.getStatus().status, is("running"));
+    }
+
+    @Test
+    public void shouldRejectNegativeStartDelay() {
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        String error = orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "neg-delay", Arrays.asList(stage0), false, -1L, null));
+        assertThat(error, is("'startDelayMillis' must be >= 0"));
+    }
+
+    @Test
+    public void shouldRejectStartDelayExceedingMax() {
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        String error = orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "huge-delay", Arrays.asList(stage0), false,
+            ChaosExperimentOrchestrator.MAX_START_DELAY_MILLIS + 1, null));
+        assertThat(error, containsString("exceeds maximum"));
+    }
+
+    @Test
+    public void shouldRejectInvalidCronSchedule() {
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        String error = orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "bad-cron", Arrays.asList(stage0), false, 0L, "not a cron"));
+        assertThat(error, containsString("'cronSchedule' is invalid"));
+    }
+
+    @Test
+    public void shouldRejectNeverMatchingCronSchedule() {
+        // "0 0 30 2 *" — 30 February never occurs, so the cron can never fire.
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        String error = orchestrator.start(new ChaosExperimentOrchestrator.ExperimentDefinition(
+            "impossible-cron", Arrays.asList(stage0), false, 0L, "0 0 30 2 *"));
+        assertThat(error, is("'cronSchedule' never matches a valid time"));
+        assertThat("no experiment was scheduled", orchestrator.getStatus(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldRoundTripScheduleFieldsThroughJson() throws Exception {
+        // given
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition original =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "sched-json", Arrays.asList(stage0), false, 15_000L, "*/5 * * * *");
+
+        // when
+        com.fasterxml.jackson.databind.node.ObjectNode json = original.toJson();
+        ChaosExperimentOrchestrator.ExperimentDefinition restored =
+            ChaosExperimentOrchestrator.ExperimentDefinition.fromJson(json);
+
+        // then
+        assertThat(json.get("startDelayMillis").asLong(), is(15_000L));
+        assertThat(json.get("cronSchedule").asText(), is("*/5 * * * *"));
+        assertThat(restored.startDelayMillis, is(15_000L));
+        assertThat(restored.cronSchedule, is("*/5 * * * *"));
+    }
+
+    @Test
+    public void shouldOmitScheduleFieldsFromJsonWhenUnset() {
+        // given - no schedule
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition("no-sched", Arrays.asList(stage0), false);
+
+        // when
+        com.fasterxml.jackson.databind.node.ObjectNode json = def.toJson();
+
+        // then - the scheduling fields are absent (back-compat output)
+        assertThat(json.has("startDelayMillis"), is(false));
+        assertThat(json.has("cronSchedule"), is(false));
+    }
+
     // --- No-experiment baseline ---
 
     @Test
