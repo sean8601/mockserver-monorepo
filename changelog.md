@@ -762,6 +762,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
+- **JetBrains IDE plugin no longer capped to old IDE builds**: the plugin previously declared
+  `untilBuild=253.*`, which excluded it from newer IDEs (e.g. build 261+) and triggered JetBrains
+  Marketplace "limited `until-build`" warnings. Compatibility is now left open-ended (empty
+  `until-build`), so the plugin stays available in current and future JetBrains IDE releases. The
+  plugin uses only stable, public platform APIs; the Plugin Verifier (`verifyPlugin`) remains the
+  backstop for any real future incompatibility.
 - **Response-modifier fidelity in codegen and the Node typedef**: `retrieve?format=JAVA` now emits the response
   modifier's `condition`, `modifiers` chain, `jsonPatch`, and `jsonMergePatch` (the patch fields are emitted via
   new `withJsonPatch(String)` / `withJsonMergePatch(String)` convenience overloads, so the generated DSL

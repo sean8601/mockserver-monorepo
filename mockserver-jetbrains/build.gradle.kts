@@ -43,7 +43,13 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = providers.gradleProperty("sinceBuild")
-            untilBuild = providers.gradleProperty("untilBuild")
+            // Open-ended compatibility: an empty untilBuild omits the `until-build`
+            // upper bound from plugin.xml, so the plugin stays available in current
+            // and future IDE builds (e.g. 261+) instead of being capped. The plugin
+            // uses only stable, public platform APIs, so we don't pin an upper bound
+            // pre-emptively — the Plugin Verifier (verifyPlugin) is the backstop that
+            // catches any real incompatibility before release.
+            untilBuild = provider { "" }
         }
     }
     signing {
