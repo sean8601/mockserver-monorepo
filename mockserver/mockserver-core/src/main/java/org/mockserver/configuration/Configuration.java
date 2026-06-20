@@ -62,6 +62,7 @@ public class Configuration {
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
+    private Boolean templatizeRecordedValues;
     private Boolean redactSecretsInRecordedExpectations;
     private Double llmCostBudgetUsd;
     private Boolean otelPropagateTraceContext;
@@ -498,6 +499,27 @@ public class Configuration {
      */
     public Configuration deduplicateRecordedExpectations(Boolean deduplicateRecordedExpectations) {
         this.deduplicateRecordedExpectations = deduplicateRecordedExpectations;
+        return this;
+    }
+
+    public Boolean templatizeRecordedValues() {
+        if (templatizeRecordedValues == null) {
+            return ConfigurationProperties.templatizeRecordedValues();
+        }
+        return templatizeRecordedValues;
+    }
+
+    /**
+     * Enable opt-in generalization of volatile-looking query parameter, header and JSON
+     * body leaf values (ids, UUIDs, timestamps, tokens) into regex matchers when
+     * retrieved recorded expectations are post-processed. Only takes effect when
+     * {@link #deduplicateRecordedExpectations()} is also enabled (the post-processor only
+     * runs then). Off by default so recorded output is unchanged unless explicitly enabled.
+     *
+     * @param templatizeRecordedValues enable value templatization of recorded expectations
+     */
+    public Configuration templatizeRecordedValues(Boolean templatizeRecordedValues) {
+        this.templatizeRecordedValues = templatizeRecordedValues;
         return this;
     }
 

@@ -158,6 +158,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
     private static final String MOCKSERVER_PER_EXPECTATION_METRICS = "mockserver.perExpectationMetrics";
     private static final String MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS = "mockserver.deduplicateRecordedExpectations";
+    private static final String MOCKSERVER_TEMPLATIZE_RECORDED_VALUES = "mockserver.templatizeRecordedValues";
     private static final String MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS = "mockserver.redactSecretsInRecordedExpectations";
     private static final String MOCKSERVER_LLM_COST_BUDGET_USD = "mockserver.llmCostBudgetUsd";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
@@ -2469,6 +2470,29 @@ public class ConfigurationProperties {
      */
     public static void deduplicateRecordedExpectations(boolean enable) {
         setProperty(MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS, "" + enable);
+    }
+
+    public static boolean templatizeRecordedValues() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_TEMPLATIZE_RECORDED_VALUES, "MOCKSERVER_TEMPLATIZE_RECORDED_VALUES", "" + false));
+    }
+
+    /**
+     * Enable opt-in generalization of volatile-looking query parameter, header and JSON
+     * body leaf values in retrieved recorded (proxy SPY/CAPTURE) expectations. When enabled,
+     * values that look like ids, UUIDs, ISO-8601 / epoch-millis timestamps, JWTs or long
+     * opaque tokens are replaced with regex matchers (query/header values become {@code .+};
+     * JSON body leaves become a {@code ${json-unit.regex}} placeholder) so the recorded
+     * expectation is reusable rather than pinned to one captured value. Stable values
+     * (short strings, words, booleans, small numbers) are preserved verbatim.
+     * <p>
+     * Only takes effect when {@link #deduplicateRecordedExpectations()} is also enabled,
+     * because the post-processor only runs then. Default is false (off) so retrieved
+     * recorded expectations are byte-for-byte unchanged unless explicitly enabled.
+     *
+     * @param enable enable value templatization of recorded expectations
+     */
+    public static void templatizeRecordedValues(boolean enable) {
+        setProperty(MOCKSERVER_TEMPLATIZE_RECORDED_VALUES, "" + enable);
     }
 
     public static boolean redactSecretsInRecordedExpectations() {

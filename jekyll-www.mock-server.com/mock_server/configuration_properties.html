@@ -1774,6 +1774,23 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.redactSecretsInRecordedExpectations="true"</code></pre>
 </div>
 
+<button id="button_configuration_templatize_recorded_values" class="accordion title"><strong>Templatize Recorded Values</strong></button>
+<div class="panel title">
+    <p>When MockServer records traffic as a proxy, the recorded expectations match the exact values that were captured. A recording pinned to a specific request id, session token or timestamp will not match the next request, making recordings brittle and over-specific. By default the recorded-expectation post-processor (enabled with <span class="inline_code">deduplicateRecordedExpectations</span>) only generalizes id-like <strong>path segments</strong> (e.g. <span class="inline_code">/users/1</span> &rarr; <span class="inline_code">/users/{id}</span>).</p>
+    <p>When this setting is enabled <strong>in addition to</strong> <span class="inline_code">deduplicateRecordedExpectations</span>, the post-processor also generalizes volatile-looking <strong>query parameter</strong>, <strong>header</strong> and <strong>JSON body</strong> values into matchers: UUIDs, long numeric ids, ISO-8601 dates / date-times, epoch-millisecond timestamps, JWTs and long opaque tokens (base64 / hex) are replaced with a regex matcher (<span class="inline_code">.+</span> for query/header values, a <span class="inline_code">${json-unit.regex}</span> placeholder for JSON body leaves). Known-credential header names (<span class="inline_code">Authorization</span>, <span class="inline_code">Cookie</span>, <span class="inline_code">x-api-key</span>, correlation-id headers, &hellip;) are always generalized when present.</p>
+    <p>It is deliberately <strong>conservative</strong>: stable values &mdash; short strings, words, booleans, small numbers such as a page size or status code, common content-types &mdash; are kept verbatim, so a recording is generalized only where it would otherwise be too specific to replay.</p>
+    <p>This is <strong>off by default</strong> and has no effect unless <span class="inline_code">deduplicateRecordedExpectations</span> is also enabled. Enable it when you want recordings that replay against future traffic; leave it off when you need recordings to match the exact captured values.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.templatizeRecordedValues(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.templatizeRecordedValues=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_TEMPLATIZE_RECORDED_VALUES=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.deduplicateRecordedExpectations="true" -Dmockserver.templatizeRecordedValues="true"</code></pre>
+</div>
+
 <button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>

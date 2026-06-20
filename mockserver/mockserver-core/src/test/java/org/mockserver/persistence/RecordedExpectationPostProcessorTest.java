@@ -221,4 +221,129 @@ public class RecordedExpectationPostProcessorTest {
         assertThat(RecordedExpectationPostProcessor.deduplicateAndTemplatize(null).isEmpty(), is(true));
         assertThat(RecordedExpectationPostProcessor.deduplicateAndTemplatize(Collections.emptyList()).isEmpty(), is(true));
     }
+
+    // ----- value templatization (opt-in) ------------------------------------
+
+    private static Expectation recordedRequest(org.mockserver.model.HttpRequest request, HttpResponse response) {
+        return new Expectation(request).thenRespond(response);
+    }
+
+    @Test
+    public void shouldNotTemplatizeValuesWhenFlagOff() {
+        // given - a UUID query param; default (path-only) overload must keep it verbatim
+        List<Expectation> recorded = Collections.singletonList(recordedRequest(
+            request().withMethod("GET").withPath("/orders")
+                .withQueryStringParameter("traceId", "123e4567-e89b-12d3-a456-426614174000"),
+            response().withStatusCode(200)));
+
+        List<Expectation> result = RecordedExpectationPostProcessor.deduplicateAndTemplatize(recorded);
+
+        assertThat(result.size(), is(1));
+        org.mockserver.model.HttpRequest req = (org.mockserver.model.HttpRequest) result.get(0).getHttpRequest();
+        assertThat(req.getFirstQueryStringParameter("traceId"), is("123e4567-e89b-12d3-a456-426614174000"));
+    }
+
+    @Test
+    public void shouldTemplatizeVolatileQueryParameterValue() {
+        // given - a UUID query param value (volatile) and a stable one
+        List<Expectation> recorded = Collections.singletonList(recordedRequest(
+            request().withMethod("GET").withPath("/orders")
+                .withQueryStringParameter("traceId", "123e4567-e89b-12d3-a456-426614174000")
+                .withQueryStringParameter("page", "2"),
+            response().withStatusCode(200)));
+
+        List<Expectation> result = RecordedExpectationPostProcessor.deduplicateAndTemplatize(recorded, true);
+
+        org.mockserver.model.HttpRequest req = (org.mockserver.model.HttpRequest) result.get(0).getHttpRequest();
+        // volatile UUID becomes a regex wildcard
+        assertThat(req.getFirstQueryStringParameter("traceId"), is(".+"));
+        // stable small numeric page is preserved
+        assertThat(req.getFirstQueryStringParameter("page"), is("2"));
+    }
+
+    @Test
+    public void shouldTemplatizeVolatileHeaderValuesAndByVolatileHeaderName() {
+        List<Expectation> recorded = Collections.singletonList(recordedRequest(
+            request().withMethod("GET").withPath("/orders")
+                .withHeader("Authorization", "Bearer eyJhbGci.payloadsegment.signaturesegment")
+                .withHeader("X-Request-Id", "987654321098765")
+                .withHeader("Accept", "application/json"),
+            response().withStatusCode(200)));
+
+        List<Expectation> result = RecordedExpectationPostProcessor.deduplicateAndTemplatize(recorded, true);
+
+        org.mockserver.model.HttpRequest req = (org.mockserver.model.HttpRequest) result.get(0).getHttpRequest();
+        // Authorization is a known-volatile header name -> generalised
+        assertThat(req.getFirstHeader("Authorization"), is(".+"));
+        // numeric correlation id -> generalised by value heuristic
+        assertThat(req.getFirstHeader("X-Request-Id"), is(".+"));
+        // stable content-negotiation header preserved
+        assertThat(req.getFirstHeader("Accept"), is("application/json"));
+    }
+
+    @Test
+    public void shouldTemplatizeVolatileJsonBodyLeavesAndPreserveStableOnes() {
+        String body = "{\"id\":\"123e4567-e89b-12d3-a456-426614174000\","
+            + "\"createdAt\":\"2026-06-20T12:34:56Z\","
+            + "\"status\":\"ACTIVE\","
+            + "\"count\":3}";
+        List<Expectation> recorded = Collections.singletonList(recordedRequest(
+            request().withMethod("POST").withPath("/orders").withBody(body),
+            response().withStatusCode(200)));
+
+        List<Expectation> result = RecordedExpectationPostProcessor.deduplicateAndTemplatize(recorded, true);
+
+        org.mockserver.model.HttpRequest req = (org.mockserver.model.HttpRequest) result.get(0).getHttpRequest();
+        assertThat(req.getBody(), is(org.hamcrest.CoreMatchers.instanceOf(org.mockserver.model.JsonBody.class)));
+        String generalised = req.getBodyAsString();
+        // volatile UUID and timestamp leaves become json-unit regex placeholders
+        assertThat(generalised, containsString("${json-unit.regex}"));
+        // stable enum and numeric leaves preserved
+        assertThat(generalised, containsString("ACTIVE"));
+        assertThat(generalised, containsString("\"count\":3"));
+        // raw volatile values no longer pinned
+        assertThat(generalised, not(containsString("123e4567-e89b-12d3-a456-426614174000")));
+        assertThat(generalised, not(containsString("2026-06-20T12:34:56Z")));
+    }
+
+    @Test
+    public void shouldLeaveStableValuesAndNonJsonBodyUntouched() {
+        List<Expectation> recorded = Collections.singletonList(recordedRequest(
+            request().withMethod("POST").withPath("/orders")
+                .withQueryStringParameter("type", "standard")
+                .withBody("plain text body, not json"),
+            response().withStatusCode(200)));
+
+        List<Expectation> result = RecordedExpectationPostProcessor.deduplicateAndTemplatize(recorded, true);
+
+        org.mockserver.model.HttpRequest req = (org.mockserver.model.HttpRequest) result.get(0).getHttpRequest();
+        assertThat(req.getFirstQueryStringParameter("type"), is("standard"));
+        assertThat(req.getBodyAsString(), is("plain text body, not json"));
+    }
+
+    @Test
+    public void volatilityHeuristicClassifiesValuesConservatively() {
+        // volatile
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("123e4567-e89b-12d3-a456-426614174000"), is(true));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("1718885696123"), is(true));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("2026-06-20T12:34:56Z"), is(true));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("2026-06-20"), is(true));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("123456789"), is(true));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("Bearer aaaaaaaa.bbbbbbbb.cccccccc"), is(true));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("abcdefABCDEF0123456789xyzw"), is(true));
+        // stable
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("42"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("200"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("ACTIVE"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("application/json"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("true"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("standard"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue(null), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue(""), is(false));
+        // long SCREAMING_SNAKE_CASE enum constants and all-uppercase codes are stable, not tokens
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("SUBSCRIPTION_CANCELLED_BY_USER"), is(false));
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("ANOTHERVERYLONGUPPERCASEWORD"), is(false));
+        // a lowercase hex digest / git SHA is volatile (high-entropy, mixed)
+        assertThat(RecordedExpectationPostProcessor.isVolatileValue("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b"), is(true));
+    }
 }

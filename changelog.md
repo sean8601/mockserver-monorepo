@@ -753,6 +753,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by an id segment (e.g. `/users/123`, `/users/456`) into one `/users/{id}` expectation, and drop exact
   duplicates — without merging requests that have genuinely different responses.
 
+- **Templatize recorded query, header, and body values, not just path segments** (`mockserver-core`). A new
+  opt-in `templatizeRecordedValues` setting extends the recorded-expectation post-processor so that, in addition
+  to id-like path segments, volatile-looking **query parameter**, **header** and **JSON body** values are
+  generalized into matchers: UUIDs, long numeric ids, ISO-8601 dates / date-times, epoch-millisecond timestamps,
+  JWTs and long opaque tokens (base64 / hex) become a regex matcher (`.+` for query/header values, a
+  `${json-unit.regex}` placeholder for JSON body leaves), and known-credential header names (`Authorization`,
+  `Cookie`, `x-api-key`, correlation-id headers, …) are always generalized when present. This makes recordings
+  reusable against future traffic instead of being pinned to one captured value. It is deliberately conservative
+  — stable values (short strings, words, booleans, small numbers like a page size or status code, common
+  content-types) are kept verbatim. Off by default and only takes effect when `deduplicateRecordedExpectations`
+  is also enabled, so recorded output is byte-for-byte unchanged unless you opt in; enable with
+  `-Dmockserver.deduplicateRecordedExpectations=true -Dmockserver.templatizeRecordedValues=true` or the
+  equivalent `MOCKSERVER_TEMPLATIZE_RECORDED_VALUES=true` environment variable.
+
 - Baseline traffic drift comparison: `PUT /mockserver/baseline/compare` diffs current recorded interactions
   against a saved baseline and returns a structured drift report (added / removed / changed), using
   value-insensitive JSON-shape comparison (a changed field value is not drift, but a new/removed field or a

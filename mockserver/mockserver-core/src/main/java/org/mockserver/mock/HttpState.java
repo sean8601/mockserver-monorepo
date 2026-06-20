@@ -5446,7 +5446,8 @@ public class HttpState {
         List<Expectation> processed = expectations;
         if (Boolean.TRUE.equals(configuration.deduplicateRecordedExpectations())) {
             int inputCount = processed == null ? 0 : processed.size();
-            processed = RecordedExpectationPostProcessor.deduplicateAndTemplatize(processed);
+            boolean templatizeValues = Boolean.TRUE.equals(configuration.templatizeRecordedValues());
+            processed = RecordedExpectationPostProcessor.deduplicateAndTemplatize(processed, templatizeValues);
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setType(LogEntry.LogMessageType.INFO)

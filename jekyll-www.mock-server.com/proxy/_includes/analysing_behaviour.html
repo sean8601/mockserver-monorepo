@@ -21,6 +21,8 @@ curl -v -X PUT "http://localhost:1080/mockserver/retrieve?type=RECORDED_EXPECTAT
 
 <p>Recording is traffic-driven: the first call only arms recording, it does not generate any traffic itself. Combine with the <code class="inline code">deduplicateRecordedExpectations</code> property to collapse structurally-identical calls (e.g. <code class="inline code">/users/1</code> and <code class="inline code">/users/2</code>) into a single templatized <code class="inline code">/users/{id}</code> expectation in the retrieved output.</p>
 
+<p>By default only id-like <em>path segments</em> are templatized. Enable the <code class="inline code">templatizeRecordedValues</code> property (in addition to <code class="inline code">deduplicateRecordedExpectations</code>) to also generalize volatile-looking <strong>query parameter</strong>, <strong>header</strong> and <strong>JSON body</strong> values &mdash; UUIDs, long ids, ISO-8601 / epoch-millis timestamps, JWTs and long opaque tokens &mdash; into regex matchers, so the recorded expectation matches future requests instead of being pinned to one captured value. It is conservative: stable values (short strings, words, booleans, small numbers such as a page size or status code) are kept verbatim. Both properties are off by default, so recorded output is unchanged unless you opt in.</p>
+
 <a id="code_export" class="anchor" href="#code_export">&nbsp;</a>
 
 <h2>Export Recorded Expectations as Client Code</h2>

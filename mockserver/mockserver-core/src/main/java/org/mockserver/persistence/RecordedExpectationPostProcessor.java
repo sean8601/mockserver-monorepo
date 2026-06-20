@@ -1,14 +1,24 @@
 package org.mockserver.persistence;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.mock.Expectation;
 import org.mockserver.model.Body;
+import org.mockserver.model.Header;
+import org.mockserver.model.Headers;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.model.JsonBody;
+import org.mockserver.model.MediaType;
 import org.mockserver.model.NottableString;
+import org.mockserver.model.Parameter;
+import org.mockserver.model.Parameters;
 import org.mockserver.model.RequestDefinition;
+import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +56,19 @@ import java.util.regex.Pattern;
  *
  * <p>Order is preserved: the first expectation of each retained group keeps its
  * original position in the output.
+ *
+ * <p><b>Value templatization (opt-in, additive).</b> When the caller passes
+ * {@code templatizeValues = true} a second, equally-conservative generalisation
+ * runs on each retained expectation: volatile-looking <i>query parameter</i>,
+ * <i>header</i> and <i>JSON body leaf</i> values — ids, UUIDs, ISO-8601 or
+ * epoch-millis timestamps, and long opaque tokens (JWT / base64 / hex) — are
+ * replaced with regex matchers so the recorded expectation is reusable instead
+ * of pinned to one captured value. Stable values (short strings, words,
+ * booleans, enums, small numbers, common content-types) are preserved verbatim.
+ * The two-argument {@link #deduplicateAndTemplatize(List)} overload keeps the
+ * historical path-only behaviour for full back-compat; value templatization only
+ * happens through {@link #deduplicateAndTemplatize(List, boolean)} with the flag
+ * set (wired behind the {@code templatizeRecordedValues} configuration option).
  */
 public class RecordedExpectationPostProcessor {
 
@@ -69,6 +92,70 @@ public class RecordedExpectationPostProcessor {
      */
     private static final String VARIABLE_PLACEHOLDER = "\u0000";
 
+    // ----- volatile VALUE heuristics (query params, headers, JSON body) -------
+
+    /**
+     * Canonical UUID (whole value).
+     */
+    private static final Pattern UUID_VALUE = Pattern.compile(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    /**
+     * A purely-numeric id that is long enough to look like an identifier rather
+     * than a stable small constant (page size, version, count). Six or more
+     * digits avoids generalising values like {@code 1}, {@code 200} or {@code 42}.
+     */
+    private static final Pattern LONG_NUMERIC_ID = Pattern.compile("^\\d{6,}$");
+
+    /**
+     * ISO-8601 date or date-time, e.g. {@code 2026-06-20T12:34:56Z} or
+     * {@code 2026-06-20T12:34:56.123+01:00} or a bare {@code 2026-06-20}.
+     */
+    private static final Pattern ISO_8601 = Pattern.compile(
+        "^\\d{4}-\\d{2}-\\d{2}([Tt ]\\d{2}:\\d{2}(:\\d{2})?(\\.\\d{1,9})?([Zz]|[+-]\\d{2}:?\\d{2})?)?$");
+
+    /**
+     * Epoch milliseconds (13 digits) — a common volatile timestamp form. Plain
+     * 10-digit epoch seconds are intentionally excluded because they overlap with
+     * ordinary long ids and are caught by {@link #LONG_NUMERIC_ID} anyway.
+     */
+    private static final Pattern EPOCH_MILLIS = Pattern.compile("^1\\d{12}$");
+
+    /**
+     * A JWT (three base64url segments separated by dots).
+     */
+    private static final Pattern JWT = Pattern.compile(
+        "^[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}$");
+
+    /**
+     * A long opaque token — a run of at least 24 characters drawn only from the
+     * base64/base64url alphabet. Long enough that ordinary words, slugs and
+     * stable identifiers are not mistaken for credentials. The
+     * {@link #isOpaqueToken(String)} guard additionally requires <i>mixed</i>
+     * content (both letters and digits, or some lowercase) so stable
+     * SCREAMING_SNAKE_CASE enum constants and all-uppercase codes are kept
+     * verbatim rather than generalised.
+     */
+    private static final Pattern OPAQUE_TOKEN = Pattern.compile("^[A-Za-z0-9_=+/-]{24,}$");
+
+    /**
+     * Header names whose values are credentials/correlation ids and are always
+     * volatile when present (matched case-insensitively).
+     */
+    private static final Set<String> VOLATILE_HEADER_NAMES = Set.of(
+        "authorization", "proxy-authorization", "cookie", "set-cookie",
+        "x-api-key", "api-key", "x-request-id", "x-correlation-id",
+        "x-amz-date", "x-amz-security-token", "x-csrf-token", "x-xsrf-token");
+
+    /**
+     * For query params and headers the value string itself is treated as a regex
+     * by the matcher, so {@code .+} matches any non-empty value. For JSON bodies
+     * json-unit's built-in {@code ${json-unit.regex}} placeholder is used so only
+     * the targeted leaf is generalised.
+     */
+    private static final String ANY_VALUE_REGEX = ".+";
+    private static final String JSON_UNIT_REGEX_PREFIX = "${json-unit.regex}";
+
     private RecordedExpectationPostProcessor() {
     }
 
@@ -81,6 +168,24 @@ public class RecordedExpectationPostProcessor {
      * variable id path segments collapsed into templated expectations
      */
     public static List<Expectation> deduplicateAndTemplatize(List<Expectation> expectations) {
+        return deduplicateAndTemplatize(expectations, false);
+    }
+
+    /**
+     * Deduplicate and templatize a list of recorded expectations. Pure function:
+     * the input list and its elements are not mutated.
+     *
+     * @param expectations    recorded expectations (may be {@code null} or empty)
+     * @param templatizeValues when {@code true}, also generalise volatile-looking
+     *                         query parameter, header and JSON body leaf values
+     *                         into regex matchers (ids, UUIDs, timestamps, tokens);
+     *                         when {@code false} those values are kept verbatim
+     *                         (historical, fully back-compatible behaviour)
+     * @return a new list with structurally-identical requests deduplicated,
+     * variable id path segments collapsed, and — when {@code templatizeValues} is
+     * set — volatile values generalised into matchers
+     */
+    public static List<Expectation> deduplicateAndTemplatize(List<Expectation> expectations, boolean templatizeValues) {
         List<Expectation> result = new ArrayList<>();
         if (expectations == null || expectations.isEmpty()) {
             return result;
@@ -111,7 +216,9 @@ public class RecordedExpectationPostProcessor {
             }
             String signature = structuralSignature((HttpRequest) expectation.getHttpRequest());
             if (emitted.add(signature)) {
-                result.addAll(collapseGroup(groups.get(signature)));
+                for (Expectation collapsed : collapseGroup(groups.get(signature))) {
+                    result.add(templatizeValues ? templatizeValues(collapsed) : collapsed);
+                }
             }
         }
 
@@ -260,6 +367,255 @@ public class RecordedExpectationPostProcessor {
         );
         rebuilt.thenRespond(source.getHttpResponse());
         return rebuilt;
+    }
+
+    // ----- value templatization (query params, headers, JSON body) -----------
+
+    /**
+     * Return a copy of {@code expectation} whose request has volatile-looking
+     * query parameter, header and JSON body leaf values replaced with regex
+     * matchers. Conservative: only values that match a volatile heuristic (id,
+     * UUID, timestamp, token) are generalised; everything else is preserved. If
+     * nothing volatile is found the original expectation is returned unchanged.
+     */
+    private static Expectation templatizeValues(Expectation expectation) {
+        if (!(expectation.getHttpRequest() instanceof HttpRequest)) {
+            return expectation;
+        }
+        HttpRequest original = (HttpRequest) expectation.getHttpRequest();
+        HttpRequest copy = original.clone();
+        boolean changed = false;
+
+        changed |= generalizeQueryParameters(copy);
+        changed |= generalizeHeaders(copy);
+        changed |= generalizeJsonBody(copy);
+
+        return changed ? rebuild(expectation, copy) : expectation;
+    }
+
+    private static boolean generalizeQueryParameters(HttpRequest request) {
+        Parameters parameters = request.getQueryStringParameters();
+        if (parameters == null || parameters.isEmpty()) {
+            return false;
+        }
+        List<Parameter> rebuilt = new ArrayList<>();
+        boolean changed = false;
+        for (Parameter entry : parameters.getEntries()) {
+            List<NottableString> newValues = new ArrayList<>();
+            for (NottableString value : entry.getValues()) {
+                if (!value.isNot() && isVolatileValue(value.getValue())) {
+                    newValues.add(NottableString.string(ANY_VALUE_REGEX, value.isNot()));
+                    changed = true;
+                } else {
+                    newValues.add(value);
+                }
+            }
+            rebuilt.add(new Parameter(entry.getName(), newValues));
+        }
+        if (changed) {
+            Parameters replacement = new Parameters(rebuilt);
+            replacement.withKeyMatchStyle(parameters.getKeyMatchStyle());
+            request.withQueryStringParameters(replacement);
+        }
+        return changed;
+    }
+
+    private static boolean generalizeHeaders(HttpRequest request) {
+        Headers headers = request.getHeaders();
+        if (headers == null || headers.isEmpty()) {
+            return false;
+        }
+        List<Header> rebuilt = new ArrayList<>();
+        boolean changed = false;
+        for (Header entry : headers.getEntries()) {
+            String name = entry.getName() != null ? entry.getName().getValue() : null;
+            boolean nameIsVolatile = name != null && VOLATILE_HEADER_NAMES.contains(name.toLowerCase());
+            List<NottableString> newValues = new ArrayList<>();
+            for (NottableString value : entry.getValues()) {
+                if (!value.isNot() && (nameIsVolatile || isVolatileValue(value.getValue()))) {
+                    newValues.add(NottableString.string(ANY_VALUE_REGEX, value.isNot()));
+                    changed = true;
+                } else {
+                    newValues.add(value);
+                }
+            }
+            rebuilt.add(new Header(entry.getName(), newValues));
+        }
+        if (changed) {
+            Headers replacement = new Headers(rebuilt);
+            replacement.withKeyMatchStyle(headers.getKeyMatchStyle());
+            request.withHeaders(replacement);
+        }
+        return changed;
+    }
+
+    /**
+     * Generalise volatile string leaves inside a JSON body. The body is converted
+     * to a {@link JsonBody} matching only the fields present (so generalised
+     * leaves match any value of the right pattern via json-unit's
+     * {@code ${json-unit.regex}} placeholder). Non-JSON bodies are left untouched.
+     */
+    private static boolean generalizeJsonBody(HttpRequest request) {
+        Body<?> body = request.getBody();
+        if (body == null) {
+            return false;
+        }
+        String json = jsonStringBody(body);
+        if (json == null) {
+            return false;
+        }
+        try {
+            JsonNode root = ObjectMapperFactory.createObjectMapper().readTree(json);
+            if (root == null || root.isMissingNode()) {
+                return false;
+            }
+            boolean changed = generalizeJsonNode(root);
+            if (!changed) {
+                return false;
+            }
+            String generalised = ObjectMapperFactory.createObjectMapper().writeValueAsString(root);
+            request.withBody(new JsonBody(generalised, null, MediaType.APPLICATION_JSON, JsonBody.DEFAULT_MATCH_TYPE));
+            return true;
+        } catch (Throwable ignore) {
+            // Malformed or unparseable JSON — keep the body verbatim.
+            return false;
+        }
+    }
+
+    /**
+     * Recursively replace volatile string leaves with json-unit regex
+     * placeholders. Numeric/boolean/null leaves are left untouched: generalising
+     * them is harder to do safely and over-generalising stable numbers (counts,
+     * ids that are also primary keys we may want to assert on) is the riskier
+     * direction. Returns true when at least one leaf was changed.
+     */
+    private static boolean generalizeJsonNode(JsonNode node) {
+        boolean changed = false;
+        if (node.isObject()) {
+            ObjectNode object = (ObjectNode) node;
+            Iterator<String> names = object.fieldNames();
+            List<String> fieldNames = new ArrayList<>();
+            while (names.hasNext()) {
+                fieldNames.add(names.next());
+            }
+            for (String field : fieldNames) {
+                JsonNode child = object.get(field);
+                if (child.isTextual()) {
+                    String generalised = generalizedTextLeaf(child.textValue());
+                    if (generalised != null) {
+                        object.put(field, generalised);
+                        changed = true;
+                    }
+                } else {
+                    changed |= generalizeJsonNode(child);
+                }
+            }
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                JsonNode child = node.get(i);
+                if (child.isTextual()) {
+                    String generalised = generalizedTextLeaf(child.textValue());
+                    if (generalised != null) {
+                        ((com.fasterxml.jackson.databind.node.ArrayNode) node).set(i, com.fasterxml.jackson.databind.node.TextNode.valueOf(generalised));
+                        changed = true;
+                    }
+                } else {
+                    changed |= generalizeJsonNode(child);
+                }
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * If the text value looks volatile, return its json-unit regex placeholder
+     * form ({@code ${json-unit.regex}<quoted-pattern>}); otherwise return null so
+     * the caller leaves the leaf untouched.
+     */
+    private static String generalizedTextLeaf(String value) {
+        if (!isVolatileValue(value)) {
+            return null;
+        }
+        // Match any value of the same broad shape; quote nothing fancy — a permissive
+        // ".+" keeps the body reusable while still asserting the field is present.
+        return JSON_UNIT_REGEX_PREFIX + ANY_VALUE_REGEX;
+    }
+
+    private static String jsonStringBody(Body<?> body) {
+        if (body.getType() != Body.Type.JSON && body.getType() != Body.Type.STRING) {
+            return null;
+        }
+        Object value = body.getValue();
+        if (!(value instanceof String)) {
+            return null;
+        }
+        String text = ((String) value).trim();
+        if (text.isEmpty() || (text.charAt(0) != '{' && text.charAt(0) != '[')) {
+            return null;
+        }
+        return text;
+    }
+
+    /**
+     * The single, conservative volatility test shared by query params, headers
+     * and body leaves. A value is volatile when it is a UUID, a long numeric id,
+     * an ISO-8601 or epoch-millis timestamp, a JWT, or a long opaque token.
+     */
+    static boolean isVolatileValue(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        // Strip a leading scheme (e.g. "Bearer ", "Basic ") so the credential body
+        // is what we test against the token heuristics.
+        String token = trimmed;
+        int space = trimmed.indexOf(' ');
+        if (space > 0 && space < trimmed.length() - 1) {
+            String scheme = trimmed.substring(0, space).toLowerCase();
+            if (scheme.equals("bearer") || scheme.equals("basic") || scheme.equals("digest")) {
+                token = trimmed.substring(space + 1).trim();
+            }
+        }
+        return UUID_VALUE.matcher(token).matches()
+            || JWT.matcher(token).matches()
+            || EPOCH_MILLIS.matcher(token).matches()
+            || LONG_NUMERIC_ID.matcher(token).matches()
+            || ISO_8601.matcher(token).matches()
+            || isOpaqueToken(token);
+    }
+
+    /**
+     * A long opaque token is generalised only when it has the high-entropy,
+     * mixed-content shape of a credential/session token: it must match
+     * {@link #OPAQUE_TOKEN} <i>and</i> contain at least one lowercase letter, or
+     * mix letters with digits. This keeps stable all-uppercase codes and
+     * {@code SCREAMING_SNAKE_CASE} enum constants (which contain no lowercase and
+     * usually no digits) verbatim, honouring the conservative contract.
+     */
+    private static boolean isOpaqueToken(String token) {
+        if (!OPAQUE_TOKEN.matcher(token).matches()) {
+            return false;
+        }
+        boolean hasLower = false;
+        boolean hasUpper = false;
+        boolean hasDigit = false;
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            if (c >= 'a' && c <= 'z') {
+                hasLower = true;
+            } else if (c >= 'A' && c <= 'Z') {
+                hasUpper = true;
+            } else if (c >= '0' && c <= '9') {
+                hasDigit = true;
+            }
+        }
+        // lowercase present => clearly not an all-caps enum/code; OR letters mixed
+        // with digits => high-entropy token. All-uppercase-with-underscores (enum)
+        // and all-uppercase-only (code) are excluded.
+        return hasLower || ((hasUpper || hasLower) && hasDigit);
     }
 
     // ----- path / body helpers -----------------------------------------------
