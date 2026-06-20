@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### AI, LLM & agent protocols (LLM / MCP / A2A)
+- **Approximate LLM token-count utility and opt-in usage inference** (`mockserver-core`). New pure helper
+  `org.mockserver.llm.TokenCounter` estimates token counts for text using a blended character/word heuristic
+  (documented explicitly as an **estimate**, not a real BPE tokenizer). A new opt-in switch
+  `mockserver.llmInferUsageEnabled` (default `false`) makes a mocked completion that omits `usage` populate
+  approximate `prompt_tokens` / `completion_tokens` — derived from the decoded request conversation and the
+  response text/tool-calls — before the response is encoded. Off by default, so existing responses are
+  unchanged (an absent `usage` still encodes as zeros) and a completion that already declares `usage` is never
+  overwritten.
+
 - **Agent framework recipes** (docs). New page `ai_agent_frameworks.html` in the AI Integration section: minimal accurate recipes for pointing LlamaIndex (`Settings.llm = OpenAI(api_base=...)`) and the OpenAI Agents SDK (`set_default_openai_client(AsyncOpenAI(base_url=...))`) at MockServer to mock LLM provider calls during testing, with env-var alternatives and a proxy fallback section for frameworks without a base-URL override.
 
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM

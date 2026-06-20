@@ -1396,6 +1396,9 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p><strong>Exploratory semantic matching</strong> &mdash; opt in to the fuzzy, LLM-judged <code>semanticMatch</code> conversation predicate. Off by default and ignored unless a backend (above) also resolves. It calls a live model to judge intent, so it is <strong>non-deterministic and must never gate a CI assertion</strong> &mdash; use it for exploration only. Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmSemanticMatchingEnabled(boolean enabled)</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmSemanticMatchingEnabled=... &nbsp; MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED=...</code></pre>
+    <p><strong>Approximate usage inference</strong> &mdash; when <code>true</code>, a mocked LLM completion that does not specify <code>usage</code> has <strong>approximate</strong> <code>prompt_tokens</code> / <code>completion_tokens</code> filled in (estimated from the request and response text). The counts are an <strong>estimate</strong> using a simple character/word heuristic, <strong>not</strong> a provider's exact token billing. Off by default so responses are unchanged unless you opt in; a completion that already specifies <code>usage</code> is never altered. Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.llmInferUsageEnabled(boolean enabled)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.llmInferUsageEnabled=... &nbsp; MOCKSERVER_LLM_INFER_USAGE_ENABLED=...</code></pre>
 </div>
 
 <button id="button_configuration_llm_vcr" class="accordion title"><strong>LLM Fixture (VCR) Recording &amp; Replay</strong></button>

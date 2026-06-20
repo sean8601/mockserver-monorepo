@@ -154,6 +154,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_OTEL_PROPAGATE_TRACE_CONTEXT = "mockserver.otelPropagateTraceContext";
     private static final String MOCKSERVER_OTEL_GENERATE_TRACE_ID = "mockserver.otelGenerateTraceId";
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
+    private static final String MOCKSERVER_LLM_INFER_USAGE_ENABLED = "mockserver.llmInferUsageEnabled";
     private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
     private static final String MOCKSERVER_PER_EXPECTATION_METRICS = "mockserver.perExpectationMetrics";
     private static final String MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS = "mockserver.deduplicateRecordedExpectations";
@@ -2389,6 +2390,26 @@ public class ConfigurationProperties {
 
     public static void llmSemanticMatchingEnabled(boolean enabled) {
         setProperty(MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED, "" + enabled);
+    }
+
+    /**
+     * Opt-in switch for approximate LLM token-usage inference. When {@code true},
+     * a mocked completion ({@code httpLlmResponse}) that does not declare
+     * {@code usage} has approximate {@code prompt_tokens} / {@code completion_tokens}
+     * filled in from the request and response text via
+     * {@link org.mockserver.llm.TokenCounter} before the response is encoded. The
+     * counts are an <strong>estimate</strong> (a character/word heuristic, not a real
+     * tokenizer), not a provider's exact billing. Off by default, so existing
+     * responses are unchanged (an absent {@code usage} continues to encode as zeros)
+     * unless a user opts in. A completion that already declares {@code usage} is never
+     * altered.
+     */
+    public static boolean llmInferUsageEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_LLM_INFER_USAGE_ENABLED, "MOCKSERVER_LLM_INFER_USAGE_ENABLED", "" + false));
+    }
+
+    public static void llmInferUsageEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_LLM_INFER_USAGE_ENABLED, "" + enabled);
     }
 
     public static boolean llmMetricsEnabled() {

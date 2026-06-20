@@ -2,13 +2,16 @@ package org.mockserver.mock.action.http;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.llm.LlmErrorBodies;
 import org.mockserver.llm.LlmErrorBody;
 import org.mockserver.llm.LlmQuotaRegistry;
 import org.mockserver.llm.LlmRateLimitHeaders;
+import org.mockserver.llm.ParsedConversation;
 import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.ProviderCodecRegistry;
 import org.mockserver.llm.StreamingFormat;
+import org.mockserver.llm.TokenCounter;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.*;
@@ -87,7 +90,7 @@ public class HttpLlmResponseActionHandler {
             }
 
             // Non-streaming completion path
-            Completion completion = httpLlmResponse.getCompletion();
+            Completion completion = withInferredUsageIfEnabled(httpLlmResponse.getCompletion(), codecInstance, request);
             if (completion != null && !Boolean.TRUE.equals(completion.getStreaming())) {
                 HttpResponse encoded = codecInstance.encode(completion, model);
                 validateStructuredOutput(completion, encoded, provider, request);
@@ -309,7 +312,7 @@ public class HttpLlmResponseActionHandler {
         ProviderCodec codecInstance = registry.lookup(provider)
             .orElseThrow(() -> new IllegalStateException("no codec registered for provider " + provider));
 
-        Completion completion = httpLlmResponse.getCompletion();
+        Completion completion = withInferredUsageIfEnabled(httpLlmResponse.getCompletion(), codecInstance, request);
         String model = httpLlmResponse.getModel();
         StreamingPhysics physics = completion.getStreamingPhysics();
 
@@ -432,6 +435,79 @@ public class HttpLlmResponseActionHandler {
         }
         int status = explicitStatus != null ? explicitStatus : 500;
         return new ProviderError(status, GENERIC_CHAOS_BODY);
+    }
+
+    /**
+     * Return the completion to encode for this request, with approximate token
+     * {@code usage} inferred when opted in via {@code mockserver.llmInferUsageEnabled}.
+     * When inference applies, a <strong>shallow copy</strong> of the completion is
+     * returned carrying approximate {@code prompt_tokens} / {@code completion_tokens}
+     * so the encoded response carries plausible numbers instead of zeros. The prompt
+     * estimate is derived from <em>this</em> request's decoded conversation; the
+     * completion estimate from the response text + tool-call arguments. Both are
+     * <strong>approximate</strong> (see {@link org.mockserver.llm.TokenCounter}), never a
+     * provider's exact billing.
+     * <p>
+     * The shared expectation {@link Completion} is <strong>never mutated</strong>: a
+     * per-request copy carries the inferred usage, so concurrent requests are safe and a
+     * request-dependent prompt estimate is recomputed every time rather than cached onto
+     * the shared object.
+     * <p>
+     * Returns the input completion unchanged (default) when the feature is off, the
+     * completion is {@code null}, or {@code usage} is already present with a non-zero input
+     * or output count — so existing responses are unchanged unless the user opts in and
+     * a declared usage is never overwritten. Fail-soft: any error decoding the request
+     * yields a 0 prompt estimate rather than breaking the response.
+     */
+    Completion withInferredUsageIfEnabled(Completion completion, ProviderCodec codec, HttpRequest request) {
+        if (completion == null || !ConfigurationProperties.llmInferUsageEnabled()) {
+            return completion;
+        }
+        Usage existing = completion.getUsage();
+        if (existing != null
+            && ((existing.getInputTokens() != null && existing.getInputTokens() > 0)
+            || (existing.getOutputTokens() != null && existing.getOutputTokens() > 0))) {
+            // already declared (non-zero) — never overwrite user-supplied usage
+            return completion;
+        }
+        int promptTokens = 0;
+        try {
+            ParsedConversation conversation = codec.decode(request);
+            promptTokens = TokenCounter.estimatePromptTokens(conversation);
+        } catch (Exception e) {
+            // fail-soft: a request that cannot be decoded simply yields a 0 prompt estimate
+            promptTokens = 0;
+        }
+        int completionTokens = TokenCounter.estimateCompletionTokens(completion.getText(), completion.getToolCalls());
+        Usage inferred = (existing != null ? copyUsage(existing) : Usage.usage())
+            .withInputTokens(promptTokens)
+            .withOutputTokens(completionTokens);
+        return copyCompletion(completion).withUsage(inferred);
+    }
+
+    /** Shallow copy of a {@link Completion} so per-request usage inference never mutates the shared expectation model. */
+    private static Completion copyCompletion(Completion source) {
+        return Completion.completion()
+            .withText(source.getText())
+            .withToolCalls(source.getToolCalls())
+            .withToolChoice(source.getToolChoice())
+            .withStopReason(source.getStopReason())
+            .withUsage(source.getUsage())
+            .withStreaming(source.getStreaming())
+            .withStreamingPhysics(source.getStreamingPhysics())
+            .withOutputSchema(source.getOutputSchema())
+            .withEnforceOutputSchema(source.getEnforceOutputSchema())
+            .withModel(source.getModel());
+    }
+
+    /** Copy of a {@link Usage} preserving any cached/reasoning sub-counts already declared. */
+    private static Usage copyUsage(Usage source) {
+        return Usage.usage()
+            .withInputTokens(source.getInputTokens())
+            .withOutputTokens(source.getOutputTokens())
+            .withCachedInputTokens(source.getCachedInputTokens())
+            .withCacheCreationTokens(source.getCacheCreationTokens())
+            .withReasoningTokens(source.getReasoningTokens());
     }
 
     /**

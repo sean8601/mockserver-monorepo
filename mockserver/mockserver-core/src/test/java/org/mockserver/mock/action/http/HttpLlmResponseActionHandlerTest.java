@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -36,6 +37,9 @@ public class HttpLlmResponseActionHandlerTest {
         // The quota registry is a JVM singleton — clear it so quota tests do not
         // accumulate state across runs in a shared (non-forked) JVM.
         org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
+        // Restore the (default-off) usage-inference switch so it does not leak into
+        // other tests in this (non-forked) JVM.
+        org.mockserver.configuration.ConfigurationProperties.llmInferUsageEnabled(false);
     }
 
     @Test
@@ -793,5 +797,111 @@ public class HttpLlmResponseActionHandlerTest {
         // then — declaring a (violated) schema does not change the stream
         assertThat(schemaEvents.size(), is(controlEvents.size()));
         assertThat(schemaEvents.get(0).getEvent(), is(controlEvents.get(0).getEvent()));
+    }
+
+    // ---- approximate usage inference (opt-in) ----
+
+    private static final String OPENAI_REQUEST_BODY =
+        "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"What is the capital of France?\"}]}";
+
+    @Test
+    public void shouldNotInferUsageByDefault() {
+        // given — inference is off (default); completion declares no usage
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .withCompletion(completion().withText("The capital of France is Paris."));
+        HttpRequest request = request().withPath("/v1/chat/completions").withBody(OPENAI_REQUEST_BODY);
+
+        // when
+        HttpResponse response = handler.handle(llmResponse, request);
+
+        // then — default behaviour unchanged: usage encodes as zeros
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), containsString("\"prompt_tokens\":0"));
+        assertThat(response.getBodyAsString(), containsString("\"completion_tokens\":0"));
+    }
+
+    @Test
+    public void shouldInferApproximateUsageWhenEnabledAndUsageAbsent() {
+        // given — inference opted in; completion declares no usage
+        org.mockserver.configuration.ConfigurationProperties.llmInferUsageEnabled(true);
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .withCompletion(completion().withText("The capital of France is Paris."));
+        HttpRequest request = request().withPath("/v1/chat/completions").withBody(OPENAI_REQUEST_BODY);
+
+        // when
+        HttpResponse response = handler.handle(llmResponse, request);
+
+        // then — approximate non-zero counts are populated from request + response text
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), not(containsString("\"prompt_tokens\":0")));
+        assertThat(response.getBodyAsString(), not(containsString("\"completion_tokens\":0")));
+    }
+
+    @Test
+    public void shouldRecomputePromptTokensPerRequestAndNotMutateSharedCompletion() {
+        // given — inference opted in; ONE shared HttpLlmResponse reused across two requests
+        org.mockserver.configuration.ConfigurationProperties.llmInferUsageEnabled(true);
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        Completion sharedCompletion = completion().withText("The capital of France is Paris.");
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .withCompletion(sharedCompletion);
+
+        String shortBody = "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}]}";
+        String longBody = "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\""
+            + "Please give me an extremely long and detailed multi-paragraph explanation of "
+            + "the history, geography, and culture of the capital city of France so I can study it."
+            + "\"}]}";
+
+        // when — the short request is served first, then a much larger one
+        HttpResponse shortResponse = handler.handle(llmResponse, request().withPath("/v1/chat/completions").withBody(shortBody));
+        HttpResponse longResponse = handler.handle(llmResponse, request().withPath("/v1/chat/completions").withBody(longBody));
+
+        // then — the larger prompt yields MORE prompt_tokens (estimate is recomputed per request,
+        // not cached from the first request onto the shared completion)
+        int shortPromptTokens = extractIntField(shortResponse.getBodyAsString(), "prompt_tokens");
+        int longPromptTokens = extractIntField(longResponse.getBodyAsString(), "prompt_tokens");
+        assertThat(longPromptTokens, is(greaterThan(shortPromptTokens)));
+
+        // and — the shared expectation Completion is never mutated (usage stays null)
+        assertThat(sharedCompletion.getUsage(), is(nullValue()));
+    }
+
+    private static int extractIntField(String json, String field) {
+        java.util.regex.Matcher matcher =
+            java.util.regex.Pattern.compile("\"" + field + "\":(\\d+)").matcher(json);
+        if (!matcher.find()) {
+            throw new AssertionError("field " + field + " not found in: " + json);
+        }
+        return Integer.parseInt(matcher.group(1));
+    }
+
+    @Test
+    public void shouldNotOverwriteDeclaredUsageWhenEnabled() {
+        // given — inference opted in, but the completion already declares usage
+        org.mockserver.configuration.ConfigurationProperties.llmInferUsageEnabled(true);
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .withCompletion(completion()
+                .withText("The capital of France is Paris.")
+                .withUsage(Usage.usage().withInputTokens(11).withOutputTokens(7)));
+        HttpRequest request = request().withPath("/v1/chat/completions").withBody(OPENAI_REQUEST_BODY);
+
+        // when
+        HttpResponse response = handler.handle(llmResponse, request);
+
+        // then — declared usage is preserved exactly, never overwritten
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), containsString("\"prompt_tokens\":11"));
+        assertThat(response.getBodyAsString(), containsString("\"completion_tokens\":7"));
     }
 }
