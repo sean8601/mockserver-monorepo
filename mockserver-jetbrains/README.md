@@ -50,7 +50,7 @@ flowchart LR
 | Testing | Send ad-hoc HTTP requests, and run an OpenAPI contract test of a live service (per-operation pass/fail) |
 | LLM & agents | Build `httpLlmResponse` expectations from a form, complete `httpLlmResponse` fields in `*.mockserver.json`, and render the agent-run call graph as Mermaid (JCEF) |
 | Debugger | Pause and edit live traffic (request/response phases) and per-frame streams (Continue / Modify / Drop) |
-| Observability | Drift report, distributed-trace correlation by W3C `traceparent` |
+| Observability | Drift report, distributed-trace correlation by W3C `traceparent`, and opening a correlated trace in your trace backend (Jaeger/Tempo/Grafana) |
 | WASM custom rules | Upload and list compiled `.wasm` modules on the running server |
 | Settings | Docker image, container name, and port under **Settings \| Tools \| MockServer** |
 
@@ -78,6 +78,7 @@ All actions are available from **Tools > MockServer** and as buttons in the **Mo
 | Run Contract Test | On an OpenAPI/Swagger spec in the active editor (also on the editor / project-view context menus), prompts for the base URL of the service under test, calls `PUT /mockserver/contractTest`, and opens a per-operation pass/fail report (with validation errors) in a new tab |
 | Show Drift Report | Calls `GET /mockserver/drift`, formats the results (type, field, expected vs actual, confidence, affected expectation), and opens them in a new tab |
 | Find Requests by Trace | Prompts for a W3C trace id (32 hex) or a full `traceparent` header value, retrieves all received requests, filters those carrying a matching `traceparent` header, and opens the results as JSON in a new tab |
+| View Trace in Backend | The inverse correlation: prompts for a W3C trace id (or `traceparent`) and opens the correlated OpenTelemetry trace in your trace backend (Jaeger / Tempo / Grafana). Substitutes the trace id into the configurable **Trace backend URL** template (e.g. `http://localhost:16686/trace/{traceId}`). With no template configured it copies the trace id to the clipboard and points you at Settings &#124; Tools &#124; MockServer |
 
 ### LLM & agents — the **LLM** tool window
 
@@ -101,7 +102,7 @@ The **LLM** tool window (bottom bar) brings the VS Code extension's LLM authorin
 The dockable **MockServer** tool window (bottom bar, MockServer icon) opens with a status line — `MockServer · localhost:<port>` showing the configured target — and an inline **Port** field (default `1080`) bound to the same saved setting used by the menu actions, Start (Docker), and the dashboard; editing it (Enter or focus lost) persists the new port and updates the status line, while an out-of-range value reverts to the saved one. It then groups icon buttons under bold section headers matching the action categories above:
 
 - **Server** — Open Dashboard in IDE, Open Dashboard (Browser), Start (Docker), Reset
-- **Editor actions (use the active file)** — Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report, Find Requests by Trace
+- **Editor actions (use the active file)** — Load Expectations, Save Recorded, Generate From OpenAPI, Send Test Request, Show Drift Report, Find Requests by Trace, View Trace in Backend
 - **WASM** — Upload WASM Module, List WASM Modules
 
 When the embedded dashboard tool window cannot reach a running server it shows a friendly "No MockServer running" panel (with a Retry link) instead of a raw browser connection error.
@@ -166,6 +167,7 @@ WASM body matching requires `wasmEnabled=true` on the running MockServer (the se
 | Docker image | `mockserver/mockserver:<plugin version>` | Image used by Start MockServer (Docker). Leave blank to track the plugin version automatically. |
 | Container name | `mockserver-ide` | Name given to the started container |
 | Host port | `1080` | Port used by all actions (dashboard URL, REST calls, Docker port binding) |
+| Trace backend URL (`{traceId}`) | _(empty)_ | URL template for **View Trace in Backend**. The `{traceId}` placeholder is replaced with the W3C trace id, e.g. `http://localhost:16686/trace/{traceId}` (Jaeger) or a Tempo/Grafana explore URL. Leave blank to just surface the trace id. |
 
 ## Requirements
 

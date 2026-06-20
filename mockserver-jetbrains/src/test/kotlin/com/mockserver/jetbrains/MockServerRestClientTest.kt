@@ -447,6 +447,47 @@ class MockServerRestClientTest {
     }
 
     @Test
+    fun `buildTraceUrl substitutes the traceId placeholder`() {
+        assertEquals(
+            "http://localhost:16686/trace/4bf92f3577b34da6a3ce929d0e0e4736",
+            MockServerRestClient.buildTraceUrl(
+                "http://localhost:16686/trace/{traceId}",
+                "4bf92f3577b34da6a3ce929d0e0e4736"
+            )
+        )
+    }
+
+    @Test
+    fun `buildTraceUrl substitutes every traceId occurrence`() {
+        assertEquals(
+            "https://g/explore?traceId=abc123&q=abc123",
+            MockServerRestClient.buildTraceUrl("https://g/explore?traceId={traceId}&q={traceId}", "abc123")
+        )
+    }
+
+    @Test
+    fun `buildTraceUrl appends the trace id when the template has no placeholder`() {
+        assertEquals(
+            "http://localhost:16686/trace/abc",
+            MockServerRestClient.buildTraceUrl("http://localhost:16686/trace/", "abc")
+        )
+    }
+
+    @Test
+    fun `buildTraceUrl URL-encodes the trace id`() {
+        assertEquals(
+            "http://x/a%20b%2Fc",
+            MockServerRestClient.buildTraceUrl("http://x/{traceId}", "a b/c")
+        )
+    }
+
+    @Test
+    fun `buildTraceUrl returns null for a blank template`() {
+        assertNull(MockServerRestClient.buildTraceUrl("", "abc"))
+        assertNull(MockServerRestClient.buildTraceUrl("   ", "abc"))
+    }
+
+    @Test
     fun `filterRequestsByTrace keeps only requests with a matching traceparent (object-map headers, the real server shape)`() {
         // MockServer's retrieve?type=requests serializes headers as a JSON object
         // keyed by header name — { "traceparent": ["..."] } — NOT an array.

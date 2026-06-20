@@ -827,6 +827,30 @@ object MockServerRestClient {
         return false
     }
 
+    /**
+     * Build a trace-backend URL for [traceId] from a user-configured [template], for
+     * opening the correlated OpenTelemetry trace in a browser (Jaeger/Tempo/Grafana).
+     * Every `{traceId}` placeholder is substituted (URL-encoded); when the template has
+     * no placeholder the (encoded) trace id is appended. Returns `null` when [template]
+     * is blank — the caller should then degrade to surfacing the bare trace id. Mirrors
+     * the VS Code extension's `buildTraceUrl`.
+     */
+    fun buildTraceUrl(template: String, traceId: String): String? {
+        val trimmed = template.trim()
+        if (trimmed.isEmpty()) return null
+        // URL-encode for a path/query segment (RFC 3986). URLEncoder applies
+        // application/x-www-form-urlencoded rules, so a space becomes "+"; rewrite it
+        // to "%20" so the result matches the VS Code helper's encodeURIComponent and is
+        // correct in a path segment. (In practice traceId is always 32-hex, so this is
+        // defensive — but it keeps the two extensions byte-for-byte identical.)
+        val encoded = URLEncoder.encode(traceId, Charsets.UTF_8).replace("+", "%20")
+        return if (trimmed.contains("{traceId}")) {
+            trimmed.replace("{traceId}", encoded)
+        } else {
+            trimmed + encoded
+        }
+    }
+
     private fun valuesContainTrace(values: JsonArray, traceId: String): Boolean {
         for (value in values) {
             if (!value.isJsonPrimitive) continue

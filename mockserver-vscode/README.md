@@ -125,6 +125,7 @@ is active.
 |---------|-------------|
 | **View Request Log** | Opens the requests the server has received as pretty JSON in a new tab (`PUT /mockserver/retrieve?type=requests&format=json`). |
 | **Find Requests by Trace** | Prompts for a W3C `traceparent` value or bare 32-hex trace id, then opens every request belonging to that distributed trace in a new JSON tab. |
+| **View Trace in Backend** | The inverse correlation: prompts for a W3C `traceparent` or bare trace id, then opens the correlated OpenTelemetry trace in your trace backend (Jaeger / Tempo / Grafana) by substituting the trace id into the configurable `mockserver.traceUrlTemplate` (e.g. `http://localhost:16686/trace/{traceId}`). With no template set it copies the trace id to the clipboard and offers to configure the template. |
 | **Send Test Request** | Fires the request described by a `*.mockserver-request.json` file at the running server and shows `HTTP <status>` + body (pretty-printed when JSON) in a new tab. A **Send to MockServer** CodeLens appears at the top of the file. |
 | **Show Drift Report** | Fetches drift records (`GET /mockserver/drift`) and shows a readable one-line-per-record report. Drift is captured when MockServer proxies traffic and a matching stub expectation differs structurally from the real upstream response. |
 | **Show Drift as Diagnostics** | Maps each drift record to the matching expectation line in the open `*.mockserver.json` file as an inline diagnostic (error / warning / info). Re-run to refresh; no drift clears them. Each diagnostic carries a **lightbulb quick-fix** — "update stub to match upstream" — that swaps the stub's declared value for the value the real upstream now returns (or falls back to "diff against live" when the value can't be located unambiguously). |
@@ -233,6 +234,7 @@ All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift
 | `mockserver.showDriftDiagnostics` | MockServer: Show Drift as Diagnostics |
 | `mockserver.viewRequestLog` | MockServer: View Request Log |
 | `mockserver.findByTrace` | MockServer: Find Requests by Trace |
+| `mockserver.viewTrace` | MockServer: View Trace in Backend (Jaeger/Tempo) |
 | `mockserver.reset` | MockServer: Reset (Clear Expectations & Logs) |
 | `mockserver.uploadWasm` | MockServer: Upload WASM Module |
 | `mockserver.listWasm` | MockServer: List WASM Modules |
@@ -251,6 +253,7 @@ All commands are available from the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift
 | `mockserver.dockerImage` | _(empty)_ | Docker image for **Start (Docker)**. Empty defaults to `mockserver/mockserver:<extension-version>`, keeping the image tag in lockstep with the extension release. |
 | `mockserver.containerName` | `mockserver-vscode` | Name of the container started and stopped by the extension. |
 | `mockserver.port` | `1080` | Host port mapped to the container's port 1080. Used for the dashboard URL and all API commands. |
+| `mockserver.traceUrlTemplate` | _(empty)_ | URL template for **View Trace in Backend**. The `{traceId}` placeholder is replaced with the W3C trace id, e.g. `http://localhost:16686/trace/{traceId}` (Jaeger) or `https://grafana.example.com/explore?...&traceId={traceId}` (Tempo/Grafana). Empty just surfaces the trace id. |
 
 ## File conventions
 

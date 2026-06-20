@@ -824,6 +824,26 @@ export function filterRequestsByTrace(
     return { traceId, matches: parsed.filter((req) => requestMatchesTrace(req, traceId)) };
 }
 
+/**
+ * Build a trace-backend URL for `traceId` from a user-configured `template`, for
+ * opening the correlated OpenTelemetry trace in a browser (e.g. Jaeger/Tempo/Grafana).
+ * The first `{traceId}` placeholder is substituted (URL-encoded); when the template
+ * has no placeholder the (encoded) trace id is appended. Returns `null` when the
+ * template is blank — the caller should then degrade to showing the bare trace id.
+ * Pure and `vscode`-free so it can be unit-tested directly.
+ */
+export function buildTraceUrl(template: string, traceId: string): string | null {
+    const trimmed = template.trim();
+    if (trimmed.length === 0) {
+        return null;
+    }
+    const encoded = encodeURIComponent(traceId);
+    if (trimmed.includes("{traceId}")) {
+        return trimmed.split("{traceId}").join(encoded);
+    }
+    return trimmed + encoded;
+}
+
 /** A drift mapped to a position in an open expectation file, ready to surface as a diagnostic. */
 export interface DriftDiagnostic {
     /** Zero-based line in the document the diagnostic attaches to (0 when no match found). */

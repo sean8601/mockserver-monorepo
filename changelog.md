@@ -296,6 +296,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   jsonPath/xpath/header/query/cookie/pathParameter into scenario state).
 
 #### IDE extensions (VS Code & JetBrains)
+- **VS Code & JetBrains extensions: trace-correlation view — open a logged exchange's OpenTelemetry trace in
+  your trace backend.** Complementing the existing *Find Requests by Trace* (trace id → received requests), a new
+  **View Trace in Backend** command/action goes the other way: enter a W3C trace id (32 hex) or full `traceparent`
+  value and it opens the correlated trace in your trace backend (Jaeger / Tempo / Grafana) in the browser. The
+  backend URL is a configurable template with a `{traceId}` placeholder — `mockserver.traceUrlTemplate` in VS Code
+  (e.g. `http://localhost:16686/trace/{traceId}`), a **Trace backend URL** field under *Settings | Tools |
+  MockServer* in JetBrains. When no template is configured it degrades gracefully: the trace id is copied to the
+  clipboard and the user is pointed at the setting. Both implementations share a pure, unit-tested `buildTraceUrl`
+  helper (placeholder substitution with URL-encoding, blank-template → null).
+
 - **JetBrains plugin (`mockserver-jetbrains`): LLM authoring + agent-run call graph (parity with the VS Code
   extension).** A new **LLM** tool window adds an *httpLlmResponse* expectation builder form
   (provider/model/path/completion/usage/stream) that opens the result in an editor or loads it straight into the

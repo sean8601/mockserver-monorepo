@@ -25,6 +25,10 @@ class MockServerSettings : PersistentStateComponent<MockServerSettings.State> {
         @JvmField var dockerImage: String = ""
         @JvmField var containerName: String = DEFAULT_CONTAINER_NAME
         @JvmField var port: Int = DEFAULT_PORT
+        // Trace-backend URL template with a {traceId} placeholder, e.g.
+        // http://localhost:16686/trace/{traceId}. Blank disables the View Trace action's
+        // browser hop (it then just surfaces the trace id).
+        @JvmField var traceUrlTemplate: String = ""
     }
 
     private var myState = State()
@@ -46,6 +50,9 @@ class MockServerSettings : PersistentStateComponent<MockServerSettings.State> {
         if (myState.port in 1..65535) myState.port else DEFAULT_PORT
 
     fun dashboardUrl(): String = "http://localhost:${effectivePort()}/mockserver/dashboard"
+
+    /** The configured trace-backend URL template (trimmed), or blank when unset. */
+    fun traceUrlTemplate(): String = myState.traceUrlTemplate.trim()
 
     companion object {
         const val DEFAULT_CONTAINER_NAME = "mockserver-ide"

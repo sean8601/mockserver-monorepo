@@ -36,6 +36,7 @@
       <li><b>Send Test Request</b> — fire the ad-hoc HTTP request described in the active editor and open the response in a new tab.</li>
       <li><b>Show Drift Report</b> — fetch MockServer's mock-drift records (how real upstream responses differ from your stubs) and open a formatted report.</li>
       <li><b>Find Requests by Trace</b> — enter a W3C trace id or full <em>traceparent</em> value and open every received request carrying that trace as JSON.</li>
+      <li><b>View Trace in Backend</b> — enter a W3C trace id or <em>traceparent</em> value and open the correlated trace in your trace backend (Jaeger/Tempo/Grafana) via a configurable URL template.</li>
     </ul>
 
     <p><b>Advanced</b></p>
@@ -141,6 +142,11 @@
                     text="Find Requests by Trace"
                     description="Finds every received request belonging to a W3C trace id (or traceparent) and opens them in a new JSON tab"
                     icon="AllIcons.Actions.Find"/>
+            <action id="MockServer.ViewTrace"
+                    class="com.mockserver.jetbrains.ViewTraceAction"
+                    text="View Trace in Backend"
+                    description="Opens a W3C trace id (or traceparent) in your trace backend (Jaeger/Tempo/Grafana) using the configured trace-backend URL template"
+                    icon="AllIcons.General.Web"/>
             <separator text="WASM"/>
             <action id="MockServer.UploadWasm"
                     class="com.mockserver.jetbrains.UploadWasmModuleAction"

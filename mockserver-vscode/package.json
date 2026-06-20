@@ -117,6 +117,10 @@
         "title": "MockServer: Find Requests by Trace"
       },
       {
+        "command": "mockserver.viewTrace",
+        "title": "MockServer: View Trace in Backend (Jaeger/Tempo)"
+      },
+      {
         "command": "mockserver.reset",
         "title": "MockServer: Reset (Clear Expectations & Logs)",
         "icon": "$(clear-all)"
@@ -334,6 +338,11 @@
           "type": "number",
           "default": 1080,
           "description": "Host port mapped to the MockServer container's port 1080 (used for the dashboard URL and the run command)."
+        },
+        "mockserver.traceUrlTemplate": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "URL template for opening an OpenTelemetry trace in your trace backend (Jaeger, Tempo, Grafana). The `{traceId}` placeholder is replaced with the W3C trace id, e.g. `http://localhost:16686/trace/{traceId}`. Leave empty to just surface the trace id. Used by the **View Trace in Backend** command."
         }
       }
     }

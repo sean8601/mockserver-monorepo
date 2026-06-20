@@ -70,6 +70,7 @@ interface MockServerConfig {
     dockerImage: string;
     containerName: string;
     port: number;
+    traceUrlTemplate: string;
 }
 
 // Reads settings fresh on each use so changes apply without reloading the window.
@@ -85,6 +86,7 @@ function getConfig(): MockServerConfig {
         dockerImage: configuredImage || `mockserver/mockserver:${extensionVersion}`,
         containerName: cfg.get<string>("containerName") || "mockserver-vscode",
         port: validPort ? configuredPort : 1080,
+        traceUrlTemplate: (cfg.get<string>("traceUrlTemplate") ?? "").trim(),
     };
 }
 
@@ -142,6 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     const viewRequestLogCmd = vscode.commands.registerCommand("mockserver.viewRequestLog", viewRequestLog);
     const findByTraceCmd = vscode.commands.registerCommand("mockserver.findByTrace", findByTrace);
+    const viewTraceCmd = vscode.commands.registerCommand("mockserver.viewTrace", viewTrace);
     const resetCmd = vscode.commands.registerCommand("mockserver.reset", resetServer);
     const uploadWasmCmd = vscode.commands.registerCommand("mockserver.uploadWasm", uploadWasm);
     const listWasmCmd = vscode.commands.registerCommand("mockserver.listWasm", listWasm);
@@ -241,6 +244,7 @@ export function activate(context: vscode.ExtensionContext): void {
         showDriftDiagnosticsCmd,
         viewRequestLogCmd,
         findByTraceCmd,
+        viewTraceCmd,
         resetCmd,
         uploadWasmCmd,
         listWasmCmd,
@@ -783,6 +787,61 @@ async function findByTrace(): Promise<void> {
         );
     } catch (e) {
         vscode.window.showErrorMessage(`MockServer: failed to find requests by trace — ${(e as Error).message}`);
+    }
+}
+
+// Trace-correlation: prompt for a W3C trace id (or full traceparent), resolve the
+// 32-hex trace id, and open the correlated trace in the configured trace-backend
+// (Jaeger/Tempo/Grafana) by substituting it into `mockserver.traceUrlTemplate`. When
+// no template is configured, degrades gracefully to surfacing the bare trace id with
+// a copy affordance and a shortcut to configure the template.
+async function viewTrace(): Promise<void> {
+    const input = await vscode.window.showInputBox({
+        prompt: "Trace id (32 hex) or full traceparent to open in your trace backend",
+        placeHolder: "4bf92f3577b34da6a3ce929d0e0e4736",
+        validateInput: (value) => {
+            if (value.trim().length === 0) {
+                return "Enter a trace id or traceparent.";
+            }
+            return client.extractTraceId(value) === null
+                ? "Enter a 32-hex trace id or a full W3C traceparent."
+                : undefined;
+        },
+    });
+    if (input === undefined) {
+        return; // user cancelled
+    }
+    const traceId = client.extractTraceId(input);
+    if (traceId === null) {
+        vscode.window.showWarningMessage("Enter a 32-hex trace id or a full W3C traceparent.");
+        return;
+    }
+    const { traceUrlTemplate } = getConfig();
+    const url = client.buildTraceUrl(traceUrlTemplate, traceId);
+    if (url === null) {
+        // No backend configured: surface the trace id and offer to copy it or set a template.
+        const choice = await vscode.window.showInformationMessage(
+            `Trace ${traceId}. Set "mockserver.traceUrlTemplate" (e.g. http://localhost:16686/trace/{traceId}) to open traces in your backend.`,
+            "Copy Trace ID",
+            "Configure Template"
+        );
+        if (choice === "Copy Trace ID") {
+            await vscode.env.clipboard.writeText(traceId);
+        } else if (choice === "Configure Template") {
+            await vscode.commands.executeCommand(
+                "workbench.action.openSettings",
+                "mockserver.traceUrlTemplate"
+            );
+        }
+        return;
+    }
+    try {
+        const opened = await vscode.env.openExternal(vscode.Uri.parse(url));
+        if (!opened) {
+            vscode.window.showWarningMessage(`MockServer: could not open the trace URL — ${url}`);
+        }
+    } catch (e) {
+        vscode.window.showErrorMessage(`MockServer: failed to open the trace URL — ${(e as Error).message}`);
     }
 }
 

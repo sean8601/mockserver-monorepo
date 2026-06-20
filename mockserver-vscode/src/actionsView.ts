@@ -126,6 +126,12 @@ const GROUPS: ActionGroup[] = [
                 icon: "telescope",
                 tooltip: "Find every request belonging to a W3C trace id",
             },
+            {
+                label: "View Trace in Backend",
+                command: "mockserver.viewTrace",
+                icon: "link-external",
+                tooltip: "Open a trace id in your trace backend (Jaeger/Tempo/Grafana)",
+            },
         ],
     },
     {

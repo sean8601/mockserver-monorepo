@@ -724,6 +724,39 @@ async function runTests(): Promise<void> {
         assert.deepStrictEqual(result.matches, []);
     });
 
+    await test("buildTraceUrl substitutes the {traceId} placeholder", () => {
+        assert.strictEqual(
+            client.buildTraceUrl("http://localhost:16686/trace/{traceId}", "4bf92f3577b34da6a3ce929d0e0e4736"),
+            "http://localhost:16686/trace/4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    });
+
+    await test("buildTraceUrl substitutes every {traceId} occurrence", () => {
+        assert.strictEqual(
+            client.buildTraceUrl("https://g/explore?traceId={traceId}&q={traceId}", "abc123"),
+            "https://g/explore?traceId=abc123&q=abc123"
+        );
+    });
+
+    await test("buildTraceUrl appends the trace id when the template has no placeholder", () => {
+        assert.strictEqual(
+            client.buildTraceUrl("http://localhost:16686/trace/", "abc"),
+            "http://localhost:16686/trace/abc"
+        );
+    });
+
+    await test("buildTraceUrl URL-encodes the trace id", () => {
+        assert.strictEqual(
+            client.buildTraceUrl("http://x/{traceId}", "a b/c"),
+            "http://x/a%20b%2Fc"
+        );
+    });
+
+    await test("buildTraceUrl returns null for a blank template", () => {
+        assert.strictEqual(client.buildTraceUrl("", "abc"), null);
+        assert.strictEqual(client.buildTraceUrl("   ", "abc"), null);
+    });
+
     await test("resetServer PUTs /mockserver/reset", async () => {
         let captured: any = {};
         const fakeFetch = (url: string, init: any) => {

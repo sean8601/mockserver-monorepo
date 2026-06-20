@@ -81,6 +81,7 @@ class MockServerToolWindowFactory : ToolWindowFactory {
             add(actionButton("Send Test Request", "MockServer.SendRequest", project, AllIcons.Actions.Lightning))
             add(actionButton("Show Drift Report", "MockServer.ShowDriftReport", project, AllIcons.Actions.Diff))
             add(actionButton("Find Requests by Trace", "MockServer.FindByTrace", project, AllIcons.Actions.Find))
+            add(actionButton("View Trace in Backend", "MockServer.ViewTrace", project, AllIcons.General.Web))
         })
 
         panel.add(sectionGap())
