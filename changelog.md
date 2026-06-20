@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **`verifyAll(...)` soft/collecting verification and verify-by-disposition filter** (`mockserver-core`,
+  Java client). Two additive, back-compatible verification ergonomics:
+  - **Soft/collecting verify** — `MockServerClient.verifyAll(Verification...)` runs every supplied
+    verification and, instead of throwing on the first failure (as `verify(...)` does), collects all
+    failures and throws a single `AssertionError` listing every mismatch, so a test sees all failures at
+    once. Passing verifications produce no error.
+  - **Verify by disposition** — `Verification.withDisposition(Disposition.FORWARDED | Disposition.MOCKED)`
+    narrows a request-count verification to only those requests that were forwarded/proxied to an upstream
+    server (`FORWARDED`) or that matched an expectation and received a mocked response (`MOCKED`). When no
+    disposition is set, verification counts all received requests exactly as before. The disposition is
+    serialized through the verify REST path (`disposition` field on the verification JSON) and ignored for
+    response-aware and expectation-id verifications.
 - **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
   `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
   `closest match diff:` block for the specific sequence step that failed to match — listing which fields

@@ -222,6 +222,22 @@ sequenceDiagram
 - `atMost(n)` — n or fewer
 - `between(min, max)` — within range
 
+#### Verify by Disposition
+
+`Verification.withDisposition(Disposition)` narrows a request-count verification to only those requests handled with a particular disposition:
+
+| Disposition | Counts log entries of type | Meaning |
+|-------------|----------------------------|---------|
+| `FORWARDED` | `FORWARDED_REQUEST` | request was forwarded/proxied to an upstream server |
+| `MOCKED` | `EXPECTATION_RESPONSE` | request matched an expectation and got a mocked response |
+| (unset) | `RECEIVED_REQUEST` | every received request (original behaviour) |
+
+When a disposition is set, `MockServerEventLog.retrieveRequests(Verification, ...)` swaps `requestLogPredicate` for `forwardedRequestLogPredicate` or `mockedRequestLogPredicate` (both exclude `NO_MATCH_RESPONSE`, MockServer's own auto-404). The disposition is serialized as the `disposition` field on the verification JSON (enum `MOCKED`/`FORWARDED`). It applies to the request-count path only — it is ignored for response verification (`httpResponse` set) and expectation-id verification.
+
+#### Soft / Collecting Verify (`verifyAll`)
+
+`MockServerClient.verifyAll(Verification...)` runs every supplied verification client-side and, instead of throwing on the first failure like `verify(...)`, collects all failure messages and throws a single `AssertionError` listing every mismatch. This is purely a client convenience — each verification is still sent through the standard `PUT /mockserver/verify` path; no server change is involved.
+
 ### Response Verification
 
 When `Verification.httpResponse` is non-null, the verification switches from the request-only path to a response-aware path that counts matching **request-response pairs** rather than received requests.

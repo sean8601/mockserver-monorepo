@@ -16,6 +16,7 @@ public class Verification extends ObjectWithJsonToString {
     private ExpectationId expectationId;
     private VerificationTimes times = VerificationTimes.atLeast(1);
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
+    private Disposition disposition;
 
     public static Verification verification() {
         return new Verification();
@@ -63,6 +64,24 @@ public class Verification extends ObjectWithJsonToString {
 
     public Verification withMaximumNumberOfRequestToReturnInVerificationFailure(Integer maximumNumberOfRequestToReturnInVerificationFailure) {
         this.maximumNumberOfRequestToReturnInVerificationFailure = maximumNumberOfRequestToReturnInVerificationFailure;
+        return this;
+    }
+
+    public Disposition getDisposition() {
+        return disposition;
+    }
+
+    /**
+     * Narrow this verification to count only requests that were handled with the given
+     * {@link Disposition} — {@link Disposition#FORWARDED forwarded/proxied} or
+     * {@link Disposition#MOCKED mocked}. When unset, all received requests are counted
+     * regardless of how they were handled (the original behaviour).
+     *
+     * @param disposition the request handling outcome to filter by, or {@code null} for no filter
+     * @return this verification for chaining
+     */
+    public Verification withDisposition(Disposition disposition) {
+        this.disposition = disposition;
         return this;
     }
 }

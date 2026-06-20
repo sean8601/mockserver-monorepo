@@ -1208,6 +1208,59 @@ public class MockServerClient implements Stoppable {
     }
 
     /**
+     * Verify multiple verifications, collecting <b>all</b> failures and throwing a single
+     * {@link AssertionError} that lists every mismatch. Unlike {@link #verify(Verification...)}
+     * and the other {@code verify(...)} methods (which throw on the first failure), this runs
+     * every supplied {@link Verification} and only throws once all have been evaluated, so a
+     * test sees all failures at once. For example:
+     * <pre>
+     * mockServerClient
+     *  .verifyAll(
+     *      verification().withRequest(request().withPath("/one")).withTimes(once()),
+     *      verification().withRequest(request().withPath("/two")).withTimes(once())
+     *  );
+     * </pre>
+     *
+     * @param verifications the verifications that must all pass
+     * @throws AssertionError if any verification fails, with a message listing every failure
+     */
+    @SuppressWarnings({"DuplicatedCode", "UnusedReturnValue"})
+    public MockServerClient verifyAll(Verification... verifications) throws AssertionError {
+        if (verifications == null || verifications.length == 0) {
+            throw new IllegalArgumentException("verifyAll(Verification...) requires a non-null non-empty array of Verification objects");
+        }
+
+        List<String> failures = new ArrayList<>();
+        for (Verification verification : verifications) {
+            if (verification == null) {
+                throw new IllegalArgumentException("verifyAll(Verification...) requires non-null Verification objects");
+            }
+            try {
+                String result = sendRequest(
+                    request()
+                        .withMethod("PUT")
+                        .withContentType(APPLICATION_JSON_UTF_8)
+                        .withPath(calculatePath("verify"))
+                        .withBody(verificationSerializer.serialize(verification), StandardCharsets.UTF_8),
+                    false
+                ).getBodyAsString();
+                if (result != null && !result.isEmpty()) {
+                    failures.add(result);
+                }
+            } catch (AuthenticationException authenticationException) {
+                throw authenticationException;
+            } catch (Throwable throwable) {
+                failures.add(throwable.getMessage());
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new AssertionError(String.join(System.lineSeparator() + System.lineSeparator(), failures));
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
      * Verify no requests have been sent.
      *
      * @throws AssertionError if any request has been found

@@ -3,6 +3,7 @@ package org.mockserver.serialization.model;
 import org.junit.Test;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.verify.Disposition;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationTimes;
 
@@ -130,6 +131,58 @@ public class VerificationDTOTest {
 
         // then
         assertThat(verificationDTO.getHttpResponse(), is(response));
+    }
+
+    @Test
+    public void shouldReturnDispositionSetInConstructor() {
+        // given
+        Verification verification = verification()
+            .withRequest(request())
+            .withDisposition(Disposition.FORWARDED);
+
+        // when
+        VerificationDTO verificationDTO = new VerificationDTO(verification);
+
+        // then
+        assertThat(verificationDTO.getDisposition(), is(Disposition.FORWARDED));
+    }
+
+    @Test
+    public void shouldBuildObjectWithDisposition() {
+        // given
+        Verification verification = verification()
+            .withRequest(request())
+            .withDisposition(Disposition.MOCKED);
+
+        // when
+        Verification builtVerification = new VerificationDTO(verification).buildObject();
+
+        // then
+        assertThat(builtVerification.getDisposition(), is(Disposition.MOCKED));
+    }
+
+    @Test
+    public void shouldReturnDispositionSetInSetter() {
+        // given
+        VerificationDTO verificationDTO = new VerificationDTO(verification());
+
+        // when
+        verificationDTO.setDisposition(Disposition.FORWARDED);
+
+        // then
+        assertThat(verificationDTO.getDisposition(), is(Disposition.FORWARDED));
+    }
+
+    @Test
+    public void shouldBuildObjectWithNullDisposition() {
+        // given
+        Verification verification = verification().withRequest(request());
+
+        // when
+        Verification builtVerification = new VerificationDTO(verification).buildObject();
+
+        // then
+        assertThat(builtVerification.getDisposition(), nullValue());
     }
 
     @Test

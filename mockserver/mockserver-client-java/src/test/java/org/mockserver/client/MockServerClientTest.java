@@ -1349,6 +1349,57 @@ public class MockServerClientTest {
     }
 
     @Test
+    public void shouldVerifyAllPassesWhenEveryVerificationPasses() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean())).thenReturn(response().withBody(""));
+        when(mockVerificationSerializer.serialize(any(Verification.class))).thenReturn("verification_json");
+
+        // when
+        mockServerClient.verifyAll(
+            verification().withRequest(request().withPath("/one")).withTimes(once()),
+            verification().withRequest(request().withPath("/two")).withTimes(once())
+        );
+
+        // then - one verify request sent per verification, no exception thrown
+        verify(mockHttpClient, new AtLeast(2)).sendRequest(
+            any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()
+        );
+    }
+
+    @Test
+    public void shouldVerifyAllCollectsEveryFailureInOneAssertionError() {
+        // given - every verify request returns a distinct failure body
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withBody("FAILURE_ONE"))
+            .thenReturn(response().withBody("FAILURE_TWO"));
+        when(mockVerificationSerializer.serialize(any(Verification.class))).thenReturn("verification_json");
+
+        try {
+            mockServerClient.verifyAll(
+                verification().withRequest(request().withPath("/one")).withTimes(once()),
+                verification().withRequest(request().withPath("/two")).withTimes(once())
+            );
+            fail("expected exception to be thrown");
+        } catch (AssertionError ae) {
+            // then - both failures appear in the single thrown message
+            assertThat(ae.getMessage(), containsString("FAILURE_ONE"));
+            assertThat(ae.getMessage(), containsString("FAILURE_TWO"));
+        }
+    }
+
+    @Test
+    public void shouldVerifyAllRejectNullArray() {
+        IllegalArgumentException illegalArgumentException = assertThrows(IllegalArgumentException.class, () -> mockServerClient.verifyAll((Verification[]) null));
+        assertThat(illegalArgumentException.getMessage(), containsString("verifyAll(Verification...) requires a non-null non-empty array of Verification objects"));
+    }
+
+    @Test
+    public void shouldVerifyAllRejectEmptyArray() {
+        IllegalArgumentException illegalArgumentException = assertThrows(IllegalArgumentException.class, () -> mockServerClient.verifyAll(new Verification[0]));
+        assertThat(illegalArgumentException.getMessage(), containsString("verifyAll(Verification...) requires a non-null non-empty array of Verification objects"));
+    }
+
+    @Test
     public void shouldHandleNullHttpRequest() {
         // when
         IllegalArgumentException illegalArgumentException = assertThrows(IllegalArgumentException.class, () -> mockServerClient.verify((RequestDefinition) null, VerificationTimes.exactly(2)));

@@ -5,6 +5,7 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.ObjectWithJsonToString;
 import org.mockserver.model.OpenAPIDefinition;
+import org.mockserver.verify.Disposition;
 import org.mockserver.verify.Verification;
 
 import static org.mockserver.model.HttpRequest.request;
@@ -20,6 +21,7 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
     private ExpectationId expectationId;
     private VerificationTimesDTO times;
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
+    private Disposition disposition;
 
     public VerificationDTO(Verification verification) {
         if (verification != null) {
@@ -32,6 +34,7 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
             expectationId = verification.getExpectationId();
             times = new VerificationTimesDTO(verification.getTimes());
             maximumNumberOfRequestToReturnInVerificationFailure = verification.getMaximumNumberOfRequestToReturnInVerificationFailure();
+            disposition = verification.getDisposition();
         }
     }
 
@@ -44,7 +47,8 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
             .withResponse(httpResponse != null ? httpResponse.buildObject() : null)
             .withExpectationId(expectationId)
             .withTimes((times != null ? times.buildObject() : once()))
-            .withMaximumNumberOfRequestToReturnInVerificationFailure(maximumNumberOfRequestToReturnInVerificationFailure);
+            .withMaximumNumberOfRequestToReturnInVerificationFailure(maximumNumberOfRequestToReturnInVerificationFailure)
+            .withDisposition(disposition);
     }
 
     public RequestDefinitionDTO getHttpRequest() {
@@ -89,6 +93,15 @@ public class VerificationDTO extends ObjectWithJsonToString implements DTO<Verif
 
     public VerificationDTO setMaximumNumberOfRequestToReturnInVerificationFailure(Integer maximumNumberOfRequestToReturnInVerificationFailure) {
         this.maximumNumberOfRequestToReturnInVerificationFailure = maximumNumberOfRequestToReturnInVerificationFailure;
+        return this;
+    }
+
+    public Disposition getDisposition() {
+        return disposition;
+    }
+
+    public VerificationDTO setDisposition(Disposition disposition) {
+        this.disposition = disposition;
         return this;
     }
 }

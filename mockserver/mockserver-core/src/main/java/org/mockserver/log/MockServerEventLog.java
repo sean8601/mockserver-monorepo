@@ -24,6 +24,7 @@ import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.HttpResponseSerializer;
 import org.mockserver.serialization.RequestDefinitionSerializer;
 import org.mockserver.uuid.UUIDService;
+import org.mockserver.verify.Disposition;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationSequence;
 import org.slf4j.Logger;
@@ -90,6 +91,14 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
             || input.getType() == FORWARDED_REQUEST
     );
     private static final Predicate<LogEntry> recordedExpectationLogPredicate = input
+        -> !input.isDeleted() && input.getType() == FORWARDED_REQUEST;
+    // Disposition predicates for verify-by-disposition (Verification.withDisposition). A MOCKED
+    // request is one that matched an expectation and produced a mocked response (EXPECTATION_RESPONSE);
+    // a FORWARDED request is one that was forwarded/proxied to an upstream server (FORWARDED_REQUEST).
+    // NO_MATCH_RESPONSE (MockServer's own auto-404 for unmatched requests) is excluded from both.
+    private static final Predicate<LogEntry> mockedRequestLogPredicate = input
+        -> !input.isDeleted() && input.getType() == EXPECTATION_RESPONSE;
+    private static final Predicate<LogEntry> forwardedRequestLogPredicate = input
         -> !input.isDeleted() && input.getType() == FORWARDED_REQUEST;
     private static final Function<LogEntry, RequestDefinition[]> logEntryToRequest = LogEntry::getHttpRequests;
     private static final Function<LogEntry, Expectation> logEntryToExpectation = LogEntry::getExpectation;
@@ -361,9 +370,17 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 )
             );
         } else {
+            // When a disposition filter is set, count requests by how they were handled
+            // (FORWARDED_REQUEST or EXPECTATION_RESPONSE) rather than all RECEIVED_REQUEST entries.
+            Predicate<LogEntry> typePredicate = requestLogPredicate;
+            if (verification.getDisposition() != null) {
+                typePredicate = verification.getDisposition() == Disposition.FORWARDED
+                    ? forwardedRequestLogPredicate
+                    : mockedRequestLogPredicate;
+            }
             retrieveLogEntries(
                 verification.getHttpRequest().withLogCorrelationId(logCorrelationId),
-                requestLogPredicate,
+                typePredicate,
                 logEntryToRequest,
                 logEventStream -> listConsumer.accept(
                     logEventStream

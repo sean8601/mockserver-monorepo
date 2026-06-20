@@ -17,6 +17,12 @@
     },
     "maximumNumberOfRequestToReturnInVerificationFailure": {
       "type": "integer"
+    },
+    "disposition": {
+      "enum": [
+        "MOCKED",
+        "FORWARDED"
+      ]
     }
   },
   "oneOf": [
