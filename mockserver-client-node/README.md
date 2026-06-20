@@ -251,6 +251,32 @@ client.removeBreakpointMatcher(breakpointId);
 client.clearBreakpointMatchers();
 ```
 
+## Using in tests
+
+The client supports TC39 explicit resource management, so a `using` / `await using`
+binding resets the server automatically when it goes out of scope — no manual
+`afterEach(() => client.reset())` needed:
+
+```js
+const { mockServerClient } = require('mockserver-client');
+
+it('records the request', async () => {
+    await using client = mockServerClient('localhost', 1080);
+    // ... register expectations, make requests ...
+    // the server is reset when `client` goes out of scope
+});
+```
+
+If your runtime/transpiler does not yet support `await using`, reset explicitly
+in a Jest/Mocha hook:
+
+```js
+const { mockServerClient } = require('mockserver-client');
+const client = mockServerClient('localhost', 1080);
+
+afterEach(() => client.reset());
+```
+
 ## Start / Launch MockServer
 
 This package (`mockserver-client`) is the REST/WebSocket client for communicating with a running MockServer. To **download and launch** a local MockServer instance (no Java or Docker required), use the companion [`mockserver-node`](https://www.npmjs.org/package/mockserver-node) package:

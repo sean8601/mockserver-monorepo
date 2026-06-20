@@ -227,6 +227,24 @@ export interface MockServerClient {
      * @param path the HTTP path the MCP server is mounted on (default "/mcp")
      */
     mcpMock(path?: string): McpMockBuilder;
+
+    /**
+     * Explicit resource management support (TC39 `await using`). Resets the
+     * MockServer when the client goes out of scope, so tests do not need a
+     * manual `afterEach(() => client.reset())`.
+     *
+     * Present only on runtimes that define `Symbol.asyncDispose`.
+     */
+    [Symbol.asyncDispose]?(): Promise<RequestResponse>;
+
+    /**
+     * Synchronous explicit resource management support (TC39 `using`). Fires a
+     * best-effort reset without awaiting it; prefer `await using` when the
+     * reset must complete before the next test.
+     *
+     * Present only on runtimes that define `Symbol.dispose`.
+     */
+    [Symbol.dispose]?(): void;
 }
 
 /**

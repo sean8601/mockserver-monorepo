@@ -2022,6 +2022,32 @@ var mockServerClient;
             clearGrpcDescriptors: clearGrpcDescriptors,
             mcpMock: mcpMock
         };
+        // Explicit resource management support (TC39 `using`/`await using`).
+        // Calling `await using client = mockServerClient(...)` will reset the
+        // MockServer when the client goes out of scope, so tests do not need a
+        // manual `afterEach(() => client.reset())`. Symbols are guarded so the
+        // client still works on runtimes that predate explicit resource
+        // management.
+        if (typeof Symbol !== 'undefined') {
+            if (Symbol.asyncDispose) {
+                _this[Symbol.asyncDispose] = function () {
+                    return reset();
+                };
+            }
+            if (Symbol.dispose) {
+                _this[Symbol.dispose] = function () {
+                    // Best-effort synchronous disposal: fire the reset request
+                    // without awaiting it. Prefer `await using` (asyncDispose)
+                    // when the reset must complete before the next test. The
+                    // returned promise is swallowed so a connection/HTTP error
+                    // during teardown does not surface as an unhandled rejection.
+                    var p = reset();
+                    if (p && typeof p.catch === 'function') {
+                        p.catch(function () { });
+                    }
+                };
+            }
+        }
         return _this;
     };
 

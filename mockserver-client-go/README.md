@@ -364,6 +364,26 @@ handle, err := mockserver.StartServer(1080, "7.1.0", nil)
 
 By default the launcher downloads the MockServer version embedded in the `VERSION` file at build time. The release pipeline updates this file automatically. Pass an explicit version string to `StartServer` or `EnsureBinary` to override.
 
+## Using in tests
+
+`MockServerT` registers a `t.Cleanup` that resets the server when the test (and
+its subtests) finish, so recorded requests, expectations and logs do not leak
+between tests:
+
+```go
+func TestSomething(t *testing.T) {
+    client := mockserver.MockServerT(t, mockserver.New("localhost", 1080))
+    // ... register expectations, make requests ...
+    // client.Reset() runs automatically when the test ends.
+}
+
+// or construct + register in one call:
+func TestAnother(t *testing.T) {
+    client := mockserver.NewMockServerT(t, "localhost", 1080)
+    // ...
+}
+```
+
 ## Build & Test
 
 ```bash

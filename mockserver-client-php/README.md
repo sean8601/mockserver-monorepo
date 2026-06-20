@@ -257,6 +257,35 @@ See the [Running MockServer](https://www.mock-server.com/mock_server/running_moc
 composer install
 ```
 
+## Using in tests (PHPUnit)
+
+`MockServer\Testing\MockServerTestTrait` provides a `MockServerClient` and resets
+the server before and after each test, so recorded requests, expectations and
+logs never leak between tests. Mix it into your PHPUnit test case and call the
+lifecycle helpers from `setUp()` / `tearDown()`:
+
+```php
+use MockServer\Testing\MockServerTestTrait;
+use PHPUnit\Framework\TestCase;
+
+final class MyTest extends TestCase
+{
+    use MockServerTestTrait;
+
+    protected function setUp(): void    { $this->setUpMockServer(); }
+    protected function tearDown(): void { $this->tearDownMockServer(); }
+
+    public function testSomething(): void
+    {
+        // $this->mockServer is a reset MockServerClient ready to use
+        $this->mockServer->reset();
+    }
+}
+```
+
+The server URL is read from the `MOCKSERVER_URL` environment variable (for
+example `http://localhost:1080`); when it is unset the test is skipped.
+
 ## Running Tests
 
 Unit tests (no server required):

@@ -287,6 +287,34 @@ handle = MockServer::BinaryLauncher.start(port: 1080, version: '7.1.0')
 
 By default the launcher downloads the MockServer version matching this client gem (currently `MockServer::VERSION` from `lib/mockserver/version.rb`). Pass an explicit `version:` keyword to override.
 
+## Using in tests (RSpec)
+
+Require `mockserver/rspec` to get a shared context that provides a fresh
+`MockServer::Client` per example and resets the server before and after each
+example, so recorded requests, expectations and logs never leak between
+examples:
+
+```ruby
+# spec_helper.rb
+require 'mockserver/rspec'
+
+# any spec tagged :mockserver gets a reset `mockserver` client
+RSpec.describe 'my integration', :mockserver do
+  it 'records the request' do
+    # `mockserver` is the shared, reset client
+    mockserver.when(
+      MockServer::HttpRequest.request(path: '/hello')
+    ).respond(
+      MockServer::HttpResponse.response(body: 'world', status_code: 200)
+    )
+  end
+end
+```
+
+Host and port default to `127.0.0.1:1080` and can be overridden with the
+`MOCKSERVER_HOST` / `MOCKSERVER_PORT` environment variables, or by defining a
+`mockserver_host` / `mockserver_port` `let` in your example group.
+
 ## License
 
 Apache-2.0

@@ -310,6 +310,31 @@ dotnet build
 dotnet test
 ```
 
+## Using in tests (xUnit)
+
+`MockServerFixture` is a reusable xUnit `IAsyncLifetime` fixture that creates a
+`MockServerClient` and resets the server before and after each test, so recorded
+requests, expectations and logs never leak between tests. Derive your test class
+from it, or use it as an `IClassFixture` / collection fixture for a shared
+instance:
+
+```csharp
+public class MyTests : MockServerFixture
+{
+    [SkippableFact]
+    public void RecordsRequest()
+    {
+        SkipIfNoServer();
+        // Client is reset before this test and again after it finishes.
+        Client!.MockAnyResponse(/* ... */);
+    }
+}
+```
+
+The server URL is read from the `MOCKSERVER_URL` environment variable (for
+example `http://localhost:1080`); when it is unset the fixture's lifecycle hooks
+are no-ops and tests are skipped via `SkipIfNoServer()`.
+
 ## Requirements
 
 - .NET SDK 8.0+ (for building)

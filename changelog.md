@@ -24,6 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field-level closest-response diff for the failing step. The diff is diagnostic only and never changes the
   pass/fail outcome; the existing failure-message format is otherwise unchanged, and when
   `detailedVerificationFailures` is disabled the message is byte-for-byte the same as before.
+- **Client test-framework fixtures and idiomatic auto-cleanup** across the Go, Node/JS, Ruby, .NET and PHP
+  clients. Each now ships an ergonomic helper that resets the server between tests so recorded requests,
+  expectations and logs do not leak — wrapping the existing `reset()` call, no server change:
+  - **Go** (`mockserver-client-go`): `MockServerT(t, client)` / `NewMockServerT(t, host, port)` register a
+    `t.Cleanup` that calls `Reset()` when the test (and its subtests) finish.
+  - **Node/JS** (`mockserver-client-node`): the client now supports TC39 explicit resource management via
+    `Symbol.asyncDispose` (and `Symbol.dispose`), so `await using client = mockServerClient(...)` resets the
+    server on scope exit; symbols are guarded for older runtimes.
+  - **Ruby** (`mockserver-client-ruby`): `require 'mockserver/rspec'` registers an RSpec shared context
+    (tag `:mockserver`) that provides a fresh, reset `mockserver` client per example.
+  - **.NET** (`mockserver-client-dotnet`): `MockServerFixture`, a reusable xUnit `IAsyncLifetime` fixture that
+    creates a `MockServerClient` and resets before/after each test (usable as a base class or `IClassFixture`).
+  - **PHP** (`mockserver-client-php`): `MockServer\Testing\MockServerTestTrait`, a PHPUnit trait exposing
+    `setUpMockServer()` / `tearDownMockServer()` helpers that reset the server around each test.
+  - **Rust** (`mockserver-client-rust`): already auto-cleans the *spawned* server via `impl Drop for
+    ServerHandle` (kills the launched process on scope exit) — left as-is.
 - **A2A mock builder: streaming and push notifications** (`A2aMockBuilder`, `mockserver-client-java`). The builder
   previously hard-coded the agent card's `capabilities.streaming` and `capabilities.pushNotifications` to `false`.
   Two opt-in features now make those advertise `true` when configured (default off = unchanged behaviour):
