@@ -92,6 +92,11 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
             .setSender(req -> httpActionHandler.getHttpClient().sendRequest(req));
         org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance()
             .setConfiguration(configuration);
+        // Wire the drift-alert webhook sender similarly so DriftAlertNotifier can POST drift alerts
+        // using the existing NettyHttpClient, without core depending on it directly. Fire-and-forget;
+        // a webhook failure never affects drift analysis or the served response.
+        org.mockserver.mock.drift.DriftAlertNotifier.getInstance()
+            .setSender(req -> httpActionHandler.getHttpClient().sendRequest(req));
         // Wire the preemption simulator's in-flight count to the live LifeCycle gauge so
         // GET /mockserver/preemption reports the real number of draining requests (not 0).
         org.mockserver.mock.action.http.PreemptionSimulator.getInstance().setInFlightSupplier(server::getRequestsInFlight);

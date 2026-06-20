@@ -70,6 +70,7 @@ public abstract class LifeCycle implements Stoppable {
         installLlmCompletionServiceIfAvailable(this.workerGroup);
         installSemanticDriftIfEnabled(this.workerGroup);
         installPerformanceDriftThreshold();
+        installDriftAlertWebhook();
     }
 
     /**
@@ -171,6 +172,43 @@ public abstract class LifeCycle implements Stoppable {
             org.mockserver.mock.drift.DriftAnalyzer.getInstance().setResponseTimeThresholdMs(threshold);
             org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
                 .info("performance drift detection enabled (p95 threshold: {} ms)", threshold);
+        }
+    }
+
+    /**
+     * Apply the configured drift-alert webhook. Off by default; only configures the
+     * {@link org.mockserver.mock.drift.DriftAlertNotifier} when enabled and the URL is non-blank.
+     * Fail-soft: a blank or malformed severity threshold logs a warning and the webhook stays off.
+     */
+    private void installDriftAlertWebhook() {
+        try {
+            if (!configuration.driftAlertWebhookEnabled()) {
+                return;
+            }
+            String url = configuration.driftAlertWebhookUrl();
+            if (url == null || url.isBlank()) {
+                org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                    .warn("drift alert webhook enabled but no URL configured; feature disabled");
+                return;
+            }
+            org.mockserver.mock.drift.SemanticSeverity threshold;
+            try {
+                threshold = org.mockserver.mock.drift.SemanticSeverity.valueOf(
+                    configuration.driftAlertSeverityThreshold().trim().toUpperCase());
+            } catch (Exception e) {
+                org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                    .warn("drift alert webhook severity threshold '{}' is invalid; feature disabled",
+                        configuration.driftAlertSeverityThreshold());
+                return;
+            }
+            long cooldownMs = configuration.driftAlertCooldownMs();
+            org.mockserver.mock.drift.DriftAlertNotifier.getInstance().configure(true, url, threshold, cooldownMs);
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .info("drift alert webhook enabled (url: {}, severity>={}, cooldown: {} ms)", url, threshold, cooldownMs);
+        } catch (Exception e) {
+            // fail-soft — drift alert webhook stays off
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .warn("failed to enable drift alert webhook ({}); continuing without it", e.getMessage());
         }
     }
 

@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
+  `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
+  time a stored drift record meets the configured severity threshold, carrying the drift record as JSON
+  (`{"event":"mockserver.drift.alert","epochTimeMs":...,"severity":...,"drift":{...}}`). Off by default and
+  fully fail-soft — a failed, slow, unreachable, or misconfigured endpoint can never affect drift analysis
+  or the served response. Severity uses the LLM-assigned `semanticSeverity` when available, otherwise a
+  structural fallback by drift type, and fires at or above `mockserver.driftAlertSeverityThreshold` (default
+  `BREAKING`). A per-signature (`expectationId|driftType|field`) cooldown
+  (`mockserver.driftAlertCooldownMs`, default 60s) de-dups recurring drifts. The outbound sender is injected
+  from the Netty HTTP client (core does not depend on it), mirroring the load-scenario orchestrator wiring.
 - **General-purpose rate limiting (`rateLimit` expectation clause)** (`mockserver-core`). A protocol-agnostic
   `rateLimit` clause on an expectation (sibling of `chaos`) returns a deterministic `429` with `Retry-After` and
   `X-RateLimit-Limit/Remaining/Reset` headers once a matched expectation exceeds its configured rate — so a test

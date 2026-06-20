@@ -594,6 +594,8 @@
                         <!-- Mutate the LoadScenarioOrchestrator singleton, Metrics, the SloSampleStore singleton and global loadGeneration* ConfigurationProperties -->
                         <exclude>**/LoadScenarioOrchestratorTest.java</exclude>
                         <exclude>**/HttpStateLoadScenarioEndpointTest.java</exclude>
+                        <!-- Mutates the DriftAlertNotifier singleton (configure/setSender/reset/setClock) -->
+                        <exclude>**/DriftAlertNotifierTest.java</exclude>
                         <!-- Mutate global ConfigurationProperties / singleton registries / Metrics (detected by GlobalStateMutationGuardTest) -->
                         <exclude>**/MaxLlmConversationBodySizeTest.java</exclude>
                         <exclude>**/SlowRequestConfigurationTest.java</exclude>
@@ -701,6 +703,7 @@
                                 <include>**/HttpStateVerifySloEndpointTest.java</include>
                                 <include>**/LoadScenarioOrchestratorTest.java</include>
                                 <include>**/HttpStateLoadScenarioEndpointTest.java</include>
+                                <include>**/DriftAlertNotifierTest.java</include>
                                 <include>**/MaxLlmConversationBodySizeTest.java</include>
                                 <include>**/SlowRequestConfigurationTest.java</include>
                                 <include>**/HttpActionHandlerLlmCostBudgetTest.java</include>

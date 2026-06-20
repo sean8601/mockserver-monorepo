@@ -135,6 +135,10 @@ public class Configuration {
     private Integer maxLlmConversationBodySize;
     private Boolean driftSemanticAnalysisEnabled;
     private Long driftResponseTimeThresholdMs;
+    private Boolean driftAlertWebhookEnabled;
+    private String driftAlertWebhookUrl;
+    private String driftAlertSeverityThreshold;
+    private Long driftAlertCooldownMs;
     private Boolean useSemicolonAsQueryParameterSeparator;
     private Boolean assumeAllRequestsAreHttp;
     private Boolean http2Enabled;
@@ -1881,6 +1885,80 @@ public class Configuration {
      */
     public Configuration driftResponseTimeThresholdMs(Long driftResponseTimeThresholdMs) {
         this.driftResponseTimeThresholdMs = driftResponseTimeThresholdMs;
+        return this;
+    }
+
+    public Boolean driftAlertWebhookEnabled() {
+        if (driftAlertWebhookEnabled == null) {
+            return ConfigurationProperties.driftAlertWebhookEnabled();
+        }
+        return driftAlertWebhookEnabled;
+    }
+
+    /**
+     * Whether to fire a fire-and-forget HTTP POST webhook when a drift record of sufficient
+     * severity is stored. Off by default (opt-in). A webhook failure never affects drift
+     * analysis or the served response.
+     *
+     * @param driftAlertWebhookEnabled true to enable the drift-alert webhook
+     */
+    public Configuration driftAlertWebhookEnabled(Boolean driftAlertWebhookEnabled) {
+        this.driftAlertWebhookEnabled = driftAlertWebhookEnabled;
+        return this;
+    }
+
+    public String driftAlertWebhookUrl() {
+        if (driftAlertWebhookUrl == null) {
+            return ConfigurationProperties.driftAlertWebhookUrl();
+        }
+        return driftAlertWebhookUrl;
+    }
+
+    /**
+     * The URL the drift-alert webhook POSTs to. Empty by default; an empty URL leaves the
+     * webhook disabled even when enabled is true.
+     *
+     * @param driftAlertWebhookUrl the webhook URL
+     */
+    public Configuration driftAlertWebhookUrl(String driftAlertWebhookUrl) {
+        this.driftAlertWebhookUrl = driftAlertWebhookUrl;
+        return this;
+    }
+
+    public String driftAlertSeverityThreshold() {
+        if (driftAlertSeverityThreshold == null) {
+            return ConfigurationProperties.driftAlertSeverityThreshold();
+        }
+        return driftAlertSeverityThreshold;
+    }
+
+    /**
+     * Minimum effective severity (BREAKING, WARNING or INFORMATIONAL) at which a stored drift
+     * record fires the webhook. BREAKING is the most severe; INFORMATIONAL fires on every drift.
+     * Default BREAKING.
+     *
+     * @param driftAlertSeverityThreshold the severity threshold name
+     */
+    public Configuration driftAlertSeverityThreshold(String driftAlertSeverityThreshold) {
+        this.driftAlertSeverityThreshold = driftAlertSeverityThreshold;
+        return this;
+    }
+
+    public Long driftAlertCooldownMs() {
+        if (driftAlertCooldownMs == null) {
+            return ConfigurationProperties.driftAlertCooldownMs();
+        }
+        return driftAlertCooldownMs;
+    }
+
+    /**
+     * De-dup cooldown window in milliseconds: a webhook fires at most once per
+     * expectation/driftType/field signature within this window. Default 60000 (60s).
+     *
+     * @param driftAlertCooldownMs the cooldown window in milliseconds
+     */
+    public Configuration driftAlertCooldownMs(Long driftAlertCooldownMs) {
+        this.driftAlertCooldownMs = driftAlertCooldownMs;
         return this;
     }
 

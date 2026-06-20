@@ -1456,6 +1456,46 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftResponseTimeThresholdMs="500"</code></pre>
+    <p><strong>Drift alert webhook</strong> &mdash; when <code>true</code> and a URL is set, MockServer sends a fire-and-forget HTTP <code>POST</code> to that URL every time a drift of sufficient severity is detected, carrying the drift record as JSON. This lets a CI job, chat-ops bot, or alerting pipeline react immediately instead of polling <code>GET /mockserver/drift</code>. Off by default. The webhook is best-effort: a failed, slow, or unreachable endpoint never affects drift detection or the response returned to the client.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftAlertWebhookEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertWebhookEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_ALERT_WEBHOOK_ENABLED=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertWebhookEnabled="true"</code></pre>
+    <p><strong>Drift alert webhook URL</strong> &mdash; the URL the drift-alert webhook POSTs to. Empty by default; leaving it empty keeps the webhook off even when enabled. The POST body is a JSON envelope <code>{"event":"mockserver.drift.alert","epochTimeMs":...,"severity":...,"drift":{...}}</code>.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span> (empty)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftAlertWebhookUrl(String url)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertWebhookUrl=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertWebhookUrl="https://hooks.example.com/mockserver-drift"</code></pre>
+    <p><strong>Drift alert severity threshold</strong> &mdash; the minimum severity at which a drift fires the webhook: <code>BREAKING</code>, <code>WARNING</code>, or <code>INFORMATIONAL</code>. <code>BREAKING</code> is the most severe and fires least often; <code>INFORMATIONAL</code> fires on every drift. When semantic drift analysis is off, severity is inferred structurally from the drift type (status-code and removed/changed-schema drifts are BREAKING, header changes are WARNING, additive changes are INFORMATIONAL).</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">BREAKING</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftAlertSeverityThreshold(String severity)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertSeverityThreshold=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertSeverityThreshold="WARNING"</code></pre>
+    <p><strong>Drift alert cooldown</strong> &mdash; de-duplication window in milliseconds. The same drift (same expectation, drift type, and field) fires the webhook at most once per window, so a drift that recurs on every request does not flood the endpoint. Default 60000 (60 seconds).</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">60000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftAlertCooldownMs(long cooldownMs)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMs=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMs="30000"</code></pre>
 </div>
 
 <button id="button_configuration_breakpoints" class="accordion title"><strong>Interactive Breakpoints</strong></button>

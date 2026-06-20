@@ -136,6 +136,10 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_REQUEST_TIMEOUT_MILLIS = "mockserver.llmRequestTimeoutMillis";
     private static final String MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED = "mockserver.driftSemanticAnalysisEnabled";
     private static final String MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS = "mockserver.driftResponseTimeThresholdMs";
+    private static final String MOCKSERVER_DRIFT_ALERT_WEBHOOK_ENABLED = "mockserver.driftAlertWebhookEnabled";
+    private static final String MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL = "mockserver.driftAlertWebhookUrl";
+    private static final String MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD = "mockserver.driftAlertSeverityThreshold";
+    private static final String MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS = "mockserver.driftAlertCooldownMs";
     private static final String MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS = "mockserver.fixtureBodyRedactFields";
     private static final String MOCKSERVER_LLM_VCR_STRICT = "mockserver.llmVcrStrict";
     private static final String MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS = "mockserver.llmOptimisationMaxCalls";
@@ -2131,6 +2135,59 @@ public class ConfigurationProperties {
 
     public static void driftResponseTimeThresholdMs(long thresholdMs) {
         setProperty(MOCKSERVER_DRIFT_RESPONSE_TIME_THRESHOLD_MS, "" + thresholdMs);
+    }
+
+    /**
+     * Whether to fire a fire-and-forget HTTP POST webhook when a drift record of sufficient
+     * severity is stored. Off by default (opt-in). A webhook failure never affects drift
+     * analysis or the served response.
+     */
+    public static boolean driftAlertWebhookEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(
+            PROPERTIES, MOCKSERVER_DRIFT_ALERT_WEBHOOK_ENABLED, "MOCKSERVER_DRIFT_ALERT_WEBHOOK_ENABLED", "false"));
+    }
+
+    public static void driftAlertWebhookEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_DRIFT_ALERT_WEBHOOK_ENABLED, "" + enabled);
+    }
+
+    /**
+     * The URL the drift-alert webhook POSTs to. Empty by default; an empty URL leaves the webhook
+     * disabled even when enabled is true.
+     */
+    public static String driftAlertWebhookUrl() {
+        return readPropertyHierarchically(
+            PROPERTIES, MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL, "MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL", "");
+    }
+
+    public static void driftAlertWebhookUrl(String url) {
+        setProperty(MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL, url == null ? "" : url);
+    }
+
+    /**
+     * Minimum effective severity (BREAKING, WARNING or INFORMATIONAL) at which a stored drift record
+     * fires the webhook. BREAKING is the most severe; INFORMATIONAL fires on every drift. Default
+     * BREAKING.
+     */
+    public static String driftAlertSeverityThreshold() {
+        return readPropertyHierarchically(
+            PROPERTIES, MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD, "MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD", "BREAKING");
+    }
+
+    public static void driftAlertSeverityThreshold(String severity) {
+        setProperty(MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD, severity == null ? "BREAKING" : severity);
+    }
+
+    /**
+     * De-dup cooldown window in milliseconds: a webhook fires at most once per
+     * expectation/driftType/field signature within this window. Default 60000 (60s).
+     */
+    public static long driftAlertCooldownMs() {
+        return readLongProperty(MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS, "MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS", 60000L);
+    }
+
+    public static void driftAlertCooldownMs(long cooldownMs) {
+        setProperty(MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS, "" + cooldownMs);
     }
 
     /**
