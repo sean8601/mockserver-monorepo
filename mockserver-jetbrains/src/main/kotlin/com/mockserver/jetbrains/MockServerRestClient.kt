@@ -598,6 +598,143 @@ object MockServerRestClient {
     }
 
     // ---------------------------------------------------------------------
+    // Contract / resiliency test runner (no I/O) — unit-testable.
+    // Mirrors the VS Code extension's `runContractTest` / `formatContractTestReport`.
+    // ---------------------------------------------------------------------
+
+    /**
+     * `PUT /mockserver/contractTest` — run an OpenAPI contract test of the live service
+     * at [serviceBaseUrl] against [specText] (a URL, path, or inline spec). The body is
+     * `{ "spec": "<spec text>", "baseUrl": <service url>, "operationId"? }`.
+     *
+     * `spec` is ALWAYS sent as a JSON **string** (the raw editor text), matching the VS
+     * Code extension and the server's own contract: the server reads `spec` with
+     * Jackson `JsonNode.asText()` (HttpState.textOrNull), which returns "" for a JSON
+     * object/array node — so embedding an inline JSON spec as an object would be read as
+     * blank and rejected (400). The server parses the inline spec from the string itself.
+     */
+    fun buildContractTestRequest(
+        baseUrl: String,
+        specText: String,
+        serviceBaseUrl: String,
+        operationId: String? = null,
+    ): HttpRequest {
+        val body = JsonObject().apply {
+            addProperty("spec", specText)
+            addProperty("baseUrl", serviceBaseUrl)
+            operationId?.trim()?.takeIf { it.isNotEmpty() }?.let { addProperty("operationId", it) }
+        }
+        return HttpRequest.newBuilder()
+            .uri(URI.create("$baseUrl/mockserver/contractTest"))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(COMPACT.toJson(body)))
+            .build()
+    }
+
+    /** One operation's contract-test outcome. */
+    data class ContractOperationResult(
+        val operationId: String,
+        val method: String,
+        val path: String,
+        val statusCodeReceived: Int,
+        val passed: Boolean,
+        val validationErrors: List<String>,
+    )
+
+    /** The full contract-test report. */
+    data class ContractTestReport(
+        val baseUrl: String,
+        val totalOperations: Int,
+        val passed: Int,
+        val failed: Int,
+        val allPassed: Boolean,
+        val results: List<ContractOperationResult>,
+    )
+
+    /**
+     * Parse a `contractTest` response [body] into a [ContractTestReport]. Defensive
+     * against missing fields. `totalOperations`/`passed`/`failed`/`allPassed` fall back
+     * to values derived from the `results` array when the server omits them.
+     */
+    fun parseContractTestReport(body: String): ContractTestReport {
+        val parsed = tryParseJson(body)
+        if (parsed == null || !parsed.isJsonObject) {
+            return ContractTestReport("", 0, 0, 0, true, emptyList())
+        }
+        val root = parsed.asJsonObject
+        val resultsArray = if (root.has("results") && root.get("results").isJsonArray) root.getAsJsonArray("results") else JsonArray()
+        val results = ArrayList<ContractOperationResult>()
+        for (element in resultsArray) {
+            if (!element.isJsonObject) continue
+            val r = element.asJsonObject
+            val errors = ArrayList<String>()
+            if (r.has("validationErrors") && r.get("validationErrors").isJsonArray) {
+                for (err in r.getAsJsonArray("validationErrors")) {
+                    if (err.isJsonPrimitive) errors.add(err.asString)
+                }
+            }
+            results.add(
+                ContractOperationResult(
+                    operationId = stringOr(r, "operationId", ""),
+                    method = stringOr(r, "method", ""),
+                    path = stringOr(r, "path", ""),
+                    statusCodeReceived = intOrNull(r, "statusCodeReceived") ?: 0,
+                    passed = r.has("passed") && r.get("passed").isJsonPrimitive && r.get("passed").asBoolean,
+                    validationErrors = errors,
+                )
+            )
+        }
+        val derivedPassed = results.count { it.passed }
+        val total = intOrNull(root, "totalOperations") ?: results.size
+        val passedCount = intOrNull(root, "passed") ?: derivedPassed
+        val failedCount = intOrNull(root, "failed") ?: (results.size - derivedPassed)
+        val allPassed = if (root.has("allPassed") && root.get("allPassed").isJsonPrimitive) {
+            root.get("allPassed").asBoolean
+        } else {
+            failedCount == 0
+        }
+        return ContractTestReport(
+            baseUrl = stringOr(root, "baseUrl", ""),
+            totalOperations = total,
+            passed = passedCount,
+            failed = failedCount,
+            allPassed = allPassed,
+            results = results,
+        )
+    }
+
+    /**
+     * Render a [report] as a readable, per-operation pass/fail summary (the JetBrains
+     * parity of `formatContractTestReport`). Failing operations list their validation
+     * errors indented beneath the line.
+     */
+    fun formatContractTestReport(report: ContractTestReport): String {
+        val header = "MockServer contract test against ${report.baseUrl} — " +
+            "${report.passed}/${report.totalOperations} passed" +
+            if (report.allPassed) " (all passed)" else ", ${report.failed} failed"
+        val lines = ArrayList<String>()
+        lines.add(header)
+        lines.add("")
+        for (r in report.results) {
+            val mark = if (r.passed) "PASS" else "FAIL"
+            val base = "[$mark] ${r.method} ${r.path} [${r.operationId}] -> HTTP ${r.statusCodeReceived}"
+            if (r.passed || r.validationErrors.isEmpty()) {
+                lines.add(base)
+            } else {
+                lines.add(base)
+                for (error in r.validationErrors) lines.add("    - $error")
+            }
+        }
+        return lines.joinToString("\n") + "\n"
+    }
+
+    private fun stringOr(obj: JsonObject, field: String, fallback: String): String {
+        if (!obj.has(field) || !obj.get(field).isJsonPrimitive) return fallback
+        return try { obj.get(field).asString } catch (_: Exception) { fallback }
+    }
+
+    // ---------------------------------------------------------------------
     // Distributed-trace correlation (no I/O) — unit-testable.
     // ---------------------------------------------------------------------
 
