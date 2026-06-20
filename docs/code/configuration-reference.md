@@ -78,6 +78,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Load generation | `loadGenerationEnabled`, `loadGenerationMaxVirtualUsers`, `loadGenerationMaxInFlightRequests`, `loadGenerationMaxRequestsPerSecond`, `loadGenerationMaxDurationMillis`, `loadGenerationMaxSteps` |
 | Breakpoints | `breakpointTimeoutMillis`, `breakpointMaxHeld` (breakpoint activation is now via the matcher-based registry REST API) |
 | Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs`, `driftAlertWebhookEnabled`, `driftAlertWebhookUrl`, `driftAlertSeverityThreshold`, `driftAlertCooldownMs` |
+| Control-plane audit | `controlPlaneAuditEnabled`, `controlPlaneAuditMaxEntries`, `controlPlaneAuditReads` |
 | Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig`, `clusterSharedTimesEnabled` |
 | Blob store | `blobStoreType`, `blobStoreBucket`, `blobStoreRegion`, `blobStoreEndpoint`, `blobStoreKeyPrefix`, `blobStoreAccessKeyId`, `blobStoreSecretAccessKey`, `blobStoreContainer`, `blobStoreConnectionString`, `blobStoreProjectId` |
 | Async messaging | `asyncKafkaBootstrapServers`, `asyncMqttBrokerUrl`, `asyncRecordedMessageMaxEntries` |
@@ -94,6 +95,18 @@ The example file documents the most commonly tuned properties (≈220 lines). Fo
 Opt-in (default `false`). When `true`, MockServer masks sensitive header values — `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` (which also covers bearer/token credentials carried in those headers) — with `***REDACTED***` on the recorded-expectation retrieval path (`HttpState.postProcessRecordedExpectations`). Because that path feeds every retrieve format, redaction covers retrieve-as-JSON, retrieve-as-code (generated client code), and persisted recorded JSON. Redaction reuses `FixtureRedactor` (the same masking already applied on the import path) and operates on copies, so the live event log is never mutated. On this path it uses the constraint-preserving variant (`redact(..., preserveConstraints=true)`), so the redacted recordings keep their original `times`, `timeToLive`, `priority`, and `id` — only the sensitive values are masked.
 
 **Trade-off:** a redacted recorded expectation can no longer replay against an upstream that requires the masked credential, so this is off by default — enable it only when you want to share or persist recordings without leaking proxied secrets.
+
+### `controlPlaneAuditEnabled`, `controlPlaneAuditMaxEntries`, `controlPlaneAuditReads`
+
+Opt-in, append-only, bounded, in-memory audit log of control-plane *mutations* (who/what/when/where/outcome) that backs `GET /mockserver/audit` (see [docs/code/event-system.md](event-system.md#control-plane-audit-log)). It records redacted, structural metadata only — never request headers or bodies.
+
+| Property | Default | Meaning |
+|----------|---------|---------|
+| `controlPlaneAuditEnabled` | `false` | When `false`, no audit entries are recorded and control-plane operations behave byte-for-byte identically (the audit emit returns immediately). Set to `true` to opt in. |
+| `controlPlaneAuditMaxEntries` | `1000` | Maximum entries retained in the bounded ring; the oldest is evicted once full. **Read once at `AuditStore` construction** — a fixed-capacity ring (like the drift store), so changing it at runtime does not resize an already-constructed store. |
+| `controlPlaneAuditReads` | `false` | When `false`, only mutations (and `reset`) are audited. Set to `true` to also audit control-plane reads (GET requests and read-only PUTs such as `/retrieve`, `/verify`, `/diff`). No effect unless `controlPlaneAuditEnabled` is `true`. |
+
+The recorded principal is **best-effort and unverified** in this version: the JWT `sub` is read with no signature verification, or the mTLS client-certificate CN, else `anonymous`. The raw token is never stored.
 
 ### `sloTrackingEnabled`, `sloWindowRetentionMillis`, `sloWindowMaxSamples`
 

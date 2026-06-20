@@ -541,11 +541,36 @@ Thread names follow the pattern `MockServer-<name><N>`. The pool uses `CallerRun
 
 `MemoryMonitoring` implements both `MockServerLogListener` and `MockServerMatcherListener` to track JVM memory usage. When `outputMemoryUsageCsv` is enabled, it writes memory statistics to a CSV file every 50 updates. See [Metrics & Monitoring](metrics.md) for full details.
 
+## Control-Plane Audit Log
+
+**TL;DR:** an off-by-default, append-only, bounded, in-memory log of control-plane *mutations* (who/what/when/where/outcome), so MockServer can run as shared infrastructure with accountability. It is **not** data-plane traffic logging and stores **no request headers or bodies** — only redacted, structural metadata.
+
+```mermaid
+flowchart LR
+    A["Control-plane request\n(PUT /expectation, /clear, ...)"] --> B["controlPlaneRequestAuthenticated()\n(single post-auth choke point)"]
+    B -->|authorised| C["recordAudit()\nfail-soft, off by default"]
+    C --> D["AuditStore\nbounded ring (newest-first)"]
+    D --> E["GET /mockserver/audit\n?limit=<n> (default 200, cap 1000)"]
+```
+
+- **Why a separate store.** The audit log is a security/accountability record of *who changed mock state*, with a different lifetime, redaction policy, and retrieval surface from the data-plane event log. It deliberately reuses the proven `DriftStore` shape (a `java.util.concurrent`-locked `ArrayDeque` ring) rather than the Disruptor event log.
+- **Fire point.** `HttpState.controlPlaneRequestAuthenticated` is the single choke point every control-plane operation passes through after authentication. `recordAudit(request)` runs in its success branch, *before* the handler executes. It is wrapped in `try/catch` and swallows all errors (TRACE-logged) so it can never throw into the request path.
+- **Off by default.** When `controlPlaneAuditEnabled` is false, `recordAudit` returns immediately and the operation behaves byte-for-byte identically. Reads (GET requests and known read PUTs such as `/retrieve`, `/verify`, `/diff`) are skipped unless `controlPlaneAuditReads` is enabled — by default only mutations (and `reset`) are recorded.
+- **Entry schema** (`AuditEntry`, immutable): `epochTimeMs`, `method`, `path` (control-plane path with the **query string dropped**), `operation` (logical name from the path suffix, e.g. `expectation`/`clear`/`reset`/`chaosExperiment`/`loadScenario`), `sourceAddress` (`request.getRemoteAddress()`, `"unknown"` if null), `principal` (best-effort), `principalSource` (`jwt`/`mtls`/`none`), `outcome` (`AUTHORIZED` in v1), `summary` (reserved; always `null` in v1 — never a header, query value, or body).
+- **Best-effort principal (UNVERIFIED).** From `Authorization: Bearer <jwt>` the payload segment is base64url-decoded and `sub` is read with **no signature verification** (`principalSource=jwt`); else the mTLS client-certificate subject CN (`principalSource=mtls`); else `anonymous`/`none`. The raw token is never stored, and any parse failure yields `anonymous`/`none`.
+- **Redaction (by omission).** Entries carry no headers and no body, and the path has its query string stripped — so there is no credential-bearing free text to scrub. The `summary` field is unused (always `null`) in v1, so safety is by omission rather than active redaction. If a non-null `summary` derived from a header or query value is ever added, scrub it through `FixtureRedactor.defaultSensitiveHeaders()` + `REDACTED_PLACEHOLDER` at that point.
+- **Reset clears the audit log, including its own `reset` entry.** A `PUT /mockserver/reset` records its `reset` audit entry and then `reset()` clears the store, so the wipe leaves no durable trace — intentional for an off-by-default, best-effort, in-memory log (not a tamper-evident compliance log).
+- **Capacity.** The `AuditStore` singleton reads `controlPlaneAuditMaxEntries` (default 1000) **once at construction** — a fixed-capacity ring, like `DriftStore`. `HttpState.reset()` clears it alongside `DriftStore`.
+
+**Deferred (not in v1):** verified principal / full IdP integration (a later unit, 1.5-A; v1 principal is best-effort *unverified*); true per-operation final status (`outcome` is always `AUTHORIZED` in v1); persistent/external sink; tamper-evidence; process-signal control of auditing.
+
 ## Class Reference
 
 | Class | File | Role |
 |-------|------|------|
 | `MockServerEventLog` | `mockserver-core/.../log/MockServerEventLog.java` | Central event log with Disruptor ring buffer |
+| `AuditStore` | `mockserver-core/.../mock/audit/AuditStore.java` | Bounded, append-only ring of control-plane audit entries (singleton; off by default) |
+| `AuditEntry` | `mockserver-core/.../mock/audit/AuditEntry.java` | Immutable, redacted control-plane mutation record (no headers/bodies) |
 | `LogEntry` | `mockserver-core/.../log/model/LogEntry.java` | Event data object, implements `EventTranslator` |
 | `MockServerLogger` | `mockserver-core/.../logging/MockServerLogger.java` | Logging facade, routes to event log |
 | `Scheduler` | `mockserver-core/.../scheduler/Scheduler.java` | Async task execution |

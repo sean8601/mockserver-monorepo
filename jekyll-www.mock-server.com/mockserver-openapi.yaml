@@ -36,6 +36,8 @@ tags:
     description: Register service-scoped, TCP and gRPC chaos / fault-injection profiles (only supported by MockServer)
   - name: drift
     description: Inspect and clear recorded mock drift (differences between expectations and observed responses)
+  - name: audit
+    description: Inspect the append-only, bounded, in-memory control-plane audit log of mutations (who/what/when/where/outcome); off by default (only supported by MockServer)
   - name: scenario
     description: Inspect, set and trigger stateful scenario state (timed auto-transitions and external triggers) (only supported by MockServer)
   - name: oidc
@@ -950,6 +952,60 @@ paths:
                 properties:
                   status:
                     type: string
+  /mockserver/audit:
+    get:
+      tags:
+        - audit
+      summary: retrieve the control-plane audit log
+      description: >-
+        Returns the most-recent control-plane audit entries (one per authorised control-plane
+        mutation, newest first). Off by default — enable with controlPlaneAuditEnabled. Each entry
+        records redacted, structural metadata only (method, control-plane path with query string
+        dropped, logical operation, source address, best-effort principal, outcome); it never
+        contains request headers or bodies.
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 200
+            maximum: 1000
+          required: false
+          description: maximum number of recent audit entries to return (default 200, capped at 1000)
+      responses:
+        '200':
+          description: audit entries returned (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    epochTimeMs:
+                      type: integer
+                      format: int64
+                    method:
+                      type: string
+                    path:
+                      type: string
+                    operation:
+                      type: string
+                    sourceAddress:
+                      type: string
+                    principal:
+                      type: string
+                    principalSource:
+                      type: string
+                      enum: [jwt, mtls, none]
+                    outcome:
+                      type: string
+                    summary:
+                      type: string
+                      nullable: true
+        '400':
+          description: failed to retrieve audit entries
   /mockserver/scenario:
     get:
       tags:

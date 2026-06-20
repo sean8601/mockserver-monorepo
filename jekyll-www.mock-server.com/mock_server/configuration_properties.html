@@ -1498,6 +1498,41 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMs="30000"</code></pre>
 </div>
 
+<button id="button_configuration_control_plane_audit" class="accordion title"><strong>Control-Plane Audit Log</strong></button>
+<div class="panel title">
+    <p>An append-only, bounded, in-memory log of control-plane <em>changes</em> (such as registering or clearing expectations) so a shared MockServer can record who changed mock state, when, and from where. It is off by default, is not request/response traffic logging, and never stores request headers or bodies &mdash; only structural metadata with secrets redacted. Retrieve it with <code>GET /mockserver/audit</code> (optionally <code>?limit=&lt;n&gt;</code>, default 200, capped at 1000).</p>
+    <p><strong>Enabled</strong> &mdash; when <code>true</code>, each authorised control-plane change is recorded. When <code>false</code> (the default) nothing is recorded and control-plane behaviour is unchanged.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneAuditEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_AUDIT_ENABLED=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditEnabled="true"</code></pre>
+    <p><strong>Max entries</strong> &mdash; how many recent audit entries to keep; the oldest is dropped once the limit is reached. This value is read once when MockServer starts.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">1000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneAuditMaxEntries(int maxEntries)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditMaxEntries=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_AUDIT_MAX_ENTRIES=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditMaxEntries="5000"</code></pre>
+    <p><strong>Audit reads</strong> &mdash; when <code>true</code>, read-only control-plane requests (such as <code>GET</code> calls and <code>/retrieve</code> or <code>/verify</code>) are also recorded. By default only changes are recorded. Has no effect unless the audit log is enabled.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneAuditReads(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditReads=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_AUDIT_READS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditReads="true"</code></pre>
+</div>
+
 <button id="button_configuration_breakpoints" class="accordion title"><strong>Interactive Breakpoints</strong></button>
 <div class="panel title">
     <p>Interactive breakpoints let you pause proxied or forwarded exchanges at four phases: request (before forwarding), response (after receiving from upstream), stream frame (each frame of a streaming response), and inbound frame (each client-to-server frame on a bidirectional connection). You can inspect, modify, continue, or abort the exchange via the callback WebSocket (or the dashboard Breakpoints panel). This is useful for debugging, manual testing, and step-through inspection of live traffic.</p>

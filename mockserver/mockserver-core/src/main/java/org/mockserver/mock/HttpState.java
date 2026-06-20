@@ -486,6 +486,7 @@ public class HttpState {
         org.mockserver.saml.SamlAssertionStore.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
+        org.mockserver.mock.audit.AuditStore.getInstance().clear();
         CassetteRegistry.getInstance().reset();
         org.mockserver.mock.dns.DnsIntentRegistry.getInstance().clear();
         org.mockserver.async.AsyncApiControlPlaneRegistry.getInstance().reset();
@@ -2713,6 +2714,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/audit", "/audit")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleAuditGet(request)), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/grpc/health", "/grpc/health")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleGrpcHealthGet()), true);
@@ -4609,6 +4616,7 @@ public class HttpState {
     private boolean controlPlaneRequestAuthenticated(HttpRequest request, ResponseWriter responseWriter) {
         try {
             if (controlPlaneAuthenticationHandler == null || controlPlaneAuthenticationHandler.controlPlaneRequestAuthenticated(request)) {
+                recordAudit(request);
                 return true;
             }
         } catch (AuthenticationException authenticationException) {
@@ -4617,6 +4625,188 @@ public class HttpState {
         }
         responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
         return false;
+    }
+
+    private static final java.util.Set<String> CONTROL_PLANE_READ_PUTS = new java.util.HashSet<>(java.util.Arrays.asList(
+        "retrieve", "verify", "verifySequence", "verifySLO", "diff", "explainUnmatched", "debugMismatch", "files/retrieve", "files/list"
+    ));
+
+    /**
+     * Best-effort, fail-soft audit of an authorised control-plane operation. Records
+     * redacted, structural metadata only (never headers or bodies) into the bounded
+     * in-memory {@link org.mockserver.mock.audit.AuditStore}. Off by default — when
+     * {@code controlPlaneAuditEnabled} is false this is a no-op and the control-plane
+     * operation behaves byte-for-byte identically. Never throws into the request path.
+     */
+    private void recordAudit(HttpRequest request) {
+        try {
+            if (request == null || !configuration.controlPlaneAuditEnabled()) {
+                return;
+            }
+            String method = request.getMethod() != null ? request.getMethod().getValue() : "";
+            String rawPath = request.getPath() != null ? request.getPath().getValue() : "";
+            String operation = auditOperation(rawPath);
+            if (!configuration.controlPlaneAuditReads() && isControlPlaneRead(method, operation)) {
+                return;
+            }
+            String sourceAddress = request.getRemoteAddress();
+            if (sourceAddress == null || sourceAddress.isEmpty()) {
+                sourceAddress = "unknown";
+            }
+            String[] principalAndSource = bestEffortPrincipal(request);
+            org.mockserver.mock.audit.AuditEntry entry = new org.mockserver.mock.audit.AuditEntry(
+                org.mockserver.time.EpochService.currentTimeMillis(),
+                method,
+                rawPath,
+                operation,
+                sourceAddress,
+                principalAndSource[0],
+                principalAndSource[1],
+                "AUTHORIZED",
+                null
+            );
+            org.mockserver.mock.audit.AuditStore.getInstance().add(entry);
+            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request())
+                        .setMessageFormat("control-plane audit{}")
+                        .setArguments(" " + method + " " + operation + " from " + sourceAddress + " as " + principalAndSource[0] + " (" + principalAndSource[1] + ") -> AUTHORIZED")
+                );
+            }
+        } catch (Throwable throwable) {
+            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.TRACE)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.TRACE)
+                        .setLogLevel(Level.TRACE)
+                        .setMessageFormat("exception recording control-plane audit entry - " + throwable.getMessage())
+                );
+            }
+        }
+    }
+
+    /**
+     * Derives the logical operation name from a control-plane path: strips
+     * {@link #PATH_PREFIX} and any query string, then returns the path remainder
+     * with leading slash removed (e.g. {@code /mockserver/clear?type=all} ->
+     * {@code clear}). Returns "" if the path is not under the control-plane prefix.
+     */
+    private static String auditOperation(String rawPath) {
+        if (rawPath == null) {
+            return "";
+        }
+        int query = rawPath.indexOf('?');
+        String path = query >= 0 ? rawPath.substring(0, query) : rawPath;
+        if (path.startsWith(PATH_PREFIX + "/")) {
+            return path.substring(PATH_PREFIX.length() + 1);
+        }
+        if (path.startsWith("/")) {
+            return path.substring(1);
+        }
+        return path;
+    }
+
+    private static boolean isControlPlaneRead(String method, String operation) {
+        if ("GET".equalsIgnoreCase(method)) {
+            return true;
+        }
+        return "PUT".equalsIgnoreCase(method) && CONTROL_PLANE_READ_PUTS.contains(operation);
+    }
+
+    /**
+     * Best-effort, UNVERIFIED principal extraction. From an {@code Authorization:
+     * Bearer <jwt>} header it base64-decodes the JWT payload segment and reads
+     * {@code sub} (NO signature verification); else from an mTLS client certificate
+     * chain it reads the subject CN; else returns {@code anonymous/none}. The raw
+     * token is never stored. Any failure yields {@code anonymous/none}.
+     *
+     * @return a 2-element array: [principal, principalSource]
+     */
+    private static String[] bestEffortPrincipal(HttpRequest request) {
+        try {
+            String authorization = request.getFirstHeader("Authorization");
+            if (authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                String token = authorization.substring(7).trim();
+                String[] segments = token.split("\\.");
+                if (segments.length >= 2) {
+                    byte[] payload = java.util.Base64.getUrlDecoder().decode(padBase64(segments[1]));
+                    com.fasterxml.jackson.databind.JsonNode node = ObjectMapperFactory.createObjectMapper().readTree(payload);
+                    com.fasterxml.jackson.databind.JsonNode sub = node.get("sub");
+                    if (sub != null && sub.isTextual() && !sub.asText().isEmpty()) {
+                        return new String[]{sub.asText(), "jwt"};
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // fall through to mTLS / anonymous
+        }
+        try {
+            java.util.List<org.mockserver.model.X509Certificate> chain = request.getClientCertificateChain();
+            if (chain != null && !chain.isEmpty()) {
+                String dn = chain.get(0).getSubjectDistinguishedName();
+                String cn = extractCommonName(dn);
+                if (cn != null && !cn.isEmpty()) {
+                    return new String[]{cn, "mtls"};
+                }
+            }
+        } catch (Throwable ignored) {
+            // fall through to anonymous
+        }
+        return new String[]{"anonymous", "none"};
+    }
+
+    private static String padBase64(String segment) {
+        int pad = segment.length() % 4;
+        if (pad == 0) {
+            return segment;
+        }
+        StringBuilder builder = new StringBuilder(segment);
+        for (int i = pad; i < 4; i++) {
+            builder.append('=');
+        }
+        return builder.toString();
+    }
+
+    private static String extractCommonName(String distinguishedName) {
+        if (distinguishedName == null) {
+            return null;
+        }
+        for (String part : distinguishedName.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.regionMatches(true, 0, "CN=", 0, 3)) {
+                return trimmed.substring(3);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Handles GET /mockserver/audit — returns the most-recent control-plane audit
+     * entries as a JSON array, newest first. Honours {@code ?limit=<n>} (default
+     * 200, capped at 1000). Mirrors {@link #handleDriftGet(HttpRequest)}.
+     */
+    private HttpResponse handleAuditGet(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            int limit = 200;
+            String limitParam = request.getFirstQueryStringParameter("limit");
+            if (limitParam != null && !limitParam.isEmpty()) {
+                try {
+                    limit = Math.min(1000, Integer.parseInt(limitParam));
+                } catch (NumberFormatException ignored) {
+                    // use default
+                }
+            }
+            List<org.mockserver.mock.audit.AuditEntry> entries = org.mockserver.mock.audit.AuditStore.getInstance().getRecent(limit);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(entries), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to retrieve audit entries\"}", MediaType.JSON_UTF_8);
+        }
     }
 
     @SuppressWarnings("rawtypes")

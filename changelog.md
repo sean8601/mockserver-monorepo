@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BREAKING`). A per-signature (`expectationId|driftType|field`) cooldown
   (`mockserver.driftAlertCooldownMs`, default 60s) de-dups recurring drifts. The outbound sender is injected
   from the Netty HTTP client (core does not depend on it), mirroring the load-scenario orchestrator wiring.
+- **Control-plane audit logging** (`mockserver-core`). An opt-in, append-only, bounded, in-memory audit log of
+  control-plane *mutations* (who/what/when/where/outcome) so a shared MockServer can run with accountability for
+  who changed mock state. Off by default (`controlPlaneAuditEnabled`); when disabled, control-plane operations
+  behave byte-for-byte identically. Entries record redacted, structural metadata only — never request headers or
+  bodies — with the path's query string dropped; the best-effort principal (unverified JWT `sub` or mTLS CN, else
+  `anonymous`) never stores the raw token. Retrieve via `GET /mockserver/audit` (`?limit=<n>`, default 200, cap
+  1000), auth-gated like other control-plane endpoints; cleared on reset. Bounded by `controlPlaneAuditMaxEntries`
+  (default 1000, fixed at startup); reads are excluded unless `controlPlaneAuditReads=true`. Verified identity and
+  true per-operation outcomes are deferred to a later release.
 - **General-purpose rate limiting (`rateLimit` expectation clause)** (`mockserver-core`). A protocol-agnostic
   `rateLimit` clause on an expectation (sibling of `chaos`) returns a deterministic `429` with `Retry-After` and
   `X-RateLimit-Limit/Remaining/Reset` headers once a matched expectation exceeds its configured rate — so a test

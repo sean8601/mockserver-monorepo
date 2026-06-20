@@ -139,6 +139,9 @@ public class Configuration {
     private String driftAlertWebhookUrl;
     private String driftAlertSeverityThreshold;
     private Long driftAlertCooldownMs;
+    private Boolean controlPlaneAuditEnabled;
+    private Integer controlPlaneAuditMaxEntries;
+    private Boolean controlPlaneAuditReads;
     private Boolean useSemicolonAsQueryParameterSeparator;
     private Boolean assumeAllRequestsAreHttp;
     private Boolean http2Enabled;
@@ -1867,6 +1870,72 @@ public class Configuration {
      */
     public Configuration driftSemanticAnalysisEnabled(Boolean driftSemanticAnalysisEnabled) {
         this.driftSemanticAnalysisEnabled = driftSemanticAnalysisEnabled;
+        return this;
+    }
+
+    public Boolean controlPlaneAuditEnabled() {
+        if (controlPlaneAuditEnabled == null) {
+            return ConfigurationProperties.controlPlaneAuditEnabled();
+        }
+        return controlPlaneAuditEnabled;
+    }
+
+    /**
+     * Whether to record an append-only, bounded, in-memory audit log of
+     * control-plane mutations (who/what/when/where/outcome). Off by default. When
+     * disabled, control-plane operations behave byte-for-byte identically and no
+     * audit entries are stored. The audit log never stores request headers or
+     * bodies — only redacted, structural metadata. Retrieve via
+     * {@code GET /mockserver/audit}.
+     *
+     * @param controlPlaneAuditEnabled true to enable control-plane audit logging
+     */
+    public Configuration controlPlaneAuditEnabled(Boolean controlPlaneAuditEnabled) {
+        this.controlPlaneAuditEnabled = controlPlaneAuditEnabled;
+        return this;
+    }
+
+    public Integer controlPlaneAuditMaxEntries() {
+        if (controlPlaneAuditMaxEntries == null) {
+            return ConfigurationProperties.controlPlaneAuditMaxEntries();
+        }
+        return controlPlaneAuditMaxEntries;
+    }
+
+    /**
+     * Maximum number of control-plane audit entries retained in the bounded
+     * in-memory ring buffer. Once full, the oldest entry is evicted on each new
+     * record. Default 1000.
+     * <p>
+     * Note: the underlying {@code AuditStore} singleton reads this value once at
+     * construction (fixed capacity, like {@code DriftStore}); changing it at
+     * runtime via this setter does not resize an already-constructed store.
+     *
+     * @param controlPlaneAuditMaxEntries maximum retained audit entries
+     */
+    public Configuration controlPlaneAuditMaxEntries(Integer controlPlaneAuditMaxEntries) {
+        this.controlPlaneAuditMaxEntries = controlPlaneAuditMaxEntries;
+        return this;
+    }
+
+    public Boolean controlPlaneAuditReads() {
+        if (controlPlaneAuditReads == null) {
+            return ConfigurationProperties.controlPlaneAuditReads();
+        }
+        return controlPlaneAuditReads;
+    }
+
+    /**
+     * Whether to also audit control-plane READ operations (e.g. GET requests and
+     * read-only PUTs such as {@code /retrieve} and {@code /verify}). Default
+     * false — only mutations (and {@code reset}) are audited, to keep the audit
+     * log focused on state changes. Has no effect unless
+     * {@code controlPlaneAuditEnabled} is true.
+     *
+     * @param controlPlaneAuditReads true to also audit control-plane reads
+     */
+    public Configuration controlPlaneAuditReads(Boolean controlPlaneAuditReads) {
+        this.controlPlaneAuditReads = controlPlaneAuditReads;
         return this;
     }
 

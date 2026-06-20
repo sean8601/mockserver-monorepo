@@ -10,6 +10,17 @@ Users who need to lock down a MockServer deployment can harden these capabilitie
 
 See [SECURITY.md](../../SECURITY.md) for the full security policy, including intentional security behaviours and vulnerability reporting.
 
+## Control-plane audit logging
+
+When MockServer runs as shared infrastructure, an opt-in audit log records *who changed mock state* (control-plane mutations: who/what/when/where/outcome) so changes are accountable. It is off by default and is **not** data-plane traffic logging. Enable it with `controlPlaneAuditEnabled` and retrieve it via `GET /mockserver/audit`. See [event-system.md](../code/event-system.md#control-plane-audit-log) and [configuration-reference.md](../code/configuration-reference.md#controlplaneauditenabled-controlplaneauditmaxentries-controlplaneauditreads).
+
+Security-relevant properties of the audit log:
+
+- **Records no bodies and no headers.** Each entry stores only redacted, structural metadata (method, control-plane path with the query string dropped, logical operation, source address, best-effort principal, outcome). It can never become a sink for request payloads or credential headers.
+- **Redaction (by omission).** The path's query string is stripped, and no header or body is ever stored, so there is no credential-bearing free text to scrub; the `summary` field is unused (`null`) in v1. The best-effort principal parser reads only the JWT `sub` claim (or the mTLS subject CN) and never stores the raw bearer token. (If a non-null `summary` is added later it must be scrubbed via `FixtureRedactor`'s default sensitive set + `***REDACTED***` at that point.)
+- **Default-off and fail-soft.** When disabled, control-plane operations behave byte-for-byte identically. The audit emit is wrapped in `try/catch` and can never throw into the request path.
+- **Best-effort, UNVERIFIED principal (v1).** The principal is read from an unverified JWT `sub` (no signature verification) or the mTLS client-certificate CN, else `anonymous`. **Verified identity is a later unit (1.5-A)** — do not treat the v1 principal as an authenticated subject; treat it as a hint correlated with the (separately enforced) control-plane authentication.
+
 ## Static Analysis: CodeQL
 
 GitHub's CodeQL semantic analysis runs automatically on:

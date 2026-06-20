@@ -141,6 +141,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL = "mockserver.driftAlertWebhookUrl";
     private static final String MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD = "mockserver.driftAlertSeverityThreshold";
     private static final String MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS = "mockserver.driftAlertCooldownMs";
+    private static final String MOCKSERVER_CONTROL_PLANE_AUDIT_ENABLED = "mockserver.controlPlaneAuditEnabled";
+    private static final String MOCKSERVER_CONTROL_PLANE_AUDIT_MAX_ENTRIES = "mockserver.controlPlaneAuditMaxEntries";
+    private static final String MOCKSERVER_CONTROL_PLANE_AUDIT_READS = "mockserver.controlPlaneAuditReads";
     private static final String MOCKSERVER_FIXTURE_BODY_REDACT_FIELDS = "mockserver.fixtureBodyRedactFields";
     private static final String MOCKSERVER_LLM_VCR_STRICT = "mockserver.llmVcrStrict";
     private static final String MOCKSERVER_LLM_OPTIMISATION_MAX_CALLS = "mockserver.llmOptimisationMaxCalls";
@@ -2139,6 +2142,52 @@ public class ConfigurationProperties {
 
     public static void driftSemanticAnalysisEnabled(boolean enabled) {
         setProperty(MOCKSERVER_DRIFT_SEMANTIC_ANALYSIS_ENABLED, "" + enabled);
+    }
+
+    /**
+     * Whether to record an append-only, bounded, in-memory audit log of
+     * control-plane mutations (who/what/when/where/outcome). Off by default. When
+     * disabled, control-plane operations behave byte-for-byte identically and no
+     * audit entries are stored. The audit log never stores request headers or
+     * bodies — only redacted, structural metadata. Retrieve via
+     * {@code GET /mockserver/audit}.
+     */
+    public static boolean controlPlaneAuditEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(
+            PROPERTIES, MOCKSERVER_CONTROL_PLANE_AUDIT_ENABLED, "MOCKSERVER_CONTROL_PLANE_AUDIT_ENABLED", "false"));
+    }
+
+    public static void controlPlaneAuditEnabled(boolean enabled) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_AUDIT_ENABLED, "" + enabled);
+    }
+
+    /**
+     * Maximum number of control-plane audit entries retained in the bounded
+     * in-memory ring buffer. Once full, the oldest entry is evicted on each new
+     * record. Default 1000. The {@code AuditStore} singleton reads this value
+     * once at construction (fixed capacity, like the drift store).
+     */
+    public static int controlPlaneAuditMaxEntries() {
+        return readIntegerProperty(MOCKSERVER_CONTROL_PLANE_AUDIT_MAX_ENTRIES, "MOCKSERVER_CONTROL_PLANE_AUDIT_MAX_ENTRIES", 1000);
+    }
+
+    public static void controlPlaneAuditMaxEntries(int maxEntries) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_AUDIT_MAX_ENTRIES, "" + maxEntries);
+    }
+
+    /**
+     * Whether to also audit control-plane READ operations (e.g. GET requests and
+     * read-only PUTs such as {@code /retrieve} and {@code /verify}). Default
+     * false — only mutations (and {@code reset}) are audited. Has no effect
+     * unless control-plane audit logging is enabled.
+     */
+    public static boolean controlPlaneAuditReads() {
+        return Boolean.parseBoolean(readPropertyHierarchically(
+            PROPERTIES, MOCKSERVER_CONTROL_PLANE_AUDIT_READS, "MOCKSERVER_CONTROL_PLANE_AUDIT_READS", "false"));
+    }
+
+    public static void controlPlaneAuditReads(boolean enabled) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_AUDIT_READS, "" + enabled);
     }
 
     /**
