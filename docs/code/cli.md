@@ -44,6 +44,7 @@ flowchart TD
 | `ui` | `Main.UiCommand` | Start MockServer (default port 1080) and open the dashboard UI in a browser; delegates to `RunCommand.run()` then calls `openDashboard()` |
 | `proxy` | `Main.ProxyCommand` | Syntactic sugar — starts MockServer with `--proxy-to` set, delegates to `RunCommand.run()` |
 | `openapi` | `Main.OpenApiCommand` | Start MockServer, pre-load expectations from an OpenAPI spec; delegates to `RunCommand.run()` |
+| `import` | `Main.ImportCommand` | Load expectations from a JSON file into an **already-running** MockServer (connects as a `MockServerClient`; does not start a server) |
 | `version` | `Main.VersionCommand` | Print `Version.getVersion()` and exit |
 | `help` | `CommandLine.HelpCommand` (picocli built-in, registered in `@Command(subcommands = {...})`) | Print usage for the top command or any subcommand — `mockserver help` or `mockserver help <subcommand>` |
 
@@ -104,6 +105,18 @@ After the server binds, `ui` opens `http://localhost:<firstPort>/mockserver/dash
 | `-D<key>=<value>` | Repeatable; same as `run` |
 | `--log-level` / `-l` | |
 
+### `import` subcommand
+
+Unlike every other subcommand, `import` does **not** start a server — it loads expectations into one that is already running. It constructs a `MockServerClient` for `--host`/`--port` and calls `importExpectationsFromFile(...)`, which reads the file via `FileReader.readFileFromClassPathOrPath`, deserialises a single-object-or-array of expectations, and upserts them (`PUT /mockserver/expectation`).
+
+| Argument / Option | Short | Required | Notes |
+|---|---|---|---|
+| `<file>` | — | Yes (positional) | Path to a JSON file containing a single expectation or an array of expectations |
+| `--port` | `-p` | Yes | Port of the running MockServer to load into |
+| `--host` | `-H` | No | Host of the running MockServer (default `localhost`) |
+
+It deliberately never calls `MockServerClient.stop()`/`close()`: that method sends a shutdown request to the **remote** server (and, for an in-JVM client, publishes a `STOP` event on the per-port `MockServerEventBus`), which must never happen when only loading expectations. The client's event-loop threads are daemon threads, so the short-lived CLI process exits cleanly without an explicit close. On any failure (missing/invalid file, unreachable server) it prints a clean `ERROR:` line and reports exit code `1` via `CommandLine.IExitCodeGenerator`, so it does not fall into the top-level execution-exception handler that prints the legacy `run` usage blob.
+
 ### `version` subcommand
 
 No options. Prints `Version.getVersion()` and exits.
@@ -121,7 +134,7 @@ The logic (in `Main.preprocessArguments`):
 if args is empty                                        → return ["run"]
 if args[0] == "-help"                                   → rewrite args[0] to "--help"
 if args[0] == "-version"                                → rewrite args[0] to "--version"
-if args[0] ∈ {run, ui, proxy, openapi, version, help}   → return args unchanged
+if args[0] ∈ {run, ui, proxy, openapi, import, version, help} → return args unchanged
 if args[0] ∈ {--help, -h, --version, -V}                → return args unchanged
 otherwise                                                → return ["run"] + args
 ```

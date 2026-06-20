@@ -75,6 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state on success so the breaker's memory stays bounded to currently-degraded upstreams. The breaker state
   resets on `HttpState.reset()`. All five properties have the usual equivalent system-property /
   environment-variable / property-file forms.
+- **`mockserver import <file>` CLI subcommand and client `importExpectations(...)` methods.** A new
+  `import` subcommand (`org.mockserver.cli.Main`, `mockserver-netty`) loads a JSON expectations file —
+  the same single-object-or-array format produced by `--persist`, the dashboard export, or
+  `retrieveActiveExpectations(..., Format.JSON)` — into an already-running MockServer:
+  `mockserver import ./expectations.json -p 1080` (`-H/--host` defaults to `localhost`). It connects as a
+  client and upserts each expectation; it does **not** start a server and never sends a shutdown to the
+  target. A missing/invalid file or unreachable server prints a clean error and exits non-zero. The
+  `mockserver-client-java` client gains typed `importExpectations(String json)` and
+  `importExpectationsFromFile(String filePath)` wrapping the same upsert.
 - **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
   `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
   `closest match diff:` block for the specific sequence step that failed to match — listing which fields

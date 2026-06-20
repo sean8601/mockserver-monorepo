@@ -1,7 +1,9 @@
 package org.mockserver.cli;
 
 import com.google.common.base.Joiner;
+import org.mockserver.client.MockServerClient;
 import org.mockserver.configuration.ConfigurationProperties;
+import org.mockserver.mock.Expectation;
 import org.mockserver.configuration.IntegerStringListParser;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -39,6 +41,7 @@ import static org.slf4j.event.Level.*;
         "  mockserver ui -p 1080",
         "  mockserver proxy --to https://api.example.com",
         "  mockserver openapi ./petstore.yaml -p 1080",
+        "  mockserver import ./expectations.json -p 1080",
         "  mockserver -p 1080",
         "",
         "Legacy flags (-serverPort, -proxyRemotePort, -proxyRemoteHost, -logLevel) are supported for backward compatibility."
@@ -48,6 +51,7 @@ import static org.slf4j.event.Level.*;
         Main.UiCommand.class,
         Main.ProxyCommand.class,
         Main.OpenApiCommand.class,
+        Main.ImportCommand.class,
         Main.VersionCommand.class,
         CommandLine.HelpCommand.class,
     }
@@ -116,6 +120,15 @@ public class Main {
     static PrintStream systemErr = System.err;
     static PrintStream systemOut = System.out;
     static boolean usageShown = false;
+    /**
+     * When true (the default for the real jar entry point), {@link #main(String...)} terminates the JVM
+     * with a non-zero exit status when a command reports a failure (e.g. a failed {@code import}, a parse
+     * error, or a startup exception) so that shell/CI callers can detect it. In-process tests that invoke
+     * {@link #main(String...)} directly set this to {@code false} so a non-zero command does not kill the
+     * test JVM. Successful long-running commands ({@code run}/{@code ui}/{@code proxy}/{@code openapi})
+     * always return exit code 0 and never trigger an exit, so the server keeps running on its own threads.
+     */
+    static boolean exitOnNonZeroCode = true;
 
     /**
      * Run the MockServer directly providing the arguments as specified below.
@@ -169,7 +182,16 @@ public class Main {
                 systemOut.flush();
                 return 2;
             });
-            cmd.execute(processedArgs);
+            // picocli's execute() returns the exit code (from a command's IExitCodeGenerator or an
+            // exception handler) but does NOT terminate the JVM itself. Propagate a non-zero code so
+            // shell/CI callers can detect failures (e.g. a failed `import`). A successful long-running
+            // server command returns 0 and stays alive on its own (non-daemon) threads, so we must NOT
+            // exit on 0. In-process tests disable the exit via exitOnNonZeroCode so a failure does not
+            // kill the test JVM.
+            int exitCode = cmd.execute(processedArgs);
+            if (exitCode != 0 && exitOnNonZeroCode) {
+                System.exit(exitCode);
+            }
         } catch (Throwable throwable) {
             MOCK_SERVER_LOGGER.logEvent(
                 new LogEntry()
@@ -193,7 +215,7 @@ public class Main {
         if (arguments == null || arguments.length == 0) {
             return new String[]{"run"};
         }
-        Set<String> subcommands = Set.of("run", "ui", "proxy", "openapi", "version", "help");
+        Set<String> subcommands = Set.of("run", "ui", "proxy", "openapi", "import", "version", "help");
         // Top-level help/version flags should NOT be prepended with "run"
         Set<String> topLevelFlags = Set.of("--help", "-h", "--version", "-V");
         String first = arguments[0];
@@ -663,6 +685,60 @@ public class Main {
             runCmd.dev = dev;
             runCmd.systemProperties = systemProperties;
             runCmd.run();
+        }
+    }
+
+    @Command(
+        name = "import",
+        description = "Load expectations from a JSON file into a running MockServer.",
+        mixinStandardHelpOptions = true
+    )
+    static class ImportCommand implements Runnable, CommandLine.IExitCodeGenerator {
+
+        @Parameters(index = "0", description = "Path to a JSON file containing a single expectation or an array of expectations.")
+        String file;
+
+        @Option(names = {"-p", "--port"}, required = true, description = "Port of the running MockServer to load the expectations into.")
+        int port;
+
+        @Option(names = {"-H", "--host"}, description = "Host of the running MockServer (default: localhost).")
+        String host = "localhost";
+
+        // Set to a non-zero value when the import fails so the process exits with a failure code
+        // for scripting, without printing the legacy "run" usage blob (this command never starts a server).
+        private int exitCode = 0;
+
+        @Override
+        public int getExitCode() {
+            return exitCode;
+        }
+
+        @Override
+        public void run() {
+            // NOTE: deliberately do NOT call mockServerClient.stop()/close() — the MockServerClient
+            // "stop" sends a shutdown request to the remote MockServer, which must never happen when
+            // we are only loading expectations into it. The client's event-loop threads are daemon
+            // threads, so the short-lived CLI process exits cleanly without an explicit close.
+            try {
+                MockServerClient mockServerClient = new MockServerClient(host, port);
+                Expectation[] imported = mockServerClient.importExpectationsFromFile(file);
+                systemOut.println("Imported " + imported.length + " expectation(s) from " + file + " into " + host + ":" + port);
+                systemOut.flush();
+            } catch (Throwable throwable) {
+                exitCode = 1;
+                MOCK_SERVER_LOGGER.logEvent(
+                    new LogEntry()
+                        .setType(SERVER_CONFIGURATION)
+                        .setLogLevel(ERROR)
+                        .setMessageFormat("exception while importing expectations from " + file + " into " + host + ":" + port + ":{}")
+                        .setThrowable(throwable)
+                );
+                // Some exceptions carry no message (e.g. a bare NPE); fall back to the exception type
+                // so the user-facing line never renders a literal "null".
+                String reason = isNotBlank(throwable.getMessage()) ? throwable.getMessage() : throwable.getClass().getSimpleName();
+                systemErr.println(NEW_LINE + "ERROR:  could not import expectations from " + file + " into " + host + ":" + port + " — " + reason + NEW_LINE);
+                systemErr.flush();
+            }
         }
     }
 

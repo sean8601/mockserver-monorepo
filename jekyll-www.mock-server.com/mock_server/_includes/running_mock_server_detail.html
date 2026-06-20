@@ -524,6 +524,11 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 			<td><code class="code inline">mockserver openapi ./petstore.yaml -p 1080</code></td>
 		</tr>
 		<tr>
+			<td><span class="inline_code">import</span></td>
+			<td>Load expectations from a JSON file into an already-running MockServer</td>
+			<td><code class="code inline">mockserver import ./expectations.json -p 1080</code></td>
+		</tr>
+		<tr>
 			<td><span class="inline_code">version</span></td>
 			<td>Print MockServer version and exit</td>
 			<td><code class="code inline">mockserver version</code></td>
@@ -675,6 +680,37 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 	</tbody>
 </table>
 
+<h4>Options for <span class="inline_code">import</span></h4>
+
+<p>The <span class="inline_code">import</span> subcommand connects to an <strong>already-running</strong> MockServer and loads expectations into it from a JSON file. It does not start a server — start one first (e.g. <span class="inline_code">mockserver run -p 1080</span>), then import. The file may be a single expectation object or an array of expectations, the same format produced by the <span class="inline_code">--persist</span> flag, the dashboard export, or the active-expectations retrieve endpoint. Each expectation is created, or updated if its <span class="inline_code">id</span> matches an existing one. If the file is missing/invalid or the server is unreachable, a clear error is printed and the command exits with a non-zero status.</p>
+
+<table class="comparison_table">
+	<thead>
+		<tr>
+			<th>Argument / Option</th>
+			<th>Required</th>
+			<th>Description</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td><span class="inline_code">&lt;file&gt;</span></td>
+			<td>Yes (positional)</td>
+			<td>Path to a JSON file containing a single expectation or an array of expectations.</td>
+		</tr>
+		<tr>
+			<td><span class="inline_code">-p, --port &lt;port&gt;</span></td>
+			<td>Yes</td>
+			<td>Port of the running MockServer to load the expectations into.</td>
+		</tr>
+		<tr>
+			<td><span class="inline_code">-H, --host &lt;host&gt;</span></td>
+			<td>No</td>
+			<td>Host of the running MockServer. Default: <span class="inline_code">localhost</span>.</td>
+		</tr>
+	</tbody>
+</table>
+
 <h4>Common examples</h4>
 
 <p>Start MockServer on port 1080:</p>
@@ -690,6 +726,9 @@ public class ExampleSpringTestListenerTestWithPortInjection {
 <pre><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar run -p <span class="numeric_literal">1080</span> \
     --openapi ./petstore.yaml \
     --persist ./expectations.json</code></pre>
+
+<p>Load expectations from a JSON file into a server that is already running on port 1080:</p>
+<pre><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar import ./expectations.json -p <span class="numeric_literal">1080</span></code></pre>
 
 <p>Start MockServer as a plain forwarding proxy (shorthand form, explicit port):</p>
 <pre><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar proxy --to api.example.com:<span class="numeric_literal">8080</span> -p <span class="numeric_literal">1080</span></code></pre>

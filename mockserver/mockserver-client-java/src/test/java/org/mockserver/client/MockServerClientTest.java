@@ -244,6 +244,43 @@ public class MockServerClientTest {
     }
 
     @Test
+    public void shouldImportExpectationsFromJson() {
+        // given
+        Expectation expectationOne = new Expectation(request().withPath("/some_path"), unlimited(), TimeToLive.unlimited(), 0)
+            .thenRespond(response().withBody("some_body_one"));
+        String expectationsJson = "[ { \"httpRequest\": { \"path\": \"/some_path\" } } ]";
+        when(mockExpectationSerializer.deserializeArray(expectationsJson, false)).thenReturn(new Expectation[]{expectationOne});
+        when(mockExpectationSerializer.serialize(expectationOne)).thenReturn("serialized_body");
+
+        // when
+        mockServerClient.importExpectations(expectationsJson);
+
+        // then
+        verify(mockExpectationSerializer).deserializeArray(expectationsJson, false);
+        verify(mockHttpClient, atLeastOnce()).sendRequest(
+            request()
+                .withHeader(CONTENT_TYPE.toString(), APPLICATION_JSON_UTF_8.toString())
+                .withHeader(HOST.toString(), "localhost:" + 1090)
+                .withMethod("PUT")
+                .withPath("/mockserver/expectation")
+                .withBody("serialized_body", UTF_8),
+            20000,
+            TimeUnit.MILLISECONDS,
+            false
+        );
+    }
+
+    @Test
+    public void shouldImportNoExpectationsForBlankJson() {
+        // when
+        Expectation[] imported = mockServerClient.importExpectations("   ");
+
+        // then
+        assertThat(imported.length, is(0));
+        verifyNoInteractions(mockHttpClient);
+    }
+
+    @Test
     public void shouldSetupExpectationWithResponse() {
         // given
         HttpRequest httpRequest =

@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.configuration.ClientConfiguration;
 import org.mockserver.configuration.Configuration;
+import org.mockserver.file.FileReader;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.httpclient.SocketConnectionException;
 import org.mockserver.log.model.LogEntry;
@@ -1885,6 +1886,43 @@ public class MockServerClient implements Stoppable {
             }
         }
         return new Expectation[0];
+    }
+
+    /**
+     * Import one or more expectations from a JSON document into a running MockServer.
+     * <p>
+     * The JSON may be a single expectation object or an array of expectations — the same
+     * format produced by {@link #retrieveActiveExpectations(RequestDefinition)} with
+     * {@link Format#JSON}, persisted via the <code>--persist</code> flag, or exported from
+     * the dashboard. Each imported expectation is created, or updated if its <code>id</code>
+     * matches an existing expectation (an upsert).
+     *
+     * @param expectationsJson a JSON expectation object or array of expectation objects
+     * @return the imported (created or updated) expectations
+     */
+    public Expectation[] importExpectations(String expectationsJson) {
+        if (isBlank(expectationsJson)) {
+            return new Expectation[0];
+        }
+        Expectation[] expectations = expectationSerializer.deserializeArray(expectationsJson, false);
+        return upsert(expectations);
+    }
+
+    /**
+     * Import one or more expectations from a JSON file into a running MockServer.
+     * <p>
+     * The file may contain a single expectation object or an array of expectations — the same
+     * format produced by {@link #retrieveActiveExpectations(RequestDefinition)} with
+     * {@link Format#JSON}, persisted via the <code>--persist</code> flag, or exported from
+     * the dashboard. Each imported expectation is created, or updated if its <code>id</code>
+     * matches an existing expectation (an upsert). The path is resolved from the classpath or
+     * the filesystem.
+     *
+     * @param filePath path to a JSON file containing an expectation object or array of expectation objects
+     * @return the imported (created or updated) expectations
+     */
+    public Expectation[] importExpectationsFromFile(String filePath) {
+        return importExpectations(FileReader.readFileFromClassPathOrPath(filePath));
     }
 
     /**

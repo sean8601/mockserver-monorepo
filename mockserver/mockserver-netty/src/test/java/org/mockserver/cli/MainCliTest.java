@@ -51,12 +51,16 @@ public class MainCliTest {
     @BeforeClass
     public static void startEventLoopGroup() {
         clientEventLoopGroup = new NioEventLoopGroup(3, new Scheduler.SchedulerThreadFactory(MainCliTest.class.getSimpleName() + "-eventLoop"));
+        // These tests invoke Main.main(...) in-process, including failure paths (unknown flag, no port,
+        // failed import). Disable the JVM-terminating exit so a non-zero command does not kill the test JVM.
+        Main.exitOnNonZeroCode = false;
     }
 
     @AfterClass
     public static void stopEventLoopGroup() {
         clientEventLoopGroup.shutdownGracefully(0, 0, MILLISECONDS).syncUninterruptibly();
         Main.usageShown = false;
+        Main.exitOnNonZeroCode = true;
     }
 
     @After
@@ -1068,6 +1072,133 @@ public class MainCliTest {
             } else {
                 System.clearProperty("java.awt.headless");
             }
+        }
+    }
+
+    // ---- import subcommand ----
+
+    @Test
+    public void shouldNotPrependRunWhenImportSubcommandPresent() {
+        String[] result = Main.preprocessArguments("import", "./expectations.json", "-p", "1080");
+        assertThat(result[0], is("import"));
+        assertThat(result.length, is(4));
+    }
+
+    @Test
+    public void shouldListImportInTopLevelHelp() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("--help");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("top-level help should list the import subcommand",
+                output, containsString("import"));
+        } finally {
+            Main.systemOut = originalOut;
+        }
+    }
+
+    @Test
+    public void shouldPrintHelpForImportSubcommand() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("help", "import");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("import help should mention the file parameter", output, containsString("file"));
+            assertThat("import help should list the --port option", output, containsString("--port"));
+            assertThat("import help should list the --host option", output, containsString("--host"));
+        } finally {
+            Main.systemOut = originalOut;
+        }
+    }
+
+    @Test
+    public void shouldImportExpectationsFromFileIntoRunningServer() throws IOException {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+
+        try {
+            // Start a server to import into
+            Main.main("run", "-p", String.valueOf(freePort));
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+
+            // Write an expectations array JSON file (the persisted/export format)
+            File expectationsFile = tempFolder.newFile("import-expectations.json");
+            String json = "[ {" +
+                "\"httpRequest\": { \"path\": \"/imported_path\" }," +
+                "\"httpResponse\": { \"body\": \"imported_body\" }" +
+                "} ]";
+            java.nio.file.Files.write(expectationsFile.toPath(), json.getBytes(StandardCharsets.UTF_8));
+
+            // No expectations loaded yet
+            assertThat("no expectations before import",
+                mockServerClient.retrieveActiveExpectations(request().withPath("/imported_path")).length, is(0));
+
+            // Import via the CLI subcommand
+            Main.main("import", expectationsFile.getAbsolutePath(), "-p", String.valueOf(freePort));
+
+            // The imported expectation is now active and responds
+            assertThat("one expectation loaded after import",
+                mockServerClient.retrieveActiveExpectations(request().withPath("/imported_path")).length, is(1));
+
+            HttpResponse httpResponse = new NettyHttpClient(configuration(), new MockServerLogger(), clientEventLoopGroup, null, false)
+                .sendRequest(
+                    request().withHeader(HOST.toString(), "127.0.0.1:" + freePort).withPath("/imported_path"),
+                    10, TimeUnit.SECONDS
+                );
+            assertThat("imported expectation responds", httpResponse.getBodyAsString(), is("imported_body"));
+        } finally {
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
+    public void shouldReturnNonZeroExitCodeWhenImportFails() throws UnsupportedEncodingException {
+        PrintStream originalErr = Main.systemErr;
+        PrintStream originalOut = Main.systemOut;
+        final int freePort = PortFactory.findFreePort();
+        try {
+            Main.systemErr = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8.name());
+            Main.systemOut = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8.name());
+
+            // Drive the import command through picocli directly so we can observe the exit code that
+            // Main.main() propagates to the JVM (an in-process Main.main(...) call cannot expose it).
+            int exitCode = new picocli.CommandLine(new Main()).execute(
+                "import", "/this/file/does/not/exist.json", "-p", String.valueOf(freePort));
+
+            assertThat("a failed import must report a non-zero exit code", exitCode, is(1));
+        } finally {
+            Main.systemErr = originalErr;
+            Main.systemOut = originalOut;
+        }
+    }
+
+    @Test
+    public void shouldReportErrorWhenImportFileMissing() throws UnsupportedEncodingException {
+        PrintStream originalErr = Main.systemErr;
+        PrintStream originalOut = Main.systemOut;
+        final int freePort = PortFactory.findFreePort();
+        try {
+            ByteArrayOutputStream errBaos = new ByteArrayOutputStream();
+            Main.systemErr = new PrintStream(errBaos, true, StandardCharsets.UTF_8.name());
+            Main.systemOut = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8.name());
+
+            // No server running and a non-existent file → clean error, no legacy run-usage blob
+            Main.main("import", "/this/file/does/not/exist.json", "-p", String.valueOf(freePort));
+
+            String err = new String(errBaos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("import failure should report a clean error",
+                err, containsString("could not import expectations"));
+        } finally {
+            Main.systemErr = originalErr;
+            Main.systemOut = originalOut;
         }
     }
 
