@@ -181,6 +181,11 @@ build-*/
 docker_build/maven/corporate-root-ca.pem
 docker/local/ca-bundle.pem
 docker/graaljs/ca-bundle.pem
+docker/ca-bundle.pem
+docker/root/ca-bundle.pem
+docker/snapshot/ca-bundle.pem
+docker/root-snapshot/ca-bundle.pem
+docker/clustered/ca-bundle.pem
 
 # soft links #
 ##############

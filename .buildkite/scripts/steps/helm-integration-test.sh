@@ -48,8 +48,12 @@ fi
 
 echo "--- :docker: Building MockServer Docker image for testing"
 cp "$JAR_DIR/$JAR_NAME" docker/mockserver-netty-jar-with-dependencies.jar
+# The base docker/Dockerfile COPYs ca-bundle.pem; stage a placeholder (or the
+# corporate CA via MOCKSERVER_LOCAL_CA_BUNDLE) before building, clean up after.
+CA_BUNDLE_STATE=$(docker/ensure-ca-bundle.sh docker)
 docker build --no-cache -t mockserver/mockserver:integration_testing --build-arg source=copy docker
 rm docker/mockserver-netty-jar-with-dependencies.jar
+[ "$CA_BUNDLE_STATE" = "created" ] && rm -f docker/ca-bundle.pem
 
 echo "--- :helm: Installing helm (if needed)"
 # Build agents are spot instances and helm pre-installation is inconsistent
