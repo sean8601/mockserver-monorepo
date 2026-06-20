@@ -1,4 +1,4 @@
-exclude: ["vendor", "*.rb", "Gemfile*", "*.gemspec", "*.md", "*.pptx", "*.psd", "images/MockServerScenarios"]
+exclude: ["vendor", "*.rb", "Gemfile*", "*.gemspec", "*.md", "*.pptx", "*.psd", "images/MockServerScenarios", "images/diagram-tools"]
 include: [".well-known"]
 
 # Site settings
