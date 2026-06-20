@@ -28,6 +28,7 @@ import org.mockserver.oidc.OidcProviderConfiguration;
 import org.mockserver.model.*;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.saml.SamlProviderConfiguration;
+import org.mockserver.scim.ScimProviderConfiguration;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.*;
 import org.mockserver.serialization.model.HttpChaosProfileDTO;
@@ -103,6 +104,7 @@ public class MockServerClient implements Stoppable {
     private ExpectationSerializer expectationSerializer = new ExpectationSerializer(MOCK_SERVER_LOGGER);
     private OpenAPIExpectationSerializer openAPIExpectationSerializer = new OpenAPIExpectationSerializer(MOCK_SERVER_LOGGER);
     private CrudExpectationsDefinitionSerializer crudExpectationsDefinitionSerializer = new CrudExpectationsDefinitionSerializer(MOCK_SERVER_LOGGER);
+    private ScimProviderConfigurationSerializer scimProviderConfigurationSerializer = new ScimProviderConfigurationSerializer(MOCK_SERVER_LOGGER);
     private VerificationSerializer verificationSerializer = new VerificationSerializer(MOCK_SERVER_LOGGER);
     private VerificationSequenceSerializer verificationSequenceSerializer = new VerificationSequenceSerializer(MOCK_SERVER_LOGGER);
     private LogEntrySerializer logEntrySerializer = new LogEntrySerializer(MOCK_SERVER_LOGGER);
@@ -2254,6 +2256,43 @@ public class MockServerClient implements Stoppable {
             true
         );
         return clientClass.cast(this);
+    }
+
+    /**
+     * Register a mock SCIM 2.0 provider that auto-generates a complete set of SCIM endpoints for the
+     * configured base path (default {@code /scim/v2}).
+     * <p>
+     * For example, with the default configuration MockServer will serve:
+     * <ul>
+     *     <li>{@code GET/POST /scim/v2/Users} and {@code GET/PUT/PATCH/DELETE /scim/v2/Users/{id}}</li>
+     *     <li>{@code GET/POST /scim/v2/Groups} and {@code GET/PUT/PATCH/DELETE /scim/v2/Groups/{id}}</li>
+     *     <li>{@code GET /scim/v2/ServiceProviderConfig}, {@code /ResourceTypes}, {@code /Schemas}</li>
+     * </ul>
+     * Responses use the {@code application/scim+json} media type, the SCIM ListResponse/Error
+     * envelopes, and inject {@code schemas}/{@code id}/{@code meta} on every resource.
+     *
+     * @param scimConfiguration the SCIM provider configuration (basePath, idStrategy, initial data, enforcement flags)
+     * @return this MockServerClient for fluent chaining
+     */
+    public MockServerClient mockScimProvider(ScimProviderConfiguration scimConfiguration) {
+        sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("scim"))
+                .withBody(scimProviderConfigurationSerializer.serialize(scimConfiguration), StandardCharsets.UTF_8),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Register a mock SCIM 2.0 provider using the default configuration (base path {@code /scim/v2}).
+     *
+     * @return this MockServerClient for fluent chaining
+     */
+    public MockServerClient mockScimProvider() {
+        return mockScimProvider(new ScimProviderConfiguration());
     }
 
     /**

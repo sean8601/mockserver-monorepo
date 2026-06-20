@@ -484,6 +484,7 @@ public class HttpState {
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
         org.mockserver.oidc.OidcAuthorizationStore.getInstance().reset();
         org.mockserver.saml.SamlAssertionStore.getInstance().reset();
+        org.mockserver.scim.ScimResourceStore.getInstance().reset();
         org.mockserver.wasm.WasmStore.getInstance().reset();
         org.mockserver.mock.drift.DriftStore.getInstance().clear();
         org.mockserver.mock.audit.AuditStore.getInstance().clear();
@@ -1881,6 +1882,58 @@ public class HttpState {
                             new LogEntry()
                                 .setLogLevel(Level.ERROR)
                                 .setMessageFormat("exception handling request for saml provider:{}error:{}")
+                                .setArguments(request, e.getMessage())
+                                .setThrowable(e)
+                        );
+                        responseWriter.writeResponse(
+                            request,
+                            BAD_REQUEST,
+                            e.getMessage(),
+                            MediaType.create("text", "plain").toString()
+                        );
+                    }
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/scim", "/scim")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    try {
+                        String requestBody = request.getBodyAsJsonOrXmlString();
+                        org.mockserver.scim.ScimProviderConfiguration scimConfig;
+                        if (requestBody == null || requestBody.trim().isEmpty()) {
+                            scimConfig = new org.mockserver.scim.ScimProviderConfiguration();
+                        } else {
+                            scimConfig = ObjectMapperFactory.createObjectMapper()
+                                .readValue(requestBody, org.mockserver.scim.ScimProviderConfiguration.class);
+                        }
+                        List<Expectation> upsertedExpectations = add(
+                            new org.mockserver.scim.ScimProviderGenerator()
+                                .generate(scimConfig)
+                                .toArray(new Expectation[0])
+                        );
+                        responseWriter.writeResponse(request, response()
+                            .withStatusCode(CREATED.code())
+                            .withBody(getExpectationSerializer().serialize(upsertedExpectations), MediaType.JSON_UTF_8), true);
+                    } catch (IllegalArgumentException iae) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for scim provider:{}error:{}")
+                                .setArguments(request, iae.getMessage())
+                                .setThrowable(iae)
+                        );
+                        responseWriter.writeResponse(
+                            request,
+                            BAD_REQUEST,
+                            iae.getMessage(),
+                            MediaType.create("text", "plain").toString()
+                        );
+                    } catch (Exception e) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.ERROR)
+                                .setMessageFormat("exception handling request for scim provider:{}error:{}")
                                 .setArguments(request, e.getMessage())
                                 .setThrowable(e)
                         );

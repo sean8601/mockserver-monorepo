@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- SCIM provider mocking (Wave 4) -->
+- **Mock a SCIM 2.0 identity provider** (`mockserver-core`, `mockserver-client-java`). A single control-plane
+  call — `PUT /mockserver/scim` (empty body or a `ScimProviderConfiguration`), or
+  `mockServerClient.mockScimProvider(...)` from Java — generates a fully functional in-memory SCIM provider.
+  It serves CRUD over `Users` and `Groups` (`GET`/`POST` collections and `GET`/`PUT`/`PATCH`/`DELETE` by id)
+  plus the SCIM discovery documents (`ServiceProviderConfig`, `ResourceTypes`, `Schemas`). Responses use the
+  `application/scim+json` media type and SCIM shapes: every resource carries `schemas`/`id`/`meta`, lists are
+  wrapped in a `ListResponse` envelope, and errors use the SCIM `Error` envelope. Supports a single-attribute
+  `filter` (`eq`/`co`/`sw`/`pr`), SCIM `PatchOp` (`add`/`replace`/`remove` over top-level and one-level
+  sub-attributes), 1-based `startIndex`/`count` pagination, an optional bearer-token gate (discovery stays
+  open), and a configurable base path (default `/scim/v2`), id strategy, and seed data. Re-running the call
+  upserts in place. See [Mock a SCIM Provider](/mock_server/mocking_scim.html).
+
 #### AI, LLM & agent protocols (LLM / MCP / A2A)
 - **Approximate LLM token-count utility and opt-in usage inference** (`mockserver-core`). New pure helper
   `org.mockserver.llm.TokenCounter` estimates token counts for text using a blended character/word heuristic

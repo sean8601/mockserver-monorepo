@@ -557,6 +557,9 @@
                         <exclude>**/OidcProviderGeneratorTest.java</exclude>
                         <!-- WS7.7 SAML SSO test mutates the SamlAssertionStore singleton -->
                         <exclude>**/SamlProviderGeneratorTest.java</exclude>
+                        <!-- Wave4 SCIM tests mutate the ScimResourceStore singleton -->
+                        <exclude>**/ScimProviderGeneratorTest.java</exclude>
+                        <exclude>**/ScimResourceStoreTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/ExampleBuilderRealisticValuesTest.java</exclude>
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
@@ -679,6 +682,8 @@
                                 <include>**/CaptureProcessorTest.java</include>
                                 <include>**/OidcProviderGeneratorTest.java</include>
                                 <include>**/SamlProviderGeneratorTest.java</include>
+                                <include>**/ScimProviderGeneratorTest.java</include>
+                                <include>**/ScimResourceStoreTest.java</include>
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
