@@ -47,7 +47,9 @@ flowchart LR
 | Schema validation | Live validation, completion, and hover docs in `*.mockserver.json` / `*.mockserver.jsonc` files |
 | Server controls | Start via Docker, open dashboard in IDE or browser, reset |
 | Expectation management | Load from file, save recorded, generate from OpenAPI spec |
-| Testing | Send ad-hoc HTTP requests and see the response in a new tab |
+| Testing | Send ad-hoc HTTP requests, and run an OpenAPI contract test of a live service (per-operation pass/fail) |
+| LLM & agents | Build `httpLlmResponse` expectations from a form, complete `httpLlmResponse` fields in `*.mockserver.json`, and render the agent-run call graph as Mermaid (JCEF) |
+| Debugger | Pause and edit live traffic (request/response phases) and per-frame streams (Continue / Modify / Drop) |
 | Observability | Drift report, distributed-trace correlation by W3C `traceparent` |
 | WASM custom rules | Upload and list compiled `.wasm` modules on the running server |
 | Settings | Docker image, container name, and port under **Settings \| Tools \| MockServer** |
@@ -73,8 +75,19 @@ All actions are available from **Tools > MockServer** and as buttons in the **Mo
 | Save Recorded Expectations | Prompts for an output format, then calls `PUT /mockserver/retrieve?type=recorded_expectations&format=json\|java`; opens the result as `recorded-expectations.mockserver.json` (JSON) or `RecordedExpectations.java` (Java DSL) in a new tab |
 | Generate Expectations From OpenAPI Spec | Sends the active editor's OpenAPI/Swagger spec (JSON or YAML) to `PUT /mockserver/openapi`, opens the generated expectations in a new tab |
 | Send Test Request | Reads a JSON request spec from the active editor, sends it to the running MockServer at the configured port, and opens the response (`HTTP <status>` + body) in a new tab |
+| Run Contract Test | On an OpenAPI/Swagger spec in the active editor (also on the editor / project-view context menus), prompts for the base URL of the service under test, calls `PUT /mockserver/contractTest`, and opens a per-operation pass/fail report (with validation errors) in a new tab |
 | Show Drift Report | Calls `GET /mockserver/drift`, formats the results (type, field, expected vs actual, confidence, affected expectation), and opens them in a new tab |
 | Find Requests by Trace | Prompts for a W3C trace id (32 hex) or a full `traceparent` header value, retrieves all received requests, filters those carrying a matching `traceparent` header, and opens the results as JSON in a new tab |
+
+### LLM & agents — the **LLM** tool window
+
+The **LLM** tool window (bottom bar) brings the VS Code extension's LLM authoring aids into JetBrains:
+
+| Feature | What it does |
+|---------|-------------|
+| LLM expectation builder | A form (method/path, provider, model, completion text, token usage, finish reason, streaming) that builds an `httpLlmResponse` expectation; **Open in Editor** drops it into a new `*.mockserver.json` tab, **Load Into Server** sends it to `PUT /mockserver/expectation` |
+| `httpLlmResponse` completion | Inside an `httpLlmResponse` block of a `*.mockserver.json` file, completion offers curated provider names (after `"provider":`), model names (after `"model":`), and the block's fields — augmenting the bundled JSON Schema completion |
+| Agent-run call graph | Enter a session id (or leave blank for the latest run) and **Render Call Graph**; the graph is fetched via the MCP `explain_agent_run` tool (`POST /mockserver/mcp`) and rendered as Mermaid in the bundled JCEF (Chromium). Falls back to the raw Mermaid source when JCEF is unavailable |
 
 ### WASM custom rules
 

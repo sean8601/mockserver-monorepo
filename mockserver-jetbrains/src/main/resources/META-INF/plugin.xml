@@ -52,6 +52,12 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <p><b>Unreleased</b> — LLM authoring, contract testing, and stream-frame debugging (VS Code parity):</p>
+    <ul>
+      <li><b>LLM tool window</b> — build an <em>httpLlmResponse</em> expectation from a form (provider/model/path/completion/usage/stream) and open it in an editor or load it into the running server; completion for <em>httpLlmResponse</em> fields, provider and model names inside <em>*.mockserver.json</em>; and an agent-run call graph rendered as Mermaid in the embedded Chromium (JCEF)</li>
+      <li><b>Run Contract Test</b> — run an OpenAPI contract test of a live service against the active spec (Tools menu and editor/project-view context menus) and open a per-operation pass/fail report</li>
+      <li><b>Stream-frame debugging</b> — the in-IDE HTTP Debugger now shows paused stream frames in a Live Streams list and resolves each with Continue / Modify (Base64) / Drop</li>
+    </ul>
     <p><b>7.1.0</b> — first release; full IDE integration:</p>
     <ul>
       <li>Expectation-file validation with JSON Schema completion and hover docs in <em>*.mockserver.json</em> files</li>
@@ -146,6 +152,11 @@
                     text="List WASM Modules"
                     description="Lists the WASM custom-rule modules registered on the running MockServer (GET /mockserver/wasm/modules)"
                     icon="AllIcons.Actions.ListFiles"/>
+            <action id="MockServer.ContractTest"
+                    class="com.mockserver.jetbrains.ContractTestAction"
+                    text="Run Contract Test"
+                    description="Runs an OpenAPI contract/resiliency test of a live service against the active spec and opens a per-operation pass/fail report (PUT /mockserver/contractTest)"
+                    icon="AllIcons.Actions.RunAll"/>
             <separator text="Advanced"/>
             <action id="MockServer.ChaosExperiment"
                     class="com.mockserver.jetbrains.ChaosExperimentAction"
@@ -153,6 +164,16 @@
                     description="Show status, start (from the active file), or stop a MockServer chaos experiment (GET/PUT/DELETE /mockserver/chaosExperiment)"
                     icon="AllIcons.Actions.Lightning"/>
         </group>
+        <!-- Make the contract-test runner reachable from the editor and project-view
+             context menus on a spec file (the action self-guards on OpenAPI shape). -->
+        <action id="MockServer.ContractTest.EditorPopup"
+                class="com.mockserver.jetbrains.ContractTestAction"
+                text="Run MockServer Contract Test"
+                description="Runs an OpenAPI contract test of a live service against the active spec (PUT /mockserver/contractTest)"
+                icon="AllIcons.Actions.RunAll">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
     </actions>
 
     <extensions defaultExtensionNs="com.intellij">
@@ -168,6 +189,12 @@
                     icon="/icons/mockserver.svg"/>
         <toolWindow id="MockServerDebugger"
                     factoryClass="com.mockserver.jetbrains.BreakpointDebuggerToolWindowFactory"
+                    anchor="bottom"
+                    secondary="true"
+                    canCloseContents="false"
+                    icon="/icons/mockserver.svg"/>
+        <toolWindow id="MockServerLlm"
+                    factoryClass="com.mockserver.jetbrains.LlmToolWindowFactory"
                     anchor="bottom"
                     secondary="true"
                     canCloseContents="false"
@@ -191,6 +218,12 @@
         <codeInsight.lineMarkerProvider
                 language=""
                 implementationClass="com.mockserver.jetbrains.MockServerGutterLineMarkerProvider"/>
+        <!-- LLM authoring completion inside httpLlmResponse blocks of *.mockserver.json.
+             Registered for every language (the contributor self-guards on file name and
+             cursor context) so it works regardless of how the JSON file type resolves. -->
+        <completion.contributor
+                language="any"
+                implementationClass="com.mockserver.jetbrains.LlmCompletionContributor"/>
     </extensions>
 
     <!-- The JSON Schema provider extension point is `JavaScript.JsonSchema.ProviderFactory`

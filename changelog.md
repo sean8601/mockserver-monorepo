@@ -28,6 +28,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     disposition is set, verification counts all received requests exactly as before. The disposition is
     serialized through the verify REST path (`disposition` field on the verification JSON) and ignored for
     response-aware and expectation-id verifications.
+- **JetBrains plugin (`mockserver-jetbrains`): LLM authoring + agent-run call graph (parity with the VS Code
+  extension).** A new **LLM** tool window adds an *httpLlmResponse* expectation builder form
+  (provider/model/path/completion/usage/stream) that opens the result in an editor or loads it straight into the
+  running server, plus an **agent-run call graph** view that fetches the graph through the MCP `explain_agent_run`
+  tool (`POST /mockserver/mcp`) and renders it as Mermaid in the bundled JCEF (Chromium), falling back to the raw
+  Mermaid source when JCEF or the CDN is unavailable. A completion contributor offers curated provider/model/field
+  suggestions inside `httpLlmResponse` blocks of `*.mockserver.json` files (augmenting, not replacing, the bundled
+  JSON Schema completion).
+- **JetBrains plugin (`mockserver-jetbrains`): contract/resiliency test runner.** A new **Run Contract Test**
+  action — in the Tools menu and the editor / project-view context menus on a spec file — runs an OpenAPI
+  contract test of a live service against the active OpenAPI/Swagger spec via `PUT /mockserver/contractTest` and
+  opens a per-operation pass/fail report (with validation errors) in a new editor tab, mirroring the VS Code
+  extension's `mockserver.contractTest` command.
+- **JetBrains plugin (`mockserver-jetbrains`): stream-frame breakpoint editing.** The in-IDE HTTP Debugger now
+  handles paused stream frames (`PausedStreamFrameDTO`, RESPONSE_STREAM / INBOUND_STREAM): they appear in a new
+  **Live Streams** list where each can be Continued, Modified (with a new Base64 payload), or Dropped, replying
+  over the frozen callback WebSocket with a `StreamFrameDecisionDTO` — completing parity with the dashboard and
+  the VS Code extension's stream-frame contract.
 - **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
   `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
   `closest match diff:` block for the specific sequence step that failed to match — listing which fields
