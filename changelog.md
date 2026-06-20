@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matchers. The `responseBodyContains` regex is compiled at registration; an invalid regex or an inverted
   status range returns `400`. The fields are accepted by `PUT /mockserver/breakpoint/matcher`, echoed by the
   register/list endpoints, and back-compatible (purely additive).
+- **CLI `--watch` live-reload flag and `mockserver demo` subcommand** (`mockserver-netty`). The `run`
+  subcommand (and its bare/legacy forms) gains `--watch`, which enables live-reload of expectations when the
+  initializer/expectations file (from `--init` / `--openapi`) changes, without a restart (~5s poll). It is a
+  thin CLI surface over the existing `mockserver.watchInitializationJson` property, so the equivalent
+  `MOCKSERVER_WATCH_INITIALIZATION_JSON=true` / `-Dmockserver.watchInitializationJson=true` forms still apply.
+  A new `mockserver demo` subcommand starts a server pre-loaded with a small set of example expectations
+  (`GET /hello`, `GET /users/{id}`) and prints a getting-started URL, the dashboard URL, and a sample `curl`
+  for instant onboarding. Both are additive and backward-compatible.
 - **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
   `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
   time a stored drift record meets the configured severity threshold, carrying the drift record as JSON

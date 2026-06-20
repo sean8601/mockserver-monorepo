@@ -45,10 +45,11 @@ flowchart TD
 | `proxy` | `Main.ProxyCommand` | Syntactic sugar — starts MockServer with `--proxy-to` set, delegates to `RunCommand.run()` |
 | `openapi` | `Main.OpenApiCommand` | Start MockServer, pre-load expectations from an OpenAPI spec; delegates to `RunCommand.run()` |
 | `import` | `Main.ImportCommand` | Load expectations from a JSON file into an **already-running** MockServer (connects as a `MockServerClient`; does not start a server) |
+| `demo` | `Main.DemoCommand` | Start MockServer (default port 1080), seed a small set of example expectations (`GET /hello`, `GET /users/{id}`) via `MockServerClient`, then print a getting-started URL, the dashboard URL, and a sample `curl`; delegates to `RunCommand.run()` then `seedDemoExpectations()` / `printDemoInstructions()` (only when the server actually started) |
 | `version` | `Main.VersionCommand` | Print `Version.getVersion()` and exit |
 | `help` | `CommandLine.HelpCommand` (picocli built-in, registered in `@Command(subcommands = {...})`) | Print usage for the top command or any subcommand — `mockserver help` or `mockserver help <subcommand>` |
 
-`ui`, `proxy` and `openapi` are thin wrappers: they construct a `RunCommand` instance, populate the relevant fields (including any `-D` system properties), and call `runCmd.run()`. All actual wiring of `ConfigurationProperties` and server startup lives in `RunCommand`. `ui` additionally opens `http://localhost:<firstPort>/mockserver/dashboard` after startup (only when the server actually started).
+`ui`, `proxy`, `openapi` and `demo` are thin wrappers: they construct a `RunCommand` instance, populate the relevant fields (including any `-D` system properties), and call `runCmd.run()`. All actual wiring of `ConfigurationProperties` and server startup lives in `RunCommand`. `ui` additionally opens `http://localhost:<firstPort>/mockserver/dashboard` after startup (only when the server actually started); `demo` additionally seeds example expectations and prints getting-started instructions (also gated on `runCmd.started`, so a no-port/validation/bind failure does not print misleading guidance). `demo` registers its expectations with a plain `MockServerClient` and deliberately does **not** use try-with-resources — `MockServerClient.close()` sends a stop request, which would shut the demo server down immediately.
 
 ### `--print-config` (top-level diagnostic)
 
@@ -65,6 +66,7 @@ flowchart TD
 | `--proxy-to` | — | `mockserver.proxyRemoteHost` + `mockserver.proxyRemotePort` (parsed) | `host:port`, `https://host[:port]`, or `http://host[:port]`; `https://` infers port 443, `http://` infers port 80; a bare hostname with no port and no scheme is rejected with a clear error message |
 | `--openapi` | — | `mockserver.initializationOpenAPIPath` | URL or file path |
 | `--init` | — | `mockserver.initializationJsonPath` | File path or glob |
+| `--watch` | — | `mockserver.watchInitializationJson` = `true` | Live-reload expectations when the initializer/expectations file(s) (from `--init` / `--openapi`) change, without a restart (~5s poll). Thin surface over the existing property; also `MOCKSERVER_WATCH_INITIALIZATION_JSON=true` / `-Dmockserver.watchInitializationJson=true`. Set before startup so the `ExpectationFileWatcher` is created. |
 | `--persist` | — | `mockserver.persistExpectations` = `true` + `mockserver.persistedExpectationsPath` | |
 | `--log-level` | `-l` | `mockserver.logLevel` | |
 | `--dev` | — | `mockserver.devMode` | Developer-friendly defaults: `maxLogEntries=1000`, `maxExpectations=1000`. Explicit config overrides dev defaults. Also available as `MOCKSERVER_DEV_MODE=true` or `-Dmockserver.devMode=true`. |
@@ -134,7 +136,7 @@ The logic (in `Main.preprocessArguments`):
 if args is empty                                        → return ["run"]
 if args[0] == "-help"                                   → rewrite args[0] to "--help"
 if args[0] == "-version"                                → rewrite args[0] to "--version"
-if args[0] ∈ {run, ui, proxy, openapi, import, version, help} → return args unchanged
+if args[0] ∈ {run, ui, proxy, openapi, import, demo, version, help} → return args unchanged
 if args[0] ∈ {--help, -h, --version, -V}                → return args unchanged
 otherwise                                                → return ["run"] + args
 ```

@@ -42,6 +42,7 @@ import static org.slf4j.event.Level.*;
         "  mockserver proxy --to https://api.example.com",
         "  mockserver openapi ./petstore.yaml -p 1080",
         "  mockserver import ./expectations.json -p 1080",
+        "  mockserver demo -p 1080",
         "  mockserver -p 1080",
         "",
         "Legacy flags (-serverPort, -proxyRemotePort, -proxyRemoteHost, -logLevel) are supported for backward compatibility."
@@ -52,6 +53,7 @@ import static org.slf4j.event.Level.*;
         Main.ProxyCommand.class,
         Main.OpenApiCommand.class,
         Main.ImportCommand.class,
+        Main.DemoCommand.class,
         Main.VersionCommand.class,
         CommandLine.HelpCommand.class,
     }
@@ -215,7 +217,7 @@ public class Main {
         if (arguments == null || arguments.length == 0) {
             return new String[]{"run"};
         }
-        Set<String> subcommands = Set.of("run", "ui", "proxy", "openapi", "import", "version", "help");
+        Set<String> subcommands = Set.of("run", "ui", "proxy", "openapi", "import", "demo", "version", "help");
         // Top-level help/version flags should NOT be prepended with "run"
         Set<String> topLevelFlags = Set.of("--help", "-h", "--version", "-V");
         String first = arguments[0];
@@ -461,6 +463,9 @@ public class Main {
         @Option(names = "--dev", description = "Enable developer-friendly defaults: reduced memory caps (maxLogEntries=1000, maxExpectations=1000) for laptop/test-suite use. Explicit config (system property, env var, or properties file) overrides dev-mode defaults.")
         boolean dev;
 
+        @Option(names = "--watch", description = "Watch the initializer/expectations file(s) (from --init / --openapi) and live-reload expectations when they change, without a restart (~5s poll). Equivalent to MOCKSERVER_WATCH_INITIALIZATION_JSON=true or -Dmockserver.watchInitializationJson=true.")
+        boolean watch;
+
         @Option(names = "--validate-openapi", description = "Validate forwarded/proxied requests and responses against the given OpenAPI spec (URL, file path, or inline payload). Violations are logged; combine with --validate-enforce to block non-conformant traffic.")
         String validateOpenapi;
 
@@ -517,6 +522,11 @@ public class Main {
                 // Wire --dev (apply early so explicit config overrides dev defaults)
                 if (dev) {
                     ConfigurationProperties.devMode(true);
+                }
+
+                // Wire --watch (must be set before startup so the expectation file watcher is created)
+                if (watch) {
+                    ConfigurationProperties.watchInitializationJson(true);
                 }
 
                 // Wire --openapi
@@ -740,6 +750,97 @@ public class Main {
                 systemErr.flush();
             }
         }
+    }
+
+    @Command(
+        name = "demo",
+        description = "Start MockServer pre-loaded with a small set of example expectations and print a getting-started URL and sample curl.",
+        mixinStandardHelpOptions = true
+    )
+    static class DemoCommand implements Runnable {
+
+        @Option(names = {"-p", "--port"}, description = "Port(s) to listen on (comma-separated list). Defaults to 1080 if not specified.")
+        String port;
+
+        @Option(names = "-D", paramLabel = "<key=value>", description = "Set a JVM system property before startup, e.g. -Dmockserver.metricsEnabled=true (repeatable). Any system property is accepted; use mockserver.* keys for MockServer configuration.")
+        Map<String, String> systemProperties = new LinkedHashMap<>();
+
+        @Option(names = {"-l", "--log-level"}, description = "Log level.")
+        String logLevel;
+
+        @Option(names = "--dev", description = "Enable developer-friendly defaults.")
+        boolean dev;
+
+        @Override
+        public void run() {
+            String resolvedPort = isNotBlank(port) ? port : "1080";
+            RunCommand runCmd = new RunCommand();
+            runCmd.port = resolvedPort;
+            runCmd.logLevel = logLevel;
+            runCmd.dev = dev;
+            runCmd.systemProperties = systemProperties;
+            runCmd.run();
+            // Only seed examples and print instructions if the server actually started — run()
+            // handles (and prints) no-port, validation, and bind failures internally, so a failed
+            // start must not produce misleading "try this curl" guidance pointing at nothing.
+            if (runCmd.started) {
+                Integer[] localPorts = INTEGER_STRING_LIST_PARSER.toArray(resolvedPort);
+                if (localPorts.length > 0) {
+                    seedDemoExpectations(localPorts[0]);
+                    printDemoInstructions(localPorts[0]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Register a tiny set of example expectations so that a fresh `mockserver demo` immediately
+     * answers requests — the onboarding equivalent of "hello world". Best-effort: a seeding
+     * failure is logged and the server still runs (the user can add their own expectations).
+     */
+    static void seedDemoExpectations(int port) {
+        // NB: do NOT use try-with-resources — MockServerClient.close() sends a stop request that
+        // would shut the demo server down immediately. Just register the expectations and leave
+        // the server running.
+        try {
+            MockServerClient client = new MockServerClient("localhost", port);
+            client
+                .when(org.mockserver.model.HttpRequest.request().withMethod("GET").withPath("/hello"))
+                .respond(
+                    org.mockserver.model.HttpResponse.response()
+                        .withStatusCode(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"message\":\"Hello from MockServer!\"}")
+                );
+            client
+                .when(org.mockserver.model.HttpRequest.request().withMethod("GET").withPath("/users/{id}")
+                    .withPathParameter("id", "[0-9]+"))
+                .respond(
+                    org.mockserver.model.HttpResponse.response()
+                        .withStatusCode(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":1,\"name\":\"Example User\"}")
+                );
+        } catch (Throwable throwable) {
+            MOCK_SERVER_LOGGER.logEvent(
+                new LogEntry()
+                    .setType(SERVER_CONFIGURATION)
+                    .setLogLevel(WARN)
+                    .setMessageFormat("exception while seeding demo expectations:{}")
+                    .setThrowable(throwable)
+            );
+        }
+    }
+
+    static void printDemoInstructions(int port) {
+        String base = "http://localhost:" + port;
+        systemOut.println(NEW_LINE + "MockServer demo is running with example expectations." + NEW_LINE);
+        systemOut.println("  Getting started: " + base + "/hello");
+        systemOut.println("  Dashboard UI:    " + base + "/mockserver/dashboard" + NEW_LINE);
+        systemOut.println("  Try it:");
+        systemOut.println("    curl " + base + "/hello");
+        systemOut.println("    curl " + base + "/users/1" + NEW_LINE);
+        systemOut.flush();
     }
 
     @Command(

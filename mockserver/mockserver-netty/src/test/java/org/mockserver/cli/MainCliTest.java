@@ -14,8 +14,10 @@ import org.mockserver.echo.http.EchoServer;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpResponse;
+import org.mockserver.persistence.FileWatcher;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.socket.PortFactory;
+import org.mockserver.test.Retries;
 import org.mockserver.version.Version;
 import org.slf4j.event.Level;
 
@@ -1217,6 +1219,183 @@ public class MainCliTest {
             assertThat("devMode should be false by default", ConfigurationProperties.devMode(), is(false));
         } finally {
             stopQuietly(mockServerClient);
+        }
+    }
+
+    // ---- --watch live-reload flag ----
+
+    @Test
+    public void shouldListWatchInRunHelp() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("run", "--help");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("run help should list --watch", output, containsString("--watch"));
+        } finally {
+            Main.systemOut = originalOut;
+        }
+    }
+
+    @Test
+    public void shouldEnableWatchInitializationJsonViaWatchFlag() throws IOException {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+        boolean originalWatch = ConfigurationProperties.watchInitializationJson();
+        String originalInit = ConfigurationProperties.initializationJsonPath();
+        File initFile = tempFolder.newFile("watch-init-flag.json");
+        java.nio.file.Files.write(initFile.toPath(), "[]".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            Main.main("run", "-p", String.valueOf(freePort),
+                "--init", initFile.getAbsolutePath(), "--watch");
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            assertThat("--watch should enable watchInitializationJson",
+                ConfigurationProperties.watchInitializationJson(), is(true));
+        } finally {
+            ConfigurationProperties.watchInitializationJson(originalWatch);
+            ConfigurationProperties.initializationJsonPath(originalInit != null ? originalInit : "");
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
+    public void shouldLiveReloadExpectationsWhenWatchedFileChanges() throws Exception {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+        boolean originalWatch = ConfigurationProperties.watchInitializationJson();
+        String originalInit = ConfigurationProperties.initializationJsonPath();
+        long originalPollPeriod = FileWatcher.getPollPeriod();
+        TimeUnit originalPollPeriodUnits = FileWatcher.getPollPeriodUnits();
+        FileWatcher.setPollPeriod(200);
+        FileWatcher.setPollPeriodUnits(MILLISECONDS);
+        File initFile = tempFolder.newFile("watch-reload-init.json");
+        java.nio.file.Files.write(initFile.toPath(), "[]".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            Main.main("run", "-p", String.valueOf(freePort),
+                "--init", initFile.getAbsolutePath(), "--watch");
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            assertThat("no expectation before the watched file is updated",
+                mockServerClient.retrieveActiveExpectations(request().withPath("/watched")).length, is(0));
+
+            // Modify the watched initializer file — the watcher should pick up the change and reload.
+            String updated = "[ { \"httpRequest\": { \"path\": \"/watched\" }," +
+                " \"httpResponse\": { \"body\": \"reloaded_body\" } } ]";
+            java.nio.file.Files.write(initFile.toPath(), updated.getBytes(StandardCharsets.UTF_8),
+                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING, java.nio.file.StandardOpenOption.SYNC);
+
+            Retries.tryWaitForSuccess(() -> {
+                try {
+                    java.nio.file.Files.probeContentType(initFile.toPath());
+                } catch (IOException ignore) {
+                    // best-effort nudge for the filesystem to flush the change
+                }
+                assertThat("watched-file change should live-reload the expectation",
+                    mockServerClient.retrieveActiveExpectations(request().withPath("/watched")).length, is(1));
+            }, 50, 1000, MILLISECONDS);
+
+            HttpResponse httpResponse = new NettyHttpClient(configuration(), new MockServerLogger(), clientEventLoopGroup, null, false)
+                .sendRequest(
+                    request().withHeader(HOST.toString(), "127.0.0.1:" + freePort).withPath("/watched"),
+                    10, TimeUnit.SECONDS
+                );
+            assertThat("reloaded expectation responds", httpResponse.getBodyAsString(), is("reloaded_body"));
+        } finally {
+            ConfigurationProperties.watchInitializationJson(originalWatch);
+            ConfigurationProperties.initializationJsonPath(originalInit != null ? originalInit : "");
+            FileWatcher.setPollPeriod(originalPollPeriod);
+            FileWatcher.setPollPeriodUnits(originalPollPeriodUnits);
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    // ---- demo subcommand ----
+
+    @Test
+    public void shouldNotPrependRunWhenDemoSubcommandPresent() {
+        String[] result = Main.preprocessArguments("demo", "-p", "1080");
+        assertThat(result[0], is("demo"));
+        assertThat(result.length, is(3));
+    }
+
+    @Test
+    public void shouldListDemoInTopLevelHelp() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("--help");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("top-level help should list the demo subcommand", output, containsString("demo"));
+        } finally {
+            Main.systemOut = originalOut;
+        }
+    }
+
+    @Test
+    public void shouldStartDemoSeedExamplesAndPrintInstructions() throws Exception {
+        final int freePort = PortFactory.findFreePort();
+        MockServerClient mockServerClient = new MockServerClient("127.0.0.1", freePort);
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("demo", "-p", String.valueOf(freePort));
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("mockServerClient.hasStarted", mockServerClient.hasStarted(), is(true));
+            // Instructions printed
+            assertThat("demo prints a getting-started URL",
+                output, containsString("localhost:" + freePort + "/hello"));
+            assertThat("demo prints a sample curl",
+                output, containsString("curl http://localhost:" + freePort + "/hello"));
+            assertThat("demo prints the dashboard URL",
+                output, containsString("/mockserver/dashboard"));
+
+            // Example expectations seeded and serving
+            HttpResponse hello = new NettyHttpClient(configuration(), new MockServerLogger(), clientEventLoopGroup, null, false)
+                .sendRequest(
+                    request().withHeader(HOST.toString(), "127.0.0.1:" + freePort).withPath("/hello"),
+                    10, TimeUnit.SECONDS
+                );
+            assertThat("demo /hello example responds",
+                hello.getBodyAsString(), containsString("Hello from MockServer!"));
+
+            HttpResponse user = new NettyHttpClient(configuration(), new MockServerLogger(), clientEventLoopGroup, null, false)
+                .sendRequest(
+                    request().withHeader(HOST.toString(), "127.0.0.1:" + freePort).withPath("/users/1"),
+                    10, TimeUnit.SECONDS
+                );
+            assertThat("demo /users/{id} example responds",
+                user.getBodyAsString(), containsString("Example User"));
+        } finally {
+            Main.systemOut = originalOut;
+            stopQuietly(mockServerClient);
+        }
+    }
+
+    @Test
+    public void shouldPrintHelpForDemoSubcommand() throws UnsupportedEncodingException {
+        PrintStream originalOut = Main.systemOut;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Main.systemOut = new PrintStream(baos, true, StandardCharsets.UTF_8.name());
+
+            Main.main("help", "demo");
+
+            String output = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+            assertThat("demo help should list the --port option", output, containsString("--port"));
+            assertThat("demo help should describe the example expectations",
+                output, containsString("example expectations"));
+        } finally {
+            Main.systemOut = originalOut;
         }
     }
 }
