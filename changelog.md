@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+
 - **Dashboard UI (`mockserver-ui`): forced the transitive `dompurify` dependency to `3.4.11`** via an npm
   `overrides` entry, resolving all 16 open Dependabot advisories. The `monaco-editor` body-matcher editor
   (added recently) bundles a pinned `dompurify@3.2.7`; the override hoists every copy to `3.4.11`. Advisories
@@ -15,151 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-hpcv-96wg-7vj8, GHSA-r47g-fvhr-h676, GHSA-h7mw-gpvr-xq4m, GHSA-crv5-9vww-q3g8, GHSA-v9jr-rg53-9pgp,
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
+
 ### Added
-- **Response-content conditional breakpoints** (`mockserver-core`). A `RESPONSE`-phase breakpoint matcher now
-  accepts optional `responseStatusCodeMin`/`responseStatusCodeMax` (inclusive status-code range) and
-  `responseBodyContains` (regex searched within the response body) fields, so a breakpoint can pause only when
-  the response looks a certain way — e.g. break only on `5xx` responses or on a body containing a particular
-  message. When set, the breakpoint pauses only if the response satisfies all configured conditions; absent
-  fields preserve the previous behaviour (pause on every matching response). Conditions are evaluated only at
-  the response phase (the request/stream paths are unchanged), via the new
-  `BreakpointMatcherRegistry.findResponseMatch`; a matcher whose condition fails falls through to later
-  matchers. The `responseBodyContains` regex is compiled at registration; an invalid regex or an inverted
-  status range returns `400`. The fields are accepted by `PUT /mockserver/breakpoint/matcher`, echoed by the
-  register/list endpoints, and back-compatible (purely additive).
-- **CLI `--watch` live-reload flag and `mockserver demo` subcommand** (`mockserver-netty`). The `run`
-  subcommand (and its bare/legacy forms) gains `--watch`, which enables live-reload of expectations when the
-  initializer/expectations file (from `--init` / `--openapi`) changes, without a restart (~5s poll). It is a
-  thin CLI surface over the existing `mockserver.watchInitializationJson` property, so the equivalent
-  `MOCKSERVER_WATCH_INITIALIZATION_JSON=true` / `-Dmockserver.watchInitializationJson=true` forms still apply.
-  A new `mockserver demo` subcommand starts a server pre-loaded with a small set of example expectations
-  (`GET /hello`, `GET /users/{id}`) and prints a getting-started URL, the dashboard URL, and a sample `curl`
-  for instant onboarding. Both are additive and backward-compatible.
-- **Dashboard UI (`mockserver-ui`): before→after preview diff when creating or editing a mock.** The
-  "Capture as Mock" dialog now has a **Preview diff** tab that renders the expectation JSON that will be
-  created (an empty object on the left, the generated mock on the right), so you can see what mock will be
-  created from a captured request before confirming. In the Composer's Review step, editing an existing
-  expectation now shows a side-by-side diff of the loaded expectation versus the outgoing JSON, so the
-  changes your edits will apply are visible before you submit. Both reuse a new read-only Monaco
-  `JsonDiffViewer` component (locally bundled — no runtime CDN), consistent with the existing `JsonEditor`.
-- **Client capability matrix and per-language test fixtures** (docs). New page `client_compatibility.html` in the Getting Started section: an 8x8 matrix of feature coverage across all clients (expectations, verify, OpenAPI, LLM mock builder, MCP mock builder, test fixture/auto-cleanup, retrieveAsCode, Testcontainers) verified against client source, plus idiomatic test-fixture snippets for all eight languages (Java JUnit 5 extension, Node `Symbol.asyncDispose`, Python pytest `conftest.py`, Ruby RSpec shared context, Go `MockServerT`/`t.Cleanup`, .NET `MockServerFixture`/`IAsyncLifetime`, Rust manual reset, PHP `MockServerTestTrait`).
+
+#### AI, LLM & agent protocols (LLM / MCP / A2A)
 - **Agent framework recipes** (docs). New page `ai_agent_frameworks.html` in the AI Integration section: minimal accurate recipes for pointing LlamaIndex (`Settings.llm = OpenAI(api_base=...)`) and the OpenAI Agents SDK (`set_default_openai_client(AsyncOpenAI(base_url=...))`) at MockServer to mock LLM provider calls during testing, with env-var alternatives and a proxy fallback section for frameworks without a base-URL override.
-- **Auth in the generated Postman & Bruno API collections.** The collection generator
-  (`scripts/collections/generate_collections.py`) now emits collection-level authentication instead of
-  `auth: none`. It reads `components.securitySchemes` from the OpenAPI spec (bearer / API key / basic) and,
-  when the spec declares none, falls back to a JWT **bearer token** — the control plane's
-  `controlPlaneJWTAuthenticationRequired` scheme. Every request inherits the collection auth, and the
-  credential is a placeholder variable (`bearerToken` / `apiKey` / `username`+`password`) left blank, so the
-  collections still work unchanged against an unauthenticated MockServer. A new Buildkite infra step
-  regenerates the collections and fails the build if the committed `examples/postman/**` and
-  `examples/bruno/**` drift from the OpenAPI spec.
 
-- **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
-  `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
-  time a stored drift record meets the configured severity threshold, carrying the drift record as JSON
-  (`{"event":"mockserver.drift.alert","epochTimeMs":...,"severity":...,"drift":{...}}`). Off by default and
-  fully fail-soft — a failed, slow, unreachable, or misconfigured endpoint can never affect drift analysis
-  or the served response. Severity uses the LLM-assigned `semanticSeverity` when available, otherwise a
-  structural fallback by drift type, and fires at or above `mockserver.driftAlertSeverityThreshold` (default
-  `BREAKING`). A per-signature (`expectationId|driftType|field`) cooldown
-  (`mockserver.driftAlertCooldownMs`, default 60s) de-dups recurring drifts. The outbound sender is injected
-  from the Netty HTTP client (core does not depend on it), mirroring the load-scenario orchestrator wiring.
-- **Control-plane audit logging** (`mockserver-core`). An opt-in, append-only, bounded, in-memory audit log of
-  control-plane *mutations* (who/what/when/where/outcome) so a shared MockServer can run with accountability for
-  who changed mock state. Off by default (`controlPlaneAuditEnabled`); when disabled, control-plane operations
-  behave byte-for-byte identically. Entries record redacted, structural metadata only — never request headers or
-  bodies — with the path's query string dropped; the best-effort principal (unverified JWT `sub` or mTLS CN, else
-  `anonymous`) never stores the raw token. Retrieve via `GET /mockserver/audit` (`?limit=<n>`, default 200, cap
-  1000), auth-gated like other control-plane endpoints; cleared on reset. Bounded by `controlPlaneAuditMaxEntries`
-  (default 1000, fixed at startup); reads are excluded unless `controlPlaneAuditReads=true`. Verified identity and
-  true per-operation outcomes are deferred to a later release.
-- **General-purpose rate limiting (`rateLimit` expectation clause)** (`mockserver-core`). A protocol-agnostic
-  `rateLimit` clause on an expectation (sibling of `chaos`) returns a deterministic `429` with `Retry-After` and
-  `X-RateLimit-Limit/Remaining/Reset` headers once a matched expectation exceeds its configured rate — so a test
-  can exercise a client's backoff/retry logic without wrapping a chaos profile. Supports `fixed_window` and
-  `token_bucket` algorithms, a named shared counter (multiple expectations can share one limit), and an
-  overridable error status. Off by default (no clause = no behaviour); the named-counter store is node-local and
-  bounded by `rateLimitMaxNamedQuotas`.
-- **Retry/backoff recovery primitive — "fail N times then succeed"** (`mockserver-core`). A new opt-in
-  `recoverAfter` clause on `httpResponse` returns a failure response (configurable `failResponse`, default
-  `503`) for the first `failTimes` matches and then the configured success response — so a test can
-  deterministically exercise a client's retry/backoff logic. An optional `idempotencyHeader` scopes the
-  attempt counter per request-header value (distinct keys each recover independently); without it the counter
-  is per-expectation. Independent of `Times`. A response without `recoverAfter` is unchanged; the keyed counter
-  registry is bounded (LRU eviction) to prevent unbounded growth.
-- **API-driven load generation via Load Scenarios** (`mockserver-core`, `mockserver-netty`). A new opt-in
-  control plane (`PUT/GET/DELETE /mockserver/loadScenario`) drives outbound traffic at a target: a
-  `LoadScenario` is an ordered list of request steps (modelled on a verification sequence) with per-step
-  think-time (the existing `Delay` model, including jitter distributions) and a ramp `LoadProfile`
-  (`CONSTANT` or `LINEAR` virtual-user count over a duration). Request fields are template-rendered per
-  iteration with a new `iteration` context object (`iteration.index`/`vuId`/`vuIteration`/`elapsedMillis`)
-  alongside the existing `faker`/`uuid`/`scenario` helpers, so data varies across iterations. Runs in-process
-  on a non-blocking scheduler that fires through the existing forward HTTP client; results feed the metrics
-  histograms and the SLO sample store, so a load run can be asserted with `verifySLO`. Off by default
-  (`loadGenerationEnabled`) and bounded by hard caps on virtual users, in-flight requests, request rate,
-  duration, and steps to prevent a scenario overloading the instance serving mocks.
-- **Richer WASM matcher ABI, authoring SDK, and a `wasm/test` endpoint** (`mockserver-core`). WASM custom-rule
-  modules can now read the request **method, path and headers** in addition to the body. A module that exports
-  `match_request(ptr, len)` receives a UTF-8 JSON envelope
-  (`{"method","path","headers":{name:[values]},"body"}`) instead of just the body; MockServer prefers
-  `match_request` when present and falls back to the legacy body-only `match(ptr, len)` export, so existing
-  body-only modules keep working unchanged. A new dependency-free Rust authoring crate
-  `mockserver-wasm-sdk` (`examples/wasm/sdk-rust/`) gives module authors typed accessors
-  (`Request::method/path/header/body`) and an `export_match_request!` macro, with a sample rule in
-  `examples/wasm/rust-request/` that matches on method + path + header. A new
-  **`POST /mockserver/wasm/test`** control-plane endpoint runs a module (supplied inline as base64 `module`, or
-  by `moduleName` for an already-uploaded module) against a sample `request` and returns `{ "matched": true|false }`,
-  so IDEs/users can validate a module without creating a live expectation. The endpoint requires `wasmEnabled=true`
-  (otherwise 403) and is fail-closed (invalid modules report `matched: false`).
-- **Timeout-aware eventual and negative-within-timeout verification** (`mockserver-client-java`). The Java
-  client gained two additive, back-compatible verification styles for testing **asynchronous** applications
-  (fire-and-forget sends, background workers) without an external retry helper:
-  - **Eventual verification** — `verify(RequestDefinition, VerificationTimes, Duration timeout)` and
-    `verify(Verification, Duration timeout)` poll the event log, re-running the verification with a small
-    backoff (100 ms) until it passes or the timeout expires, throwing the last failure on timeout. This
-    replaces the single-snapshot semantics of the existing `verify(...)` for cases where the request may not
-    have reached MockServer yet.
-  - **Negative-within-timeout verification** — `verifyNever(RequestDefinition, Duration window)` and
-    `verifyNever(Verification, Duration window)` assert the condition stays **unmet** for the whole window
-    (e.g. "no request was made within 2 seconds"), failing the moment a matching request is observed and
-    returning normally if the window elapses with no match.
-
-  Both are implemented purely client-side (a poll loop over the standard `PUT /mockserver/verify` endpoint);
-  no server change is involved. The existing snapshot `verify(...)` methods are unchanged.
-- **Generate a schema-valid response body from an inline JSON Schema** (`mockserver-core`). An HTTP response
-  can now carry a plain inline [JSON Schema](https://json-schema.org) (not a full OpenAPI document) via a new
-  `generateFromSchema` response field (`HttpResponse.withGenerateFromSchema(...)` in Java, or the
-  `generateFromSchema` expectation-JSON field). At response time MockServer synthesizes a schema-valid JSON body
-  from it, reusing the same example-generation engine used for OpenAPI responses, so the generated body honours
-  `type`, `required`, `enum`, `default`, arrays and nested objects. This is additive and fully back-compatible:
-  it only fires when the response has no explicit body (an explicit `body` always wins), and a schema that cannot
-  be parsed leaves the response body unset (logged at WARN) rather than failing the request. Inline-schema
-  `$ref` resolution follows the OpenAPI-spec trust model (control-plane, remote refs resolved), not the
-  `jsonSchemaAllowRemoteRefs` matching-path model. Lets you return realistic, type-correct mock data from a bare
-  schema without hand-authoring response JSON or attaching a whole OpenAPI spec.
-- **Opt-in OpenAPI request validation during mock matching** (`mockserver-core`). When a request is matched by
-  an expectation created from an OpenAPI spec (`Expectation.when(specUrlOrPayload, operationId)` /
-  `openAPI(...)`), the incoming request can now be validated against that spec before the matched action is
-  dispatched. Enable it with the new `validateRequestsAgainstOpenApiSpec` flag
-  (`Configuration.validateRequestsAgainstOpenApiSpec(true)`, the `mockserver.validateRequestsAgainstOpenApiSpec`
-  system property, or the `MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC` environment variable). When a
-  matched request violates the spec (e.g. a malformed or missing request body), MockServer rejects it with a
-  **400** describing the violations and logs an `OPENAPI_REQUEST_VALIDATION_FAILED` event, instead of serving
-  the mock response. Previously OpenAPI request validation only ran on the proxy/forward path
-  (`validateProxyOpenAPISpec`). The flag is **off by default and fully back-compatible**: with it unset, or for
-  expectations not backed by an OpenAPI spec, behaviour is exactly as before. The validation runs off the Netty
-  event loop, mirroring the validation-proxy request path.
-- **Regex path capture groups exposed to response/forward templates** (`mockserver-core`). When an
-  expectation matches a request path with a regular expression containing capture groups, the captured
-  values are now available to Mustache, Velocity and JavaScript templates via two new request-model
-  fields: `request.pathGroups` (the numbered groups, 1&#8209;based aligned with `java.util.regex` group
-  numbering — index `0` is the whole match, index `1` the first capture group) and
-  `request.namedPathGroups` (Java named groups `(?<name>...)`, keyed by name). For example a path matcher
-  `"/users/(\\d+)/orders/(\\w+)"` lets a template echo `{{ request.pathGroups.1 }}` (Mustache),
-  `$!request.pathGroups[1]` (Velocity) or `request.pathGroups[1]` (JavaScript). The groups are populated
-  on a successful data-plane match only and are additive and fully back-compatible: existing template
-  fields are unchanged, both new fields are empty when the matched path had no capture groups, and group
-  extraction is best-effort (it never throws and never affects which expectation matches).
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,
@@ -172,98 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fully back-compatible: the default (unset/`false`) keeps the existing fail-soft validate-and-log behaviour
   (diagnostic header only), and the flag has no effect without an `outputSchema`. A blank, absent-text, or
   malformed schema remains a no-op and never produces an enforcement error.
-- **`verifyAll(...)` soft/collecting verification and verify-by-disposition filter** (`mockserver-core`,
-  Java client). Two additive, back-compatible verification ergonomics:
-  - **Soft/collecting verify** — `MockServerClient.verifyAll(Verification...)` runs every supplied
-    verification and, instead of throwing on the first failure (as `verify(...)` does), collects all
-    failures and throws a single `AssertionError` listing every mismatch, so a test sees all failures at
-    once. Passing verifications produce no error.
-  - **Verify by disposition** — `Verification.withDisposition(Disposition.FORWARDED | Disposition.MOCKED)`
-    narrows a request-count verification to only those requests that were forwarded/proxied to an upstream
-    server (`FORWARDED`) or that matched an expectation and received a mocked response (`MOCKED`). When no
-    disposition is set, verification counts all received requests exactly as before. The disposition is
-    serialized through the verify REST path (`disposition` field on the verification JSON) and ignored for
-    response-aware and expectation-id verifications.
-- **JetBrains plugin (`mockserver-jetbrains`): LLM authoring + agent-run call graph (parity with the VS Code
-  extension).** A new **LLM** tool window adds an *httpLlmResponse* expectation builder form
-  (provider/model/path/completion/usage/stream) that opens the result in an editor or loads it straight into the
-  running server, plus an **agent-run call graph** view that fetches the graph through the MCP `explain_agent_run`
-  tool (`POST /mockserver/mcp`) and renders it as Mermaid in the bundled JCEF (Chromium), falling back to the raw
-  Mermaid source when JCEF or the CDN is unavailable. A completion contributor offers curated provider/model/field
-  suggestions inside `httpLlmResponse` blocks of `*.mockserver.json` files (augmenting, not replacing, the bundled
-  JSON Schema completion).
-- **JetBrains plugin (`mockserver-jetbrains`): contract/resiliency test runner.** A new **Run Contract Test**
-  action — in the Tools menu and the editor / project-view context menus on a spec file — runs an OpenAPI
-  contract test of a live service against the active OpenAPI/Swagger spec via `PUT /mockserver/contractTest` and
-  opens a per-operation pass/fail report (with validation errors) in a new editor tab, mirroring the VS Code
-  extension's `mockserver.contractTest` command.
-- **JetBrains plugin (`mockserver-jetbrains`): stream-frame breakpoint editing.** The in-IDE HTTP Debugger now
-  handles paused stream frames (`PausedStreamFrameDTO`, RESPONSE_STREAM / INBOUND_STREAM): they appear in a new
-  **Live Streams** list where each can be Continued, Modified (with a new Base64 payload), or Dropped, replying
-  over the frozen callback WebSocket with a `StreamFrameDecisionDTO` — completing parity with the dashboard and
-  the VS Code extension's stream-frame contract.
-- **SLO resilience verdicts (`mockserver-core`)** — assert pass/fail service-level objectives over observed
-  forwarded traffic. A new opt-in windowed sample store (`sloTrackingEnabled`, off by default; a true no-op on
-  the request path when disabled) records latency + error per forwarded round-trip, and `PUT /mockserver/verifySLO`
-  evaluates `SloCriteria` (latency percentile + error-rate objectives over a `LOOKBACK`/`EXPLICIT` window against
-  optional upstream hosts) and returns a structured `SloVerdict` — `200` PASS / `406` FAIL / `400` when malformed or
-  tracking is disabled. Bounded by `sloWindowMaxSamples` (50000) and `sloWindowRetentionMillis` (600000). Pairs with
-  chaos experiments: drive faults, then assert the system stayed within objectives.
-- **Connection-lifecycle fault injection + preemption simulation** (`mockserver-core`, `mockserver-netty`).
-  Extends the per-host TCP chaos profile with response-path lifecycle faults — mid-response TCP RST
-  (`resetMidResponse`), host-scoped jittered slow-close (`slowCloseDelay`), and HTTP/2 GOAWAY (`http2GoAway`) —
-  configured through the existing `PUT /mockserver/tcpChaos`. Adds a `PUT/GET/DELETE /mockserver/preemption`
-  control plane that simulates a Kubernetes rolling-update / spot-reclaim drain: it cordons new exchanges
-  (HTTP/2 GOAWAY or `503` + `Connection: close`), reports the live in-flight count while draining, and
-  auto-uncordons after a TTL — without stopping the JVM. Destructive RSTs feed the chaos auto-halt
-  circuit-breaker (which now also clears the TCP chaos registry); graceful drain signals do not. Off by
-  default; zero cost on the normal response path when inactive.
-- **Upstream forward retry policy and per-upstream circuit breaker** (`mockserver-core`). Matched
-  FORWARD-class actions can now retry transient upstream failures and fail fast on a dead upstream, both
-  **opt-in and off by default** (existing forward behaviour is unchanged). Retry (`forwardProxyRetryCount`,
-  `forwardProxyRetryBackoffMillis`) re-issues the upstream call on a connection error or a 502/503/504, but
-  only for idempotent methods (GET/HEAD/OPTIONS/PUT/DELETE/TRACE) so a request is never executed twice, with
-  a non-blocking linear back-off. The per-upstream circuit breaker (`forwardProxyCircuitBreakerEnabled`,
-  `forwardProxyCircuitBreakerFailureThreshold`, `forwardProxyCircuitBreakerWindowMillis`) trips open (fail-fast
-  503) after N consecutive failures to a `host:port`, then half-opens after a window to probe recovery. When
-  metrics are enabled the number of currently-open upstreams is exported as the new
-  `mock_server_upstream_circuit_open` Prometheus gauge. Healthy upstreams are evicted from the per-upstream
-  state on success so the breaker's memory stays bounded to currently-degraded upstreams. The breaker state
-  resets on `HttpState.reset()`. All five properties have the usual equivalent system-property /
-  environment-variable / property-file forms.
-- **`mockserver import <file>` CLI subcommand and client `importExpectations(...)` methods.** A new
-  `import` subcommand (`org.mockserver.cli.Main`, `mockserver-netty`) loads a JSON expectations file —
-  the same single-object-or-array format produced by `--persist`, the dashboard export, or
-  `retrieveActiveExpectations(..., Format.JSON)` — into an already-running MockServer:
-  `mockserver import ./expectations.json -p 1080` (`-H/--host` defaults to `localhost`). It connects as a
-  client and upserts each expectation; it does **not** start a server and never sends a shutdown to the
-  target. A missing/invalid file or unreachable server prints a clean error and exits non-zero. The
-  `mockserver-client-java` client gains typed `importExpectations(String json)` and
-  `importExpectationsFromFile(String filePath)` wrapping the same upsert.
-- **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
-  `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
-  `closest match diff:` block for the specific sequence step that failed to match — listing which fields
-  (method/path/headers/body/...) differ from the closest recorded request — exactly as single-request and
-  single-response verification already do. Response-aware sequences (`withResponses(...)`) get the same
-  field-level closest-response diff for the failing step. The diff is diagnostic only and never changes the
-  pass/fail outcome; the existing failure-message format is otherwise unchanged, and when
-  `detailedVerificationFailures` is disabled the message is byte-for-byte the same as before.
-- **Client test-framework fixtures and idiomatic auto-cleanup** across the Go, Node/JS, Ruby, .NET and PHP
-  clients. Each now ships an ergonomic helper that resets the server between tests so recorded requests,
-  expectations and logs do not leak — wrapping the existing `reset()` call, no server change:
-  - **Go** (`mockserver-client-go`): `MockServerT(t, client)` / `NewMockServerT(t, host, port)` register a
-    `t.Cleanup` that calls `Reset()` when the test (and its subtests) finish.
-  - **Node/JS** (`mockserver-client-node`): the client now supports TC39 explicit resource management via
-    `Symbol.asyncDispose` (and `Symbol.dispose`), so `await using client = mockServerClient(...)` resets the
-    server on scope exit; symbols are guarded for older runtimes.
-  - **Ruby** (`mockserver-client-ruby`): `require 'mockserver/rspec'` registers an RSpec shared context
-    (tag `:mockserver`) that provides a fresh, reset `mockserver` client per example.
-  - **.NET** (`mockserver-client-dotnet`): `MockServerFixture`, a reusable xUnit `IAsyncLifetime` fixture that
-    creates a `MockServerClient` and resets before/after each test (usable as a base class or `IClassFixture`).
-  - **PHP** (`mockserver-client-php`): `MockServer\Testing\MockServerTestTrait`, a PHPUnit trait exposing
-    `setUpMockServer()` / `tearDownMockServer()` helpers that reset the server around each test.
-  - **Rust** (`mockserver-client-rust`): already auto-cleans the *spawned* server via `impl Drop for
-    ServerHandle` (kills the launched process on scope exit) — left as-is.
+
 - **A2A mock builder: streaming and push notifications** (`A2aMockBuilder`, `mockserver-client-java`). The builder
   previously hard-coded the agent card's `capabilities.streaming` and `capabilities.pushNotifications` to `false`.
   Two opt-in features now make those advertise `true` when configured (default off = unchanged behaviour):
@@ -274,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `withPushNotifications(webhookUrl)` makes `tasks/pushNotificationConfig/set` echo the registered config and
     makes each `tasks/send` additionally POST the completed task to the configured webhook URL (via an
     override-forwarded-request) while still returning the JSON-RPC task response to the caller.
+
 - **Fluent LLM and MCP mock builders for the Ruby, Go, Rust, .NET and PHP clients**: the idiomatic
   LLM-mocking and MCP-server-mocking builders that previously shipped only in the Node and Python
   clients are now available in all five remaining client libraries. Each client gains an LLM builder
@@ -285,25 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Expectation` struct; Rust `llm`/`mcp` modules returning `serde_json::Value`; .NET `LlmMockBuilder`/
   `McpMockBuilder` under `MockServer.Client`; PHP `MockServer\Llm`/`MockServer\Mcp` builders) and ships
   with unit tests asserting the generated wire JSON.
-- **Saved chaos profile library (save/apply/list/delete chaos experiments by name)**: chaos experiments can now be
-  stored as reusable, named profiles instead of re-authoring the experiment JSON every time. A profile is simply a
-  saved chaos-experiment definition (the same JSON shape `PUT /mockserver/chaosExperiment` accepts) kept under a name.
-  - `PUT /mockserver/chaosExperiment/profiles/{name}` — save (or replace) a profile under `{name}`.
-  - `POST /mockserver/chaosExperiment/apply/{name}` — apply (start) a saved profile by name.
-  - `GET /mockserver/chaosExperiment/profiles` — list saved profile names; `GET /mockserver/chaosExperiment/profiles/{name}`
-    returns one profile's definition.
-  - `DELETE /mockserver/chaosExperiment/profiles/{name}` — remove a saved profile.
 
-  Profiles are persisted in the `StateBackend` CRUD-entity store, so they **survive a server reset** (unlike active
-  chaos, which a reset clears) and **replicate across the fleet** when a clustered backend is configured. The existing
-  `/mockserver/chaosExperiment` endpoint is unchanged. The dashboard Chaos panel gains a **Saved Profiles** list with a
-  "Save as Profile" button (saves the current experiment editor) and one-click apply / delete chips.
-- **Dashboard UI (`mockserver-ui`): "Set breakpoint" from a log row.** Each log entry that carries a request now
-  shows a pause-circle action that pre-fills a new breakpoint matcher from that request's method and path and jumps
-  to the Breakpoints view's structured matcher form (method dropdown, path field, phase checkboxes) — so you can go
-  from "I saw this request in the log" to "pause it next time" in one click. The prefill is a one-shot store hand-off
-  (mirroring the existing edit-expectation and generate-stub hand-offs); an unrecognised HTTP method falls back to
-  "(any)" while still applying the path.
 - **LLM embeddings for Gemini/Ollama/Bedrock, plus rerank mocking (Cohere/Voyage)**: `httpLlmResponse` embeddings
   now work for three more providers (previously only OpenAI/Azure-OpenAI returned a real embedding response):
   - **Gemini** — emits the `embedContent` shape (`{"embedding":{"values":[...]}}`, default 768 dimensions).
@@ -320,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `topN`, in the provider-correct envelope — Cohere `{"results":[...]}`, Voyage
   `{"object":"list","data":[...],"usage":{...}}`. Scores are reproducible when `deterministicFromInput` is set
   (opt-in, matching embeddings).
+
 - **MCP control plane: `prompts/list`, `prompts/get` and `sampling/createMessage`**: MockServer's own MCP server
   (`/mockserver/mcp`, over HTTP/1.1, HTTP/2 and HTTP/3) now advertises the `prompts` and `sampling` capabilities and
   serves three new JSON-RPC methods. `prompts/list` returns the configured prompts (name, description, arguments);
@@ -327,26 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (unknown prompt → JSON-RPC `INVALID_PARAMS`); `sampling/createMessage` returns a deterministic mocked completion in
   the MCP sampling result shape (`role`, `content`, `model`, `stopReason`), echoing the client's preferred model hint
   and an optional `mockResponse` text override. New `McpPromptRegistry` configures the built-in prompt set.
-- **Non-Java clients can now retrieve expectations as generated MockServer SDK setup code**: the Go, Node, Python,
-  Ruby, .NET, PHP and Rust clients gain `retrieveExpectationsAsCode(format)` / `retrieveRecordedExpectationsAsCode(format)`
-  (idiomatic naming per client) that call the existing `PUT /mockserver/retrieve?format=JAVA|JAVASCRIPT|PYTHON|GO|CSHARP|RUBY|RUST|PHP`
-  endpoint and return the generated builder code (the `when(...).respond(...)` setup that recreates the active or
-  recorded expectations) as a string. Previously only the Java client and the dashboard UI exposed code retrieval;
-  the other clients hard-coded `format=JSON`. Server behaviour is unchanged — this only plumbs the existing
-  capability into the client libraries.
-- **Dashboard UI: named-example picker for OpenAPI-backed expectations**. The **Import OpenAPI**
-  dialog now detects when a pasted inline JSON spec declares multiple named response examples for an
-  operation (under the first media type of a response body) and shows a per-operation dropdown to
-  choose which one the generated mock should return. The chosen example is sent to the server as the
-  `operationsAndResponses` value `{ statusCode, exampleName }` (the field the existing
-  `OpenAPIConverter` already honours), so no server change was needed. Because `operationsAndResponses`
-  also acts as an operation filter on the server, picking an example for one operation still imports
-  **all** operations — the picked one with its example and every other operation with the spec default
-  — rather than silently dropping the rest. Operations that declare no `operationId` are preserved too:
-  the dialog replicates the server's synthesized `"<METHOD> <path>"` id (e.g. `GET /pets`) so an id-less
-  operation survives the import even when another operation pins an example. Leaving every picker on **Default** sends no override at all,
-  preserving MockServer's default example selection. URL and YAML specs are sent untouched (no picker),
-  and `$ref`-resolved examples are not surfaced since the dialog inspects the raw pasted JSON.
+
 - **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
   recognises `input_audio` content parts on the request side (so conversation matchers can assert a message
   contains audio, and in what `format` — e.g. `wav`/`mp3`), mirroring the existing image-part recognition;
@@ -355,15 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that when `toolChoice` is `required` and a tool call is configured, the mocked response's `finish_reason` is
   `tool_calls` (non-streaming and streaming). Absent `toolChoice` leaves the existing finish-reason behaviour
   unchanged.
-- **gRPC example synthesis from descriptors**: a matched gRPC expectation with a successful
-  (`grpc-status: 0`) response and *no* hand-authored response body now returns a schema-valid
-  example message synthesized from the loaded proto descriptor's response type, instead of an
-  empty frame. The new `GrpcExampleSynthesizer` walks the message's fields and emits
-  deterministic, type-correct placeholders — scalars, enums (first declared value), nested
-  messages, repeated fields (single element), map entries, `oneof` (first field only), and the
-  protobuf well-known types (`Timestamp`, `Duration`, scalar wrappers, etc.). Recursion is
-  bounded so self-referential schemas terminate safely. Explicit response bodies are always
-  used as-is and never overwritten — synthesis only fills the "no body provided" gap.
+
 - **LLM optimisation export**: proxy your agent's LLM calls through MockServer, then export a one-click
   **optimisation brief** (Markdown, pre-framed for any LLM) or structured **JSON bundle**
   (`LlmOptimisationReport`) from captured traffic. Six deterministic optimisation signals detect
@@ -381,209 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   included, consistent with the dashboard Sessions view. Per-call latency shows the measured
   upstream round-trip (full-stream duration for streaming responses), carried internally and never
   leaked to the client response.
-- **GraphQL and AsyncAPI spec import**: `PUT /mockserver/graphql` imports a GraphQL SDL / introspection document
-  and generates an expectation per root operation type whose responses are schema-valid (built on the GraphQL
-  response synthesizer); `PUT /mockserver/asyncapi/http` turns an AsyncAPI document's channels into GET
-  expectations serving schema-aware example payloads over HTTP. (Raw `.proto` import is deferred — compiled gRPC
-  descriptors still import via `PUT /mockserver/grpc/descriptors`.)
-- **Pact provider-state preconditions on import, verify, and export**: a Pact interaction's `providerState`
-  (v2) / `providerStates` (v3) — the "given ..." precondition — is now preserved on import and mapped onto a
-  MockServer scenario (`scenarioName` = `pact-provider-state`, `scenarioState` = the state name), so an imported
-  interaction only matches once that provider state has been activated. Pact verification activates each
-  interaction's provider state before matching (the provider-state callback) and restores prior state
-  afterwards, and export round-trips the provider state. Stateless interactions are unchanged.
-- **Request-driven (template) response delay**: a `delay` may carry a `template`+`templateType` (`VELOCITY`/
-  `MUSTACHE`) rendered against the request to compute the delay in milliseconds (e.g. larger payloads respond
-  slower). Static and statistical-distribution delays are unchanged; an invalid/blank render falls back safely.
-- **Conditional (if-then-else) request matcher**: a new `conditionalRequestDefinition` (`if`/`then`/`else`
-  request matchers) matches as: if the `if` guard matches require `then`, otherwise require `else` (absent
-  `else` ⇒ match when the guard is false). Existing AND-only matching is unchanged.
-- **JSON Patch / JSON Merge Patch on forwarded responses**: a response modifier may carry a `jsonPatch`
-  (RFC 6902) and/or `jsonMergePatch` (RFC 7386) applied to a forwarded/proxied JSON response body, so a single
-  field of a real upstream response can be changed without replacing the whole body. Non-JSON or absent ⇒ body
-  unchanged.
-- **Editor extensions: in-IDE breakpoint debugger and power-user panels**: the VS Code and JetBrains extensions
-  add a debugger over the breakpoint callback WebSocket (pause/inspect/Modify/Continue/Abort on requests and
-  responses flowing through MockServer), drift quick-fixes, code-aware run gutters, and chaos/contract panels.
-- **Accept-header content-negotiation matching**: a header matcher value may use an opt-in `accept:<media-type>`
-  directive that matches when the request's `Accept` header finds the media type acceptable per RFC 7231 —
-  honouring q-weights (`q=0` excludes), `type/*` and `*/*` wildcards, and specificity/preference ordering.
-  Existing exact/regex header matching is unchanged when the directive is absent.
-- **Conditional and chainable response modifiers**: an `httpOverrideForwardedRequest` / forward-template response
-  modifier may now carry a `condition` (gate on exact `statusCode`, `statusCodeRange` class range,
-  `responseHasHeader`, or `requestHasHeader`) and/or an ordered `modifiers` chain where each modifier sees the
-  previous one's output. Legacy single-modifier expectations behave byte-for-byte identically.
-- **JSON Patch / JSON Merge Patch on forwarded response bodies**: an `httpOverrideForwardedRequest` /
-  forward-template response modifier may now carry an inline `jsonPatch` (RFC 6902 array of
-  `add`/`remove`/`replace`/`move`/`copy`/`test` operations) and/or `jsonMergePatch` (RFC 7386 object) that is
-  applied to a forwarded/proxied upstream response body when that body is valid JSON — letting you change one
-  field of a real upstream response instead of replacing the whole body. `jsonPatch` runs before
-  `jsonMergePatch`. A non-JSON body, a malformed patch, or a failed `test` operation leaves the body unchanged
-  (the forward never errors), and an absent patch is byte-for-byte unchanged.
-- **gRPC bidi-stream response templating**: a `grpcBidiResponse` message may set `templateType`
-  (`VELOCITY`/`MUSTACHE`) so its `json` is rendered as a response template against the matched inbound message
-  (exposing `request.body`, `jsonPath`, and the `scenario` state helper). Static (no `templateType`) responses
-  are emitted byte-for-byte unchanged.
-- **Editor extensions: author/verify/record against a running server**: the VS Code and JetBrains extensions add
-  scratch-request match analysis (shows whether a request matched and the nearest-miss diff), Verify/Delete
-  actions on `*.mockserver.json` expectations, generate-stubs-from-OpenAPI, and record-to-code (write recorded
-  expectations into a workspace file as JSON or DSL).
-- **VS Code extension: in-IDE HTTP debugger + code-aware integration + power-user panels**: the VS Code extension
-  adds an in-IDE breakpoint debugger over the MockServer callback WebSocket — register a request matcher, receive
-  paused exchanges, and **Continue / Modify / Abort** (Abort is REQUEST-phase only; RESPONSE phase is
-  Continue/Modify), plus per-frame stream editing (Continue/Modify/Drop/Inject/Close). Breakpoints fire only on
-  traffic flowing **through** MockServer (proxied/forwarded/matched-mock). Also: a drift quick-fix lightbulb
-  ("update stub to match upstream") that swaps the stub's value for the live upstream value; run/inspect gutter
-  CodeLens on `new MockServerClient(...)`, `@MockServerSettings`, and Testcontainers `MockServerContainer`
-  usages; `httpLlmResponse` authoring completion; an agent-run call-graph rendered as Mermaid; a chaos status /
-  stop panel; and an OpenAPI contract-test runner with a per-operation pass/fail report. Everything talks only to
-  the configured local MockServer — nothing phones home.
-- **Dashboard: Contract Test and Cluster panels**: two new dashboard tabs. **Contract** runs an OpenAPI spec
-  (URL or inline) against a live service via `PUT /mockserver/contractTest` and renders the report as a
-  pass/fail-per-operation table with per-operation validation errors and a passed/failed summary. **Cluster**
-  reads `GET /mockserver/cluster` and shows the state-backend cluster status (clustered flag, node id,
-  coordinator, named cluster, and a member list with coordinator/local markers), auto-refreshing with a manual
-  refresh; a standalone server reports a single local node.
-- **Dashboard: Monaco code editor with live JSON validation for body matchers**: the Composer's request
-  body-matcher field is now a real Monaco code editor with syntax highlighting and per-type language modes
-  (JSON, XML, GraphQL, plaintext for path/regex expressions). For JSON and JSON-Schema body types it
-  validates live as you type — malformed JSON (and, for the JSON-Schema type, an invalid schema document)
-  is flagged inline with red squiggles plus a short error summary beneath the editor, before you submit.
-  Monaco and its language workers are bundled and served locally by the dashboard (no runtime CDN dependency).
-- **Deterministic fuzzy / similarity body matcher**: a request body matcher `FuzzyBody`
-  (`{"type":"FUZZY","fuzzy":"...","threshold":0.8,"ignoreCase":false}`, DSL `FuzzyBody.fuzzy(...)`) matches when
-  the request body is similar enough to an expected string by a deterministic Jaro-Winkler ratio at or above a
-  configurable threshold (default `0.8`) — a non-LLM alternative to exact/regex body matching.
-- **Response templates: `html`, `csv`, `xpath`, and `yaml` helper functions**: response templates (Velocity /
-  JavaScript / Mustache) gain four new built-in helpers — `html.escape`/`html.unescape`, `csv.parse`/`csv.row`,
-  `xpath.evaluate` (XXE-hardened), and `yaml.toJson`/`yaml.parse` — for shaping response bodies from request
-  data without custom code.
-- **Node client: advanced response builders**: the Node.js client now exposes `respondWithSse`,
-  `respondWithWebSocket`, `respondWithDns`, `respondWithBinary`, and `respondWithGrpcStream` (with TypeScript
-  declarations) so SSE, WebSocket, DNS, raw-binary, and gRPC-stream expectations can be registered from Node,
-  reaching parity with the Java and Python clients (serializer-only additions; the server already accepted these payloads).
-- **Rust client: advanced response-builder naming parity**: the Rust client's fluent `when(...)` chain now
-  exposes `respond_with_sse`, `respond_with_web_socket`, `respond_with_dns`, `respond_with_binary`, and
-  `respond_with_grpc_stream` aliases so SSE, WebSocket, DNS, raw-binary, and gRPC-stream expectations can be
-  registered with method names aligned to the other clients (each delegates to the existing idiomatic
-  `respond_*` methods; serializer payloads are unchanged).
-- **Dashboard: duplicate an expectation + priority column and sort**: the Active Expectations panel now shows a
-  "Duplicate" action on each row that opens the Composer pre-populated with a copy of the expectation (its `id`
-  stripped, so saving creates a brand-new expectation while preserving `priority` and every other field). Each
-  row also shows a `P<n>` chip with the expectation's match `priority` (defaults to `0`; higher wins), and a
-  header "Priority" toggle re-orders the list by priority descending so the match order is visible at a glance.
-- **Dashboard: scenario state-machine diagram**: the Scenario State Machine panel now renders the selected
-  scenario's states and transitions as a live Mermaid `stateDiagram-v2`, with the current state highlighted.
-  The graph is built from what the panel observes — states it has seen and transitions it has watched happen
-  (selecting a scenario, setting a state, scheduling a timed `current → next` transition, or triggering one) —
-  so the state machine takes shape as you drive it. State names are sanitised so they cannot break the diagram
-  (or inject markup), and if Mermaid fails to render the panel falls back to showing the diagram source.
-- **One-command record round-trip**: `GET/PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=...`
-  now accepts an optional `forwardUnmatchedTo=<upstream>` parameter. When supplied, the call arms
-  record-and-forward of unmatched requests to that upstream for the session — subsequent traffic that
-  matches no expectation is forwarded to the upstream and captured — and the same/next retrieve returns
-  the recorded expectations (deduplicated and templatized when `deduplicateRecordedExpectations` is on) in
-  the requested format (`java`, `javascript`, `python`, `go`, `csharp`, `ruby`, `rust`, `php`, `json`, …).
-  This removes the multi-step setup (configure `proxyRemoteHost`/`proxyRemotePort` and
-  `attemptToProxyIfNoMatchingExpectation`, run traffic, then retrieve) for the common "proxy a real
-  upstream → get ready-to-use expectations/code" flow. The upstream accepts a bare `host`, `host:port`, or
-  full URL (`http://host:port` / `https://host:port`, default ports 80/443) and is SSRF-validated against
-  the same `forwardProxyBlockPrivateNetworks` policy as the forward and replay paths **before** any state is
-  mutated or any connection is made (a blocked upstream returns `403` and leaves configuration untouched; a
-  malformed upstream returns `400`). Recording remains traffic-driven — the call only arms recording, it
-  does not synthesise traffic.
-- **Cluster status endpoint and metric**: a new read-only `GET /mockserver/cluster` control-plane endpoint
-  reports the node's view of cluster membership and health as JSON — `clustered`, `nodeId`, `coordinator`,
-  `clusterName`, `memberCount`, and a `members` list that flags the coordinator and the local node. On a
-  single-node / in-memory deployment it returns a sensible degenerate response (`clustered: false`, one local
-  member that is its own coordinator), so health checks and tooling can call it unconditionally; with the
-  Infinispan backend clustered, it reports the real JGroups fleet membership. A matching Prometheus gauge
-  `mock_server_cluster_members` (read live at scrape time, `1` for single-node) exports the member count when
-  metrics are enabled. Backed by a new `StateBackend.clusterInfo()` SPI method with a degenerate default
-  implementation and a real Infinispan implementation.
-- **Effective-configuration diagnostic (`--print-config`)**: the command-line launcher now accepts a
-  `--print-config` flag that prints the effective configuration and exits, listing each known property as
-  `name = value   [source]` where `source` is the tier that supplied the value (`system-property`,
-  `properties-file`, `environment-variable`, `default`, or `runtime-set` for a value applied at runtime via a
-  programmatic setter). Properties left at their built-in default show `(default)`, and sensitive values
-  (passwords, API keys, tokens, secrets, private keys, credentials) are redacted as `***REDACTED***` via the
-  existing sensitive-name detection. The same report is available at runtime as JSON from the authenticated
-  `GET /mockserver/config` control-plane endpoint. Source reporting is purely observational — it reads the
-  in-memory property cache first (exactly as the real resolution does) and then the same tiers in the same
-  precedence order, without mutating any state or changing how any value resolves.
-- **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
-  containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
-  schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched
-  query with no hand-authored response JSON — respecting field types, nullability, lists, nested objects,
-  scalars (including common custom scalars such as `DateTime`/`JSON`), enums (first declared value), field
-  aliases, `__typename`, inline fragments, and named fragment spreads. Only the requested selection set
-  appears in the response (a subset of the type is honoured). Backed by a new `com.graphql-java:graphql-java`
-  dependency (pinned to the Java-17-compatible 22.x line). The `schema` field round-trips in JSON in both the
-  nested `graphQL` form and the flat body form.
-- **Dropped-log-event visibility**: when the event-log ring buffer is full under sustained load, dropped
-  log events are now counted and observable instead of vanishing silently (previously only WARN/ERROR
-  drops were logged, so INFO/DEBUG drops were invisible). A `mock_server_dropped_log_events` Prometheus
-  counter is exported when metrics are enabled, the running total is always available regardless of
-  metrics, and a single WARN is logged on the first drop pointing at `ringBufferSize` / log verbosity as
-  the remedy.
-- **Response verification: status-code range / operator matching**: a response template may now match a
-  status code by class range (`statusCodeRange: "2XX"` matches `200`–`299`, case-insensitive `2xx` is also
-  accepted) or numeric operator (`">= 400"`, `"> 200"`, `"< 300"`, `"<= 204"`, `"== 201"`) instead of only
-  an exact `statusCode`. The new `statusCodeRange` field is verification-only — it is never written to the
-  wire when a response is served — and round-trips in JSON. When `statusCodeRange` is absent the historical
-  exact-`statusCode` matching is byte-for-byte unchanged.
-- **`detailedVerificationFailures` now applies to response verification**: a failing response verification
-  (when `detailedVerificationFailures` is enabled) now appends a field-level "closest match diff" naming the
-  response fields that differed (statusCode/reasonPhrase, headers, cookies, body) and the expected-vs-found
-  values for the closest recorded response — mirroring the long-standing request-verification diagnostic,
-  which previously did nothing for response verification. The diff is diagnostic only and never changes the
-  pass/fail result; it is gated identically to the request side and capped by
-  `maximumNumberOfRequestToReturnInVerificationFailure`.
-- **Response matcher: reason-phrase honours `matchExactCase`**: when `matchExactCase` is enabled, the
-  response reason-phrase is now matched case-sensitively (parity with the response body), so a template
-  reason-phrase `OK` no longer matches an actual `ok`. The default (false) keeps the historical
-  case-insensitive behaviour unchanged.
-- **Response matcher: structured cookie matching**: a response template's structured cookies (`Set-Cookie`)
-  are now matched using the same sub-set / notted semantics as the request side — extra response cookies are
-  allowed, a missing required cookie fails the match, and notted cookie values are honoured. Responses with no
-  cookie template are unconstrained (additive; default response matching is unchanged).
-- **Upstream connection pooling opt-in `forwardConnectionPoolEnabled`** (`MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED`,
-  default false): when enabled, idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host, port and
-  scheme) and reused for subsequent forwarded/proxied requests to the same upstream, eliminating repeated TCP and
-  TLS handshakes for proxy-heavy workloads. The pool degrades gracefully — surplus connections beyond
-  `forwardConnectionPoolMaxIdlePerKey` (default 8) are closed rather than blocking, idle connections are evicted
-  after `forwardConnectionPoolIdleTimeoutMillis` (default 30000ms), and connections the upstream closed or that
-  returned `Connection: close` are never reused. Only plain HTTP/1.1 keep-alive connections are pooled; HTTP/2,
-  HTTP/3, binary forwarding, streaming responses and proxy-tunnelled connections are never pooled. The default
-  (false) is byte-for-byte the existing fresh-connection-per-request behaviour.
-- **Cached forward-proxy PEM parsing**: forward-proxy private key and certificate-chain PEM material is now parsed
-  once and cached by its configuration value, so an unchanged forward-proxy key/chain is not re-parsed on every
-  client TLS context (re)build.
-- **OpenAPI contract testing endpoint `PUT /mockserver/contractTest`**: runs an OpenAPI spec as contract
-  tests against a live service. For each operation MockServer builds a representative example request, sends
-  it to the target `baseUrl` (reusing the wired HTTP client, with the same SSRF protection as the forward
-  and replay paths), and validates the response against the spec. Returns a structured pass/fail-per-operation
-  JSON report (`totalOperations`, `passed`, `failed`, `allPassed`, and per-operation `validationErrors`). An
-  optional `operationId` restricts the run to a single operation.
-- **Enforce OpenAPI response validation for mocks `enforceResponseValidationForMocks`**
-  (`MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS`, default false): when enabled (alongside
-  `openAPIResponseValidation`), a mock response that fails OpenAPI response validation is replaced with a
-  `502` error describing the violations, matching the enforcement already available on the validation-proxy
-  path via `validateProxyEnforce`. The default (false) keeps the historical advisory-only behaviour where
-  violations are logged but the response is still returned.
-- **Case-sensitive matching opt-in `matchExactCase`** (`MOCKSERVER_MATCH_EXACT_CASE`, default false): when
-  enabled, request matching of the method, path and regex string body becomes case-sensitive (exact case)
-  instead of the historical case-insensitive behaviour, so an expectation for `/Path` no longer matches a
-  request to `/path`. (Exact string bodies were already matched case-sensitively and are unaffected.) Header
-  names and values, cookie names and values, and query string parameters always remain case-insensitive
-  regardless of this setting. The default (false) is byte-for-byte the existing behaviour.
-- **Weighted/probabilistic response selection**: a new `WEIGHTED` `ResponseMode` selects among an
-  expectation's multiple `httpResponses` by relative weight (via the index-aligned `responseWeights` list,
-  e.g. `[90, 10]` for a 90%/10% split). Missing or non-positive weights default to 1; a non-positive total
-  falls back to uniform selection. Weights round-trip in expectation JSON and Java code generation.
-- **Conditional (Nth-hit) breakpoints**: breakpoint matchers accept an optional `skipCount` that skips the
-  first N matching hits and only pauses afterward (per-breakpoint, thread-safe counter); exposed via the
-  `/mockserver/breakpoint` API and a "Skip count" field in the dashboard Breakpoints panel.
+
 - **Provider-correct LLM chaos error bodies**: LLM chaos error injection now emits the body shape the real
   provider returns — Anthropic `overloaded_error`/`rate_limit_error`, the OpenAI `server_error`/
   `rate_limit_exceeded` envelope, Gemini's Google-API status, Ollama's plain message — so client SDK
@@ -594,29 +120,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pick the status yourself. It applies to both probabilistic and quota-breach errors, works even when no
   explicit `errorStatus` is set, and an explicit status still overrides the code while keeping the
   provider-correct body. Case-insensitive; an unrecognised value falls back to the existing behaviour.
-- **Readiness endpoint `GET /mockserver/ready`**: returns 503 until expectation initializers and OpenAPI
-  seeding complete, then 200 — distinct from the always-200 liveness/status endpoints. The Helm chart now
-  points the readiness probe at it and liveness at the existing path, so Kubernetes no longer routes traffic
-  to a pod whose expectations aren't loaded yet.
-- **`failOnInitializationError`** (`MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR`, default false): when enabled, a
-  malformed initialization JSON/OpenAPI file or a broken initialization class fails server startup instead
-  of logging a warning and continuing with zero expectations.
-- **JSONPath / XPath request-body extraction in Velocity and JavaScript response templates**: the Velocity
-  and JavaScript template engines now expose the same `jsonPath` / `xPath` request-body extraction the
-  Mustache engine already had, so a field can be pulled out of the request body without hand-parsing it.
-  In Velocity use `$jsonPath.find("$.store.book[0].title")` and `$xPath.find("/element/key")`; in
-  JavaScript call `jsonPath('$.store.book[0].title')` and `xPath('/element/key')`. Both operate on the
-  request body, share the exact same JSONPath/XPath libraries and error handling as Mustache, and a missing
-  path resolves to an empty value (logged, never thrown) just as it does for Mustache templates.
-- **Per-upstream forward/proxy observability**: forwarded and proxied requests are now observable by
-  the upstream they hit and how it performed. When `metricsEnabled` is set, two new Prometheus metrics
-  are exposed: `mock_server_forward_request_duration_seconds` (a histogram of forward latency labelled
-  by `upstream_host`, sourced from the existing client-side `Timing` rather than re-measured) and
-  `mock_server_forward_requests` (a count labelled by `upstream_host` and `status_class`, e.g. `2xx`/`5xx`).
-  When `otelTracesEnabled` is set, the forward/proxy request span additionally carries the OpenTelemetry
-  `server.address`/`server.port` attributes for the resolved upstream. Labels are bounded to the upstream
-  host (never the full URL/path) to keep cardinality in check, and all recording is a no-op with zero
-  overhead when metrics/telemetry are disabled.
+
+- **LLM model/pricing catalog refresh**: `org.mockserver.llm.cost.LlmPricing` now recognises current
+  model families — Claude Opus 4.5–4.8, Sonnet 4.5/4.6, Haiku 4.5 and Fable 5; OpenAI gpt-4.1 family
+  and o3/o4 reasoning models; Gemini 2.5 flash-lite/flash/pro — in addition to the existing entries.
+  More-specific prefixes are matched first so e.g. `claude-opus-4-8` resolves to its own tier rather
+  than the generic `claude-opus-4`. `gpt-5*` entries are explicitly approximated placeholders (mapped
+  to the nearest known tier, flagged in a code comment) so a recognised model is still priced instead
+  of dropped — confirm those figures against the provider price list before relying on them.
+
+- **Cached and reasoning token usage fields**: `org.mockserver.model.Usage` gains three optional,
+  back-compatible fields — `cachedInputTokens`, `cacheCreationTokens` and `reasoningTokens`. The
+  runtime-LLM provider clients decode them from each provider's usage shape (OpenAI
+  `prompt_tokens_details.cached_tokens` / `completion_tokens_details.reasoning_tokens`, OpenAI Responses
+  `input_tokens_details` / `output_tokens_details`, Anthropic `cache_read_input_tokens` /
+  `cache_creation_input_tokens`, Gemini `cachedContentTokenCount` / `thoughtsTokenCount`), and the GenAI
+  telemetry spans emit them as `mockserver.gen_ai.usage.{cached_input,cache_creation,reasoning}_tokens`.
+  Absent fields (a provider that doesn't report them) leave behaviour unchanged, so cost dashboards can
+  now split cached-input and reasoning spend without mis-billing older recordings.
+
+- **Multimodal image request recognition**: the conversation decoders now recognise image content parts
+  so a mocked LLM request can match on image presence — OpenAI `image_url`, Anthropic `image`
+  (base64 source), and Gemini `inline_data` / `inlineData`. `ParsedMessage` exposes `hasImage()`,
+  `imageCount()` and `getImages()` (each `ImagePart` carries the declared media type where the provider
+  shape includes it). Request-side only — MockServer recognises images, it does not store the bytes or
+  generate image responses.
+
+- LLM mocking API in the Python and Node clients: build completion/chat mocks, tool-use, token usage,
+  streaming physics, embeddings, multi-turn conversations and provider failover — producing the same wire
+  format as the Java `Llm` builders, bringing LLM mocking to those clients.
+
+- MCP (Model Context Protocol) server-mocking API in the Python and Node clients: define a mock MCP server's
+  tools and resources and their responses, mirroring the Java `McpMockBuilder`.
+
+- AMQP 0.9.1 (RabbitMQ) broker mocking in the AsyncAPI module: AsyncAPI specs with `amqp` channel bindings now
+  publish their mock messages to a RabbitMQ broker (exchange/routing-key or queue per the binding), alongside
+  the existing Kafka and MQTT support. Configure the broker with `asyncAmqpUri` (env `MOCKSERVER_ASYNC_AMQP_URI`).
+
+#### Dashboard UI
+- **Dashboard UI (`mockserver-ui`): before→after preview diff when creating or editing a mock.** The
+  "Capture as Mock" dialog now has a **Preview diff** tab that renders the expectation JSON that will be
+  created (an empty object on the left, the generated mock on the right), so you can see what mock will be
+  created from a captured request before confirming. In the Composer's Review step, editing an existing
+  expectation now shows a side-by-side diff of the loaded expectation versus the outgoing JSON, so the
+  changes your edits will apply are visible before you submit. Both reuse a new read-only Monaco
+  `JsonDiffViewer` component (locally bundled — no runtime CDN), consistent with the existing `JsonEditor`.
+
+- **Dashboard UI (`mockserver-ui`): "Set breakpoint" from a log row.** Each log entry that carries a request now
+  shows a pause-circle action that pre-fills a new breakpoint matcher from that request's method and path and jumps
+  to the Breakpoints view's structured matcher form (method dropdown, path field, phase checkboxes) — so you can go
+  from "I saw this request in the log" to "pause it next time" in one click. The prefill is a one-shot store hand-off
+  (mirroring the existing edit-expectation and generate-stub hand-offs); an unrecognised HTTP method falls back to
+  "(any)" while still applying the path.
+
+- **Dashboard UI: named-example picker for OpenAPI-backed expectations**. The **Import OpenAPI**
+  dialog now detects when a pasted inline JSON spec declares multiple named response examples for an
+  operation (under the first media type of a response body) and shows a per-operation dropdown to
+  choose which one the generated mock should return. The chosen example is sent to the server as the
+  `operationsAndResponses` value `{ statusCode, exampleName }` (the field the existing
+  `OpenAPIConverter` already honours), so no server change was needed. Because `operationsAndResponses`
+  also acts as an operation filter on the server, picking an example for one operation still imports
+  **all** operations — the picked one with its example and every other operation with the spec default
+  — rather than silently dropping the rest. Operations that declare no `operationId` are preserved too:
+  the dialog replicates the server's synthesized `"<METHOD> <path>"` id (e.g. `GET /pets`) so an id-less
+  operation survives the import even when another operation pins an example. Leaving every picker on **Default** sends no override at all,
+  preserving MockServer's default example selection. URL and YAML specs are sent untouched (no picker),
+  and `$ref`-resolved examples are not surfaced since the dialog inspects the raw pasted JSON.
+
+- **Dashboard: Contract Test and Cluster panels**: two new dashboard tabs. **Contract** runs an OpenAPI spec
+  (URL or inline) against a live service via `PUT /mockserver/contractTest` and renders the report as a
+  pass/fail-per-operation table with per-operation validation errors and a passed/failed summary. **Cluster**
+  reads `GET /mockserver/cluster` and shows the state-backend cluster status (clustered flag, node id,
+  coordinator, named cluster, and a member list with coordinator/local markers), auto-refreshing with a manual
+  refresh; a standalone server reports a single local node.
+
+- **Dashboard: Monaco code editor with live JSON validation for body matchers**: the Composer's request
+  body-matcher field is now a real Monaco code editor with syntax highlighting and per-type language modes
+  (JSON, XML, GraphQL, plaintext for path/regex expressions). For JSON and JSON-Schema body types it
+  validates live as you type — malformed JSON (and, for the JSON-Schema type, an invalid schema document)
+  is flagged inline with red squiggles plus a short error summary beneath the editor, before you submit.
+  Monaco and its language workers are bundled and served locally by the dashboard (no runtime CDN dependency).
+
+- **Dashboard: duplicate an expectation + priority column and sort**: the Active Expectations panel now shows a
+  "Duplicate" action on each row that opens the Composer pre-populated with a copy of the expectation (its `id`
+  stripped, so saving creates a brand-new expectation while preserving `priority` and every other field). Each
+  row also shows a `P<n>` chip with the expectation's match `priority` (defaults to `0`; higher wins), and a
+  header "Priority" toggle re-orders the list by priority descending so the match order is visible at a glance.
+
+- **Dashboard: scenario state-machine diagram**: the Scenario State Machine panel now renders the selected
+  scenario's states and transitions as a live Mermaid `stateDiagram-v2`, with the current state highlighted.
+  The graph is built from what the panel observes — states it has seen and transitions it has watched happen
+  (selecting a scenario, setting a state, scheduling a timed `current → next` transition, or triggering one) —
+  so the state machine takes shape as you drive it. State names are sanitised so they cannot break the diagram
+  (or inject markup), and if Mermaid fails to render the panel falls back to showing the diagram source.
+
 - **Dashboard UI — usability, responsiveness and new surfaces**: a broad pass over the dashboard from
   an adversarial review.
   - **Delete and edit a single mock** from the dashboard's Active Expectations panel (previously the
@@ -670,58 +267,214 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     raw detail behind a "Details" toggle), form fields no longer overflow on small screens, type sizes
     come from a single typography scale, and "Capture as mock" can hand a captured request straight to
     the Composer to refine.
-- **Default response headers**: a new `defaultResponseHeaders` setting stamps one or more headers onto every
-  response MockServer returns (mock, forwarded and proxied), so organisation-wide headers — a `Server`
-  banner, a build or trace id, custom org headers — can be set once instead of on every expectation. The
-  value is a pipe-separated list of `name=value` pairs, e.g.
-  `-Dmockserver.defaultResponseHeaders="Server=MockServer|X-Trace-Id=abc123"` (also
-  `MOCKSERVER_DEFAULT_RESPONSE_HEADERS` / `mockserver.defaultResponseHeaders` in a properties file). Values
-  may contain commas and `=`; headers are applied **add-if-absent**, so a header already set on the response
-  (including CORS headers) is never overwritten. Default empty = no change.
-- **Warning for unrecognised configuration keys**: MockServer now logs a `WARN` at startup when it sees a
-  `mockserver.*` system property, a `MOCKSERVER_*` environment variable, or a properties-file key in the
-  `mockserver.` namespace that isn't a known configuration property — so a typo such as
-  `-Dmockserver.maxExpectatons=...` or `MOCKSERVER_METRICS_ENABLE=...` is surfaced instead of being silently
-  ignored (the previous behaviour, which left the default in effect with no signal). Recognised keys are
-  derived from the configuration constants themselves, plus the CLI/launcher keys (`MOCKSERVER_SERVER_PORT`,
-  `MOCKSERVER_LAUNCHER`, `MOCKSERVER_JAVA_OPTS`, etc.), so valid configuration never warns and unrelated
-  environment variables (`JAVA_HOME`, `PATH`, …) are ignored.
+
 - **Timestamps on dashboard log entries**: each entry in the dashboard's Log Messages list now shows the
   time it was logged — a compact local time inline, with the full `yyyy-MM-dd HH:mm:ss.SSS` timestamp on
   hover — so events can be correlated and ordering/latency seen at a glance. The timestamp was already
   captured server-side; the dashboard WebSocket serializer now sends it and the UI renders it (rows without
   a timestamp are unchanged).
-- **Redact secrets in recorded expectations**: a new opt-in setting masks sensitive request headers
-  (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key`) when recorded
-  expectations are retrieved (as JSON or as generated client code) or persisted, so credentials captured
-  while proxying don't leak into shared recordings, generated code, or persisted JSON. Off by default
-  (current behaviour is unchanged); enable with `-Dmockserver.redactSecretsInRecordedExpectations=true` or
-  `MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS=true`. Redaction preserves each expectation's `times`,
-  `timeToLive`, `priority` and `id`, so recordings still replay correctly. Note: because credentials are
-  replaced with a placeholder, a recording that relies on the original credential to authenticate against an
-  upstream must be retrieved with redaction disabled.
-- **LLM model/pricing catalog refresh**: `org.mockserver.llm.cost.LlmPricing` now recognises current
-  model families — Claude Opus 4.5–4.8, Sonnet 4.5/4.6, Haiku 4.5 and Fable 5; OpenAI gpt-4.1 family
-  and o3/o4 reasoning models; Gemini 2.5 flash-lite/flash/pro — in addition to the existing entries.
-  More-specific prefixes are matched first so e.g. `claude-opus-4-8` resolves to its own tier rather
-  than the generic `claude-opus-4`. `gpt-5*` entries are explicitly approximated placeholders (mapped
-  to the nearest known tier, flagged in a code comment) so a recognised model is still priced instead
-  of dropped — confirm those figures against the provider price list before relying on them.
-- **Cached and reasoning token usage fields**: `org.mockserver.model.Usage` gains three optional,
-  back-compatible fields — `cachedInputTokens`, `cacheCreationTokens` and `reasoningTokens`. The
-  runtime-LLM provider clients decode them from each provider's usage shape (OpenAI
-  `prompt_tokens_details.cached_tokens` / `completion_tokens_details.reasoning_tokens`, OpenAI Responses
-  `input_tokens_details` / `output_tokens_details`, Anthropic `cache_read_input_tokens` /
-  `cache_creation_input_tokens`, Gemini `cachedContentTokenCount` / `thoughtsTokenCount`), and the GenAI
-  telemetry spans emit them as `mockserver.gen_ai.usage.{cached_input,cache_creation,reasoning}_tokens`.
-  Absent fields (a provider that doesn't report them) leave behaviour unchanged, so cost dashboards can
-  now split cached-input and reasoning spend without mis-billing older recordings.
-- **Multimodal image request recognition**: the conversation decoders now recognise image content parts
-  so a mocked LLM request can match on image presence — OpenAI `image_url`, Anthropic `image`
-  (base64 source), and Gemini `inline_data` / `inlineData`. `ParsedMessage` exposes `hasImage()`,
-  `imageCount()` and `getImages()` (each `ImagePart` carries the declared media type where the provider
-  shape includes it). Request-side only — MockServer recognises images, it does not store the bytes or
-  generate image responses.
+
+- Dashboard request-log filtering gains regex matching on method/path and named, saved filter presets
+  (persisted in the browser) for quickly switching between common filters.
+
+- Dashboard "Why didn't this match?" now offers a side-by-side visual diff (request vs the closest
+  expectation's matcher) alongside the existing text reasons.
+
+- Dashboard matcher test playground: enter a sample request and see whether a candidate expectation would
+  match it (a browser-side preview) before registering — reached from a new toolbar button.
+
+- Dashboard composer can now author `capture` rules on an expectation (extract a request value via
+  jsonPath/xpath/header/query/cookie/pathParameter into scenario state).
+
+#### IDE extensions (VS Code & JetBrains)
+- **JetBrains plugin (`mockserver-jetbrains`): LLM authoring + agent-run call graph (parity with the VS Code
+  extension).** A new **LLM** tool window adds an *httpLlmResponse* expectation builder form
+  (provider/model/path/completion/usage/stream) that opens the result in an editor or loads it straight into the
+  running server, plus an **agent-run call graph** view that fetches the graph through the MCP `explain_agent_run`
+  tool (`POST /mockserver/mcp`) and renders it as Mermaid in the bundled JCEF (Chromium), falling back to the raw
+  Mermaid source when JCEF or the CDN is unavailable. A completion contributor offers curated provider/model/field
+  suggestions inside `httpLlmResponse` blocks of `*.mockserver.json` files (augmenting, not replacing, the bundled
+  JSON Schema completion).
+
+- **JetBrains plugin (`mockserver-jetbrains`): contract/resiliency test runner.** A new **Run Contract Test**
+  action — in the Tools menu and the editor / project-view context menus on a spec file — runs an OpenAPI
+  contract test of a live service against the active OpenAPI/Swagger spec via `PUT /mockserver/contractTest` and
+  opens a per-operation pass/fail report (with validation errors) in a new editor tab, mirroring the VS Code
+  extension's `mockserver.contractTest` command.
+
+- **JetBrains plugin (`mockserver-jetbrains`): stream-frame breakpoint editing.** The in-IDE HTTP Debugger now
+  handles paused stream frames (`PausedStreamFrameDTO`, RESPONSE_STREAM / INBOUND_STREAM): they appear in a new
+  **Live Streams** list where each can be Continued, Modified (with a new Base64 payload), or Dropped, replying
+  over the frozen callback WebSocket with a `StreamFrameDecisionDTO` — completing parity with the dashboard and
+  the VS Code extension's stream-frame contract.
+
+- **Editor extensions: in-IDE breakpoint debugger and power-user panels**: the VS Code and JetBrains extensions
+  add a debugger over the breakpoint callback WebSocket (pause/inspect/Modify/Continue/Abort on requests and
+  responses flowing through MockServer), drift quick-fixes, code-aware run gutters, and chaos/contract panels.
+
+- **Editor extensions: author/verify/record against a running server**: the VS Code and JetBrains extensions add
+  scratch-request match analysis (shows whether a request matched and the nearest-miss diff), Verify/Delete
+  actions on `*.mockserver.json` expectations, generate-stubs-from-OpenAPI, and record-to-code (write recorded
+  expectations into a workspace file as JSON or DSL).
+
+- **VS Code extension: in-IDE HTTP debugger + code-aware integration + power-user panels**: the VS Code extension
+  adds an in-IDE breakpoint debugger over the MockServer callback WebSocket — register a request matcher, receive
+  paused exchanges, and **Continue / Modify / Abort** (Abort is REQUEST-phase only; RESPONSE phase is
+  Continue/Modify), plus per-frame stream editing (Continue/Modify/Drop/Inject/Close). Breakpoints fire only on
+  traffic flowing **through** MockServer (proxied/forwarded/matched-mock). Also: a drift quick-fix lightbulb
+  ("update stub to match upstream") that swaps the stub's value for the live upstream value; run/inspect gutter
+  CodeLens on `new MockServerClient(...)`, `@MockServerSettings`, and Testcontainers `MockServerContainer`
+  usages; `httpLlmResponse` authoring completion; an agent-run call-graph rendered as Mermaid; a chaos status /
+  stop panel; and an OpenAPI contract-test runner with a per-operation pass/fail report. Everything talks only to
+  the configured local MockServer — nothing phones home.
+
+- VS Code extension adds **MockServer: Find Requests by Trace** — enter a W3C trace id (32 hex) or a full
+  `traceparent` header value and the extension opens every request the server received that belongs to that
+  distributed trace, so you can see every hop of one trace in a new JSON editor tab.
+
+- VS Code and JetBrains extensions now validate MockServer expectation files. Name a file `*.mockserver.json`
+  (or `*.mockserver.jsonc`) and the editor gives inline schema validation, autocompletion, and hover
+  documentation for expectations — driven by the same schema MockServer itself validates against, generated
+  from `mockserver-core` (`scripts/generate-editor-expectation-schema.mjs`). A single expectation or an array
+  of expectations (initialization JSON) is accepted.
+
+- JetBrains plugin adds a **Settings | Tools | MockServer** panel to configure the Docker image, container
+  name, and port.
+
+- VS Code extension turns expectation files into a live control surface: CodeLens actions at the top of any
+  `*.mockserver.json` / `*.mockserver.jsonc` file **Load into running MockServer** (`PUT /mockserver/expectation`,
+  comments and trailing commas tolerated) and **Diff against live** (side-by-side diff against the server's
+  active expectations), both reachable from the Command Palette.
+
+- VS Code extension can record real traffic into code: **MockServer: Save Recorded Expectations** opens the
+  expectations the server recorded from proxied/forwarded traffic
+  (`PUT /mockserver/retrieve?type=recorded_expectations`) as JSON or Java DSL in a new editor tab.
+
+- VS Code extension can generate expectations from an OpenAPI/Swagger spec: **MockServer: Generate
+  Expectations From OpenAPI Spec** sends the active editor's spec (JSON or YAML) to the running server
+  (`PUT /mockserver/openapi`) and opens the generated expectations in a new tab.
+
+- VS Code extension can show a mock-drift report: **MockServer: Show Drift Report** fetches the latest
+  drift records (`GET /mockserver/drift`) — how real upstream responses have drifted from your stub
+  expectations — and opens a readable text summary in a new tab (one line per drift: type, field,
+  expected vs actual value, confidence, and the affected expectation).
+
+- JetBrains plugin brings the same mock-drift report to the **Tools > MockServer** menu: **Show Drift
+  Report** fetches the latest drift records (`GET /mockserver/drift`) and opens a readable text summary in
+  a new tab (one line per drift: type, field, expected vs actual value, confidence, and the affected
+  expectation). The HTTP call runs off the UI thread.
+
+- JetBrains plugin adds distributed-trace correlation: **Find Requests by Trace** (menu and tool window)
+  prompts for a W3C trace id (32 hex) or a full `traceparent` header value, retrieves the requests
+  MockServer has received (`PUT /mockserver/retrieve?type=requests`), filters them down to those carrying a
+  `traceparent` header with that trace id, and opens the matching requests as JSON in a new tab. The HTTP
+  call runs off the UI thread.
+
+- JetBrains plugin can author WASM custom-rule modules: **Upload WASM Module** picks a compiled `.wasm`
+  file with the IDE file chooser, confirms a module name, and uploads its raw bytes
+  (`PUT /mockserver/wasm/modules?name=<name>`, `application/octet-stream`) to the running server so it can
+  be referenced by name as a WASM body matcher; **List WASM Modules** fetches the registered modules
+  (`GET /mockserver/wasm/modules`) and opens the JSON list of names in a new tab. The upload reports
+  clearly when the server has WASM support disabled, and both HTTP calls run off the UI thread.
+
+- VS Code extension can surface mock drift as **inline diagnostics** on the open expectation file:
+  **MockServer: Show Drift as Diagnostics** fetches the latest drift records (`GET /mockserver/drift`),
+  matches each to its expectation by `id`, and shows it as a diagnostic on that expectation's line
+  (unmatched drift attaches to the first line) — so "the real upstream differs from this stub" appears
+  right in the `*.mockserver.json` file. Status-code drift, a removed schema field, or a fully-confident
+  drift shows as an error; a newly added schema field shows as a warning; everything else as information.
+  Re-running refreshes the diagnostics and a clean result clears them.
+
+- VS Code extension can author WASM custom-rule modules: **MockServer: Upload WASM Module** picks a
+  compiled `.wasm` file and uploads it to the running server (`PUT /mockserver/wasm/modules?name=<name>`,
+  raw bytes) so it can be referenced by name in an expectation body matcher
+  (`{ "type": "WASM", "moduleName": "<name>" }`), and **MockServer: List WASM Modules** opens the registered
+  module names (`GET /mockserver/wasm/modules`) in a new JSON tab. When WASM support is disabled on the
+  server the "WASM support is disabled" message is surfaced verbatim.
+
+- JetBrains plugin brings the same server-interaction actions to the **Tools > MockServer** menu:
+  **Load Expectations Into Running Server** (`PUT /mockserver/expectation`, a single expectation or an array),
+  **Save Recorded Expectations** (`PUT /mockserver/retrieve?type=recorded_expectations`, opens the
+  recorded expectations in a new JSON tab), and **Generate Expectations From OpenAPI Spec**
+  (`PUT /mockserver/openapi`, sends the active editor's JSON or YAML spec and opens the generated
+  expectations in a new JSON tab). All HTTP calls run off the UI thread.
+
+- JetBrains plugin can show the live MockServer dashboard **inside the IDE** via **Open MockServer Dashboard
+  in IDE** (and a dedicated right-hand tool window), embedding it with the bundled JCEF (Chromium) engine and
+  Reload / Open-in-Browser controls. When JCEF is unavailable in the IDE or runtime it falls back gracefully
+  to opening the external browser.
+
+- VS Code extension can show the live dashboard inside VS Code: **MockServer: Open Dashboard** reveals the
+  running server's dashboard docked in the bottom panel (a webview that frames
+  `http://localhost:<port>/mockserver/dashboard`) on the configured port, alongside an external-browser option.
+
+- VS Code extension can send an ad-hoc test request without leaving the editor: name a file
+  `*.mockserver-request.json` (`{ "method", "path", "headers"?, "body"? }`) and the **MockServer: Send
+  Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the
+  configured port and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a
+  new tab.
+
+- JetBrains plugin brings the same ad-hoc request feature to the **Tools > MockServer** menu:
+  **Send Test Request** parses the active editor's JSON request spec
+  (`{ "method", "path", "headers"?, "body"? }`), fires it at the running server on the configured port,
+  and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab.
+  The HTTP call runs off the UI thread.
+
+- JetBrains plugin bottom **MockServer** tool window is now a one-click launcher for the full action set
+  (previously only Open Dashboard + Start Docker): buttons are grouped into *Server* (Open Dashboard in IDE,
+  Open Dashboard in Browser, Start (Docker), Reset) and *Editor actions* (Load Expectations, Save Recorded,
+  Generate From OpenAPI, Send Test Request, Show Drift Report), so everything is reachable without opening
+  the **Tools > MockServer** menu. The editor actions reuse the registered actions verbatim.
+
+- JetBrains plugin adds **Reset MockServer** (menu and tool window): clears all expectations and recorded
+  logs on the running server (`PUT /mockserver/reset`) after a confirmation prompt; the HTTP call runs off
+  the UI thread.
+
+- VS Code extension adds two quick utility commands: **MockServer: View Request Log** opens the log of
+  requests the server has received (`PUT /mockserver/retrieve?type=requests`) in a new JSON tab (saying so
+  rather than opening an empty tab when no requests have been recorded), and **MockServer: Reset (Clear
+  Expectations & Logs)** clears all expectations and the request log (`PUT /mockserver/reset`) after a modal
+  confirmation.
+
+#### Client libraries
+- **Client capability matrix and per-language test fixtures** (docs). New page `client_compatibility.html` in the Getting Started section: an 8x8 matrix of feature coverage across all clients (expectations, verify, OpenAPI, LLM mock builder, MCP mock builder, test fixture/auto-cleanup, retrieveAsCode, Testcontainers) verified against client source, plus idiomatic test-fixture snippets for all eight languages (Java JUnit 5 extension, Node `Symbol.asyncDispose`, Python pytest `conftest.py`, Ruby RSpec shared context, Go `MockServerT`/`t.Cleanup`, .NET `MockServerFixture`/`IAsyncLifetime`, Rust manual reset, PHP `MockServerTestTrait`).
+
+- **Client test-framework fixtures and idiomatic auto-cleanup** across the Go, Node/JS, Ruby, .NET and PHP
+  clients. Each now ships an ergonomic helper that resets the server between tests so recorded requests,
+  expectations and logs do not leak — wrapping the existing `reset()` call, no server change:
+  - **Go** (`mockserver-client-go`): `MockServerT(t, client)` / `NewMockServerT(t, host, port)` register a
+    `t.Cleanup` that calls `Reset()` when the test (and its subtests) finish.
+  - **Node/JS** (`mockserver-client-node`): the client now supports TC39 explicit resource management via
+    `Symbol.asyncDispose` (and `Symbol.dispose`), so `await using client = mockServerClient(...)` resets the
+    server on scope exit; symbols are guarded for older runtimes.
+  - **Ruby** (`mockserver-client-ruby`): `require 'mockserver/rspec'` registers an RSpec shared context
+    (tag `:mockserver`) that provides a fresh, reset `mockserver` client per example.
+  - **.NET** (`mockserver-client-dotnet`): `MockServerFixture`, a reusable xUnit `IAsyncLifetime` fixture that
+    creates a `MockServerClient` and resets before/after each test (usable as a base class or `IClassFixture`).
+  - **PHP** (`mockserver-client-php`): `MockServer\Testing\MockServerTestTrait`, a PHPUnit trait exposing
+    `setUpMockServer()` / `tearDownMockServer()` helpers that reset the server around each test.
+  - **Rust** (`mockserver-client-rust`): already auto-cleans the *spawned* server via `impl Drop for
+    ServerHandle` (kills the launched process on scope exit) — left as-is.
+
+- **Non-Java clients can now retrieve expectations as generated MockServer SDK setup code**: the Go, Node, Python,
+  Ruby, .NET, PHP and Rust clients gain `retrieveExpectationsAsCode(format)` / `retrieveRecordedExpectationsAsCode(format)`
+  (idiomatic naming per client) that call the existing `PUT /mockserver/retrieve?format=JAVA|JAVASCRIPT|PYTHON|GO|CSHARP|RUBY|RUST|PHP`
+  endpoint and return the generated builder code (the `when(...).respond(...)` setup that recreates the active or
+  recorded expectations) as a string. Previously only the Java client and the dashboard UI exposed code retrieval;
+  the other clients hard-coded `format=JSON`. Server behaviour is unchanged — this only plumbs the existing
+  capability into the client libraries.
+
+- **Node client: advanced response builders**: the Node.js client now exposes `respondWithSse`,
+  `respondWithWebSocket`, `respondWithDns`, `respondWithBinary`, and `respondWithGrpcStream` (with TypeScript
+  declarations) so SSE, WebSocket, DNS, raw-binary, and gRPC-stream expectations can be registered from Node,
+  reaching parity with the Java and Python clients (serializer-only additions; the server already accepted these payloads).
+
+- **Rust client: advanced response-builder naming parity**: the Rust client's fluent `when(...)` chain now
+  exposes `respond_with_sse`, `respond_with_web_socket`, `respond_with_dns`, `respond_with_binary`, and
+  `respond_with_grpc_stream` aliases so SSE, WebSocket, DNS, raw-binary, and gRPC-stream expectations can be
+  registered with method names aligned to the other clients (each delegates to the existing idiomatic
+  `respond_*` methods; serializer payloads are unchanged).
+
 - **Expectation code generation in every client language**: the retrieve endpoint can now produce
   copy-paste-ready client code from recorded or active expectations in **Java, JavaScript, Python, Go,
   C#, Ruby, Rust and PHP**, alongside the existing Java output. Call
@@ -748,6 +501,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one `verify(...)` call per request entirely in the browser. Each format has a "Copy as code" button.
   The `Format` enum gains `GO`, `CSHARP`, `RUBY`, `RUST` and `PHP` alongside `JAVASCRIPT`/`PYTHON`;
   `java`, `json`, and `log_entries` are unchanged and existing formats are byte-identical.
+
+- Go client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
+  `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
+
+- Rust client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, `openapi()` import, and
+  `verify_zero_interactions()`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
+
+- .NET client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
+  `VerifyZeroInteractions` (sync + async), moving it toward feature parity with the Java/Node/Python/Ruby clients.
+
+- PHP client parity: gRPC descriptor management, SSE/WebSocket/DNS/binary/gRPC-stream response builders,
+  OpenAPI import, and `verifyZeroInteractions`.
+
+#### Request matching & response generation
+- **Generate a schema-valid response body from an inline JSON Schema** (`mockserver-core`). An HTTP response
+  can now carry a plain inline [JSON Schema](https://json-schema.org) (not a full OpenAPI document) via a new
+  `generateFromSchema` response field (`HttpResponse.withGenerateFromSchema(...)` in Java, or the
+  `generateFromSchema` expectation-JSON field). At response time MockServer synthesizes a schema-valid JSON body
+  from it, reusing the same example-generation engine used for OpenAPI responses, so the generated body honours
+  `type`, `required`, `enum`, `default`, arrays and nested objects. This is additive and fully back-compatible:
+  it only fires when the response has no explicit body (an explicit `body` always wins), and a schema that cannot
+  be parsed leaves the response body unset (logged at WARN) rather than failing the request. Inline-schema
+  `$ref` resolution follows the OpenAPI-spec trust model (control-plane, remote refs resolved), not the
+  `jsonSchemaAllowRemoteRefs` matching-path model. Lets you return realistic, type-correct mock data from a bare
+  schema without hand-authoring response JSON or attaching a whole OpenAPI spec.
+
+- **Regex path capture groups exposed to response/forward templates** (`mockserver-core`). When an
+  expectation matches a request path with a regular expression containing capture groups, the captured
+  values are now available to Mustache, Velocity and JavaScript templates via two new request-model
+  fields: `request.pathGroups` (the numbered groups, 1&#8209;based aligned with `java.util.regex` group
+  numbering — index `0` is the whole match, index `1` the first capture group) and
+  `request.namedPathGroups` (Java named groups `(?<name>...)`, keyed by name). For example a path matcher
+  `"/users/(\\d+)/orders/(\\w+)"` lets a template echo `{{ request.pathGroups.1 }}` (Mustache),
+  `$!request.pathGroups[1]` (Velocity) or `request.pathGroups[1]` (JavaScript). The groups are populated
+  on a successful data-plane match only and are additive and fully back-compatible: existing template
+  fields are unchanged, both new fields are empty when the matched path had no capture groups, and group
+  extraction is best-effort (it never throws and never affects which expectation matches).
+
+- **Request-driven (template) response delay**: a `delay` may carry a `template`+`templateType` (`VELOCITY`/
+  `MUSTACHE`) rendered against the request to compute the delay in milliseconds (e.g. larger payloads respond
+  slower). Static and statistical-distribution delays are unchanged; an invalid/blank render falls back safely.
+
+- **Conditional (if-then-else) request matcher**: a new `conditionalRequestDefinition` (`if`/`then`/`else`
+  request matchers) matches as: if the `if` guard matches require `then`, otherwise require `else` (absent
+  `else` ⇒ match when the guard is false). Existing AND-only matching is unchanged.
+
+- **Accept-header content-negotiation matching**: a header matcher value may use an opt-in `accept:<media-type>`
+  directive that matches when the request's `Accept` header finds the media type acceptable per RFC 7231 —
+  honouring q-weights (`q=0` excludes), `type/*` and `*/*` wildcards, and specificity/preference ordering.
+  Existing exact/regex header matching is unchanged when the directive is absent.
+
+- **Conditional and chainable response modifiers**: an `httpOverrideForwardedRequest` / forward-template response
+  modifier may now carry a `condition` (gate on exact `statusCode`, `statusCodeRange` class range,
+  `responseHasHeader`, or `requestHasHeader`) and/or an ordered `modifiers` chain where each modifier sees the
+  previous one's output. Legacy single-modifier expectations behave byte-for-byte identically.
+
+- **Deterministic fuzzy / similarity body matcher**: a request body matcher `FuzzyBody`
+  (`{"type":"FUZZY","fuzzy":"...","threshold":0.8,"ignoreCase":false}`, DSL `FuzzyBody.fuzzy(...)`) matches when
+  the request body is similar enough to an expected string by a deterministic Jaro-Winkler ratio at or above a
+  configurable threshold (default `0.8`) — a non-LLM alternative to exact/regex body matching.
+
+- **Response templates: `html`, `csv`, `xpath`, and `yaml` helper functions**: response templates (Velocity /
+  JavaScript / Mustache) gain four new built-in helpers — `html.escape`/`html.unescape`, `csv.parse`/`csv.row`,
+  `xpath.evaluate` (XXE-hardened), and `yaml.toJson`/`yaml.parse` — for shaping response bodies from request
+  data without custom code.
+
+- **Case-sensitive matching opt-in `matchExactCase`** (`MOCKSERVER_MATCH_EXACT_CASE`, default false): when
+  enabled, request matching of the method, path and regex string body becomes case-sensitive (exact case)
+  instead of the historical case-insensitive behaviour, so an expectation for `/Path` no longer matches a
+  request to `/path`. (Exact string bodies were already matched case-sensitively and are unaffected.) Header
+  names and values, cookie names and values, and query string parameters always remain case-insensitive
+  regardless of this setting. The default (false) is byte-for-byte the existing behaviour.
+
+- **Weighted/probabilistic response selection**: a new `WEIGHTED` `ResponseMode` selects among an
+  expectation's multiple `httpResponses` by relative weight (via the index-aligned `responseWeights` list,
+  e.g. `[90, 10]` for a 90%/10% split). Missing or non-positive weights default to 1; a non-positive total
+  falls back to uniform selection. Weights round-trip in expectation JSON and Java code generation.
+
+- **JSONPath / XPath request-body extraction in Velocity and JavaScript response templates**: the Velocity
+  and JavaScript template engines now expose the same `jsonPath` / `xPath` request-body extraction the
+  Mustache engine already had, so a field can be pulled out of the request body without hand-parsing it.
+  In Velocity use `$jsonPath.find("$.store.book[0].title")` and `$xPath.find("/element/key")`; in
+  JavaScript call `jsonPath('$.store.book[0].title')` and `xPath('/element/key')`. Both operate on the
+  request body, share the exact same JSONPath/XPath libraries and error handling as Mustache, and a missing
+  path resolves to an empty value (logged, never thrown) just as it does for Mustache templates.
+
+- **Default response headers**: a new `defaultResponseHeaders` setting stamps one or more headers onto every
+  response MockServer returns (mock, forwarded and proxied), so organisation-wide headers — a `Server`
+  banner, a build or trace id, custom org headers — can be set once instead of on every expectation. The
+  value is a pipe-separated list of `name=value` pairs, e.g.
+  `-Dmockserver.defaultResponseHeaders="Server=MockServer|X-Trace-Id=abc123"` (also
+  `MOCKSERVER_DEFAULT_RESPONSE_HEADERS` / `mockserver.defaultResponseHeaders` in a properties file). Values
+  may contain commas and `=`; headers are applied **add-if-absent**, so a header already set on the response
+  (including CORS headers) is never overwritten. Default empty = no change.
+
 - **Match and verify by negotiated protocol** (HTTP/1.1, HTTP/2, HTTP/3): expectations can now match,
   and recorded requests can be verified, on the protocol a request actually arrived over. Use
   `request().withProtocol("HTTP_2")` (or `Protocol.HTTP_3`, etc.) on an expectation to only match
@@ -759,6 +607,375 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pretty-printed retrieval format omitted it — so `retrieveRecordedRequests(...)` carries the protocol
   for both HTTP/2 and HTTP/3. Fully backward compatible: protocol is optional and an expectation that
   does not specify a protocol still matches a request regardless of the protocol it arrived over.
+
+- **HTTP response trailers** (trailing headers): a response can now carry trailing headers via
+  `httpResponse().withTrailers(...)` / `withTrailer(name, values...)` (mirroring the existing header
+  builder), serialised in JSON as a `trailers` object alongside `headers`. MockServer emits them as
+  protocol-appropriate trailing headers — for HTTP/1.1 the response is sent chunked with an automatic
+  `Trailer` header announcing the field names and a trailing-header block after the final chunk (an
+  explicit `Content-Length` is dropped, since trailers and a fixed length are mutually exclusive); for
+  HTTP/2 and HTTP/3 they become a trailing HEADERS frame. gRPC responses are unaffected: the gRPC layer
+  builds its own trailing HEADERS frame from `grpc-status`/`grpc-message` and does not read the general
+  `trailers` field, so general trailers are not emitted on gRPC responses. Fully backward compatible — a
+  response with no trailers is byte-for-byte identical to before.
+
+- Expectation **namespacing / multi-tenancy**: an optional `namespace` (tenant) field on each expectation lets
+  multiple teams or test-suites share one MockServer instance without their expectations colliding. A request
+  scopes matching to a namespace via a configurable header (`matchNamespaceHeader`, default
+  `X-MockServer-Namespace`; env `MOCKSERVER_MATCH_NAMESPACE_HEADER`): a request in namespace `T` matches
+  expectations whose `namespace` is `T` plus all global (no-namespace) expectations, and never another
+  tenant's. A request with no namespace header matches only global expectations (true isolation by default).
+  `PUT /mockserver/clear?namespace=T` and `PUT /mockserver/retrieve?type=active_expectations&namespace=T` are
+  scoped to a single tenant. The Java client adds `clearByNamespace(namespace)` and
+  `retrieveActiveExpectations(requestDefinition, namespace)` so a CI job can clear or inspect only its own
+  namespace on teardown without resorting to raw HTTP. Fully backward compatible — with no namespace ever set,
+  behaviour is unchanged.
+
+- Response-template helpers `crypto` (`md5`/`sha1`/`sha256`/`sha512`/`hmacSha256`, lowercase hex) and `regex`
+  (`matches`/`replaceAll`/`group`) for hashing/signing and extracting or rewriting values inside templates.
+
+- `multipart/form-data` request-body matching: a new `MultipartBody` matcher matches on individual parts by
+  field name/value, filename, and part content-type (regex and negation supported, like form parameters), via
+  both the Java DSL and the JSON/REST API. OpenAPI operations with `multipart/form-data` request bodies now
+  build field matchers from the schema's required properties instead of being matched on path and method only.
+
+- Numeric comparison operators (`> 60`, `>= 60`, `< 100`, `<= 30`, `== 5`; not-equal via `!== 5`) for matching
+  header, cookie, and query-string parameter values, in addition to exact and regex matching.
+
+- Response templates can read and write scenario state via a `scenario` helper (`scenario.get(name)`,
+  `scenario.set(name, state)`, `scenario.matches(name, state)`) in Velocity, JavaScript and Mustache — capture a
+  value in one request and use it to drive a later response (stateful "scenario" mocking).
+
+- Declarative `capture` rules on an expectation extract a value from the matched request (via jsonPath, xpath,
+  header, queryStringParameter, cookie or pathParameter) and store it into scenario state, so a later request's
+  response template can read it — enabling auth→resource→confirm journeys without manual scenario triggers.
+
+- The mock OIDC provider now supports the full OAuth2 authorization-code flow: a new `/authorize` endpoint issues
+  a single-use code and redirects back with `code` and `state`, and `/token` exchanges it (with PKCE S256/plain
+  support) for tokens — completing the interactive flow alongside the existing client-credentials grant.
+
+- SAML 2.0 mock Identity Provider: `PUT /mockserver/saml` stands up a mock IdP (metadata endpoint + SP-initiated
+  Web-Browser-SSO POST profile) that returns an XML-DSig-signed SAML assertion with a configurable subject and
+  attributes — letting you test SAML SSO integrations without a real IdP. Self-signed signing cert generated by
+  default, or supply your own. Inbound SAMLRequest parsing is XXE-hardened.
+
+#### Proxying, forwarding & recording
+- **Upstream forward retry policy and per-upstream circuit breaker** (`mockserver-core`). Matched
+  FORWARD-class actions can now retry transient upstream failures and fail fast on a dead upstream, both
+  **opt-in and off by default** (existing forward behaviour is unchanged). Retry (`forwardProxyRetryCount`,
+  `forwardProxyRetryBackoffMillis`) re-issues the upstream call on a connection error or a 502/503/504, but
+  only for idempotent methods (GET/HEAD/OPTIONS/PUT/DELETE/TRACE) so a request is never executed twice, with
+  a non-blocking linear back-off. The per-upstream circuit breaker (`forwardProxyCircuitBreakerEnabled`,
+  `forwardProxyCircuitBreakerFailureThreshold`, `forwardProxyCircuitBreakerWindowMillis`) trips open (fail-fast
+  503) after N consecutive failures to a `host:port`, then half-opens after a window to probe recovery. When
+  metrics are enabled the number of currently-open upstreams is exported as the new
+  `mock_server_upstream_circuit_open` Prometheus gauge. Healthy upstreams are evicted from the per-upstream
+  state on success so the breaker's memory stays bounded to currently-degraded upstreams. The breaker state
+  resets on `HttpState.reset()`. All five properties have the usual equivalent system-property /
+  environment-variable / property-file forms.
+
+- **JSON Patch / JSON Merge Patch on forwarded responses**: a response modifier may carry a `jsonPatch`
+  (RFC 6902) and/or `jsonMergePatch` (RFC 7386) applied to a forwarded/proxied JSON response body, so a single
+  field of a real upstream response can be changed without replacing the whole body. Non-JSON or absent ⇒ body
+  unchanged.
+
+- **JSON Patch / JSON Merge Patch on forwarded response bodies**: an `httpOverrideForwardedRequest` /
+  forward-template response modifier may now carry an inline `jsonPatch` (RFC 6902 array of
+  `add`/`remove`/`replace`/`move`/`copy`/`test` operations) and/or `jsonMergePatch` (RFC 7386 object) that is
+  applied to a forwarded/proxied upstream response body when that body is valid JSON — letting you change one
+  field of a real upstream response instead of replacing the whole body. `jsonPatch` runs before
+  `jsonMergePatch`. A non-JSON body, a malformed patch, or a failed `test` operation leaves the body unchanged
+  (the forward never errors), and an absent patch is byte-for-byte unchanged.
+
+- **One-command record round-trip**: `GET/PUT /mockserver/retrieve?type=RECORDED_EXPECTATIONS&format=...`
+  now accepts an optional `forwardUnmatchedTo=<upstream>` parameter. When supplied, the call arms
+  record-and-forward of unmatched requests to that upstream for the session — subsequent traffic that
+  matches no expectation is forwarded to the upstream and captured — and the same/next retrieve returns
+  the recorded expectations (deduplicated and templatized when `deduplicateRecordedExpectations` is on) in
+  the requested format (`java`, `javascript`, `python`, `go`, `csharp`, `ruby`, `rust`, `php`, `json`, …).
+  This removes the multi-step setup (configure `proxyRemoteHost`/`proxyRemotePort` and
+  `attemptToProxyIfNoMatchingExpectation`, run traffic, then retrieve) for the common "proxy a real
+  upstream → get ready-to-use expectations/code" flow. The upstream accepts a bare `host`, `host:port`, or
+  full URL (`http://host:port` / `https://host:port`, default ports 80/443) and is SSRF-validated against
+  the same `forwardProxyBlockPrivateNetworks` policy as the forward and replay paths **before** any state is
+  mutated or any connection is made (a blocked upstream returns `403` and leaves configuration untouched; a
+  malformed upstream returns `400`). Recording remains traffic-driven — the call only arms recording, it
+  does not synthesise traffic.
+
+- **Upstream connection pooling opt-in `forwardConnectionPoolEnabled`** (`MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED`,
+  default false): when enabled, idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host, port and
+  scheme) and reused for subsequent forwarded/proxied requests to the same upstream, eliminating repeated TCP and
+  TLS handshakes for proxy-heavy workloads. The pool degrades gracefully — surplus connections beyond
+  `forwardConnectionPoolMaxIdlePerKey` (default 8) are closed rather than blocking, idle connections are evicted
+  after `forwardConnectionPoolIdleTimeoutMillis` (default 30000ms), and connections the upstream closed or that
+  returned `Connection: close` are never reused. Only plain HTTP/1.1 keep-alive connections are pooled; HTTP/2,
+  HTTP/3, binary forwarding, streaming responses and proxy-tunnelled connections are never pooled. The default
+  (false) is byte-for-byte the existing fresh-connection-per-request behaviour.
+
+- **Cached forward-proxy PEM parsing**: forward-proxy private key and certificate-chain PEM material is now parsed
+  once and cached by its configuration value, so an unchanged forward-proxy key/chain is not re-parsed on every
+  client TLS context (re)build.
+
+- **Redact secrets in recorded expectations**: a new opt-in setting masks sensitive request headers
+  (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key`) when recorded
+  expectations are retrieved (as JSON or as generated client code) or persisted, so credentials captured
+  while proxying don't leak into shared recordings, generated code, or persisted JSON. Off by default
+  (current behaviour is unchanged); enable with `-Dmockserver.redactSecretsInRecordedExpectations=true` or
+  `MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS=true`. Redaction preserves each expectation's `times`,
+  `timeToLive`, `priority` and `id`, so recordings still replay correctly. Note: because credentials are
+  replaced with a placeholder, a recording that relies on the original credential to authenticate against an
+  upstream must be retrieved with redaction disabled.
+
+- Sensitive data is now redacted by default when importing HAR or Postman collections (`PUT /mockserver/import`):
+  sensitive request/response headers (Authorization, API keys, cookies) and common secret JSON body fields are
+  masked before expectations are stored. Redaction can be disabled or extended via import options.
+
+- Smart deduplication and templatization of recorded traffic: collapse many recorded requests that differ only
+  by an id segment (e.g. `/users/123`, `/users/456`) into one `/users/{id}` expectation, and drop exact
+  duplicates — without merging requests that have genuinely different responses.
+
+- Baseline traffic drift comparison: `PUT /mockserver/baseline/compare` diffs current recorded interactions
+  against a saved baseline and returns a structured drift report (added / removed / changed), using
+  value-insensitive JSON-shape comparison (a changed field value is not drift, but a new/removed field or a
+  type change is) — usable from CI to catch traffic-shape regressions.
+
+#### Verification
+- **Timeout-aware eventual and negative-within-timeout verification** (`mockserver-client-java`). The Java
+  client gained two additive, back-compatible verification styles for testing **asynchronous** applications
+  (fire-and-forget sends, background workers) without an external retry helper:
+  - **Eventual verification** — `verify(RequestDefinition, VerificationTimes, Duration timeout)` and
+    `verify(Verification, Duration timeout)` poll the event log, re-running the verification with a small
+    backoff (100 ms) until it passes or the timeout expires, throwing the last failure on timeout. This
+    replaces the single-snapshot semantics of the existing `verify(...)` for cases where the request may not
+    have reached MockServer yet.
+  - **Negative-within-timeout verification** — `verifyNever(RequestDefinition, Duration window)` and
+    `verifyNever(Verification, Duration window)` assert the condition stays **unmet** for the whole window
+    (e.g. "no request was made within 2 seconds"), failing the moment a matching request is observed and
+    returning normally if the window elapses with no match.
+
+  Both are implemented purely client-side (a poll loop over the standard `PUT /mockserver/verify` endpoint);
+  no server change is involved. The existing snapshot `verify(...)` methods are unchanged.
+
+- **`verifyAll(...)` soft/collecting verification and verify-by-disposition filter** (`mockserver-core`,
+  Java client). Two additive, back-compatible verification ergonomics:
+  - **Soft/collecting verify** — `MockServerClient.verifyAll(Verification...)` runs every supplied
+    verification and, instead of throwing on the first failure (as `verify(...)` does), collects all
+    failures and throws a single `AssertionError` listing every mismatch, so a test sees all failures at
+    once. Passing verifications produce no error.
+  - **Verify by disposition** — `Verification.withDisposition(Disposition.FORWARDED | Disposition.MOCKED)`
+    narrows a request-count verification to only those requests that were forwarded/proxied to an upstream
+    server (`FORWARDED`) or that matched an expectation and received a mocked response (`MOCKED`). When no
+    disposition is set, verification counts all received requests exactly as before. The disposition is
+    serialized through the verify REST path (`disposition` field on the verification JSON) and ignored for
+    response-aware and expectation-id verifications.
+
+- **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
+  `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
+  `closest match diff:` block for the specific sequence step that failed to match — listing which fields
+  (method/path/headers/body/...) differ from the closest recorded request — exactly as single-request and
+  single-response verification already do. Response-aware sequences (`withResponses(...)`) get the same
+  field-level closest-response diff for the failing step. The diff is diagnostic only and never changes the
+  pass/fail outcome; the existing failure-message format is otherwise unchanged, and when
+  `detailedVerificationFailures` is disabled the message is byte-for-byte the same as before.
+
+- **Response verification: status-code range / operator matching**: a response template may now match a
+  status code by class range (`statusCodeRange: "2XX"` matches `200`–`299`, case-insensitive `2xx` is also
+  accepted) or numeric operator (`">= 400"`, `"> 200"`, `"< 300"`, `"<= 204"`, `"== 201"`) instead of only
+  an exact `statusCode`. The new `statusCodeRange` field is verification-only — it is never written to the
+  wire when a response is served — and round-trips in JSON. When `statusCodeRange` is absent the historical
+  exact-`statusCode` matching is byte-for-byte unchanged.
+
+- **`detailedVerificationFailures` now applies to response verification**: a failing response verification
+  (when `detailedVerificationFailures` is enabled) now appends a field-level "closest match diff" naming the
+  response fields that differed (statusCode/reasonPhrase, headers, cookies, body) and the expected-vs-found
+  values for the closest recorded response — mirroring the long-standing request-verification diagnostic,
+  which previously did nothing for response verification. The diff is diagnostic only and never changes the
+  pass/fail result; it is gated identically to the request side and capped by
+  `maximumNumberOfRequestToReturnInVerificationFailure`.
+
+- **Response matcher: reason-phrase honours `matchExactCase`**: when `matchExactCase` is enabled, the
+  response reason-phrase is now matched case-sensitively (parity with the response body), so a template
+  reason-phrase `OK` no longer matches an actual `ok`. The default (false) keeps the historical
+  case-insensitive behaviour unchanged.
+
+- **Response matcher: structured cookie matching**: a response template's structured cookies (`Set-Cookie`)
+  are now matched using the same sub-set / notted semantics as the request side — extra response cookies are
+  allowed, a missing required cookie fails the match, and notted cookie values are honoured. Responses with no
+  cookie template are unconstrained (additive; default response matching is unchanged).
+
+#### OpenAPI & contract testing
+- **Auth in the generated Postman & Bruno API collections.** The collection generator
+  (`scripts/collections/generate_collections.py`) now emits collection-level authentication instead of
+  `auth: none`. It reads `components.securitySchemes` from the OpenAPI spec (bearer / API key / basic) and,
+  when the spec declares none, falls back to a JWT **bearer token** — the control plane's
+  `controlPlaneJWTAuthenticationRequired` scheme. Every request inherits the collection auth, and the
+  credential is a placeholder variable (`bearerToken` / `apiKey` / `username`+`password`) left blank, so the
+  collections still work unchanged against an unauthenticated MockServer. A new Buildkite infra step
+  regenerates the collections and fails the build if the committed `examples/postman/**` and
+  `examples/bruno/**` drift from the OpenAPI spec.
+
+- **Opt-in OpenAPI request validation during mock matching** (`mockserver-core`). When a request is matched by
+  an expectation created from an OpenAPI spec (`Expectation.when(specUrlOrPayload, operationId)` /
+  `openAPI(...)`), the incoming request can now be validated against that spec before the matched action is
+  dispatched. Enable it with the new `validateRequestsAgainstOpenApiSpec` flag
+  (`Configuration.validateRequestsAgainstOpenApiSpec(true)`, the `mockserver.validateRequestsAgainstOpenApiSpec`
+  system property, or the `MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC` environment variable). When a
+  matched request violates the spec (e.g. a malformed or missing request body), MockServer rejects it with a
+  **400** describing the violations and logs an `OPENAPI_REQUEST_VALIDATION_FAILED` event, instead of serving
+  the mock response. Previously OpenAPI request validation only ran on the proxy/forward path
+  (`validateProxyOpenAPISpec`). The flag is **off by default and fully back-compatible**: with it unset, or for
+  expectations not backed by an OpenAPI spec, behaviour is exactly as before. The validation runs off the Netty
+  event loop, mirroring the validation-proxy request path.
+
+- **Pact provider-state preconditions on import, verify, and export**: a Pact interaction's `providerState`
+  (v2) / `providerStates` (v3) — the "given ..." precondition — is now preserved on import and mapped onto a
+  MockServer scenario (`scenarioName` = `pact-provider-state`, `scenarioState` = the state name), so an imported
+  interaction only matches once that provider state has been activated. Pact verification activates each
+  interaction's provider state before matching (the provider-state callback) and restores prior state
+  afterwards, and export round-trips the provider state. Stateless interactions are unchanged.
+
+- **OpenAPI contract testing endpoint `PUT /mockserver/contractTest`**: runs an OpenAPI spec as contract
+  tests against a live service. For each operation MockServer builds a representative example request, sends
+  it to the target `baseUrl` (reusing the wired HTTP client, with the same SSRF protection as the forward
+  and replay paths), and validates the response against the spec. Returns a structured pass/fail-per-operation
+  JSON report (`totalOperations`, `passed`, `failed`, `allPassed`, and per-operation `validationErrors`). An
+  optional `operationId` restricts the run to a single operation.
+
+- **Enforce OpenAPI response validation for mocks `enforceResponseValidationForMocks`**
+  (`MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS`, default false): when enabled (alongside
+  `openAPIResponseValidation`), a mock response that fails OpenAPI response validation is replaced with a
+  `502` error describing the violations, matching the enforcement already available on the validation-proxy
+  path via `validateProxyEnforce`. The default (false) keeps the historical advisory-only behaviour where
+  violations are logged but the response is still returned.
+
+- OpenAPI example generation accepts an optional reproducibility seed and per-field value overrides (via a
+  reserved `__generationOptions__` entry in the import's operations map), so generated example bodies can be
+  deterministic per run and pin specific fields.
+
+- Import Pact v3 consumer contracts as expectations: `PUT /mockserver/import?format=pact` (or the dedicated
+  `PUT /mockserver/pact/import`) consumes a Pact contract and generates matching expectations, mapping Pact
+  matchingRules to MockServer matchers — the inverse of the existing Pact export/verify.
+
+#### gRPC & GraphQL
+- **gRPC example synthesis from descriptors**: a matched gRPC expectation with a successful
+  (`grpc-status: 0`) response and *no* hand-authored response body now returns a schema-valid
+  example message synthesized from the loaded proto descriptor's response type, instead of an
+  empty frame. The new `GrpcExampleSynthesizer` walks the message's fields and emits
+  deterministic, type-correct placeholders — scalars, enums (first declared value), nested
+  messages, repeated fields (single element), map entries, `oneof` (first field only), and the
+  protobuf well-known types (`Timestamp`, `Duration`, scalar wrappers, etc.). Recursion is
+  bounded so self-referential schemas terminate safely. Explicit response bodies are always
+  used as-is and never overwritten — synthesis only fills the "no body provided" gap.
+
+- **GraphQL and AsyncAPI spec import**: `PUT /mockserver/graphql` imports a GraphQL SDL / introspection document
+  and generates an expectation per root operation type whose responses are schema-valid (built on the GraphQL
+  response synthesizer); `PUT /mockserver/asyncapi/http` turns an AsyncAPI document's channels into GET
+  expectations serving schema-aware example payloads over HTTP. (Raw `.proto` import is deferred — compiled gRPC
+  descriptors still import via `PUT /mockserver/grpc/descriptors`.)
+
+- **gRPC bidi-stream response templating**: a `grpcBidiResponse` message may set `templateType`
+  (`VELOCITY`/`MUSTACHE`) so its `json` is rendered as a response template against the matched inbound message
+  (exposing `request.body`, `jsonPath`, and the `scenario` state helper). Static (no `templateType`) responses
+  are emitted byte-for-byte unchanged.
+
+- **GraphQL schema-driven response synthesis**: a GraphQL expectation body may now carry a `schema` field
+  containing either SDL text (e.g. `type Query { hello: String }`) or an introspection JSON result. When a
+  schema is registered, MockServer can synthesize a schema-valid `{"data": {...}}` response for a matched
+  query with no hand-authored response JSON — respecting field types, nullability, lists, nested objects,
+  scalars (including common custom scalars such as `DateTime`/`JSON`), enums (first declared value), field
+  aliases, `__typename`, inline fragments, and named fragment spreads. Only the requested selection set
+  appears in the response (a subset of the type is honoured). Backed by a new `com.graphql-java:graphql-java`
+  dependency (pinned to the Java-17-compatible 22.x line). The `schema` field round-trips in JSON in both the
+  nested `graphQL` form and the flat body form.
+
+- gRPC descriptor management in the Python, Node, Go, Rust, .NET and Ruby clients (`upload_grpc_descriptor` /
+  `uploadGrpcDescriptor`, `retrieve_grpc_services` / `retrieveGrpcServices`, `clear_grpc_descriptors` /
+  `clearGrpcDescriptors`) — upload a compiled gRPC descriptor set as raw bytes, list registered services, and
+  clear them — bringing every client to parity with the Java client.
+
+- gRPC **Connect protocol** (buf.build Connect) unary mocking: Connect unary calls are plain HTTP POSTs, so
+  they already match with ordinary `httpRequest`/`httpResponse` expectations — new `ConnectResponse.success(json)`
+  / `ConnectResponse.error(code, message)` helpers build the correct `application/json` success body and the
+  Connect error envelope (`{code, message, details}`) with the HTTP status mapped from the Connect error code.
+  Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
+
+#### Chaos, resilience & SRE
+- **Response-content conditional breakpoints** (`mockserver-core`). A `RESPONSE`-phase breakpoint matcher now
+  accepts optional `responseStatusCodeMin`/`responseStatusCodeMax` (inclusive status-code range) and
+  `responseBodyContains` (regex searched within the response body) fields, so a breakpoint can pause only when
+  the response looks a certain way — e.g. break only on `5xx` responses or on a body containing a particular
+  message. When set, the breakpoint pauses only if the response satisfies all configured conditions; absent
+  fields preserve the previous behaviour (pause on every matching response). Conditions are evaluated only at
+  the response phase (the request/stream paths are unchanged), via the new
+  `BreakpointMatcherRegistry.findResponseMatch`; a matcher whose condition fails falls through to later
+  matchers. The `responseBodyContains` regex is compiled at registration; an invalid regex or an inverted
+  status range returns `400`. The fields are accepted by `PUT /mockserver/breakpoint/matcher`, echoed by the
+  register/list endpoints, and back-compatible (purely additive).
+
+- **General-purpose rate limiting (`rateLimit` expectation clause)** (`mockserver-core`). A protocol-agnostic
+  `rateLimit` clause on an expectation (sibling of `chaos`) returns a deterministic `429` with `Retry-After` and
+  `X-RateLimit-Limit/Remaining/Reset` headers once a matched expectation exceeds its configured rate — so a test
+  can exercise a client's backoff/retry logic without wrapping a chaos profile. Supports `fixed_window` and
+  `token_bucket` algorithms, a named shared counter (multiple expectations can share one limit), and an
+  overridable error status. Off by default (no clause = no behaviour); the named-counter store is node-local and
+  bounded by `rateLimitMaxNamedQuotas`.
+
+- **Retry/backoff recovery primitive — "fail N times then succeed"** (`mockserver-core`). A new opt-in
+  `recoverAfter` clause on `httpResponse` returns a failure response (configurable `failResponse`, default
+  `503`) for the first `failTimes` matches and then the configured success response — so a test can
+  deterministically exercise a client's retry/backoff logic. An optional `idempotencyHeader` scopes the
+  attempt counter per request-header value (distinct keys each recover independently); without it the counter
+  is per-expectation. Independent of `Times`. A response without `recoverAfter` is unchanged; the keyed counter
+  registry is bounded (LRU eviction) to prevent unbounded growth.
+
+- **API-driven load generation via Load Scenarios** (`mockserver-core`, `mockserver-netty`). A new opt-in
+  control plane (`PUT/GET/DELETE /mockserver/loadScenario`) drives outbound traffic at a target: a
+  `LoadScenario` is an ordered list of request steps (modelled on a verification sequence) with per-step
+  think-time (the existing `Delay` model, including jitter distributions) and a ramp `LoadProfile`
+  (`CONSTANT` or `LINEAR` virtual-user count over a duration). Request fields are template-rendered per
+  iteration with a new `iteration` context object (`iteration.index`/`vuId`/`vuIteration`/`elapsedMillis`)
+  alongside the existing `faker`/`uuid`/`scenario` helpers, so data varies across iterations. Runs in-process
+  on a non-blocking scheduler that fires through the existing forward HTTP client; results feed the metrics
+  histograms and the SLO sample store, so a load run can be asserted with `verifySLO`. Off by default
+  (`loadGenerationEnabled`) and bounded by hard caps on virtual users, in-flight requests, request rate,
+  duration, and steps to prevent a scenario overloading the instance serving mocks.
+
+- **SLO resilience verdicts (`mockserver-core`)** — assert pass/fail service-level objectives over observed
+  forwarded traffic. A new opt-in windowed sample store (`sloTrackingEnabled`, off by default; a true no-op on
+  the request path when disabled) records latency + error per forwarded round-trip, and `PUT /mockserver/verifySLO`
+  evaluates `SloCriteria` (latency percentile + error-rate objectives over a `LOOKBACK`/`EXPLICIT` window against
+  optional upstream hosts) and returns a structured `SloVerdict` — `200` PASS / `406` FAIL / `400` when malformed or
+  tracking is disabled. Bounded by `sloWindowMaxSamples` (50000) and `sloWindowRetentionMillis` (600000). Pairs with
+  chaos experiments: drive faults, then assert the system stayed within objectives.
+
+- **Connection-lifecycle fault injection + preemption simulation** (`mockserver-core`, `mockserver-netty`).
+  Extends the per-host TCP chaos profile with response-path lifecycle faults — mid-response TCP RST
+  (`resetMidResponse`), host-scoped jittered slow-close (`slowCloseDelay`), and HTTP/2 GOAWAY (`http2GoAway`) —
+  configured through the existing `PUT /mockserver/tcpChaos`. Adds a `PUT/GET/DELETE /mockserver/preemption`
+  control plane that simulates a Kubernetes rolling-update / spot-reclaim drain: it cordons new exchanges
+  (HTTP/2 GOAWAY or `503` + `Connection: close`), reports the live in-flight count while draining, and
+  auto-uncordons after a TTL — without stopping the JVM. Destructive RSTs feed the chaos auto-halt
+  circuit-breaker (which now also clears the TCP chaos registry); graceful drain signals do not. Off by
+  default; zero cost on the normal response path when inactive.
+
+- **Saved chaos profile library (save/apply/list/delete chaos experiments by name)**: chaos experiments can now be
+  stored as reusable, named profiles instead of re-authoring the experiment JSON every time. A profile is simply a
+  saved chaos-experiment definition (the same JSON shape `PUT /mockserver/chaosExperiment` accepts) kept under a name.
+  - `PUT /mockserver/chaosExperiment/profiles/{name}` — save (or replace) a profile under `{name}`.
+  - `POST /mockserver/chaosExperiment/apply/{name}` — apply (start) a saved profile by name.
+  - `GET /mockserver/chaosExperiment/profiles` — list saved profile names; `GET /mockserver/chaosExperiment/profiles/{name}`
+    returns one profile's definition.
+  - `DELETE /mockserver/chaosExperiment/profiles/{name}` — remove a saved profile.
+
+  Profiles are persisted in the `StateBackend` CRUD-entity store, so they **survive a server reset** (unlike active
+  chaos, which a reset clears) and **replicate across the fleet** when a clustered backend is configured. The existing
+  `/mockserver/chaosExperiment` endpoint is unchanged. The dashboard Chaos panel gains a **Saved Profiles** list with a
+  "Save as Profile" button (saves the current experiment editor) and one-click apply / delete chips.
+
+- **Conditional (Nth-hit) breakpoints**: breakpoint matchers accept an optional `skipCount` that skips the
+  first N matching hits and only pauses afterward (per-breakpoint, thread-safe counter); exposed via the
+  `/mockserver/breakpoint` API and a "Skip count" field in the dashboard Breakpoints panel.
+
 - **Stream-level error injection** (HTTP/2 / HTTP/3): the `httpError` action gained
   `withStreamError(long)` (plus a `withStreamError(StreamErrorCode)` enum overload and a
   `withStreamErrorCodeName("REFUSED_STREAM")` convenience), serialised in JSON as a `streamError`
@@ -772,200 +989,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposed on the Node, Python and Ruby clients as `streamError` / `stream_error`. Useful for resilience
   testing that clients handle mid-stream resets. Fully backward compatible — omitted when null, so
   existing `dropConnection`/`responseBytes` behaviour is unchanged.
-- **HTTP response trailers** (trailing headers): a response can now carry trailing headers via
-  `httpResponse().withTrailers(...)` / `withTrailer(name, values...)` (mirroring the existing header
-  builder), serialised in JSON as a `trailers` object alongside `headers`. MockServer emits them as
-  protocol-appropriate trailing headers — for HTTP/1.1 the response is sent chunked with an automatic
-  `Trailer` header announcing the field names and a trailing-header block after the final chunk (an
-  explicit `Content-Length` is dropped, since trailers and a fixed length are mutually exclusive); for
-  HTTP/2 and HTTP/3 they become a trailing HEADERS frame. gRPC responses are unaffected: the gRPC layer
-  builds its own trailing HEADERS frame from `grpc-status`/`grpc-message` and does not read the general
-  `trailers` field, so general trailers are not emitted on gRPC responses. Fully backward compatible — a
-  response with no trailers is byte-for-byte identical to before.
-- Expectation **namespacing / multi-tenancy**: an optional `namespace` (tenant) field on each expectation lets
-  multiple teams or test-suites share one MockServer instance without their expectations colliding. A request
-  scopes matching to a namespace via a configurable header (`matchNamespaceHeader`, default
-  `X-MockServer-Namespace`; env `MOCKSERVER_MATCH_NAMESPACE_HEADER`): a request in namespace `T` matches
-  expectations whose `namespace` is `T` plus all global (no-namespace) expectations, and never another
-  tenant's. A request with no namespace header matches only global expectations (true isolation by default).
-  `PUT /mockserver/clear?namespace=T` and `PUT /mockserver/retrieve?type=active_expectations&namespace=T` are
-  scoped to a single tenant. The Java client adds `clearByNamespace(namespace)` and
-  `retrieveActiveExpectations(requestDefinition, namespace)` so a CI job can clear or inspect only its own
-  namespace on teardown without resorting to raw HTTP. Fully backward compatible — with no namespace ever set,
-  behaviour is unchanged.
-- VS Code extension adds **MockServer: Find Requests by Trace** — enter a W3C trace id (32 hex) or a full
-  `traceparent` header value and the extension opens every request the server received that belongs to that
-  distributed trace, so you can see every hop of one trace in a new JSON editor tab.
-- VS Code and JetBrains extensions now validate MockServer expectation files. Name a file `*.mockserver.json`
-  (or `*.mockserver.jsonc`) and the editor gives inline schema validation, autocompletion, and hover
-  documentation for expectations — driven by the same schema MockServer itself validates against, generated
-  from `mockserver-core` (`scripts/generate-editor-expectation-schema.mjs`). A single expectation or an array
-  of expectations (initialization JSON) is accepted.
-- JetBrains plugin adds a **Settings | Tools | MockServer** panel to configure the Docker image, container
-  name, and port.
-- VS Code extension turns expectation files into a live control surface: CodeLens actions at the top of any
-  `*.mockserver.json` / `*.mockserver.jsonc` file **Load into running MockServer** (`PUT /mockserver/expectation`,
-  comments and trailing commas tolerated) and **Diff against live** (side-by-side diff against the server's
-  active expectations), both reachable from the Command Palette.
-- VS Code extension can record real traffic into code: **MockServer: Save Recorded Expectations** opens the
-  expectations the server recorded from proxied/forwarded traffic
-  (`PUT /mockserver/retrieve?type=recorded_expectations`) as JSON or Java DSL in a new editor tab.
-- VS Code extension can generate expectations from an OpenAPI/Swagger spec: **MockServer: Generate
-  Expectations From OpenAPI Spec** sends the active editor's spec (JSON or YAML) to the running server
-  (`PUT /mockserver/openapi`) and opens the generated expectations in a new tab.
-- VS Code extension can show a mock-drift report: **MockServer: Show Drift Report** fetches the latest
-  drift records (`GET /mockserver/drift`) — how real upstream responses have drifted from your stub
-  expectations — and opens a readable text summary in a new tab (one line per drift: type, field,
-  expected vs actual value, confidence, and the affected expectation).
-- JetBrains plugin brings the same mock-drift report to the **Tools > MockServer** menu: **Show Drift
-  Report** fetches the latest drift records (`GET /mockserver/drift`) and opens a readable text summary in
-  a new tab (one line per drift: type, field, expected vs actual value, confidence, and the affected
-  expectation). The HTTP call runs off the UI thread.
-- JetBrains plugin adds distributed-trace correlation: **Find Requests by Trace** (menu and tool window)
-  prompts for a W3C trace id (32 hex) or a full `traceparent` header value, retrieves the requests
-  MockServer has received (`PUT /mockserver/retrieve?type=requests`), filters them down to those carrying a
-  `traceparent` header with that trace id, and opens the matching requests as JSON in a new tab. The HTTP
-  call runs off the UI thread.
-- JetBrains plugin can author WASM custom-rule modules: **Upload WASM Module** picks a compiled `.wasm`
-  file with the IDE file chooser, confirms a module name, and uploads its raw bytes
-  (`PUT /mockserver/wasm/modules?name=<name>`, `application/octet-stream`) to the running server so it can
-  be referenced by name as a WASM body matcher; **List WASM Modules** fetches the registered modules
-  (`GET /mockserver/wasm/modules`) and opens the JSON list of names in a new tab. The upload reports
-  clearly when the server has WASM support disabled, and both HTTP calls run off the UI thread.
-- VS Code extension can surface mock drift as **inline diagnostics** on the open expectation file:
-  **MockServer: Show Drift as Diagnostics** fetches the latest drift records (`GET /mockserver/drift`),
-  matches each to its expectation by `id`, and shows it as a diagnostic on that expectation's line
-  (unmatched drift attaches to the first line) — so "the real upstream differs from this stub" appears
-  right in the `*.mockserver.json` file. Status-code drift, a removed schema field, or a fully-confident
-  drift shows as an error; a newly added schema field shows as a warning; everything else as information.
-  Re-running refreshes the diagnostics and a clean result clears them.
-- VS Code extension can author WASM custom-rule modules: **MockServer: Upload WASM Module** picks a
-  compiled `.wasm` file and uploads it to the running server (`PUT /mockserver/wasm/modules?name=<name>`,
-  raw bytes) so it can be referenced by name in an expectation body matcher
-  (`{ "type": "WASM", "moduleName": "<name>" }`), and **MockServer: List WASM Modules** opens the registered
-  module names (`GET /mockserver/wasm/modules`) in a new JSON tab. When WASM support is disabled on the
-  server the "WASM support is disabled" message is surfaced verbatim.
-- JetBrains plugin brings the same server-interaction actions to the **Tools > MockServer** menu:
-  **Load Expectations Into Running Server** (`PUT /mockserver/expectation`, a single expectation or an array),
-  **Save Recorded Expectations** (`PUT /mockserver/retrieve?type=recorded_expectations`, opens the
-  recorded expectations in a new JSON tab), and **Generate Expectations From OpenAPI Spec**
-  (`PUT /mockserver/openapi`, sends the active editor's JSON or YAML spec and opens the generated
-  expectations in a new JSON tab). All HTTP calls run off the UI thread.
-- JetBrains plugin can show the live MockServer dashboard **inside the IDE** via **Open MockServer Dashboard
-  in IDE** (and a dedicated right-hand tool window), embedding it with the bundled JCEF (Chromium) engine and
-  Reload / Open-in-Browser controls. When JCEF is unavailable in the IDE or runtime it falls back gracefully
-  to opening the external browser.
-- VS Code extension can show the live dashboard inside VS Code: **MockServer: Open Dashboard** reveals the
-  running server's dashboard docked in the bottom panel (a webview that frames
-  `http://localhost:<port>/mockserver/dashboard`) on the configured port, alongside an external-browser option.
-- VS Code extension can send an ad-hoc test request without leaving the editor: name a file
-  `*.mockserver-request.json` (`{ "method", "path", "headers"?, "body"? }`) and the **MockServer: Send
-  Test Request** command (or the **Send to MockServer** CodeLens) fires it at the running server on the
-  configured port and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a
-  new tab.
-- JetBrains plugin brings the same ad-hoc request feature to the **Tools > MockServer** menu:
-  **Send Test Request** parses the active editor's JSON request spec
-  (`{ "method", "path", "headers"?, "body"? }`), fires it at the running server on the configured port,
-  and opens the response (`HTTP <status>` plus the body, pretty-printed when JSON) in a new editor tab.
-  The HTTP call runs off the UI thread.
-- JetBrains plugin bottom **MockServer** tool window is now a one-click launcher for the full action set
-  (previously only Open Dashboard + Start Docker): buttons are grouped into *Server* (Open Dashboard in IDE,
-  Open Dashboard in Browser, Start (Docker), Reset) and *Editor actions* (Load Expectations, Save Recorded,
-  Generate From OpenAPI, Send Test Request, Show Drift Report), so everything is reachable without opening
-  the **Tools > MockServer** menu. The editor actions reuse the registered actions verbatim.
-- JetBrains plugin adds **Reset MockServer** (menu and tool window): clears all expectations and recorded
-  logs on the running server (`PUT /mockserver/reset`) after a confirmation prompt; the HTTP call runs off
-  the UI thread.
-- VS Code extension adds two quick utility commands: **MockServer: View Request Log** opens the log of
-  requests the server has received (`PUT /mockserver/retrieve?type=requests`) in a new JSON tab (saying so
-  rather than opening an empty tab when no requests have been recorded), and **MockServer: Reset (Clear
-  Expectations & Logs)** clears all expectations and the request log (`PUT /mockserver/reset`) after a modal
-  confirmation.
-- Go client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
-  `VerifyZeroInteractions`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
-- Rust client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, `openapi()` import, and
-  `verify_zero_interactions()`, moving it toward feature parity with the Java/Node/Python/Ruby clients.
-- .NET client: SSE, WebSocket, DNS, binary, and gRPC-stream response builders, OpenAPI import, and
-  `VerifyZeroInteractions` (sync + async), moving it toward feature parity with the Java/Node/Python/Ruby clients.
-- Sensitive data is now redacted by default when importing HAR or Postman collections (`PUT /mockserver/import`):
-  sensitive request/response headers (Authorization, API keys, cookies) and common secret JSON body fields are
-  masked before expectations are stored. Redaction can be disabled or extended via import options.
-- Response-template helpers `crypto` (`md5`/`sha1`/`sha256`/`sha512`/`hmacSha256`, lowercase hex) and `regex`
-  (`matches`/`replaceAll`/`group`) for hashing/signing and extracting or rewriting values inside templates.
-- `multipart/form-data` request-body matching: a new `MultipartBody` matcher matches on individual parts by
-  field name/value, filename, and part content-type (regex and negation supported, like form parameters), via
-  both the Java DSL and the JSON/REST API. OpenAPI operations with `multipart/form-data` request bodies now
-  build field matchers from the schema's required properties instead of being matched on path and method only.
-- gRPC descriptor management in the Python, Node, Go, Rust, .NET and Ruby clients (`upload_grpc_descriptor` /
-  `uploadGrpcDescriptor`, `retrieve_grpc_services` / `retrieveGrpcServices`, `clear_grpc_descriptors` /
-  `clearGrpcDescriptors`) — upload a compiled gRPC descriptor set as raw bytes, list registered services, and
-  clear them — bringing every client to parity with the Java client.
-- Dashboard request-log filtering gains regex matching on method/path and named, saved filter presets
-  (persisted in the browser) for quickly switching between common filters.
-- Numeric comparison operators (`> 60`, `>= 60`, `< 100`, `<= 30`, `== 5`; not-equal via `!== 5`) for matching
-  header, cookie, and query-string parameter values, in addition to exact and regex matching.
-- Response templates can read and write scenario state via a `scenario` helper (`scenario.get(name)`,
-  `scenario.set(name, state)`, `scenario.matches(name, state)`) in Velocity, JavaScript and Mustache — capture a
-  value in one request and use it to drive a later response (stateful "scenario" mocking).
-- Declarative `capture` rules on an expectation extract a value from the matched request (via jsonPath, xpath,
-  header, queryStringParameter, cookie or pathParameter) and store it into scenario state, so a later request's
-  response template can read it — enabling auth→resource→confirm journeys without manual scenario triggers.
-- The mock OIDC provider now supports the full OAuth2 authorization-code flow: a new `/authorize` endpoint issues
-  a single-use code and redirects back with `code` and `state`, and `/token` exchanges it (with PKCE S256/plain
-  support) for tokens — completing the interactive flow alongside the existing client-credentials grant.
+
+#### CLI & configuration
+- **CLI `--watch` live-reload flag and `mockserver demo` subcommand** (`mockserver-netty`). The `run`
+  subcommand (and its bare/legacy forms) gains `--watch`, which enables live-reload of expectations when the
+  initializer/expectations file (from `--init` / `--openapi`) changes, without a restart (~5s poll). It is a
+  thin CLI surface over the existing `mockserver.watchInitializationJson` property, so the equivalent
+  `MOCKSERVER_WATCH_INITIALIZATION_JSON=true` / `-Dmockserver.watchInitializationJson=true` forms still apply.
+  A new `mockserver demo` subcommand starts a server pre-loaded with a small set of example expectations
+  (`GET /hello`, `GET /users/{id}`) and prints a getting-started URL, the dashboard URL, and a sample `curl`
+  for instant onboarding. Both are additive and backward-compatible.
+
+- **`mockserver import <file>` CLI subcommand and client `importExpectations(...)` methods.** A new
+  `import` subcommand (`org.mockserver.cli.Main`, `mockserver-netty`) loads a JSON expectations file —
+  the same single-object-or-array format produced by `--persist`, the dashboard export, or
+  `retrieveActiveExpectations(..., Format.JSON)` — into an already-running MockServer:
+  `mockserver import ./expectations.json -p 1080` (`-H/--host` defaults to `localhost`). It connects as a
+  client and upserts each expectation; it does **not** start a server and never sends a shutdown to the
+  target. A missing/invalid file or unreachable server prints a clean error and exits non-zero. The
+  `mockserver-client-java` client gains typed `importExpectations(String json)` and
+  `importExpectationsFromFile(String filePath)` wrapping the same upsert.
+
+- **Effective-configuration diagnostic (`--print-config`)**: the command-line launcher now accepts a
+  `--print-config` flag that prints the effective configuration and exits, listing each known property as
+  `name = value   [source]` where `source` is the tier that supplied the value (`system-property`,
+  `properties-file`, `environment-variable`, `default`, or `runtime-set` for a value applied at runtime via a
+  programmatic setter). Properties left at their built-in default show `(default)`, and sensitive values
+  (passwords, API keys, tokens, secrets, private keys, credentials) are redacted as `***REDACTED***` via the
+  existing sensitive-name detection. The same report is available at runtime as JSON from the authenticated
+  `GET /mockserver/config` control-plane endpoint. Source reporting is purely observational — it reads the
+  in-memory property cache first (exactly as the real resolution does) and then the same tiers in the same
+  precedence order, without mutating any state or changing how any value resolves.
+
+- **Readiness endpoint `GET /mockserver/ready`**: returns 503 until expectation initializers and OpenAPI
+  seeding complete, then 200 — distinct from the always-200 liveness/status endpoints. The Helm chart now
+  points the readiness probe at it and liveness at the existing path, so Kubernetes no longer routes traffic
+  to a pod whose expectations aren't loaded yet.
+
+- **`failOnInitializationError`** (`MOCKSERVER_FAIL_ON_INITIALIZATION_ERROR`, default false): when enabled, a
+  malformed initialization JSON/OpenAPI file or a broken initialization class fails server startup instead
+  of logging a warning and continuing with zero expectations.
+
+- **Warning for unrecognised configuration keys**: MockServer now logs a `WARN` at startup when it sees a
+  `mockserver.*` system property, a `MOCKSERVER_*` environment variable, or a properties-file key in the
+  `mockserver.` namespace that isn't a known configuration property — so a typo such as
+  `-Dmockserver.maxExpectatons=...` or `MOCKSERVER_METRICS_ENABLE=...` is surfaced instead of being silently
+  ignored (the previous behaviour, which left the default in effect with no signal). Recognised keys are
+  derived from the configuration constants themselves, plus the CLI/launcher keys (`MOCKSERVER_SERVER_PORT`,
+  `MOCKSERVER_LAUNCHER`, `MOCKSERVER_JAVA_OPTS`, etc.), so valid configuration never warns and unrelated
+  environment variables (`JAVA_HOME`, `PATH`, …) are ignored.
+
 - Graceful shutdown now drains in-flight requests: on stop, MockServer waits up to `stopDrainMillis` (env
   `MOCKSERVER_STOP_DRAIN_MILLIS`, default 15000; 0 disables) for active requests to complete before shutting
   down — avoiding cut connections during Kubernetes rolling restarts.
+
+- More configuration properties are editable at runtime from the dashboard configuration dialog (matching &
+  proxying, logging, and CORS toggles that the server applies live).
+
+#### WASM custom rules
+- **Richer WASM matcher ABI, authoring SDK, and a `wasm/test` endpoint** (`mockserver-core`). WASM custom-rule
+  modules can now read the request **method, path and headers** in addition to the body. A module that exports
+  `match_request(ptr, len)` receives a UTF-8 JSON envelope
+  (`{"method","path","headers":{name:[values]},"body"}`) instead of just the body; MockServer prefers
+  `match_request` when present and falls back to the legacy body-only `match(ptr, len)` export, so existing
+  body-only modules keep working unchanged. A new dependency-free Rust authoring crate
+  `mockserver-wasm-sdk` (`examples/wasm/sdk-rust/`) gives module authors typed accessors
+  (`Request::method/path/header/body`) and an `export_match_request!` macro, with a sample rule in
+  `examples/wasm/rust-request/` that matches on method + path + header. A new
+  **`POST /mockserver/wasm/test`** control-plane endpoint runs a module (supplied inline as base64 `module`, or
+  by `moduleName` for an already-uploaded module) against a sample `request` and returns `{ "matched": true|false }`,
+  so IDEs/users can validate a module without creating a live expectation. The endpoint requires `wasmEnabled=true`
+  (otherwise 403) and is fail-closed (invalid modules report `matched: false`).
+
+#### Clustering & observability
+- **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
+  `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
+  time a stored drift record meets the configured severity threshold, carrying the drift record as JSON
+  (`{"event":"mockserver.drift.alert","epochTimeMs":...,"severity":...,"drift":{...}}`). Off by default and
+  fully fail-soft — a failed, slow, unreachable, or misconfigured endpoint can never affect drift analysis
+  or the served response. Severity uses the LLM-assigned `semanticSeverity` when available, otherwise a
+  structural fallback by drift type, and fires at or above `mockserver.driftAlertSeverityThreshold` (default
+  `BREAKING`). A per-signature (`expectationId|driftType|field`) cooldown
+  (`mockserver.driftAlertCooldownMs`, default 60s) de-dups recurring drifts. The outbound sender is injected
+  from the Netty HTTP client (core does not depend on it), mirroring the load-scenario orchestrator wiring.
+
+- **Control-plane audit logging** (`mockserver-core`). An opt-in, append-only, bounded, in-memory audit log of
+  control-plane *mutations* (who/what/when/where/outcome) so a shared MockServer can run with accountability for
+  who changed mock state. Off by default (`controlPlaneAuditEnabled`); when disabled, control-plane operations
+  behave byte-for-byte identically. Entries record redacted, structural metadata only — never request headers or
+  bodies — with the path's query string dropped; the best-effort principal (unverified JWT `sub` or mTLS CN, else
+  `anonymous`) never stores the raw token. Retrieve via `GET /mockserver/audit` (`?limit=<n>`, default 200, cap
+  1000), auth-gated like other control-plane endpoints; cleared on reset. Bounded by `controlPlaneAuditMaxEntries`
+  (default 1000, fixed at startup); reads are excluded unless `controlPlaneAuditReads=true`. Verified identity and
+  true per-operation outcomes are deferred to a later release.
+
+- **Cluster status endpoint and metric**: a new read-only `GET /mockserver/cluster` control-plane endpoint
+  reports the node's view of cluster membership and health as JSON — `clustered`, `nodeId`, `coordinator`,
+  `clusterName`, `memberCount`, and a `members` list that flags the coordinator and the local node. On a
+  single-node / in-memory deployment it returns a sensible degenerate response (`clustered: false`, one local
+  member that is its own coordinator), so health checks and tooling can call it unconditionally; with the
+  Infinispan backend clustered, it reports the real JGroups fleet membership. A matching Prometheus gauge
+  `mock_server_cluster_members` (read live at scrape time, `1` for single-node) exports the member count when
+  metrics are enabled. Backed by a new `StateBackend.clusterInfo()` SPI method with a degenerate default
+  implementation and a real Infinispan implementation.
+
+- **Dropped-log-event visibility**: when the event-log ring buffer is full under sustained load, dropped
+  log events are now counted and observable instead of vanishing silently (previously only WARN/ERROR
+  drops were logged, so INFO/DEBUG drops were invisible). A `mock_server_dropped_log_events` Prometheus
+  counter is exported when metrics are enabled, the running total is always available regardless of
+  metrics, and a single WARN is logged on the first drop pointing at `ringBufferSize` / log verbosity as
+  the remedy.
+
+- **Per-upstream forward/proxy observability**: forwarded and proxied requests are now observable by
+  the upstream they hit and how it performed. When `metricsEnabled` is set, two new Prometheus metrics
+  are exposed: `mock_server_forward_request_duration_seconds` (a histogram of forward latency labelled
+  by `upstream_host`, sourced from the existing client-side `Timing` rather than re-measured) and
+  `mock_server_forward_requests` (a count labelled by `upstream_host` and `status_class`, e.g. `2xx`/`5xx`).
+  When `otelTracesEnabled` is set, the forward/proxy request span additionally carries the OpenTelemetry
+  `server.address`/`server.port` attributes for the resolved upstream. Labels are bounded to the upstream
+  host (never the full URL/path) to keep cardinality in check, and all recording is a no-op with zero
+  overhead when metrics/telemetry are disabled.
+
 - Optional per-expectation Prometheus metrics: enable `perExpectationMetricsEnabled` (env
   `MOCKSERVER_PER_EXPECTATION_METRICS`, default off) to emit a `mock_server_expectation_matched` counter
   labelled by stable expectation id, for per-endpoint match dashboards (cardinality is bounded by expectation
   count; off by default to avoid surprise series).
-- OpenAPI example generation accepts an optional reproducibility seed and per-field value overrides (via a
-  reserved `__generationOptions__` entry in the import's operations map), so generated example bodies can be
-  deterministic per run and pin specific fields.
-- Dashboard "Why didn't this match?" now offers a side-by-side visual diff (request vs the closest
-  expectation's matcher) alongside the existing text reasons.
-- LLM mocking API in the Python and Node clients: build completion/chat mocks, tool-use, token usage,
-  streaming physics, embeddings, multi-turn conversations and provider failover — producing the same wire
-  format as the Java `Llm` builders, bringing LLM mocking to those clients.
-- MCP (Model Context Protocol) server-mocking API in the Python and Node clients: define a mock MCP server's
-  tools and resources and their responses, mirroring the Java `McpMockBuilder`.
-- PHP client parity: gRPC descriptor management, SSE/WebSocket/DNS/binary/gRPC-stream response builders,
-  OpenAPI import, and `verifyZeroInteractions`.
-- Import Pact v3 consumer contracts as expectations: `PUT /mockserver/import?format=pact` (or the dedicated
-  `PUT /mockserver/pact/import`) consumes a Pact contract and generates matching expectations, mapping Pact
-  matchingRules to MockServer matchers — the inverse of the existing Pact export/verify.
-- Smart deduplication and templatization of recorded traffic: collapse many recorded requests that differ only
-  by an id segment (e.g. `/users/123`, `/users/456`) into one `/users/{id}` expectation, and drop exact
-  duplicates — without merging requests that have genuinely different responses.
-- Dashboard matcher test playground: enter a sample request and see whether a candidate expectation would
-  match it (a browser-side preview) before registering — reached from a new toolbar button.
-- Baseline traffic drift comparison: `PUT /mockserver/baseline/compare` diffs current recorded interactions
-  against a saved baseline and returns a structured drift report (added / removed / changed), using
-  value-insensitive JSON-shape comparison (a changed field value is not drift, but a new/removed field or a
-  type change is) — usable from CI to catch traffic-shape regressions.
-- Dashboard composer can now author `capture` rules on an expectation (extract a request value via
-  jsonPath/xpath/header/query/cookie/pathParameter into scenario state).
-- More configuration properties are editable at runtime from the dashboard configuration dialog (matching &
-  proxying, logging, and CORS toggles that the server applies live).
-- AMQP 0.9.1 (RabbitMQ) broker mocking in the AsyncAPI module: AsyncAPI specs with `amqp` channel bindings now
-  publish their mock messages to a RabbitMQ broker (exchange/routing-key or queue per the binding), alongside
-  the existing Kafka and MQTT support. Configure the broker with `asyncAmqpUri` (env `MOCKSERVER_ASYNC_AMQP_URI`).
-- SAML 2.0 mock Identity Provider: `PUT /mockserver/saml` stands up a mock IdP (metadata endpoint + SP-initiated
-  Web-Browser-SSO POST profile) that returns an XML-DSig-signed SAML assertion with a configurable subject and
-  attributes — letting you test SAML SSO integrations without a real IdP. Self-signed signing cert generated by
-  default, or supply your own. Inbound SAMLRequest parsing is XXE-hardened.
-- gRPC **Connect protocol** (buf.build Connect) unary mocking: Connect unary calls are plain HTTP POSTs, so
-  they already match with ordinary `httpRequest`/`httpResponse` expectations — new `ConnectResponse.success(json)`
-  / `ConnectResponse.error(code, message)` helpers build the correct `application/json` success body and the
-  Connect error envelope (`{code, message, details}`) with the HTTP status mapped from the Connect error code.
-  Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
+
 
 ### Changed
-- **Dashboard navigation**: the **Optimise** tab is renamed **LLM Optimise** and moved to sit
-  immediately after **Chaos**, and dashboard tabs now show a one-line description bar beneath the
-  navigation explaining what the screen is for (for example, LLM Optimise: "Analyse captured LLM
-  traffic to optimise prompts, inference cost, safety, and speed").
+
+#### AI, LLM & agent protocols (LLM / MCP / A2A)
 - **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
   support-agent run (mocked OpenAI Chat Completions with realistic token usage) designed to fire all
   six optimisation signals (`REPEATED_SYSTEM_PROMPT`, `LARGE_STATIC_CONTEXT_RESENT`,
@@ -976,6 +1129,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenCode" section of the AI optimisation docs — shows how to capture **real** agent traffic by
   proxying a headless OpenCode run (your own API key) through MockServer; it is deliberately not part
   of the offline, deterministic `npm run demo`.
+
+#### Dashboard UI
+- **Dashboard navigation**: the **Optimise** tab is renamed **LLM Optimise** and moved to sit
+  immediately after **Chaos**, and dashboard tabs now show a one-line description bar beneath the
+  navigation explaining what the screen is for (for example, LLM Optimise: "Analyse captured LLM
+  traffic to optimise prompts, inference cost, safety, and speed").
+
+- **Dashboard UI visual refresh**: the dashboard now has a real design system (consistent spacing,
+  shadows, typography and a dark-mode-aware log-colour palette). The Metrics view leads with KPI
+  "hero" stat cards, its charts have a real time axis and area fill, and panels show skeleton
+  placeholders while loading instead of a bare spinner. Server error messages shown in the UI are now
+  humanised (a short, actionable message with the raw server detail tucked behind a "Details" toggle)
+  instead of dumping raw server output.
+
+- **Dashboard UI: viewport virtualization for long lists** (behaviour-preserving): the Log Messages,
+  Active Expectations and Requests panels now window their rows — only the entries in (or near) the
+  visible area are mounted in the DOM instead of mounting every row, so panels with tens of thousands
+  of entries (e.g. a 50k-entry log) scroll smoothly instead of bogging down the browser. Rows are
+  measured dynamically so expand/collapse still works, and filtering, ordering, auto-scroll-to-top,
+  selection and live append are unchanged. In a non-layout/headless environment (or a panel laid out at
+  zero height) the list falls back to rendering every row so content stays reachable.
+
+- Dashboard is now more usable on small screens (mobile and the IDE-embedded dashboard): the Get Started
+  feature tiles collapse to a compact bulleted list when the panel is narrow, and the Log Messages list
+  hides the inline message preview when narrow (it wrapped one word per line) — the full message is still
+  available by expanding the row. The Get Started collapse is now driven by a **CSS container query** (the
+  panel's own width) rather than the viewport width, so it works inside the narrow IDE-embedded dashboard
+  (whose CSS viewport stays wide regardless of the tool-window size), not only when a browser window is
+  narrowed; feature-tile titles that wrap to two lines also use a tighter line height.
+
+#### IDE extensions (VS Code & JetBrains)
+- The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
+  JetBrains "MockServer Dashboard" tool window (light/dark variants) and the VS Code dashboard webview tab.
+
+- VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
+  (VS Code: `mockserver.*` settings). The Docker image tag now defaults to the extension's own version instead
+  of a hardcoded constant, so it can no longer drift behind the release (previously pinned to `7.0.0`).
+
+- VS Code and JetBrains extensions now validate the active editor before submitting it to MockServer and show
+  a clear warning instead of a raw server error: **Generate From OpenAPI Spec** warns when the file is not an
+  OpenAPI/Swagger spec, and **Load Expectations** warns when the file is not valid JSON or is actually an
+  OpenAPI spec (redirecting to the Generate action).
+
+- Both editor extensions now ship a proper marketplace icon (the MockServer "M" mark) instead of the generic
+  placeholder — a 128×128 icon for the VS Code Marketplace / Open VSX and a `pluginIcon.svg` (light/dark) for
+  the JetBrains Marketplace.
+
+- VS Code extension gains a **MockServer side panel** (an Activity Bar view) with grouped one-click actions —
+  Server, Author, Inspect, and WASM — plus a status line showing the configured `localhost:<port>`, mirroring
+  the JetBrains tool window so the features are discoverable without the command palette. The live dashboard
+  now opens **docked in the bottom panel** (its own "MockServer Dashboard" view, full width, not mixed in with
+  your editor tabs) instead of as an editor tab.
+
+- VS Code extension is also more discoverable elsewhere: a **status-bar item** (`MockServer :<port>`) opens a
+  quick menu (Open Dashboard, Start, Stop, View Request Log), and the file-scoped commands appear in the editor
+  title bar and right-click menu only on the files they apply to (`*.mockserver.json(c)` and
+  `*.mockserver-request.json`), keeping the command palette uncluttered. The trace-id and WASM-module-name
+  prompts validate input inline, and expectation snippets now also fire in `.jsonc`-typed files.
+
+- JetBrains plugin actions now carry icons and are grouped (Server / Editor / WASM) in the **Tools >
+  MockServer** menu and tool window; the **MockServer** tool window shows the configured `localhost:<port>`
+  target with bold section headers, and the in-IDE dashboard shows a friendly "no MockServer running" panel
+  (with a retry link) instead of a raw browser connection error when the server is unreachable.
+
+- JetBrains plugin **Save Recorded Expectations** now offers a JSON / Java DSL format choice (matching the VS
+  Code extension), so recorded traffic can be turned into Java code as well as JSON.
+
+- JetBrains plugin **MockServer** tool window now has an inline **Port** field (default 1080) next to the
+  status line, bound to the saved setting — change the port in one place and the Start (Docker) action, the
+  dashboard URL, and every REST action use it, no need to open Settings.
+
+- Both editor extensions now present a Marketplace-ready landing page that leads with the flagship
+  capabilities (schema authoring, record-to-code, in-IDE dashboard), a badge row, and a 30-second quick start
+  — the VS Code README and the JetBrains plugin's `<description>` (which is what the JetBrains Marketplace
+  actually renders, not the repo README).
+
+#### Client libraries
+- **Clearer error when a client's binary launcher finds no release bundle**: the Go, Node, Python, Ruby,
+  Rust and PHP clients' auto-download launchers now detect an HTTP 404 on the MockServer release bundle and
+  fail with an actionable message — naming the requested version and pointing to a version that ships
+  bundles, the Docker image (`mockserver/mockserver:mockserver-<version>`), or the Maven Central jar —
+  instead of a raw 404 or a corrupt download. (Some release tags ship no self-contained bundle; previously
+  every launcher hard-404'd with no guidance.)
+
+#### Request matching & response generation
 - **Efficiency: fewer allocations on hot expectation/log paths** (behaviour-preserving): clearing the
   whole event log (a `clear` with no filter) no longer rebuilds an uncached request matcher per call and
   no longer scans each entry through a matcher — an empty filter now short-circuits to clearing exactly
@@ -985,76 +1223,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON-type matcher (the control-plane path still always carries it); and `ObjectMapperFactory` now caches
   the custom-serializer export `ObjectMapper`s by serializer-set signature instead of rebuilding one per
   export. No observable behaviour changes.
+
 - **`HttpRequest.withBody((String) null)` now leaves the body unset**: a null string body passed to a
   request builder no longer coerces to an empty `StringBody` — the body field stays `null`, exactly as
   `HttpResponse.withBody((String) null)` has always behaved. `getBodyAsString()` therefore returns `null`
   (not `""`) for such a request, and the request serializes with no `body` field at all. Body matching is
   unchanged: a request expectation built with a null string body still matches any body, just as before.
   Passing an empty string (`withBody("")`) is unaffected and still produces an empty `StringBody`.
-- **Dashboard UI visual refresh**: the dashboard now has a real design system (consistent spacing,
-  shadows, typography and a dark-mode-aware log-colour palette). The Metrics view leads with KPI
-  "hero" stat cards, its charts have a real time axis and area fill, and panels show skeleton
-  placeholders while loading instead of a bare spinner. Server error messages shown in the UI are now
-  humanised (a short, actionable message with the raw server detail tucked behind a "Details" toggle)
-  instead of dumping raw server output.
-- **Dashboard UI: viewport virtualization for long lists** (behaviour-preserving): the Log Messages,
-  Active Expectations and Requests panels now window their rows — only the entries in (or near) the
-  visible area are mounted in the DOM instead of mounting every row, so panels with tens of thousands
-  of entries (e.g. a 50k-entry log) scroll smoothly instead of bogging down the browser. Rows are
-  measured dynamically so expand/collapse still works, and filtering, ordering, auto-scroll-to-top,
-  selection and live append are unchanged. In a non-layout/headless environment (or a panel laid out at
-  zero height) the list falls back to rendering every row so content stays reachable.
-- **Clearer error when a client's binary launcher finds no release bundle**: the Go, Node, Python, Ruby,
-  Rust and PHP clients' auto-download launchers now detect an HTTP 404 on the MockServer release bundle and
-  fail with an actionable message — naming the requested version and pointing to a version that ships
-  bundles, the Docker image (`mockserver/mockserver:mockserver-<version>`), or the Maven Central jar —
-  instead of a raw 404 or a corrupt download. (Some release tags ship no self-contained bundle; previously
-  every launcher hard-404'd with no guidance.)
+
 - JSON Schema body matching no longer resolves remote `$ref`s (http/https/file/jar/ftp) by default — a
   security hardening against SSRF / unexpected network fetches. Schemas using only internal/inline refs are
   unaffected; set `-Dmockserver.jsonSchemaAllowRemoteRefs=true` to restore remote resolution.
-- The in-IDE dashboard now shows the MockServer logo as its icon instead of a generic browser icon — the
-  JetBrains "MockServer Dashboard" tool window (light/dark variants) and the VS Code dashboard webview tab.
-- Dashboard is now more usable on small screens (mobile and the IDE-embedded dashboard): the Get Started
-  feature tiles collapse to a compact bulleted list when the panel is narrow, and the Log Messages list
-  hides the inline message preview when narrow (it wrapped one word per line) — the full message is still
-  available by expanding the row. The Get Started collapse is now driven by a **CSS container query** (the
-  panel's own width) rather than the viewport width, so it works inside the narrow IDE-embedded dashboard
-  (whose CSS viewport stays wide regardless of the tool-window size), not only when a browser window is
-  narrowed; feature-tile titles that wrap to two lines also use a tighter line height.
-- VS Code and JetBrains extensions now make the MockServer Docker image, container name, and port configurable
-  (VS Code: `mockserver.*` settings). The Docker image tag now defaults to the extension's own version instead
-  of a hardcoded constant, so it can no longer drift behind the release (previously pinned to `7.0.0`).
-- VS Code and JetBrains extensions now validate the active editor before submitting it to MockServer and show
-  a clear warning instead of a raw server error: **Generate From OpenAPI Spec** warns when the file is not an
-  OpenAPI/Swagger spec, and **Load Expectations** warns when the file is not valid JSON or is actually an
-  OpenAPI spec (redirecting to the Generate action).
-- Both editor extensions now ship a proper marketplace icon (the MockServer "M" mark) instead of the generic
-  placeholder — a 128×128 icon for the VS Code Marketplace / Open VSX and a `pluginIcon.svg` (light/dark) for
-  the JetBrains Marketplace.
-- VS Code extension gains a **MockServer side panel** (an Activity Bar view) with grouped one-click actions —
-  Server, Author, Inspect, and WASM — plus a status line showing the configured `localhost:<port>`, mirroring
-  the JetBrains tool window so the features are discoverable without the command palette. The live dashboard
-  now opens **docked in the bottom panel** (its own "MockServer Dashboard" view, full width, not mixed in with
-  your editor tabs) instead of as an editor tab.
-- VS Code extension is also more discoverable elsewhere: a **status-bar item** (`MockServer :<port>`) opens a
-  quick menu (Open Dashboard, Start, Stop, View Request Log), and the file-scoped commands appear in the editor
-  title bar and right-click menu only on the files they apply to (`*.mockserver.json(c)` and
-  `*.mockserver-request.json`), keeping the command palette uncluttered. The trace-id and WASM-module-name
-  prompts validate input inline, and expectation snippets now also fire in `.jsonc`-typed files.
-- JetBrains plugin actions now carry icons and are grouped (Server / Editor / WASM) in the **Tools >
-  MockServer** menu and tool window; the **MockServer** tool window shows the configured `localhost:<port>`
-  target with bold section headers, and the in-IDE dashboard shows a friendly "no MockServer running" panel
-  (with a retry link) instead of a raw browser connection error when the server is unreachable.
-- JetBrains plugin **Save Recorded Expectations** now offers a JSON / Java DSL format choice (matching the VS
-  Code extension), so recorded traffic can be turned into Java code as well as JSON.
-- JetBrains plugin **MockServer** tool window now has an inline **Port** field (default 1080) next to the
-  status line, bound to the saved setting — change the port in one place and the Start (Docker) action, the
-  dashboard URL, and every REST action use it, no need to open Settings.
-- Both editor extensions now present a Marketplace-ready landing page that leads with the flagship
-  capabilities (schema authoring, record-to-code, in-IDE dashboard), a badge row, and a 30-second quick start
-  — the VS Code README and the JetBrains plugin's `<description>` (which is what the JetBrains Marketplace
-  actually renders, not the repo README).
+
 - **Faster request matching with many expectations**: the incoming request's headers, cookies, query
   parameters and path parameters are now converted into their internal matcher form once per request and
   reused across every candidate expectation, instead of being rebuilt for each expectation evaluated. The
@@ -1062,103 +1242,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutated mid-match (e.g. query-parameter splitting), so matching behaviour is unchanged. This reduces
   per-request allocations and CPU when matching against large expectation sets.
 
+
 ### Fixed
-- **mTLS server startup with a supplied leaf+CA certificate chain on Java 17**: when MockServer was
-  configured with a TLS X.509 certificate file that already contained the full chain (leaf followed by
-  the CA), the CA was appended a second time, producing a `[leaf, CA, CA]` chain. Java 17's PKCS12
-  keystore rejects the duplicate with `KeyStoreException: Certificate chain is not valid`, so the server
-  failed to start its TLS context (Java 21 tolerated it, masking the bug). The certificate chain now
-  de-duplicates the CA, so a supplied full-chain PEM yields `[leaf, CA]` and mTLS starts correctly on
-  Java 17.
-- **JetBrains IDE plugin no longer capped to old IDE builds**: the plugin previously declared
-  `untilBuild=253.*`, which excluded it from newer IDEs (e.g. build 261+) and triggered JetBrains
-  Marketplace "limited `until-build`" warnings. Compatibility is now left open-ended (empty
-  `until-build`), so the plugin stays available in current and future JetBrains IDE releases. The
-  plugin uses only stable, public platform APIs; the Plugin Verifier (`verifyPlugin`) remains the
-  backstop for any real future incompatibility.
-- **Response-modifier fidelity in codegen and the Node typedef**: `retrieve?format=JAVA` now emits the response
-  modifier's `condition`, `modifiers` chain, `jsonPatch`, and `jsonMergePatch` (the patch fields are emitted via
-  new `withJsonPatch(String)` / `withJsonMergePatch(String)` convenience overloads, so the generated DSL
-  compiles and round-trips); and the Node client `mockServer.d.ts` `responseModifier` type now declares
-  `condition`, `modifiers`, `jsonPatch`, and `jsonMergePatch`.
-- **Response body matching now has full parity with request body matching**: matching a proxied/forwarded
-  upstream response body previously used a stripped-down copy of the request body dispatch that was missing
-  several behaviours — it did not convert an XML or form actual body to JSON before applying a JSON / JSON
-  schema / JSON path matcher, ignored an optional template body, mis-routed a multipart matcher to the generic
-  string path, and only checked the decompressed (not the original/compressed) bytes for a binary matcher.
-  A JSON or XML matcher against a response with no body at all could also trigger an internal NullPointer that
-  was swallowed into a silent non-match. Request and response body matching now share a single dispatch
-  (`BodyMatching`), so a response body matcher behaves exactly like the equivalent request body matcher,
-  including a clean non-match (no swallowed exception) when the response has no body. Request matching is
-  unchanged.
-- **Response verification no longer counts MockServer's own auto-generated no-match responses**: verifying a
-  response (e.g. `verify(response().withStatusCode(404))`) or a response-aware sequence now counts only the
-  responses your mocks actually produced (matched expectation responses and forwarded/proxied responses), not
-  the default 404 MockServer returns for an unmatched request. Those auto no-match responses are still
-  returned by `/retrieve` — they are excluded only from verification.
-- **Response-aware verification sequences with mismatched request/response list lengths are now rejected**:
-  a sequence that supplies both `httpRequests` and `httpResponses` but of different non-empty lengths
-  previously padded the shorter list with nulls (which always matched), silently passing on the unspecified
-  steps. Such a sequence now returns a clear error. A request-only or response-only sequence (one list empty)
-  remains valid.
-- **Response sequence verification no longer throws on a recorded pair with a null request**: a request-
-  constrained step that encountered a recorded request/response pair whose request was null previously
-  NPE'd and was masked as a generic "exception while processing verification sequence"; it is now correctly
-  treated as a non-matching pair.
-- **Failing response-sequence verification messages now show the responses**: a response-aware sequence
-  failure now serialises the expected response sequence and the recorded responses (it previously reported
-  the requests, often an empty `[]` for a response-only sequence).
-- **An entirely-empty verification sequence is now rejected**: a `VerificationSequence` with no
-  expectationIds, requests or responses previously passed vacuously; it now returns a clear error.
-- **Verification no longer hangs if its request filter fails to build**: a verification whose request filter
-  could not be turned into a matcher (e.g. an invalid OpenAPI/schema filter) previously left the verify
-  result future uncompleted, hanging the caller; the failure is now logged and the verification completes.
-- **`not(...)` expectations now match correctly with fail-fast matching enabled (the default)**: a negated
-  request matcher (`not(request()...)`, or a request-matcher-level `not`) could wrongly report a non-match
-  whenever a field other than the HTTP method matched before the first mismatching field. With the default
-  `matchersFailFast=true`, the early-exit short-circuit negated a *partial* "failed so far?" signal through
-  the NOT operators, producing a premature wrong verdict for any expectation with an odd number of NOT flags.
-  For example `not(request().withMethod("GET").withPath("/test"))` failed to match an incoming `GET /other`
-  even though it plainly is not `GET /test`. The fix only short-circuits when no NOT operator is in play
-  (preserving the fail-fast optimisation for the common case) and evaluates all fields for NOT expectations,
-  so the verdict now always equals a full evaluation. Affected the path, header and body fields.
-- **Notted key in `MATCHING_KEY` mode now asserts key-absence**: a notted matcher key (e.g. `!X`) used with
-  `KeyMatchStyle.MATCHING_KEY` (for headers/query/cookies) previously aggregated values from every key that
-  was not `X` and matched against that bag — a meaningless result. It now means "no key equal to `X` is
-  present", consistent with the default `SUB_SET` behaviour.
-- **Clearer "closest expectation" diagnostics**: the "closest expectation matched X/Y fields" log no longer
-  counts non-HTTP fields (DNS/binary/OpenAPI) in the denominator for an HTTP request, and no longer collapses
-  the matched-field count to a misleading near-maximum when fail-fast matching is enabled — the count now
-  reflects the fields actually compared. This is a diagnostic-only change (INFO level); matching behaviour is
-  unchanged.
-- **Control-plane body filter hardening**: a control-plane body filter (used by clear/verify/retrieve) no
-  longer treats an absent body via stringification, removing a latent case where a literal `"null"` body
-  filter could match a request with no body.
-- **Scenario state no longer advances when a matching expectation is skipped**: a scenario expectation
-  whose scenario state matched but which was then skipped by a percentage (`withPercentage`) gate
-  previously advanced the scenario to its next state even though it was never served (a
-  consume-then-skip bug). The scenario now transitions only at the point the expectation is actually
-  served, and the transition is applied atomically (compare-and-set) so that on a clustered backend two
-  nodes racing the same scenario step serve the response from exactly one node — preserving the
-  documented cross-node "exactly one winner" guarantee.
-- **Faster expectation registration**: registering large numbers of expectations on the default
-  in-memory setup was O(n²) because each add triggered two full backend reconciliation passes. The
-  non-clustered path now does a cheap eviction-only trim, restoring linear registration time;
-  clustered reconciliation behaviour is unchanged.
-- **OpenAPI example generation now honours more JSON-Schema constraints**, so generated example data is
-  less likely to fail a consumer's own validators:
-  - Arrays emit `minItems` items (clamped to a small cap) instead of always a single element, and an
-    explicit `maxItems` below 1 yields an empty array rather than a stray default item.
-  - String `pattern` (regex) constraints produce a matching value (e.g. SKUs, phone numbers) instead of a
-    generic word; an unsupported/invalid regex falls back to the previous behaviour rather than failing.
-  - `exclusiveMinimum` / `exclusiveMaximum` (both the OpenAPI 3.0 boolean-flag and 3.1 numeric forms) are
-    respected — the generated number sits strictly inside the open bound.
-  - The `time` string format now produces a valid `HH:mm:ss` example (previously only `date` and
-    `date-time` were format-aware).
-  - `minProperties` on a free-form / `additionalProperties` object now emits at least that many entries
-    (clamped to a cap of 10).
-  - Unconstrained schemas are unchanged — there is no behaviour change when none of these constraints are
-    present.
+
+#### Dashboard UI
 - **Dashboard UI correctness fixes** (from an adversarial review):
   - The dashboard no longer crashes to a blank white screen when a view fails to load (e.g. the Metrics
     chunk after a redeploy) — views are wrapped in an error boundary that offers a reload/retry and
@@ -1173,6 +1260,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The traffic comparison's "Diff (N/2)" counter and button state no longer disagree after a refresh
     drops a selected request.
   - Non-HTTP (e.g. gRPC) expectations no longer render their id twice in the Active Expectations list.
+
+- Dashboard `favicon.svg` (and any future SVG asset) is now served with a valid `Content-Type: image/svg+xml`
+  instead of a null header value. The `svg` extension was missing from the dashboard's MIME-type map, so the
+  asset response carried a `Content-Type` header with a `null` value, which crashed Netty's header encoder
+  (`NullPointerException: value`) and left the asset failing to load. The MIME map now includes `svg` and falls
+  back to `application/octet-stream` for any unmapped extension, and the response→Netty mapper now skips any
+  header whose value is null rather than throwing while encoding the response (issue #2358).
+
+#### IDE extensions (VS Code & JetBrains)
+- **JetBrains IDE plugin no longer capped to old IDE builds**: the plugin previously declared
+  `untilBuild=253.*`, which excluded it from newer IDEs (e.g. build 261+) and triggered JetBrains
+  Marketplace "limited `until-build`" warnings. Compatibility is now left open-ended (empty
+  `until-build`), so the plugin stays available in current and future JetBrains IDE releases. The
+  plugin uses only stable, public platform APIs; the Plugin Verifier (`verifyPlugin`) remains the
+  backstop for any real future incompatibility.
+
+- JetBrains plugin no longer risks an `AlreadyDisposedException` when a project (or tool window) is closed
+  while an extension HTTP request is still in flight — the result is now delivered on the UI thread through a
+  single shared, project-disposal-guarded helper.
+
+- VS Code extension now activates on startup (`onStartupFinished`), so the MockServer status-bar item and the
+  expectation-file CodeLens appear immediately on a fresh window instead of only after the first command is
+  run from the palette.
+
+- JetBrains plugin **Start (Docker)** now checks the Docker daemon is reachable before launching and reports a
+  clear "Docker is not running" error instead of showing a success notification while nothing actually
+  started; the Docker check and launch run off the UI thread.
+
+- JetBrains plugin now provides JSON Schema **completion and validation** for `*.mockserver.json(c)` expectation
+  files. Three issues blocked it: (1) the JSON-schema provider was registered under the wrong extension point
+  (`com.intellij.json` / `jsonSchema.ProviderFactory`) — IntelliJ's real EP is `JavaScript.JsonSchema.ProviderFactory`,
+  so the provider was never instantiated (this is why it never worked at all in IntelliJ); (2) the bundled
+  schema's root was a `oneOf` (single expectation or array), which IntelliJ's JSON engine cannot navigate; and
+  (3) the schema referenced the draft-07 meta-schema by its remote `http://json-schema.org/draft-07/schema#`
+  URL for embedded-schema fields, which IntelliJ tries to **fetch over the network** — failing silently offline
+  or behind a TLS proxy and making it discard the whole schema. The provider is now registered under the
+  correct EP, the root is a concrete object/array union with inline properties, and the embedded-schema fields
+  use a permissive inline schema (no network fetch), so completion and error highlighting work in IntelliJ
+  (VS Code already tolerated the schema shape). The schema was also regenerated against the current
+  `mockserver-core`, picking up previously-missing fields (e.g. the `capture` rule, `namespace`, response `trailers`).
+
+#### Request matching & response generation
+- **Response-modifier fidelity in codegen and the Node typedef**: `retrieve?format=JAVA` now emits the response
+  modifier's `condition`, `modifiers` chain, `jsonPatch`, and `jsonMergePatch` (the patch fields are emitted via
+  new `withJsonPatch(String)` / `withJsonMergePatch(String)` convenience overloads, so the generated DSL
+  compiles and round-trips); and the Node client `mockServer.d.ts` `responseModifier` type now declares
+  `condition`, `modifiers`, `jsonPatch`, and `jsonMergePatch`.
+
+- **Response body matching now has full parity with request body matching**: matching a proxied/forwarded
+  upstream response body previously used a stripped-down copy of the request body dispatch that was missing
+  several behaviours — it did not convert an XML or form actual body to JSON before applying a JSON / JSON
+  schema / JSON path matcher, ignored an optional template body, mis-routed a multipart matcher to the generic
+  string path, and only checked the decompressed (not the original/compressed) bytes for a binary matcher.
+  A JSON or XML matcher against a response with no body at all could also trigger an internal NullPointer that
+  was swallowed into a silent non-match. Request and response body matching now share a single dispatch
+  (`BodyMatching`), so a response body matcher behaves exactly like the equivalent request body matcher,
+  including a clean non-match (no swallowed exception) when the response has no body. Request matching is
+  unchanged.
+
+- **`not(...)` expectations now match correctly with fail-fast matching enabled (the default)**: a negated
+  request matcher (`not(request()...)`, or a request-matcher-level `not`) could wrongly report a non-match
+  whenever a field other than the HTTP method matched before the first mismatching field. With the default
+  `matchersFailFast=true`, the early-exit short-circuit negated a *partial* "failed so far?" signal through
+  the NOT operators, producing a premature wrong verdict for any expectation with an odd number of NOT flags.
+  For example `not(request().withMethod("GET").withPath("/test"))` failed to match an incoming `GET /other`
+  even though it plainly is not `GET /test`. The fix only short-circuits when no NOT operator is in play
+  (preserving the fail-fast optimisation for the common case) and evaluates all fields for NOT expectations,
+  so the verdict now always equals a full evaluation. Affected the path, header and body fields.
+
+- **Notted key in `MATCHING_KEY` mode now asserts key-absence**: a notted matcher key (e.g. `!X`) used with
+  `KeyMatchStyle.MATCHING_KEY` (for headers/query/cookies) previously aggregated values from every key that
+  was not `X` and matched against that bag — a meaningless result. It now means "no key equal to `X` is
+  present", consistent with the default `SUB_SET` behaviour.
+
+- **Clearer "closest expectation" diagnostics**: the "closest expectation matched X/Y fields" log no longer
+  counts non-HTTP fields (DNS/binary/OpenAPI) in the denominator for an HTTP request, and no longer collapses
+  the matched-field count to a misleading near-maximum when fail-fast matching is enabled — the count now
+  reflects the fields actually compared. This is a diagnostic-only change (INFO level); matching behaviour is
+  unchanged.
+
+- **Control-plane body filter hardening**: a control-plane body filter (used by clear/verify/retrieve) no
+  longer treats an absent body via stringification, removing a latent case where a literal `"null"` body
+  filter could match a request with no body.
+
+- **Scenario state no longer advances when a matching expectation is skipped**: a scenario expectation
+  whose scenario state matched but which was then skipped by a percentage (`withPercentage`) gate
+  previously advanced the scenario to its next state even though it was never served (a
+  consume-then-skip bug). The scenario now transitions only at the point the expectation is actually
+  served, and the transition is applied atomically (compare-and-set) so that on a clustered backend two
+  nodes racing the same scenario step serve the response from exactly one node — preserving the
+  documented cross-node "exactly one winner" guarantee.
+
+- **Faster expectation registration**: registering large numbers of expectations on the default
+  in-memory setup was O(n²) because each add triggered two full backend reconciliation passes. The
+  non-clustered path now does a cheap eviction-only trim, restoring linear registration time;
+  clustered reconciliation behaviour is unchanged.
+
+#### Verification
+- **Response verification no longer counts MockServer's own auto-generated no-match responses**: verifying a
+  response (e.g. `verify(response().withStatusCode(404))`) or a response-aware sequence now counts only the
+  responses your mocks actually produced (matched expectation responses and forwarded/proxied responses), not
+  the default 404 MockServer returns for an unmatched request. Those auto no-match responses are still
+  returned by `/retrieve` — they are excluded only from verification.
+
+- **Response-aware verification sequences with mismatched request/response list lengths are now rejected**:
+  a sequence that supplies both `httpRequests` and `httpResponses` but of different non-empty lengths
+  previously padded the shorter list with nulls (which always matched), silently passing on the unspecified
+  steps. Such a sequence now returns a clear error. A request-only or response-only sequence (one list empty)
+  remains valid.
+
+- **Response sequence verification no longer throws on a recorded pair with a null request**: a request-
+  constrained step that encountered a recorded request/response pair whose request was null previously
+  NPE'd and was masked as a generic "exception while processing verification sequence"; it is now correctly
+  treated as a non-matching pair.
+
+- **Failing response-sequence verification messages now show the responses**: a response-aware sequence
+  failure now serialises the expected response sequence and the recorded responses (it previously reported
+  the requests, often an empty `[]` for a response-only sequence).
+
+- **An entirely-empty verification sequence is now rejected**: a `VerificationSequence` with no
+  expectationIds, requests or responses previously passed vacuously; it now returns a clear error.
+
+- **Verification no longer hangs if its request filter fails to build**: a verification whose request filter
+  could not be turned into a matcher (e.g. an invalid OpenAPI/schema filter) previously left the verify
+  result future uncompleted, hanging the caller; the failure is now logged and the verification completes.
+
+- Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
+  Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
+  `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.
+
+#### OpenAPI & contract testing
+- **OpenAPI example generation now honours more JSON-Schema constraints**, so generated example data is
+  less likely to fail a consumer's own validators:
+  - Arrays emit `minItems` items (clamped to a small cap) instead of always a single element, and an
+    explicit `maxItems` below 1 yields an empty array rather than a stray default item.
+  - String `pattern` (regex) constraints produce a matching value (e.g. SKUs, phone numbers) instead of a
+    generic word; an unsupported/invalid regex falls back to the previous behaviour rather than failing.
+  - `exclusiveMinimum` / `exclusiveMaximum` (both the OpenAPI 3.0 boolean-flag and 3.1 numeric forms) are
+    respected — the generated number sits strictly inside the open bound.
+  - The `time` string format now produces a valid `HH:mm:ss` example (previously only `date` and
+    `date-time` were format-aware).
+  - `minProperties` on a free-form / `additionalProperties` object now emits at least that many entries
+    (clamped to a cap of 10).
+  - Unconstrained schemas are unchanged — there is no behaviour change when none of these constraints are
+    present.
+
 - **OpenAPI follow-ups (further re-review).**
   - **XML response bodies are now real, spec-correct XML.** When an OpenAPI response content type is XML
     (`application/xml`, `text/xml`, or a `+xml` suffix) MockServer now serialises the generated example as
@@ -1201,6 +1434,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     throwable is logged.
   - A generated string example with a `null` value now renders as an empty XML element rather than the
     literal text `null` (e.g. `<field></field>` instead of `<field>null</field>`).
+
 - **OpenAPI handling hardened across both directions (audit follow-up to #2357).** A review of the
   OpenAPI subsystem found and fixed a batch of correctness defects:
   - **Range status-code keys** (`1XX`–`5XX`, legal in OpenAPI 3.x) no longer crash a spec import. A
@@ -1248,13 +1482,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     changed previously returned the stale parse. `PUT /mockserver/openapi` now evicts that cache entry
     before re-importing a URL/file spec, so incremental sync reflects the latest content (inline payloads
     are keyed by content and were already correct).
-- **CPU no longer climbs as the request/event log fills when using `/retrieve` and `clear` under sustained load (issue #2359, a follow-up to #2329).** The #2329 fix made log *insertion* O(1); this fixes the remaining cost on the *read* paths. `retrieveLogEntries` (used by every `/retrieve`) and `retrieveLogEntriesInReverseForUI` ran the expensive request matcher — which clones the request and runs full field-by-field matching — on **every** entry in the log *before* the cheap type/not-deleted filter, so the matcher was evaluated against deleted tombstones and wrong-type entries that were then discarded. As the log fills toward `maxLogEntries` (and clearing *expectations* does not clear the *log*, while `clear` at the default `INFO` level only marks entries deleted rather than removing them), this made each `/retrieve` cost grow with total log size and stay high. The filters are now ordered cheap-predicate-first (matching the existing expectation-id retrieve path), so the matcher only runs for entries that can actually be returned. Additionally, `clear` now skips entries already marked deleted, so a `clear` issued every test cycle no longer re-matches the whole accumulated log of tombstones. No behaviour change — same retrieved results and same clear semantics. Tip for high-throughput users (unchanged from #2329): also clear the log (`PUT /mockserver/clear?type=LOG` or `?type=ALL`, or `PUT /mockserver/reset`), not just expectations, or lower `maxLogEntries`.
-- Dashboard `favicon.svg` (and any future SVG asset) is now served with a valid `Content-Type: image/svg+xml`
-  instead of a null header value. The `svg` extension was missing from the dashboard's MIME-type map, so the
-  asset response carried a `Content-Type` header with a `null` value, which crashed Netty's header encoder
-  (`NullPointerException: value`) and left the asset failing to load. The MIME map now includes `svg` and falls
-  back to `application/octet-stream` for any unmapped extension, and the response→Netty mapper now skips any
-  header whose value is null rather than throwing while encoding the response (issue #2358).
+
 - **OpenAPI example generation** no longer wraps a scalar property in a single-element array when its schema
   is `allOf: [ $ref to a scalar ]` (e.g. a string). Previously a property such as
   `baz: { allOf: [ $ref to a type:string schema ] }` generated `{ "baz": ["hello"] }` instead of
@@ -1262,36 +1490,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`MismatchedInputException: Cannot deserialize value of type 'java.lang.String' from Array value`).
   The `allOf`-flattened example aggregated by the parser is now unwrapped to the scalar value, matching
   JSON-Schema `allOf` semantics (#2357).
-- JetBrains plugin no longer risks an `AlreadyDisposedException` when a project (or tool window) is closed
-  while an extension HTTP request is still in flight — the result is now delivered on the UI thread through a
-  single shared, project-disposal-guarded helper.
-- VS Code extension now activates on startup (`onStartupFinished`), so the MockServer status-bar item and the
-  expectation-file CodeLens appear immediately on a fresh window instead of only after the first command is
-  run from the palette.
-- JetBrains plugin **Start (Docker)** now checks the Docker daemon is reachable before launching and reports a
-  clear "Docker is not running" error instead of showing a success notification while nothing actually
-  started; the Docker check and launch run off the UI thread.
-- JetBrains plugin now provides JSON Schema **completion and validation** for `*.mockserver.json(c)` expectation
-  files. Three issues blocked it: (1) the JSON-schema provider was registered under the wrong extension point
-  (`com.intellij.json` / `jsonSchema.ProviderFactory`) — IntelliJ's real EP is `JavaScript.JsonSchema.ProviderFactory`,
-  so the provider was never instantiated (this is why it never worked at all in IntelliJ); (2) the bundled
-  schema's root was a `oneOf` (single expectation or array), which IntelliJ's JSON engine cannot navigate; and
-  (3) the schema referenced the draft-07 meta-schema by its remote `http://json-schema.org/draft-07/schema#`
-  URL for embedded-schema fields, which IntelliJ tries to **fetch over the network** — failing silently offline
-  or behind a TLS proxy and making it discard the whole schema. The provider is now registered under the
-  correct EP, the root is a concrete object/array union with inline properties, and the embedded-schema fields
-  use a permissive inline schema (no network fetch), so completion and error highlighting work in IntelliJ
-  (VS Code already tolerated the schema shape). The schema was also regenerated against the current
-  `mockserver-core`, picking up previously-missing fields (e.g. the `capture` rule, `namespace`, response `trailers`).
-- Rust client: `VerificationTimes::at_least(n)` now serializes an explicit `atMost: -1` (unbounded) sentinel.
-  Previously `atMost` was omitted, and the server's primitive-`int` field defaulted it to `0`, turning
-  `at_least(n)` into an impossible `between(n, 0)` constraint that always failed verification.
+
+#### CLI & configuration
+- **mTLS server startup with a supplied leaf+CA certificate chain on Java 17**: when MockServer was
+  configured with a TLS X.509 certificate file that already contained the full chain (leaf followed by
+  the CA), the CA was appended a second time, producing a `[leaf, CA, CA]` chain. Java 17's PKCS12
+  keystore rejects the duplicate with `KeyStoreException: Certificate chain is not valid`, so the server
+  failed to start its TLS context (Java 21 tolerated it, masking the bug). The certificate chain now
+  de-duplicates the CA, so a supplied full-chain PEM yields `[leaf, CA]` and mTLS starts correctly on
+  Java 17.
+
 - Stop leaking the vulnerable `commons-beanutils` (1.9.4 and, via `commons-digester3`, 1.8.3) to downstream
   consumers through `velocity-tools-generic`. These transitive versions are affected by GHSA-wxr5-93ph-8wr9
   (CVE-2025-48734). MockServer's own build already pinned 1.11.0, but that pin lived in
   `dependencyManagement`, which is not transitive, so consumers of `mockserver-core` still resolved the
   vulnerable versions. `commons-beanutils` is now excluded from `velocity-tools-generic` and declared as a
   direct dependency at 1.11.0 so the fixed version propagates to consumers. (#1981)
+
+#### Clustering & observability
+- **CPU no longer climbs as the request/event log fills when using `/retrieve` and `clear` under sustained load (issue #2359, a follow-up to #2329).** The #2329 fix made log *insertion* O(1); this fixes the remaining cost on the *read* paths. `retrieveLogEntries` (used by every `/retrieve`) and `retrieveLogEntriesInReverseForUI` ran the expensive request matcher — which clones the request and runs full field-by-field matching — on **every** entry in the log *before* the cheap type/not-deleted filter, so the matcher was evaluated against deleted tombstones and wrong-type entries that were then discarded. As the log fills toward `maxLogEntries` (and clearing *expectations* does not clear the *log*, while `clear` at the default `INFO` level only marks entries deleted rather than removing them), this made each `/retrieve` cost grow with total log size and stay high. The filters are now ordered cheap-predicate-first (matching the existing expectation-id retrieve path), so the matcher only runs for entries that can actually be returned. Additionally, `clear` now skips entries already marked deleted, so a `clear` issued every test cycle no longer re-matches the whole accumulated log of tombstones. No behaviour change — same retrieved results and same clear semantics. Tip for high-throughput users (unchanged from #2329): also clear the log (`PUT /mockserver/clear?type=LOG` or `?type=ALL`, or `PUT /mockserver/reset`), not just expectations, or lower `maxLogEntries`.
+
 
 ## [7.1.0] - 2026-06-16
 
