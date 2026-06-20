@@ -90,6 +90,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `$ref` resolution follows the OpenAPI-spec trust model (control-plane, remote refs resolved), not the
   `jsonSchemaAllowRemoteRefs` matching-path model. Lets you return realistic, type-correct mock data from a bare
   schema without hand-authoring response JSON or attaching a whole OpenAPI spec.
+- **Opt-in OpenAPI request validation during mock matching** (`mockserver-core`). When a request is matched by
+  an expectation created from an OpenAPI spec (`Expectation.when(specUrlOrPayload, operationId)` /
+  `openAPI(...)`), the incoming request can now be validated against that spec before the matched action is
+  dispatched. Enable it with the new `validateRequestsAgainstOpenApiSpec` flag
+  (`Configuration.validateRequestsAgainstOpenApiSpec(true)`, the `mockserver.validateRequestsAgainstOpenApiSpec`
+  system property, or the `MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC` environment variable). When a
+  matched request violates the spec (e.g. a malformed or missing request body), MockServer rejects it with a
+  **400** describing the violations and logs an `OPENAPI_REQUEST_VALIDATION_FAILED` event, instead of serving
+  the mock response. Previously OpenAPI request validation only ran on the proxy/forward path
+  (`validateProxyOpenAPISpec`). The flag is **off by default and fully back-compatible**: with it unset, or for
+  expectations not backed by an OpenAPI spec, behaviour is exactly as before. The validation runs off the Netty
+  event loop, mirroring the validation-proxy request path.
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,

@@ -185,6 +185,7 @@ public class Configuration {
     private String initializationOpenAPIPath;
     private String openAPIContextPathPrefix;
     private Boolean openAPIResponseValidation;
+    private Boolean validateRequestsAgainstOpenApiSpec;
     private String validateProxyOpenAPISpec;
     private Boolean validateProxyEnforce;
     private Boolean generateRealisticExampleValues;
@@ -2517,6 +2518,28 @@ public class Configuration {
      */
     public Configuration enforceResponseValidationForMocks(Boolean enforceResponseValidationForMocks) {
         this.enforceResponseValidationForMocks = enforceResponseValidationForMocks;
+        return this;
+    }
+
+    public Boolean validateRequestsAgainstOpenApiSpec() {
+        if (validateRequestsAgainstOpenApiSpec == null) {
+            return ConfigurationProperties.validateRequestsAgainstOpenApiSpec();
+        }
+        return validateRequestsAgainstOpenApiSpec;
+    }
+
+    /**
+     * <p>If false (the default) incoming requests matched by an OpenAPI-backed mock expectation are
+     * not validated against the spec — behaviour is exactly as before.</p>
+     * <p>If true, when a request matches an expectation created from an OpenAPI spec
+     * ({@code specUrlOrPayload}), the incoming request is validated against that spec before the
+     * matched action is dispatched. A request that violates the spec is rejected with a 400 status
+     * code describing the violations, instead of the mock response.</p>
+     *
+     * @param validateRequestsAgainstOpenApiSpec if enabled, requests matched by an OpenAPI-backed mock that violate the spec are rejected with a 400 error
+     */
+    public Configuration validateRequestsAgainstOpenApiSpec(Boolean validateRequestsAgainstOpenApiSpec) {
+        this.validateRequestsAgainstOpenApiSpec = validateRequestsAgainstOpenApiSpec;
         return this;
     }
 

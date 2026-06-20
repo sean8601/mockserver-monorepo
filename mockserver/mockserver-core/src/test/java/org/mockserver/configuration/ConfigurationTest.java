@@ -793,6 +793,33 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetValidateRequestsAgainstOpenApiSpec() {
+        boolean original = ConfigurationProperties.validateRequestsAgainstOpenApiSpec();
+        try {
+            // then - default value
+            assertThat(configuration.validateRequestsAgainstOpenApiSpec(), equalTo(false));
+
+            // when - system property setter
+            ConfigurationProperties.validateRequestsAgainstOpenApiSpec(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.validateRequestsAgainstOpenApiSpec(), equalTo(true));
+            assertThat(System.getProperty("mockserver.validateRequestsAgainstOpenApiSpec"), equalTo("true"));
+            assertThat(configuration.validateRequestsAgainstOpenApiSpec(), equalTo(true));
+            ConfigurationProperties.validateRequestsAgainstOpenApiSpec(original);
+
+            // when - instance setter overrides the system property
+            ConfigurationProperties.validateRequestsAgainstOpenApiSpec(false);
+            configuration.validateRequestsAgainstOpenApiSpec(true);
+
+            // then - getter
+            assertThat(configuration.validateRequestsAgainstOpenApiSpec(), equalTo(true));
+        } finally {
+            ConfigurationProperties.validateRequestsAgainstOpenApiSpec(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetMaxSocketTimeoutInMillis() {
         long original = ConfigurationProperties.maxSocketTimeout();
         try {

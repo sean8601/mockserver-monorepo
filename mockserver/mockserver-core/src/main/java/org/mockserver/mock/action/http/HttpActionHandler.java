@@ -313,6 +313,75 @@ public class HttpActionHandler {
      * action-type switch and secondary-action fan-out live here.
      */
     private void dispatchPrimaryAction(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable expectationPostProcessor) {
+        // opt-in (ADV6): when the matched expectation is OpenAPI-backed and request validation is enabled,
+        // validate the incoming request against the spec before dispatching the action. On violation reject
+        // with a 400 instead of serving the mock response. The validate-then-dispatch is wrapped in
+        // scheduler.submit so the (potentially cold-cache) OpenAPI parse / JSON-schema validation runs off the
+        // Netty event loop, mirroring the validation-proxy request path. When the flag is off (the default) or
+        // the expectation is not OpenAPI-backed, behaviour is byte-for-byte unchanged.
+        if (Boolean.TRUE.equals(configuration.validateRequestsAgainstOpenApiSpec())
+            && expectation.getHttpRequest() instanceof OpenAPIDefinition openAPIDefinition
+            && isNotBlank(openAPIDefinition.getSpecUrlOrPayload())) {
+            scheduler.submit(() -> {
+                HttpResponse rejectResponse = validateMockRequest(openAPIDefinition, request);
+                if (rejectResponse != null) {
+                    responseWriter.writeResponse(request, rejectResponse, false);
+                    expectationPostProcessor.run();
+                } else {
+                    dispatchPrimaryActionInternal(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
+                }
+            }, synchronous);
+            return;
+        }
+        dispatchPrimaryActionInternal(expectation, request, responseWriter, ctx, synchronous, expectationPostProcessor);
+    }
+
+    /**
+     * Validates an incoming request matched by an OpenAPI-backed mock expectation against its spec.
+     * Violations are logged as {@code OPENAPI_REQUEST_VALIDATION_FAILED} and a 400 response describing
+     * the violations is returned to short-circuit dispatch. Returns {@code null} when the request is
+     * valid (or validation could not run) so dispatch proceeds normally.
+     *
+     * <p>This method may perform an expensive cold-cache OpenAPI parse / JSON-schema validation, so
+     * callers MUST invoke it off the Netty event loop (inside a {@code scheduler.submit} block).</p>
+     */
+    private HttpResponse validateMockRequest(final OpenAPIDefinition openAPIDefinition, final HttpRequest request) {
+        try {
+            List<String> requestErrors = OpenAPIRequestValidator.validate(openAPIDefinition.getSpecUrlOrPayload(), request, mockServerLogger);
+            if (!requestErrors.isEmpty()) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(OPENAPI_REQUEST_VALIDATION_FAILED)
+                        .setLogLevel(Level.WARN)
+                        .setCorrelationId(request.getLogCorrelationId())
+                        .setHttpRequest(request)
+                        .setMessageFormat("request matched by OpenAPI-backed expectation does not conform to OpenAPI spec{}errors:{}")
+                        .setArguments(request, String.join("; ", requestErrors))
+                );
+                return response()
+                    .withStatusCode(400)
+                    .withBody("OpenAPI request validation failed: " + String.join("; ", requestErrors));
+            }
+        } catch (Exception e) {
+            if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setCorrelationId(request.getLogCorrelationId())
+                        .setMessageFormat("failed to validate request against OpenAPI-backed expectation spec{}due to:{}")
+                        .setArguments(request, e.getMessage())
+                );
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Dispatches the matched expectation's primary action to the appropriate per-type handler. Extracted
+     * from {@link #dispatchPrimaryAction} so the optional OpenAPI request-validation pre-flight can short-circuit
+     * dispatch without restructuring the action-type switch.
+     */
+    private void dispatchPrimaryActionInternal(final Expectation expectation, final HttpRequest request, final ResponseWriter responseWriter, final ChannelHandlerContext ctx, final boolean synchronous, final Runnable expectationPostProcessor) {
         // declarative capture (WS2.2): extract value(s) from the matched request into scenario
         // state BEFORE the response is built, so a response template can read them via scenario.get(name)
         org.mockserver.mock.CaptureProcessor.process(expectation.getCapture(), request);

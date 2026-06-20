@@ -113,6 +113,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD = "mockserver.forwardProxyCircuitBreakerFailureThreshold";
     private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS = "mockserver.forwardProxyCircuitBreakerWindowMillis";
     private static final String MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS = "mockserver.enforceResponseValidationForMocks";
+    private static final String MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC = "mockserver.validateRequestsAgainstOpenApiSpec";
 
     // socket
     private static final String MOCKSERVER_MAX_SOCKET_TIMEOUT = "mockserver.maxSocketTimeout";
@@ -1784,6 +1785,23 @@ public class ConfigurationProperties {
      */
     public static void enforceResponseValidationForMocks(boolean enable) {
         setProperty(MOCKSERVER_ENFORCE_RESPONSE_VALIDATION_FOR_MOCKS, "" + enable);
+    }
+
+    public static boolean validateRequestsAgainstOpenApiSpec() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC, "MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC", "" + false));
+    }
+
+    /**
+     * If false (the default) incoming requests matched by an OpenAPI-backed mock expectation are not
+     * validated against the spec — behaviour is exactly as before. If true, when a request matches an
+     * expectation created from an OpenAPI spec ({@code specUrlOrPayload}), the incoming request is
+     * validated against that spec before the matched action is dispatched; a request that violates the
+     * spec is rejected with a 400 status code describing the violations instead of the mock response.
+     *
+     * @param enable enable OpenAPI request validation for requests matched by OpenAPI-backed mocks
+     */
+    public static void validateRequestsAgainstOpenApiSpec(boolean enable) {
+        setProperty(MOCKSERVER_VALIDATE_REQUESTS_AGAINST_OPENAPI_SPEC, "" + enable);
     }
 
     // socket

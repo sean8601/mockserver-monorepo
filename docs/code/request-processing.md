@@ -750,6 +750,27 @@ flowchart TD
 | `validateProxyOpenAPISpec` | String | `""` (disabled) | OpenAPI spec URL, file path, or inline payload to validate forwarded traffic against |
 | `validateProxyEnforce` | Boolean | `false` | When true, block non-conformant traffic (400 for bad requests, 502 for bad non-streaming responses). Streaming responses are validated report-only. |
 
+### OpenAPI Request Validation on the Mock Path
+
+The validation proxy above only validates **forwarded** traffic. By default a request matched by an
+OpenAPI-backed **mock** expectation (`Expectation.when(specUrlOrPayload, operationId)` / `openAPI(...)`) is
+**not** revalidated against the spec — the expectation matcher already screens the request, but it matches the
+request body loosely (a `jsonSchema` body matcher built with `withOptional`), so a malformed request that still
+matches the operation is served the mock response.
+
+When `validateRequestsAgainstOpenApiSpec` is set to `true`, MockServer additionally validates each matched
+request against the spec the matched expectation was built from, **after the match but before the action is
+dispatched** (in `HttpActionHandler.dispatchPrimaryAction`). A request that violates the spec is rejected with a
+**400** describing the violations and logged as `OPENAPI_REQUEST_VALIDATION_FAILED`, instead of serving the mock
+response. The check only applies when the matched expectation's request definition is an `OpenAPIDefinition`
+carrying a `specUrlOrPayload`; for plain `HttpRequest`-backed expectations it is a no-op. Validation uses
+`OpenAPIRequestValidator` and runs off the Netty event loop (inside `scheduler.submit`), mirroring the
+validation-proxy request path. The flag is **off by default and fully back-compatible**.
+
+| Configuration Property | Type | Default | Description |
+|----------------------|------|---------|-------------|
+| `validateRequestsAgainstOpenApiSpec` | Boolean | `false` | When true, requests matched by an OpenAPI-backed mock that violate the spec are rejected with a 400 instead of serving the mock response. OpenAPI-backed expectations only. |
+
 ### Loop Prevention
 
 To prevent infinite forwarding loops (where MockServer forwards to itself), an `x-forwarded-by` header with a unique per-instance value (`MockServer_<UUID>`) is added to forwarded requests. If an incoming request already has this header with the matching value, it is identified as a loop and returned with a 404.
