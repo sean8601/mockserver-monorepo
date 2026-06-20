@@ -4292,7 +4292,13 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(8));
+        // discovery, jwks, token, authorize, userinfo, introspection, revocation, logout, device_authorization
+        assertThat(returnedExpectations.length, is(9));
+
+        // Verify the device-authorization endpoint (added with the OAuth2 device grant) is matchable
+        assertThat(httpState.firstMatchingExpectation(
+            request("/device_authorization").withMethod("POST")
+        ), is(notNullValue()));
 
         // Verify the discovery endpoint is now matchable
         HttpResponse discoveryResponse = httpState.firstMatchingExpectation(
@@ -4346,7 +4352,8 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(8));
+        // discovery, jwks, token, authorize, userinfo, introspection, revocation, logout, device_authorization
+        assertThat(returnedExpectations.length, is(9));
     }
 
     @Test
