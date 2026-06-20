@@ -45,6 +45,7 @@ object BreakpointProtocol {
     const val TYPE_HTTP_REQUEST_AND_RESPONSE = "org.mockserver.model.HttpRequestAndHttpResponse"
     const val TYPE_CLIENT_ID = "org.mockserver.serialization.model.WebSocketClientIdDTO"
     const val TYPE_PAUSED_STREAM_FRAME = "org.mockserver.serialization.model.PausedStreamFrameDTO"
+    const val TYPE_STREAM_FRAME_DECISION = "org.mockserver.serialization.model.StreamFrameDecisionDTO"
 
     // Header names the server stamps on the dispatched HttpRequest (frozen contract).
     const val CORRELATION_ID_HEADER = "WebSocketCorrelationId"
@@ -300,6 +301,92 @@ object BreakpointProtocol {
     }
 
     // ---------------------------------------------------------------------
+    // Stream-frame phase (RESPONSE_STREAM / INBOUND_STREAM) — parity with the
+    // VS Code extension's breakpointProtocol.ts. A paused stream frame
+    // (PausedStreamFrameDTO) is resolved with a StreamFrameDecisionDTO reply.
+    // ---------------------------------------------------------------------
+
+    /** Per-frame resolution actions (StreamFrameDecisionDTO.action). */
+    enum class StreamFrameAction { CONTINUE, MODIFY, DROP, INJECT, CLOSE }
+
+    /**
+     * A paused stream frame dispatched over the callback WS (the frozen
+     * `PausedStreamFrameDTO` shape). [body] is the frame payload, Base64-encoded.
+     * [correlationId] is echoed back in the [StreamFrameDecisionDTO] reply so the
+     * server can route the decision to the parked frame.
+     */
+    data class PausedStreamFrame(
+        val correlationId: String,
+        val streamId: String?,
+        val sequenceNumber: Long?,
+        val direction: String?,
+        val phase: String?,
+        val body: String?,
+        val requestMethod: String?,
+        val requestPath: String?,
+        val breakpointId: String?,
+        val requestTimestamp: Long?,
+    )
+
+    /**
+     * True when [type] is a paused stream-frame dispatch. (This debugger only
+     * registers REQUEST/RESPONSE matchers today, so the server will not normally push
+     * these — but the client decodes them so stream support can be enabled.)
+     */
+    fun isStreamFrameEnvelope(type: String?): Boolean = type == TYPE_PAUSED_STREAM_FRAME
+
+    /**
+     * Parse a decoded [Envelope] into a [PausedStreamFrame], or null when it is not a
+     * `PausedStreamFrameDTO`. A frame with no `correlationId` is rejected (null) — the
+     * reply could not be routed without it.
+     */
+    fun parsePausedStreamFrame(envelope: Envelope): PausedStreamFrame? {
+        if (envelope.type != TYPE_PAUSED_STREAM_FRAME) return null
+        val value = envelope.value ?: return null
+        val parsed = tryParseJson(value) ?: return null
+        if (!parsed.isJsonObject) return null
+        val obj = parsed.asJsonObject
+        val correlationId = stringField(obj, "correlationId") ?: return null
+        return PausedStreamFrame(
+            correlationId = correlationId,
+            streamId = stringField(obj, "streamId"),
+            sequenceNumber = longField(obj, "sequenceNumber"),
+            direction = stringField(obj, "direction"),
+            phase = stringField(obj, "phase"),
+            body = stringField(obj, "body"),
+            requestMethod = stringField(obj, "requestMethod"),
+            requestPath = stringField(obj, "requestPath"),
+            breakpointId = stringField(obj, "breakpointId"),
+            requestTimestamp = stringField(obj, "requestTimestamp")?.toLongOrNull() ?: longField(obj, "requestTimestamp"),
+        )
+    }
+
+    /**
+     * Build the `StreamFrameDecisionDTO` reply envelope for a paused [frame]. The
+     * `correlationId` is always echoed from the frame. [bodyBase64] (replacement /
+     * injected bytes, Base64-encoded) is required for MODIFY and INJECT and ignored
+     * for CONTINUE/DROP/CLOSE. Throws [IllegalArgumentException] when MODIFY/INJECT is
+     * requested without a body, mirroring the frozen contract (the server cannot apply
+     * a body-less MODIFY/INJECT).
+     */
+    fun buildStreamFrameReply(
+        frame: PausedStreamFrame,
+        action: StreamFrameAction,
+        bodyBase64: String? = null,
+    ): String {
+        val needsBody = action == StreamFrameAction.MODIFY || action == StreamFrameAction.INJECT
+        if (needsBody && bodyBase64.isNullOrEmpty()) {
+            throw IllegalArgumentException("A Base64 body is required for stream-frame ${action.name}.")
+        }
+        val decision = JsonObject().apply {
+            addProperty("correlationId", frame.correlationId)
+            addProperty("action", action.name)
+            if (needsBody) addProperty("body", bodyBase64)
+        }
+        return encodeEnvelope(TYPE_STREAM_FRAME_DECISION, decision)
+    }
+
+    // ---------------------------------------------------------------------
     // Internals.
     // ---------------------------------------------------------------------
 
@@ -352,6 +439,11 @@ object BreakpointProtocol {
     private fun stringField(obj: JsonObject, field: String): String? {
         if (!obj.has(field) || !obj.get(field).isJsonPrimitive) return null
         return obj.get(field).asString
+    }
+
+    private fun longField(obj: JsonObject, field: String): Long? {
+        if (!obj.has(field) || !obj.get(field).isJsonPrimitive) return null
+        return try { obj.get(field).asLong } catch (_: Exception) { null }
     }
 
     private fun parseObjectOrThrow(text: String, what: String): JsonObject {

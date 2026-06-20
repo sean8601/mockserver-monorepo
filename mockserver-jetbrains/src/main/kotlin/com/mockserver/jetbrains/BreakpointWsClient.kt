@@ -33,6 +33,8 @@ class BreakpointWsClient(
     private val onPaused: (BreakpointProtocol.PausedExchange) -> Unit,
     /** Fired on connect (true) / disconnect (false), and on error with a message. */
     private val onState: (connected: Boolean, message: String?) -> Unit,
+    /** Fired for each paused stream frame (off the EDT). Default no-op. */
+    private val onStreamFrame: (BreakpointProtocol.PausedStreamFrame) -> Unit = {},
 ) {
 
     /** The client id this debugger registers its matchers under (server adopts it). */
@@ -132,9 +134,9 @@ class BreakpointWsClient(
     /**
      * Decode one reassembled text frame. The first frame is the server-assigned
      * client-id handshake (ignored — we registered our own id via the header);
-     * REQUEST/RESPONSE dispatches become [BreakpointProtocol.PausedExchange]s.
-     * Anything else (stream frames, errors) is ignored — this debugger registers
-     * only REQUEST/RESPONSE matchers, so the server will not push stream frames.
+     * REQUEST/RESPONSE dispatches become [BreakpointProtocol.PausedExchange]s, and
+     * `PausedStreamFrameDTO` dispatches become [BreakpointProtocol.PausedStreamFrame]s
+     * delivered to [onStreamFrame]. A UI callback that throws never kills the listener.
      */
     private fun handleFrame(frame: String) {
         val envelope = try {
@@ -143,6 +145,23 @@ class BreakpointWsClient(
             return
         }
         if (BreakpointProtocol.isClientIdEnvelope(envelope.type)) return
+
+        if (BreakpointProtocol.isStreamFrameEnvelope(envelope.type)) {
+            val streamFrame = try {
+                BreakpointProtocol.parsePausedStreamFrame(envelope)
+            } catch (_: Exception) {
+                null
+            }
+            if (streamFrame != null) {
+                try {
+                    onStreamFrame(streamFrame)
+                } catch (_: Exception) {
+                    // Never let a UI callback exception kill the listener thread.
+                }
+            }
+            return
+        }
+
         val paused = try {
             BreakpointProtocol.parsePausedExchange(envelope)
         } catch (_: Exception) {

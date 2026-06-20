@@ -40,7 +40,9 @@ import javax.swing.ListSelectionModel
  *
  * Scope: REQUEST/RESPONSE pause/inspect/modify (ABORT is REQUEST-phase only, per
  * `docs/code/breakpoints.md`). Per-frame stream editing (RESPONSE_STREAM /
- * INBOUND_STREAM) is deferred to Phase 7 and is intentionally not offered here.
+ * INBOUND_STREAM) is also handled here: when the server pushes a paused stream frame
+ * it appears in the Live Streams list, where it can be Continued, Modified (with a
+ * new Base64 payload), or Dropped.
  */
 class BreakpointDebuggerToolWindowFactory : ToolWindowFactory {
 
@@ -81,6 +83,13 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
     private val modifyButton = JButton("Modify…")
     private val abortButton = JButton("Abort")
 
+    // Live Streams: paused stream frames (RESPONSE_STREAM / INBOUND_STREAM).
+    private val streamModel = DefaultListModel<BreakpointProtocol.PausedStreamFrame>()
+    private val streamList = JList(streamModel)
+    private val streamContinueButton = JButton("Continue")
+    private val streamModifyButton = JButton("Modify…")
+    private val streamDropButton = JButton("Drop")
+
     private var wsClient: BreakpointWsClient? = null
     private val registeredMatcherIds = mutableListOf<String>()
 
@@ -90,6 +99,7 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
         buildUi()
         wireActions()
         updateDecisionButtons(null)
+        updateStreamButtons(null)
     }
 
     private fun buildUi() {
@@ -141,7 +151,25 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
             firstComponent = listScroll
             secondComponent = rightPanel
         }
-        root.add(split, BorderLayout.CENTER)
+
+        // Live Streams panel (below the buffered exchanges): paused stream frames.
+        streamList.selectionMode = ListSelectionModel.SINGLE_SELECTION
+        streamList.cellRenderer = StreamFrameRenderer()
+        val streamScroll = JBScrollPane(streamList).apply { preferredSize = Dimension(260, 120) }
+        val streamDecisionRow = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(4))).apply {
+            add(JBLabel("Live Streams:").apply { font = font.deriveFont(Font.BOLD) })
+            add(streamContinueButton); add(streamModifyButton); add(streamDropButton)
+        }
+        val streamPanel = JPanel(BorderLayout()).apply {
+            add(streamScroll, BorderLayout.CENTER)
+            add(streamDecisionRow, BorderLayout.SOUTH)
+        }
+
+        val verticalSplit = com.intellij.openapi.ui.Splitter(true, 0.7f).apply {
+            firstComponent = split
+            secondComponent = streamPanel
+        }
+        root.add(verticalSplit, BorderLayout.CENTER)
     }
 
     private fun wireActions() {
@@ -156,6 +184,10 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
         continueButton.addActionListener { resolveContinue() }
         modifyButton.addActionListener { resolveModify() }
         abortButton.addActionListener { resolveAbort() }
+        streamList.addListSelectionListener { updateStreamButtons(streamList.selectedValue) }
+        streamContinueButton.addActionListener { resolveStreamFrame(BreakpointProtocol.StreamFrameAction.CONTINUE) }
+        streamModifyButton.addActionListener { resolveStreamModify() }
+        streamDropButton.addActionListener { resolveStreamFrame(BreakpointProtocol.StreamFrameAction.DROP) }
         setBreakpointButton.isEnabled = false
         clearButton.isEnabled = false
     }
@@ -167,6 +199,7 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
         val client = BreakpointWsClient(
             port = port,
             onPaused = { exchange -> runOnEdt(project) { pausedModel.addElement(exchange) } },
+            onStreamFrame = { frame -> runOnEdt(project) { streamModel.addElement(frame) } },
             onState = { connected, message ->
                 runOnEdt(project) {
                     if (connected) {
@@ -183,6 +216,8 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
                         clearButton.isEnabled = false
                         wsClient = null
                         registeredMatcherIds.clear()
+                        streamModel.clear()
+                        updateStreamButtons(null)
                     }
                 }
             },
@@ -321,6 +356,59 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
         updateDecisionButtons(null)
     }
 
+    // ---- stream-frame decisions ---------------------------------------
+
+    private fun resolveStreamFrame(action: BreakpointProtocol.StreamFrameAction, bodyBase64: String? = null) {
+        val frame = streamList.selectedValue ?: return
+        val reply = try {
+            BreakpointProtocol.buildStreamFrameReply(frame, action, bodyBase64)
+        } catch (ex: IllegalArgumentException) {
+            MockServerNotifier.notify(project, ex.message ?: "Invalid stream-frame decision.", com.intellij.notification.NotificationType.ERROR)
+            return
+        }
+        sendStreamDecisionAndRemove(frame, reply)
+    }
+
+    private fun resolveStreamModify() {
+        val frame = streamList.selectedValue ?: return
+        val edited = Messages.showMultilineInputDialog(
+            project,
+            "Base64-encoded replacement bytes for this frame:",
+            "Modify Stream Frame",
+            frame.body ?: "",
+            Messages.getQuestionIcon(),
+            null
+        ) ?: return
+        if (edited.isBlank()) {
+            MockServerNotifier.notify(project, "A Base64 body is required to MODIFY a stream frame.", com.intellij.notification.NotificationType.WARNING)
+            return
+        }
+        resolveStreamFrame(BreakpointProtocol.StreamFrameAction.MODIFY, edited.trim())
+    }
+
+    private fun sendStreamDecisionAndRemove(frame: BreakpointProtocol.PausedStreamFrame, reply: String) {
+        val client = wsClient
+        if (client == null || !client.connected) {
+            MockServerNotifier.notify(project, "The breakpoint WebSocket is not connected — cannot resolve.", com.intellij.notification.NotificationType.ERROR)
+            return
+        }
+        try {
+            client.sendDecision(reply)
+        } catch (ex: Exception) {
+            MockServerNotifier.notify(project, "Failed to send stream decision: ${ex.message}", com.intellij.notification.NotificationType.ERROR)
+            return
+        }
+        streamModel.removeElement(frame)
+        updateStreamButtons(null)
+    }
+
+    private fun updateStreamButtons(frame: BreakpointProtocol.PausedStreamFrame?) {
+        val enabled = frame != null
+        streamContinueButton.isEnabled = enabled
+        streamModifyButton.isEnabled = enabled
+        streamDropButton.isEnabled = enabled
+    }
+
     // ---- rendering -----------------------------------------------------
 
     private fun updateDecisionButtons(exchange: BreakpointProtocol.PausedExchange?) {
@@ -351,6 +439,22 @@ class BreakpointDebuggerPanel(private val project: Project) : Disposable {
             if (value is BreakpointProtocol.PausedExchange) {
                 text = "[${value.phase.name}] ${value.method ?: "?"} ${value.path ?: "?"}"
                 icon = if (value.phase == BreakpointProtocol.Phase.REQUEST) AllIcons.Actions.Upload else AllIcons.Actions.Download
+            }
+            return component
+        }
+    }
+
+    private class StreamFrameRenderer : javax.swing.DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>?, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean
+        ): Component {
+            val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            if (value is BreakpointProtocol.PausedStreamFrame) {
+                val phase = value.phase ?: "STREAM"
+                val seq = value.sequenceNumber?.let { "#$it" } ?: ""
+                val target = "${value.requestMethod ?: ""} ${value.requestPath ?: ""}".trim()
+                text = "[$phase] $seq ${if (target.isNotEmpty()) target else value.streamId ?: ""}".trim()
+                icon = if (value.direction == "INBOUND") AllIcons.Actions.Upload else AllIcons.Actions.Download
             }
             return component
         }
