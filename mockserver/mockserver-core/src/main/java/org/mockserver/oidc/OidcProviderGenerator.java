@@ -86,11 +86,16 @@ public class OidcProviderGenerator {
         // 8. End-session (logout) endpoint
         expectations.add(buildLogoutExpectation());
 
-        // Register provider state so the /authorize and /token callbacks can complete the
-        // authorization-code flow (issue codes, validate PKCE, mint tokens carrying the nonce).
+        // 9. Device-authorization endpoint (RFC 8628)
+        expectations.add(buildDeviceAuthorizationExpectation(config));
+
+        // Register provider state so the /authorize, /token, /introspect and /device_authorization
+        // callbacks can complete the flows (issue codes, validate PKCE, mint tokens carrying the nonce,
+        // poll device codes, resolve opaque tokens).
         OidcAuthorizationStore.getInstance().registerProvider(
             new OidcAuthorizationStore.Provider(
-                config.getAuthorizePath(), config.getTokenPath(), config, tokenMinter
+                config.getAuthorizePath(), config.getTokenPath(), config.getDeviceAuthorizationPath(),
+                config, tokenMinter
             )
         );
 
@@ -109,10 +114,12 @@ public class OidcProviderGenerator {
         discovery.put("introspection_endpoint", issuer + config.getIntrospectPath());
         discovery.put("revocation_endpoint", issuer + config.getRevokePath());
         discovery.put("end_session_endpoint", issuer + LOGOUT_PATH);
+        discovery.put("device_authorization_endpoint", issuer + config.getDeviceAuthorizationPath());
         discovery.put("response_types_supported", Arrays.asList("code", "token", "id_token", "code token", "code id_token"));
-        // Advertise only the grants actually implemented (device_code is deferred to a later wave).
+        // Advertise the implemented grants, including the RFC 8628 device-code grant.
         discovery.put("grant_types_supported", Arrays.asList(
-            "authorization_code", "client_credentials", "refresh_token"
+            "authorization_code", "client_credentials", "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code"
         ));
         discovery.put("code_challenge_methods_supported", Arrays.asList("S256", "plain"));
         discovery.put("token_endpoint_auth_methods_supported",
@@ -195,27 +202,29 @@ public class OidcProviderGenerator {
     }
 
     private Expectation buildIntrospectionExpectation(OidcProviderConfiguration config) {
-        Map<String, Object> introspection = new LinkedHashMap<>();
-        boolean active = !config.isIssueExpiredToken();
-        introspection.put("active", active);
-        introspection.put("sub", config.getSubject());
-        introspection.put("iss", config.getIssuer());
-        introspection.put("aud", config.getAudience());
-        introspection.put("scope", String.join(" ", config.getScopes()));
-        if (config.getAdditionalClaims() != null) {
-            introspection.putAll(config.getAdditionalClaims());
-        }
-
+        // A class callback so introspection can resolve opaque access tokens (RFC 7662): when the
+        // presented `token` is a stored opaque token it echoes the stored claims (active:true), an
+        // unknown/expired opaque token yields active:false, and otherwise it falls back to the
+        // provider's static introspection result (active driven by issueExpiredToken).
         return new Expectation(
             request()
                 .withMethod("POST")
                 .withPath(config.getIntrospectPath())
         )
             .withId("oidc.introspect")
-            .thenRespond(response()
-                .withStatusCode(200)
-                .withHeader("content-type", APPLICATION_JSON)
-                .withBody(serializeToJson(introspection)));
+            .thenRespond(HttpClassCallback.callback(OidcIntrospectionCallback.class.getName()));
+    }
+
+    private Expectation buildDeviceAuthorizationExpectation(OidcProviderConfiguration config) {
+        // A class callback so /device_authorization can mint a device_code + user_code per request
+        // (RFC 8628 §3.2) and record them in the store for the token-endpoint polling exchange.
+        return new Expectation(
+            request()
+                .withMethod("POST")
+                .withPath(config.getDeviceAuthorizationPath())
+        )
+            .withId("oidc.deviceAuthorization")
+            .thenRespond(HttpClassCallback.callback(OidcDeviceAuthorizationCallback.class.getName()));
     }
 
     private Expectation buildRevocationExpectation(OidcProviderConfiguration config) {

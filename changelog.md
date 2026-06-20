@@ -980,7 +980,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default); the status/definition JSON omit the new fields when unset. The deferred start reuses the existing
   single-thread `chaos-experiment-scheduler`; cron parsing is handled by a self-contained `CronSchedule`
   evaluator (no third-party cron dependency).
-
+- **Mock OIDC / OAuth2 provider — OAuth2 completion (Wave 2)** (`mockserver-core`, `mockserver-client-java`).
+  Extends the one-call mock IdP with three OAuth2 capabilities, all additive and off by default:
+  (1) **Device authorization grant (RFC 8628)** — a new `POST /device_authorization` endpoint (configurable
+  via `deviceAuthorizationPath`, advertised in discovery as `device_authorization_endpoint`) returns
+  `device_code`, `user_code`, `verification_uri`, `verification_uri_complete`, `expires_in`, and `interval`;
+  polling `/token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` returns
+  `authorization_pending` for the first `deviceCodePendingPolls` polls (default `0` = approve immediately) and
+  then mints tokens. Device codes are single-use after approval and TTL-bounded; `device_code` is re-added to
+  discovery `grant_types_supported`. (2) **Token-endpoint client authentication** — a new
+  `enforceClientAuthentication` flag (default `false`) makes `/token` validate `client_secret_basic`
+  (`Authorization: Basic`) and `client_secret_post` (form `client_id`/`client_secret`) against the configured
+  `clientId`/`clientSecret`; missing/wrong credentials return RFC 6749 §5.2 `invalid_client` (HTTP 401 +
+  `WWW-Authenticate: Basic`). (3) **Opaque access tokens** — an `opaqueAccessToken` flag (default `false`)
+  makes the `access_token` a random opaque string (the `id_token` stays a signed JWT); the opaque token and its
+  claims are stored so `/introspect` (now a callback, RFC 7662) returns `active:true` with the claims for a
+  known token and `active:false` for an unknown/expired one. All token-endpoint errors use the RFC 6749 §5.2
+  envelope (`error`, `error_description`, `error_uri`) with correct HTTP status.
 - **Response-content conditional breakpoints** (`mockserver-core`). A `RESPONSE`-phase breakpoint matcher now
   accepts optional `responseStatusCodeMin`/`responseStatusCodeMax` (inclusive status-code range) and
   `responseBodyContains` (regex searched within the response body) fields, so a breakpoint can pause only when

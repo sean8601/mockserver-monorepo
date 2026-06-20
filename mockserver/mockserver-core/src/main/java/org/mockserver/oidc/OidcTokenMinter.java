@@ -71,15 +71,32 @@ public class OidcTokenMinter {
 
         String effectiveIssuer = config.isWrongIssuer() ? config.getIssuer() + "/wrong" : config.getIssuer();
 
-        String accessToken = sign(buildAccessTokenClaims(effectiveIssuer, scopeString, iat, exp));
+        Map<String, Serializable> accessTokenClaims = buildAccessTokenClaims(effectiveIssuer, scopeString, iat, exp);
+
+        String accessToken;
+        if (config.isOpaqueAccessToken()) {
+            // Opaque access token: a random reference (not a JWT). Real IdPs frequently issue opaque
+            // tokens whose only validation path is introspection — store the token + its claims so the
+            // /introspect endpoint can resolve them (RFC 7662).
+            accessToken = "mock-opaque-" + java.util.UUID.randomUUID();
+            Map<String, Object> introspectionClaims = new LinkedHashMap<String, Object>(accessTokenClaims);
+            OidcAuthorizationStore.getInstance().putOpaqueToken(
+                accessToken, new OidcAuthorizationStore.OpaqueToken(introspectionClaims, exp));
+        } else {
+            accessToken = sign(accessTokenClaims);
+        }
 
         String idToken = null;
         if (openIdRequested) {
+            // at_hash is computed over the access_token as issued (opaque or JWT).
             idToken = sign(buildIdTokenClaims(effectiveIssuer, scopeList, nonce, accessToken, iat, exp));
         }
 
         if (config.isTamperedSignature()) {
-            accessToken = tamperSignature(accessToken);
+            // Opaque access tokens have no signature to tamper; only the (JWT) id_token is corrupted.
+            if (!config.isOpaqueAccessToken()) {
+                accessToken = tamperSignature(accessToken);
+            }
             if (idToken != null) {
                 idToken = tamperSignature(idToken);
             }

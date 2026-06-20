@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.mockserver.model.HttpResponse.response;
+import static org.mockserver.oidc.OidcDeviceAuthorizationCallback.DEVICE_CODE_GRANT_TYPE;
 
 /**
  * Mock OIDC {@code /token} endpoint.
@@ -49,36 +50,47 @@ public class OidcTokenCallback implements ExpectationResponseCallback {
                 .withBody("{}");
         }
 
+        // Token-endpoint client authentication (RFC 6749 §2.3 / §3.2.1). When enforced, validate
+        // client_secret_basic (Authorization: Basic) and client_secret_post (form params); a missing or
+        // wrong credential yields RFC 6749 §5.2 invalid_client (HTTP 401 + WWW-Authenticate: Basic).
+        if (provider.config.isEnforceClientAuthentication()) {
+            HttpResponse authFailure = validateClientAuthentication(request, form, provider.config);
+            if (authFailure != null) {
+                return authFailure;
+            }
+        }
+
+        if (DEVICE_CODE_GRANT_TYPE.equals(grantType)) {
+            return handleDeviceCodeGrant(store, provider, form);
+        }
+
         if (!"authorization_code".equals(grantType)) {
             // client_credentials, refresh_token, or unspecified. Tokens are minted at request time so
             // the requested scope is honoured. No nonce/id_token for client_credentials unless the
             // openid scope is requested; the refresh_token grant returns a fresh refresh_token.
             boolean refreshGrant = "refresh_token".equals(grantType);
             String tokenResponse = provider.tokenMinter.mintTokenResponse(form.get("scope"), null, refreshGrant);
-            return response()
-                .withStatusCode(200)
-                .withHeader("content-type", JSON_CONTENT_TYPE)
-                .withBody(tokenResponse);
+            return tokenSuccess(tokenResponse);
         }
 
         String code = form.get("code");
         OidcAuthorizationStore.AuthorizationCode authorizationCode = store.consumeCode(code);
         if (authorizationCode == null) {
-            return tokenError("invalid_grant", "authorization code is invalid, expired, or already used");
+            return tokenError("invalid_grant", "authorization code is invalid, expired, or already used", 400);
         }
 
         String redirectUri = form.get("redirect_uri");
         if (authorizationCode.redirectUri != null && !authorizationCode.redirectUri.equals(redirectUri)) {
-            return tokenError("invalid_grant", "redirect_uri does not match the authorization request");
+            return tokenError("invalid_grant", "redirect_uri does not match the authorization request", 400);
         }
 
         if (authorizationCode.codeChallenge != null) {
             String codeVerifier = form.get("code_verifier");
             if (codeVerifier == null || codeVerifier.isEmpty()) {
-                return tokenError("invalid_grant", "code_verifier is required for PKCE");
+                return tokenError("invalid_grant", "code_verifier is required for PKCE", 400);
             }
             if (!verifyPkce(authorizationCode.codeChallenge, authorizationCode.codeChallengeMethod, codeVerifier)) {
-                return tokenError("invalid_grant", "PKCE verification failed");
+                return tokenError("invalid_grant", "PKCE verification failed", 400);
             }
         }
 
@@ -86,17 +98,101 @@ public class OidcTokenCallback implements ExpectationResponseCallback {
         // authorization_code grant always returns a refresh_token.
         String tokenResponse = provider.tokenMinter.mintTokenResponse(
             authorizationCode.scope, authorizationCode.nonce, true);
+        return tokenSuccess(tokenResponse);
+    }
+
+    /**
+     * Device-code grant polling (RFC 8628 §3.4/§3.5). For the configured number of polls the endpoint
+     * answers {@code authorization_pending}; once the device is "approved" it consumes the
+     * (single-use) device code and mints tokens. Unknown/expired device codes yield
+     * {@code expired_token}.
+     */
+    private HttpResponse handleDeviceCodeGrant(OidcAuthorizationStore store,
+                                               OidcAuthorizationStore.Provider provider,
+                                               Map<String, String> form) {
+        String deviceCode = form.get("device_code");
+        OidcAuthorizationStore.DeviceCode pending = store.peekDeviceCode(deviceCode);
+        if (pending == null) {
+            // Unknown, already-redeemed, or past its TTL.
+            return tokenError("expired_token", "device_code is unknown, expired, or already redeemed", 400);
+        }
+        if (pending.pendingPolls > 0) {
+            // The user has not yet approved — decrement and tell the client to keep polling.
+            pending.pendingPolls--;
+            return tokenError("authorization_pending", "the user has not yet approved the device", 400);
+        }
+        // Approved: consume the device code (single-use) and mint tokens honouring the requested scope.
+        OidcAuthorizationStore.DeviceCode approved = store.consumeDeviceCode(deviceCode);
+        if (approved == null) {
+            return tokenError("expired_token", "device_code is unknown, expired, or already redeemed", 400);
+        }
+        String tokenResponse = provider.tokenMinter.mintTokenResponse(approved.scope, null, true);
+        return tokenSuccess(tokenResponse);
+    }
+
+    /**
+     * Validates client authentication for the token endpoint (RFC 6749 §2.3.1). Returns {@code null}
+     * when authentication succeeds, or an RFC 6749 §5.2 {@code invalid_client} (HTTP 401) response when
+     * credentials are missing or wrong.
+     */
+    private HttpResponse validateClientAuthentication(HttpRequest request, Map<String, String> form,
+                                                      OidcProviderConfiguration config) {
+        String clientId = null;
+        String clientSecret = null;
+
+        // client_secret_basic: Authorization: Basic base64(clientId:clientSecret)
+        String authorization = request.getFirstHeader("Authorization");
+        if (authorization != null && authorization.regionMatches(true, 0, "Basic ", 0, 6)) {
+            try {
+                String decoded = new String(
+                    Base64.getDecoder().decode(authorization.substring(6).trim()), StandardCharsets.UTF_8);
+                int colon = decoded.indexOf(':');
+                if (colon >= 0) {
+                    clientId = urlDecode(decoded.substring(0, colon));
+                    clientSecret = urlDecode(decoded.substring(colon + 1));
+                }
+            } catch (IllegalArgumentException e) {
+                return invalidClient();
+            }
+        }
+
+        // client_secret_post: client_id / client_secret in the form body (only if not already in header)
+        if (clientId == null && clientSecret == null) {
+            clientId = form.get("client_id");
+            clientSecret = form.get("client_secret");
+        }
+
+        if (clientId == null || clientSecret == null
+            || !clientId.equals(config.getClientId())
+            || !clientSecret.equals(config.getClientSecret())) {
+            return invalidClient();
+        }
+        return null;
+    }
+
+    private HttpResponse invalidClient() {
+        return response()
+            .withStatusCode(401)
+            .withHeader("content-type", JSON_CONTENT_TYPE)
+            .withHeader("WWW-Authenticate", "Basic")
+            .withBody("{\"error\":\"invalid_client\",\"error_description\":\"client authentication failed\"}");
+    }
+
+    private HttpResponse tokenSuccess(String tokenResponse) {
         return response()
             .withStatusCode(200)
             .withHeader("content-type", JSON_CONTENT_TYPE)
             .withBody(tokenResponse);
     }
 
-    private HttpResponse tokenError(String error, String description) {
+    private HttpResponse tokenError(String error, String description, int statusCode) {
+        // RFC 6749 §5.2 error envelope: error, error_description, and an optional error_uri.
+        String errorUri = "https://www.mock-server.com/mock_server/mock_openid_connect_provider.html";
         return response()
-            .withStatusCode(400)
+            .withStatusCode(statusCode)
             .withHeader("content-type", JSON_CONTENT_TYPE)
-            .withBody("{\"error\":\"" + error + "\",\"error_description\":\"" + description + "\"}");
+            .withBody("{\"error\":\"" + error + "\",\"error_description\":\"" + description
+                + "\",\"error_uri\":\"" + errorUri + "\"}");
     }
 
     /**

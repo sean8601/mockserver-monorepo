@@ -92,4 +92,52 @@ public class OidcAuthorizationStoreTest {
         assertThat(store.consumeCode("stale"), is(nullValue()));
         assertThat(store.consumeCode("fresh"), is(notNullValue()));
     }
+
+    // --- Wave 2: device-code TTL + single-use semantics ---
+
+    private static OidcAuthorizationStore.DeviceCode newDeviceCode() {
+        return new OidcAuthorizationStore.DeviceCode("USER-CODE", "openid", 0);
+    }
+
+    @Test
+    public void freshDeviceCodeIsPeekableAndConsumable() {
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+        store.putDeviceCode("d1", newDeviceCode());
+
+        assertThat(store.peekDeviceCode("d1"), is(notNullValue()));
+        assertThat(store.consumeDeviceCode("d1"), is(notNullValue()));
+    }
+
+    @Test
+    public void deviceCodeIsSingleUseOnConsume() {
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+        store.putDeviceCode("d1", newDeviceCode());
+
+        assertThat(store.consumeDeviceCode("d1"), is(notNullValue()));
+        assertThat("second consume of the same device code must fail",
+            store.consumeDeviceCode("d1"), is(nullValue()));
+    }
+
+    @Test
+    public void unredeemedDeviceCodePastTtlIsRejected() {
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+        store.putDeviceCode("d1", newDeviceCode());
+
+        store.advance(OidcAuthorizationStore.DEVICE_CODE_TTL_MILLIS + 1);
+
+        assertThat("expired device code must be treated as not-found", store.peekDeviceCode("d1"), is(nullValue()));
+    }
+
+    @Test
+    public void expiredDeviceCodesAreEvictedOnWrite() {
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+
+        store.putDeviceCode("stale", newDeviceCode());
+        store.advance(OidcAuthorizationStore.DEVICE_CODE_TTL_MILLIS + 1);
+        store.putDeviceCode("fresh", newDeviceCode());
+
+        assertThat("expired device code must be evicted from the map on write", store.deviceCodeCount(), is(1));
+        assertThat(store.peekDeviceCode("stale"), is(nullValue()));
+        assertThat(store.peekDeviceCode("fresh"), is(notNullValue()));
+    }
 }

@@ -1,6 +1,7 @@
 package org.mockserver.oidc;
 
 import java.io.Serializable;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -37,10 +38,23 @@ public class OidcAuthorizationStore {
      */
     static final long CODE_TTL_MILLIS = 60_000L;
 
+    /**
+     * Lifetime of an unredeemed device code, in milliseconds. RFC 8628 §3.2 reports the same lifetime
+     * to the client via the {@code expires_in} field of the device-authorization response. A device
+     * code older than this is treated as expired at {@code /token} (RFC 8628 §3.5 {@code expired_token})
+     * and evicted, so the device-codes map cannot grow unbounded with never-redeemed codes.
+     */
+    static final long DEVICE_CODE_TTL_MILLIS = 300_000L;
+
+    /** Polling interval (seconds) advertised in the device-authorization response (RFC 8628 §3.2). */
+    static final int DEVICE_CODE_INTERVAL_SECONDS = 5;
+
     private static final OidcAuthorizationStore INSTANCE = new OidcAuthorizationStore();
 
     private final List<Provider> providers = new CopyOnWriteArrayList<>();
     private final Map<String, AuthorizationCode> codes = new ConcurrentHashMap<>();
+    private final Map<String, DeviceCode> deviceCodes = new ConcurrentHashMap<>();
+    private final Map<String, OpaqueToken> opaqueTokens = new ConcurrentHashMap<>();
 
     OidcAuthorizationStore() {
     }
@@ -59,12 +73,18 @@ public class OidcAuthorizationStore {
      * with the same paths refreshes the minted tokens.
      */
     public synchronized void registerProvider(Provider provider) {
-        // remove any existing provider serving the same authorize/token path so the latest wins;
+        // remove any existing provider serving the same authorize/token/device path so the latest wins;
         // synchronized so the remove+add compound is atomic against concurrent PUT /mockserver/oidc
         // (otherwise two threads can both pass removeIf and leave duplicate stale entries).
         providers.removeIf(existing ->
-            existing.authorizePath.equals(provider.authorizePath) || existing.tokenPath.equals(provider.tokenPath));
+            existing.authorizePath.equals(provider.authorizePath)
+                || existing.tokenPath.equals(provider.tokenPath)
+                || pathsEqual(existing.deviceAuthorizationPath, provider.deviceAuthorizationPath));
         providers.add(0, provider);
+    }
+
+    private static boolean pathsEqual(String a, String b) {
+        return a != null && a.equals(b);
     }
 
     /**
@@ -85,6 +105,30 @@ public class OidcAuthorizationStore {
     public Provider providerForTokenPath(String tokenPath) {
         for (Provider provider : providers) {
             if (provider.tokenPath.equals(tokenPath)) {
+                return provider;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the provider serving the given device-authorization path, or {@code null} if none registered.
+     */
+    public Provider providerForDeviceAuthorizationPath(String deviceAuthorizationPath) {
+        for (Provider provider : providers) {
+            if (pathsEqual(provider.deviceAuthorizationPath, deviceAuthorizationPath)) {
+                return provider;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the provider serving the given introspection path, or {@code null} if none registered.
+     */
+    public Provider providerForIntrospectPath(String introspectPath) {
+        for (Provider provider : providers) {
+            if (provider.config.getIntrospectPath().equals(introspectPath)) {
                 return provider;
             }
         }
@@ -125,9 +169,102 @@ public class OidcAuthorizationStore {
         return codes.size();
     }
 
+    // --- Device authorization grant (RFC 8628) ---
+
+    /**
+     * Records a device code issued by the device-authorization endpoint. Like authorization codes,
+     * device codes are TTL-bounded ({@link #DEVICE_CODE_TTL_MILLIS}); expired entries are evicted on
+     * write so the map cannot grow unbounded with codes that are never redeemed.
+     */
+    public void putDeviceCode(String deviceCode, DeviceCode value) {
+        long now = currentTimeMillis();
+        value.issuedAtMillis = now;
+        deviceCodes.values().removeIf(existing -> isDeviceCodeExpired(existing, now));
+        deviceCodes.put(deviceCode, value);
+    }
+
+    /**
+     * Looks up a device code WITHOUT consuming it (the client polls the same code repeatedly until it
+     * is approved). Returns {@code null} when unknown or expired (expired entries are evicted).
+     */
+    public DeviceCode peekDeviceCode(String deviceCode) {
+        if (deviceCode == null) {
+            return null;
+        }
+        DeviceCode value = deviceCodes.get(deviceCode);
+        if (value == null) {
+            return null;
+        }
+        if (isDeviceCodeExpired(value, currentTimeMillis())) {
+            deviceCodes.remove(deviceCode);
+            return null;
+        }
+        return value;
+    }
+
+    /**
+     * Consumes (removes and returns) a device code once it has been approved and tokens are minted, so
+     * a device code is single-use for the successful exchange. Returns {@code null} when unknown or
+     * expired.
+     */
+    public DeviceCode consumeDeviceCode(String deviceCode) {
+        if (deviceCode == null) {
+            return null;
+        }
+        DeviceCode value = deviceCodes.remove(deviceCode);
+        if (value == null || isDeviceCodeExpired(value, currentTimeMillis())) {
+            return null;
+        }
+        return value;
+    }
+
+    private static boolean isDeviceCodeExpired(DeviceCode value, long now) {
+        return now - value.issuedAtMillis > DEVICE_CODE_TTL_MILLIS;
+    }
+
+    /** Number of device codes currently retained (test visibility for TTL eviction). */
+    int deviceCodeCount() {
+        return deviceCodes.size();
+    }
+
+    // --- Opaque access tokens ---
+
+    /**
+     * Records an opaque access token (when {@link OidcProviderConfiguration#isOpaqueAccessToken()}) so
+     * the introspection endpoint can validate it. Bounded by the token's own expiry; expired entries
+     * are evicted on write so the map cannot grow unbounded.
+     */
+    public void putOpaqueToken(String token, OpaqueToken value) {
+        long now = currentTimeMillis();
+        opaqueTokens.values().removeIf(existing -> existing.isExpired(now));
+        opaqueTokens.put(token, value);
+    }
+
+    /**
+     * Looks up an opaque access token for introspection. Returns {@code null} when unknown; an expired
+     * token is returned (so introspection can report {@code active:false}) but evicted from the map.
+     */
+    public OpaqueToken lookupOpaqueToken(String token) {
+        if (token == null) {
+            return null;
+        }
+        OpaqueToken value = opaqueTokens.get(token);
+        if (value != null && value.isExpired(currentTimeMillis())) {
+            opaqueTokens.remove(token);
+        }
+        return value;
+    }
+
+    /** Number of opaque access tokens currently retained (test visibility). */
+    int opaqueTokenCount() {
+        return opaqueTokens.size();
+    }
+
     public void reset() {
         providers.clear();
         codes.clear();
+        deviceCodes.clear();
+        opaqueTokens.clear();
     }
 
     /**
@@ -139,13 +276,15 @@ public class OidcAuthorizationStore {
     public static class Provider {
         final String authorizePath;
         final String tokenPath;
+        final String deviceAuthorizationPath;
         final OidcProviderConfiguration config;
         final OidcTokenMinter tokenMinter;
 
-        public Provider(String authorizePath, String tokenPath,
+        public Provider(String authorizePath, String tokenPath, String deviceAuthorizationPath,
                         OidcProviderConfiguration config, OidcTokenMinter tokenMinter) {
             this.authorizePath = authorizePath;
             this.tokenPath = tokenPath;
+            this.deviceAuthorizationPath = deviceAuthorizationPath;
             this.config = config;
             this.tokenMinter = tokenMinter;
         }
@@ -172,6 +311,46 @@ public class OidcAuthorizationStore {
             this.codeChallengeMethod = codeChallengeMethod;
             this.scope = scope;
             this.nonce = nonce;
+        }
+    }
+
+    /**
+     * Record of a device code issued by the device-authorization endpoint (RFC 8628). Carries the
+     * paired {@code user_code}, the requested {@code scope}, and a counter of how many
+     * {@code authorization_pending} polls remain before the device is "approved" and tokens are
+     * minted (drives the {@link OidcProviderConfiguration#getDeviceCodePendingPolls()} mock model).
+     */
+    public static class DeviceCode implements Serializable {
+        final String userCode;
+        final String scope;
+        /** Remaining polls to answer with {@code authorization_pending} before approval. */
+        volatile int pendingPolls;
+        /** Wall-clock time the code was stored ({@link #putDeviceCode}); drives TTL expiry. */
+        volatile long issuedAtMillis;
+
+        public DeviceCode(String userCode, String scope, int pendingPolls) {
+            this.userCode = userCode;
+            this.scope = scope;
+            this.pendingPolls = pendingPolls;
+        }
+    }
+
+    /**
+     * Record of an opaque access token (issued when {@link OidcProviderConfiguration#isOpaqueAccessToken()})
+     * so the introspection endpoint can validate it: the claims to echo back and the absolute expiry.
+     */
+    public static class OpaqueToken implements Serializable {
+        final Map<String, Object> claims;
+        /** Absolute expiry epoch-seconds; {@code 0} when no expiry was recorded. */
+        final long expiresAtEpochSeconds;
+
+        public OpaqueToken(Map<String, Object> claims, long expiresAtEpochSeconds) {
+            this.claims = new LinkedHashMap<>(claims);
+            this.expiresAtEpochSeconds = expiresAtEpochSeconds;
+        }
+
+        boolean isExpired(long nowMillis) {
+            return expiresAtEpochSeconds > 0 && nowMillis / 1000L >= expiresAtEpochSeconds;
         }
     }
 }

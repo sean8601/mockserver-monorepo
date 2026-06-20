@@ -76,7 +76,7 @@ public class OidcProviderIntegrationTest {
     public void typedClientMockOpenIdProviderReturnsExpectations() {
         Expectation[] expectations = mockServer.mockOpenIdProvider(
             new OidcProviderConfiguration().setIssuer(base()));
-        assertThat(expectations.length, is(8));
+        assertThat(expectations.length, is(9));
     }
 
     @Test
@@ -149,7 +149,65 @@ public class OidcProviderIntegrationTest {
         assertTrue(accessToken.verify(verifier));
     }
 
+    @Test
+    public void deviceAuthorizationGrantFlowOverHttp() throws Exception {
+        // one-call OIDC provider that requires one pending poll before approval
+        mockServer.mockOpenIdProvider(new OidcProviderConfiguration()
+            .setIssuer(base())
+            .setClientId("device-client")
+            .setDeviceCodePendingPolls(1));
+
+        JsonNode discovery = objectMapper.readTree(get("/.well-known/openid-configuration"));
+        String deviceEndpoint = discovery.get("device_authorization_endpoint").asText();
+        String tokenEndpoint = discovery.get("token_endpoint").asText();
+        String jwksUri = discovery.get("jwks_uri").asText();
+        JWSVerifier verifier = new RSASSAVerifier((RSAKey) JWKSet.parse(get(pathOf(jwksUri))).getKeys().get(0));
+
+        // 1. device authorization request
+        HttpResponse<String> deviceResponse = httpClient.send(
+            HttpRequest.newBuilder(URI.create(base() + pathOf(deviceEndpoint)))
+                .header("content-type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString("scope=" + enc("openid profile")))
+                .build(),
+            HttpResponse.BodyHandlers.ofString());
+        assertThat(deviceResponse.statusCode(), is(200));
+        JsonNode device = objectMapper.readTree(deviceResponse.body());
+        String deviceCode = device.get("device_code").asText();
+        assertTrue("user_code present", device.has("user_code"));
+        assertThat(device.get("interval").asInt(), is(5));
+
+        String tokenBody = "grant_type=" + enc("urn:ietf:params:oauth:grant-type:device_code")
+            + "&device_code=" + enc(deviceCode);
+
+        // 2. first poll → authorization_pending (400)
+        HttpResponse<String> pending = postForm(tokenEndpoint, tokenBody);
+        assertThat(pending.statusCode(), is(400));
+        assertTrue(pending.body().contains("authorization_pending"));
+
+        // 3. second poll → tokens minted (200) and id_token verifies against the JWKS
+        HttpResponse<String> minted = postForm(tokenEndpoint, tokenBody);
+        assertThat(minted.statusCode(), is(200));
+        JsonNode tokens = objectMapper.readTree(minted.body());
+        assertTrue(tokens.has("access_token"));
+        assertTrue(tokens.has("id_token"));
+        assertTrue(SignedJWT.parse(tokens.get("id_token").asText()).verify(verifier));
+
+        // 4. device code is single-use — a further poll fails
+        HttpResponse<String> reused = postForm(tokenEndpoint, tokenBody);
+        assertThat(reused.statusCode(), is(400));
+        assertTrue(reused.body().contains("expired_token"));
+    }
+
     // --- helpers ---
+
+    private HttpResponse<String> postForm(String endpoint, String body) throws Exception {
+        return httpClient.send(
+            HttpRequest.newBuilder(URI.create(base() + pathOf(endpoint)))
+                .header("content-type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build(),
+            HttpResponse.BodyHandlers.ofString());
+    }
 
     private String get(String path) throws Exception {
         HttpResponse<String> response = httpClient.send(

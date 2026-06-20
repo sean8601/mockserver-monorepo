@@ -61,10 +61,10 @@ public class OidcProviderGeneratorTest {
     }
 
     @Test
-    public void defaultsProduceEightExpectations() {
+    public void defaultsProduceNineExpectations() {
         List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
 
-        assertThat(expectations.size(), is(8));
+        assertThat(expectations.size(), is(9));
         assertThat(expectations.get(0).getId(), is("oidc.discovery"));
         assertThat(expectations.get(1).getId(), is("oidc.jwks"));
         assertThat(expectations.get(2).getId(), is("oidc.token"));
@@ -73,6 +73,7 @@ public class OidcProviderGeneratorTest {
         assertThat(expectations.get(5).getId(), is("oidc.introspect"));
         assertThat(expectations.get(6).getId(), is("oidc.revoke"));
         assertThat(expectations.get(7).getId(), is("oidc.logout"));
+        assertThat(expectations.get(8).getId(), is("oidc.deviceAuthorization"));
     }
 
     @Test
@@ -100,14 +101,15 @@ public class OidcProviderGeneratorTest {
         assertThat(doc.get("revocation_endpoint").asText(), is("https://idp.example.com/revoke"));
 
         assertThat(doc.get("end_session_endpoint").asText(), is("https://idp.example.com/logout"));
+        assertThat(doc.get("device_authorization_endpoint").asText(), is("https://idp.example.com/device_authorization"));
 
-        // Check supported values — only implemented grants advertised (no device_code).
+        // Check supported values — implemented grants advertised, including the RFC 8628 device-code grant.
         assertTrue(doc.get("grant_types_supported").isArray());
-        assertThat(doc.get("grant_types_supported").size(), is(3));
+        assertThat(doc.get("grant_types_supported").size(), is(4));
         List<String> grants = new java.util.ArrayList<>();
         doc.get("grant_types_supported").forEach(node -> grants.add(node.asText()));
-        assertThat(grants, hasItems("authorization_code", "client_credentials", "refresh_token"));
-        assertFalse(grants.stream().anyMatch(g -> g.contains("device_code")));
+        assertThat(grants, hasItems("authorization_code", "client_credentials", "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code"));
 
         assertThat(doc.get("id_token_signing_alg_values_supported").get(0).asText(), is("RS256"));
         assertThat(doc.get("subject_types_supported").get(0).asText(), is("public"));
@@ -279,8 +281,13 @@ public class OidcProviderGeneratorTest {
         HttpRequest request = (HttpRequest) introspect.getHttpRequest();
         assertThat(request.getMethod().getValue(), is("POST"));
         assertThat(request.getPath().getValue(), is("/introspect"));
+        assertThat(introspect.getHttpResponseClassCallback().getCallbackClass(),
+            is(OidcIntrospectionCallback.class.getName()));
 
-        JsonNode body = objectMapper.readTree(introspect.getHttpResponse().getBodyAsString());
+        // Drive the introspection callback with no token => static active:true result.
+        HttpResponse response = new OidcIntrospectionCallback().handle(
+            request().withMethod("POST").withPath("/introspect").withBody(""));
+        JsonNode body = objectMapper.readTree(response.getBodyAsString());
         assertThat(body.get("active").asBoolean(), is(true));
         assertThat(body.get("sub").asText(), is("mock-user"));
     }
@@ -529,9 +536,11 @@ public class OidcProviderGeneratorTest {
         OidcProviderConfiguration config = new OidcProviderConfiguration()
             .setIssueExpiredToken(true);
 
-        List<Expectation> expectations = generator.generate(config);
+        generator.generate(config);
 
-        JsonNode introspection = objectMapper.readTree(expectations.get(5).getHttpResponse().getBodyAsString());
+        HttpResponse response = new OidcIntrospectionCallback().handle(
+            request().withMethod("POST").withPath("/introspect").withBody(""));
+        JsonNode introspection = objectMapper.readTree(response.getBodyAsString());
         assertThat(introspection.get("active").asBoolean(), is(false));
     }
 
@@ -821,6 +830,230 @@ public class OidcProviderGeneratorTest {
         assertThat(response.getStatusCode(), is(302));
         assertThat(response.getFirstHeader("location"), containsString("https://app/home"));
         assertThat(response.getFirstHeader("location"), containsString("state=s1"));
+    }
+
+    // --- Wave 2: device grant, client authentication, opaque access tokens ---
+
+    @Test
+    public void deviceAuthorizationExpectationIsPostClassCallback() {
+        List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
+        Expectation device = expectations.get(8);
+
+        assertThat(device.getId(), is("oidc.deviceAuthorization"));
+        HttpRequest request = (HttpRequest) device.getHttpRequest();
+        assertThat(request.getMethod().getValue(), is("POST"));
+        assertThat(request.getPath().getValue(), is("/device_authorization"));
+        assertThat(device.getHttpResponseClassCallback().getCallbackClass(),
+            is(OidcDeviceAuthorizationCallback.class.getName()));
+    }
+
+    @Test
+    public void deviceAuthorizationReturnsRfc8628Fields() throws Exception {
+        generator.generate(new OidcProviderConfiguration().setIssuer("https://idp.test"));
+
+        HttpResponse response = new OidcDeviceAuthorizationCallback().handle(
+            request().withMethod("POST").withPath("/device_authorization").withBody("scope=" + enc("openid profile")));
+        assertThat(response.getStatusCode(), is(200));
+
+        JsonNode body = objectMapper.readTree(response.getBodyAsString());
+        assertThat(body.get("device_code").asText(), containsString("mock-device-code-"));
+        assertTrue("user_code present", body.has("user_code"));
+        assertThat(body.get("verification_uri").asText(), is("https://idp.test/device"));
+        assertThat(body.get("verification_uri_complete").asText(),
+            containsString("https://idp.test/device?user_code="));
+        assertTrue("expires_in present", body.get("expires_in").asLong() > 0);
+        assertThat(body.get("interval").asInt(), is(5));
+    }
+
+    @Test
+    public void deviceCodeGrantApprovesImmediatelyByDefault() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String deviceCode = objectMapper.readTree(new OidcDeviceAuthorizationCallback().handle(
+            request().withMethod("POST").withPath("/device_authorization").withBody("scope=openid")
+        ).getBodyAsString()).get("device_code").asText();
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=" + enc("urn:ietf:params:oauth:grant-type:device_code")
+                + "&device_code=" + enc(deviceCode)));
+        assertThat(tokenResponse.getStatusCode(), is(200));
+        JsonNode tokens = objectMapper.readTree(tokenResponse.getBodyAsString());
+        assertTrue(tokens.has("access_token"));
+        assertTrue(tokens.has("id_token"));
+        assertTrue("device grant returns a refresh_token", tokens.has("refresh_token"));
+    }
+
+    @Test
+    public void deviceCodeGrantReturnsAuthorizationPendingThenTokens() throws Exception {
+        // pendingPolls = 2 → first two polls pending, third mints tokens
+        generator.generate(new OidcProviderConfiguration().setDeviceCodePendingPolls(2));
+
+        String deviceCode = objectMapper.readTree(new OidcDeviceAuthorizationCallback().handle(
+            request().withMethod("POST").withPath("/device_authorization").withBody("scope=openid")
+        ).getBodyAsString()).get("device_code").asText();
+
+        String body = "grant_type=" + enc("urn:ietf:params:oauth:grant-type:device_code")
+            + "&device_code=" + enc(deviceCode);
+
+        for (int i = 0; i < 2; i++) {
+            HttpResponse pending = new OidcTokenCallback().handle(tokenRequest(body));
+            assertThat("poll " + i + " should be pending", pending.getStatusCode(), is(400));
+            assertThat(pending.getBodyAsString(), containsString("authorization_pending"));
+        }
+
+        HttpResponse minted = new OidcTokenCallback().handle(tokenRequest(body));
+        assertThat(minted.getStatusCode(), is(200));
+        assertTrue(objectMapper.readTree(minted.getBodyAsString()).has("access_token"));
+    }
+
+    @Test
+    public void deviceCodeIsSingleUseAfterApproval() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String deviceCode = objectMapper.readTree(new OidcDeviceAuthorizationCallback().handle(
+            request().withMethod("POST").withPath("/device_authorization").withBody("scope=openid")
+        ).getBodyAsString()).get("device_code").asText();
+
+        String body = "grant_type=" + enc("urn:ietf:params:oauth:grant-type:device_code")
+            + "&device_code=" + enc(deviceCode);
+
+        assertThat(new OidcTokenCallback().handle(tokenRequest(body)).getStatusCode(), is(200));
+        // second exchange of the same device code must fail (single-use after approval)
+        HttpResponse second = new OidcTokenCallback().handle(tokenRequest(body));
+        assertThat(second.getStatusCode(), is(400));
+        assertThat(second.getBodyAsString(), containsString("expired_token"));
+    }
+
+    @Test
+    public void unknownDeviceCodeIsRejected() {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=" + enc("urn:ietf:params:oauth:grant-type:device_code")
+                + "&device_code=never-issued"));
+        assertThat(tokenResponse.getStatusCode(), is(400));
+        assertThat(tokenResponse.getBodyAsString(), containsString("expired_token"));
+    }
+
+    @Test
+    public void clientAuthBasicSucceedsWithCorrectCredentials() throws Exception {
+        generator.generate(new OidcProviderConfiguration()
+            .setEnforceClientAuthentication(true)
+            .setClientId("the-client")
+            .setClientSecret("the-secret"));
+
+        String basic = Base64.getEncoder().encodeToString("the-client:the-secret".getBytes(StandardCharsets.UTF_8));
+        HttpResponse response = new OidcTokenCallback().handle(
+            request().withMethod("POST").withPath("/token")
+                .withHeader("Authorization", "Basic " + basic)
+                .withBody("grant_type=client_credentials"));
+        assertThat(response.getStatusCode(), is(200));
+        assertTrue(objectMapper.readTree(response.getBodyAsString()).has("access_token"));
+    }
+
+    @Test
+    public void clientAuthPostSucceedsWithCorrectCredentials() throws Exception {
+        generator.generate(new OidcProviderConfiguration()
+            .setEnforceClientAuthentication(true)
+            .setClientId("the-client")
+            .setClientSecret("the-secret"));
+
+        HttpResponse response = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=client_credentials&client_id=the-client&client_secret=the-secret"));
+        assertThat(response.getStatusCode(), is(200));
+        assertTrue(objectMapper.readTree(response.getBodyAsString()).has("access_token"));
+    }
+
+    @Test
+    public void clientAuthMissingCredentialsReturns401InvalidClient() {
+        generator.generate(new OidcProviderConfiguration()
+            .setEnforceClientAuthentication(true)
+            .setClientId("the-client")
+            .setClientSecret("the-secret"));
+
+        HttpResponse response = new OidcTokenCallback().handle(tokenRequest("grant_type=client_credentials"));
+        assertThat(response.getStatusCode(), is(401));
+        assertThat(response.getFirstHeader("WWW-Authenticate"), is("Basic"));
+        assertThat(response.getBodyAsString(), containsString("invalid_client"));
+    }
+
+    @Test
+    public void clientAuthWrongSecretReturns401InvalidClient() {
+        generator.generate(new OidcProviderConfiguration()
+            .setEnforceClientAuthentication(true)
+            .setClientId("the-client")
+            .setClientSecret("the-secret"));
+
+        HttpResponse response = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=client_credentials&client_id=the-client&client_secret=WRONG"));
+        assertThat(response.getStatusCode(), is(401));
+        assertThat(response.getBodyAsString(), containsString("invalid_client"));
+    }
+
+    @Test
+    public void clientAuthDisabledAllowsNoCredentials() throws Exception {
+        // default flag off → no credentials still works (back-compat)
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse response = new OidcTokenCallback().handle(tokenRequest("grant_type=client_credentials"));
+        assertThat(response.getStatusCode(), is(200));
+        assertTrue(objectMapper.readTree(response.getBodyAsString()).has("access_token"));
+    }
+
+    @Test
+    public void opaqueAccessTokenIsNotAJwtButIdTokenStillVerifies() throws Exception {
+        List<Expectation> expectations = generator.generate(new OidcProviderConfiguration()
+            .setOpaqueAccessToken(true));
+
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
+        String accessToken = tokenResponse.get("access_token").asText();
+
+        // opaque: not a 3-segment JWT
+        assertThat("opaque access token is not a JWT", accessToken.split("\\.").length, is(1));
+        assertThat(accessToken, containsString("mock-opaque-"));
+
+        // id_token is still a signed JWT and verifies against the JWKS
+        JWKSet jwkSet = JWKSet.parse(expectations.get(1).getHttpResponse().getBodyAsString());
+        JWSVerifier verifier = new RSASSAVerifier((RSAKey) jwkSet.getKeys().get(0));
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.get("id_token").asText());
+        assertTrue("id_token must still verify when access_token is opaque", idToken.verify(verifier));
+    }
+
+    @Test
+    public void introspectionResolvesOpaqueAccessToken() throws Exception {
+        generator.generate(new OidcProviderConfiguration()
+            .setOpaqueAccessToken(true)
+            .setSubject("opaque-sub"));
+
+        String accessToken = objectMapper.readTree(tokenResponseBody()).get("access_token").asText();
+
+        HttpResponse introspect = new OidcIntrospectionCallback().handle(
+            request().withMethod("POST").withPath("/introspect").withBody("token=" + enc(accessToken)));
+        JsonNode body = objectMapper.readTree(introspect.getBodyAsString());
+        assertThat(body.get("active").asBoolean(), is(true));
+        assertThat(body.get("sub").asText(), is("opaque-sub"));
+    }
+
+    @Test
+    public void introspectionUnknownOpaqueTokenIsInactive() throws Exception {
+        generator.generate(new OidcProviderConfiguration().setOpaqueAccessToken(true));
+
+        HttpResponse introspect = new OidcIntrospectionCallback().handle(
+            request().withMethod("POST").withPath("/introspect").withBody("token=never-issued-opaque"));
+        JsonNode body = objectMapper.readTree(introspect.getBodyAsString());
+        assertThat(body.get("active").asBoolean(), is(false));
+    }
+
+    @Test
+    public void tokenErrorEnvelopeIncludesErrorUri() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse response = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=never-issued&redirect_uri=" + enc("https://app/cb")));
+        JsonNode body = objectMapper.readTree(response.getBodyAsString());
+        assertThat(body.get("error").asText(), is("invalid_grant"));
+        assertTrue("RFC 6749 §5.2 error_description", body.has("error_description"));
+        assertTrue("optional error_uri present", body.has("error_uri"));
     }
 
     // --- helpers ---
