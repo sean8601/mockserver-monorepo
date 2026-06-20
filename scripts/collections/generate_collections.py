@@ -36,10 +36,79 @@ PATH_PARAM_EXAMPLES = {"name": "checkout"}
 # Query params to enable (with value) rather than leave disabled — needed for the request to work.
 ENABLE_QUERY = {("put", "/mockserver/mode"): {"mode": "SIMULATE"}}
 
+# Fallback auth when the OpenAPI spec declares no securitySchemes. MockServer's
+# control plane supports JWT bearer authentication
+# (controlPlaneJWTAuthenticationRequired) — so a bearer token is the realistic
+# default. It stays inert until the user fills in the placeholder variable, so
+# importing the collection against an unauthenticated MockServer still works.
+DEFAULT_SECURITY_SCHEMES = {
+    "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "MockServer control-plane JWT bearer token "
+                       "(enabled via controlPlaneJWTAuthenticationRequired).",
+    }
+}
+
 
 def load_spec():
     with open(SPEC) as f:
         return yaml.safe_load(f)
+
+
+def _placeholder_var(scheme_name, kind):
+    """Stable collection-variable name for a scheme's placeholder credential."""
+    return {"bearer": "bearerToken", "apikey": "apiKey",
+            "basic_user": "username", "basic_pass": "password"}.get(kind, scheme_name)
+
+
+def resolve_auth(spec):
+    """Pick the collection-level auth from the spec's securitySchemes.
+
+    Returns (auth_dict, variables) where auth_dict is a normalised, source-agnostic
+    description of the chosen scheme and variables is a list of (key, value) collection
+    variables holding the placeholder credentials. When the spec declares no
+    securitySchemes we fall back to DEFAULT_SECURITY_SCHEMES (a JWT bearer token).
+
+    A collection carries a single top-level auth, so when several schemes exist we
+    prefer them in the order bearer/http -> apiKey -> basic, matching how most users
+    authenticate against the control plane.
+    """
+    schemes = (spec.get("components", {}) or {}).get("securitySchemes") or DEFAULT_SECURITY_SCHEMES
+
+    def by_priority(item):
+        name, s = item
+        t = (s.get("type") or "").lower()
+        scheme = (s.get("scheme") or "").lower()
+        if t == "http" and scheme == "bearer":
+            return 0
+        if t == "apikey":
+            return 1
+        if t == "http" and scheme == "basic":
+            return 2
+        return 3
+
+    name, scheme = min(schemes.items(), key=by_priority)
+    t = (scheme.get("type") or "").lower()
+    s = (scheme.get("scheme") or "").lower()
+
+    if t == "http" and s == "bearer":
+        var = _placeholder_var(name, "bearer")
+        return {"kind": "bearer", "token_var": var}, [(var, "")]
+    if t == "apikey":
+        var = _placeholder_var(name, "apikey")
+        key_name = scheme.get("name", "X-API-Key")
+        location = scheme.get("in", "header")
+        return ({"kind": "apikey", "header_name": key_name, "in": location, "value_var": var},
+                [(var, "")])
+    if t == "http" and s == "basic":
+        user_var = _placeholder_var(name, "basic_user")
+        pass_var = _placeholder_var(name, "basic_pass")
+        return ({"kind": "basic", "user_var": user_var, "pass_var": pass_var},
+                [(user_var, ""), (pass_var, "")])
+    # Unsupported scheme type (oauth2/openIdConnect): leave auth off but don't fail.
+    return None, []
 
 
 def media_and_example(op):
@@ -127,7 +196,30 @@ def tag_order(spec):
 
 # ---------------- Postman ----------------
 
-def build_postman(spec):
+def postman_auth(auth):
+    """Translate the normalised auth into a Postman v2.1.0 collection-level auth block."""
+    if not auth:
+        return None
+    if auth["kind"] == "bearer":
+        return {"type": "bearer",
+                "bearer": [{"key": "token", "value": "{{%s}}" % auth["token_var"], "type": "string"}]}
+    if auth["kind"] == "apikey":
+        return {"type": "apikey",
+                "apikey": [
+                    {"key": "key", "value": auth["header_name"], "type": "string"},
+                    {"key": "value", "value": "{{%s}}" % auth["value_var"], "type": "string"},
+                    {"key": "in", "value": auth["in"], "type": "string"},
+                ]}
+    if auth["kind"] == "basic":
+        return {"type": "basic",
+                "basic": [
+                    {"key": "username", "value": "{{%s}}" % auth["user_var"], "type": "string"},
+                    {"key": "password", "value": "{{%s}}" % auth["pass_var"], "type": "string"},
+                ]}
+    return None
+
+
+def build_postman(spec, auth=None, auth_vars=()):
     folders = {}
     order = tag_order(spec)
     for tag, method, path, op in iter_ops(spec):
@@ -165,7 +257,7 @@ def build_postman(spec):
             seen.append(tag)
             items.append({"name": tag, "item": folders[tag]})
 
-    return {
+    collection = {
         "info": {
             "_postman_id": POSTMAN_ID,
             "name": COLLECTION_NAME,
@@ -176,8 +268,15 @@ def build_postman(spec):
             "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
         },
         "item": items,
-        "variable": [{"key": "baseUrl", "value": "http://localhost:1080"}],
+        "variable": [{"key": "baseUrl", "value": "http://localhost:1080"}]
+                    + [{"key": k, "value": v} for k, v in auth_vars],
     }
+    pm_auth = postman_auth(auth)
+    if pm_auth:
+        # Inserted after info so Postman applies it as the collection default; each
+        # request inherits it unless overridden.
+        collection["auth"] = pm_auth
+    return collection
 
 
 # ---------------- Bruno ----------------
@@ -186,7 +285,25 @@ def bru_escape_name(name):
     return name.replace("\n", " ")
 
 
-def build_bruno(spec):
+def bruno_collection_auth(auth):
+    """Render the collection-level auth { ... } + auth:<kind> { ... } block for collection.bru."""
+    if not auth:
+        return None, "none"
+    if auth["kind"] == "bearer":
+        return (f"auth {{\n  mode: bearer\n}}\n\n"
+                f"auth:bearer {{\n  token: {{{{{auth['token_var']}}}}}\n}}\n"), "inherit"
+    if auth["kind"] == "apikey":
+        return (f"auth {{\n  mode: apikey\n}}\n\n"
+                f"auth:apikey {{\n  key: {auth['header_name']}\n"
+                f"  value: {{{{{auth['value_var']}}}}}\n  placement: {auth['in']}\n}}\n"), "inherit"
+    if auth["kind"] == "basic":
+        return (f"auth {{\n  mode: basic\n}}\n\n"
+                f"auth:basic {{\n  username: {{{{{auth['user_var']}}}}}\n"
+                f"  password: {{{{{auth['pass_var']}}}}}\n}}\n"), "inherit"
+    return None, "none"
+
+
+def build_bruno(spec, auth=None, auth_vars=()):
     if os.path.isdir(BRUNO_DIR):
         for entry in os.listdir(BRUNO_DIR):
             p = os.path.join(BRUNO_DIR, entry)
@@ -200,11 +317,20 @@ def build_bruno(spec):
         json.dump({"version": "1", "name": COLLECTION_NAME, "type": "collection",
                    "ignore": ["node_modules", ".git"]}, f, indent=2)
         f.write("\n")
-    # environment
+
+    # collection.bru — collection-level auth that requests inherit.
+    coll_auth_block, request_auth = bruno_collection_auth(auth)
+    if coll_auth_block:
+        with open(os.path.join(BRUNO_DIR, "collection.bru"), "w") as f:
+            f.write(coll_auth_block)
+
+    # environment — baseUrl plus any auth placeholder variables.
     env_dir = os.path.join(BRUNO_DIR, "environments")
     os.makedirs(env_dir, exist_ok=True)
     with open(os.path.join(env_dir, "Local.bru"), "w") as f:
-        f.write("vars {\n  baseUrl: http://localhost:1080\n}\n")
+        var_lines = "  baseUrl: http://localhost:1080\n" + "".join(
+            f"  {k}: {v}\n" for k, v in auth_vars)
+        f.write(f"vars {{\n{var_lines}}}\n")
 
     order = tag_order(spec)
     folders = {}
@@ -237,7 +363,7 @@ def build_bruno(spec):
             fname = re.sub(r"[\\/:*?\"<>|]", "-", name)[:120]
 
             lines = [f"meta {{\n  name: {name}\n  type: http\n  seq: {seq}\n}}\n"]
-            lines.append(f"{method} {{\n  url: {url}\n  body: {body_kind}\n  auth: none\n}}\n")
+            lines.append(f"{method} {{\n  url: {url}\n  body: {body_kind}\n  auth: {request_auth}\n}}\n")
             if mt:
                 lines.append(f"headers {{\n  Content-Type: {mt}\n}}\n")
             if qp:
@@ -257,13 +383,16 @@ def build_bruno(spec):
 def main():
     spec = load_spec()
     n_ops = sum(1 for _ in iter_ops(spec))
-    pm = build_postman(spec)
+    auth, auth_vars = resolve_auth(spec)
+    pm = build_postman(spec, auth, auth_vars)
     os.makedirs(os.path.dirname(POSTMAN_OUT), exist_ok=True)
     with open(POSTMAN_OUT, "w") as f:
         json.dump(pm, f, indent=2)
         f.write("\n")
-    build_bruno(spec)
+    build_bruno(spec, auth, auth_vars)
     n_pm = sum(len(fl["item"]) for fl in pm["item"])
+    auth_desc = auth["kind"] if auth else "none"
+    print(f"collection auth: {auth_desc}")
     print(f"spec operations: {n_ops}")
     print(f"postman requests: {n_pm} across {len(pm['item'])} folders -> {POSTMAN_OUT}")
     n_bru = sum(len([x for x in os.listdir(os.path.join(BRUNO_DIR, d)) if x.endswith('.bru') and x != 'folder.bru'])

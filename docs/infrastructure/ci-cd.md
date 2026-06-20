@@ -82,9 +82,17 @@ against rules"}
     MATCH -->|container_integration_tests/| CONTAINER["trigger: mockserver-container-tests"]
     MATCH -->|jekyll-www.mock-server.com/| WEBSITE["trigger: mockserver-website"]
     MATCH -->|docker_build/maven/| BUILD_IMG["trigger: mockserver-build-image"]
-    MATCH -->|.buildkite/ .github/ terraform/ etc.| INFRA["trigger: mockserver-infra"]
+    MATCH -->|".buildkite/ .github/ terraform/ scripts/ examples/ OpenAPI spec etc."| INFRA["trigger: mockserver-infra"]
     MATCH -->|no match| DEFAULT["inline: no-op step"]
 ```
+
+The `mockserver-infra` pipeline (`pipeline-infra.yml`) runs lightweight validation
+steps in Docker: opencode config lint, shell-script lint, Dockerfile sync, Helm
+chart validation, and **API-collection validation**. The collection step
+(`collections-validate.sh`) regenerates the Postman and Bruno collections from the
+OpenAPI spec and fails if the committed `examples/postman/**` or `examples/bruno/**`
+have drifted — so `examples/` and `jekyll-www.mock-server.com/mockserver-openapi.yaml`
+also route to this pipeline.
 
 ### Buildkite Pipelines
 

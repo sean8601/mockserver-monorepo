@@ -26,6 +26,16 @@ alongside the code.
 4. Each request carries a worked example body and documentation; run them top to bottom or pick the
    area you need.
 
+## Authentication
+
+The collection ships with collection-level auth so it works against an authenticated MockServer
+without per-request setup. By default it uses a **JWT bearer token** — MockServer's control plane
+supports JWT auth via `controlPlaneJWTAuthenticationRequired`, and every request inherits the
+collection auth. Set the `bearerToken` variable in the **Local** environment to your token. Left
+blank, the bearer header is empty and requests still work against an unauthenticated MockServer. If
+the OpenAPI spec later declares `securitySchemes` (bearer, API key, or basic), the generator emits
+that scheme instead.
+
 ## Validate the examples
 
 Every example body is tested against a live MockServer:

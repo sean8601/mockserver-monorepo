@@ -44,6 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `JsonDiffViewer` component (locally bundled — no runtime CDN), consistent with the existing `JsonEditor`.
 - **Client capability matrix and per-language test fixtures** (docs). New page `client_compatibility.html` in the Getting Started section: an 8x8 matrix of feature coverage across all clients (expectations, verify, OpenAPI, LLM mock builder, MCP mock builder, test fixture/auto-cleanup, retrieveAsCode, Testcontainers) verified against client source, plus idiomatic test-fixture snippets for all eight languages (Java JUnit 5 extension, Node `Symbol.asyncDispose`, Python pytest `conftest.py`, Ruby RSpec shared context, Go `MockServerT`/`t.Cleanup`, .NET `MockServerFixture`/`IAsyncLifetime`, Rust manual reset, PHP `MockServerTestTrait`).
 - **Agent framework recipes** (docs). New page `ai_agent_frameworks.html` in the AI Integration section: minimal accurate recipes for pointing LlamaIndex (`Settings.llm = OpenAI(api_base=...)`) and the OpenAI Agents SDK (`set_default_openai_client(AsyncOpenAI(base_url=...))`) at MockServer to mock LLM provider calls during testing, with env-var alternatives and a proxy fallback section for frameworks without a base-URL override.
+- **Auth in the generated Postman & Bruno API collections.** The collection generator
+  (`scripts/collections/generate_collections.py`) now emits collection-level authentication instead of
+  `auth: none`. It reads `components.securitySchemes` from the OpenAPI spec (bearer / API key / basic) and,
+  when the spec declares none, falls back to a JWT **bearer token** — the control plane's
+  `controlPlaneJWTAuthenticationRequired` scheme. Every request inherits the collection auth, and the
+  credential is a placeholder variable (`bearerToken` / `apiKey` / `username`+`password`) left blank, so the
+  collections still work unchanged against an unauthenticated MockServer. A new Buildkite infra step
+  regenerates the collections and fails the build if the committed `examples/postman/**` and
+  `examples/bruno/**` drift from the OpenAPI spec.
+
 - **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
   `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
   time a stored drift record meets the configured severity threshold, carrying the drift record as JSON
