@@ -278,6 +278,24 @@ McpMockBuilder.mcpMock("/mcp")
 
 Custom task handlers are evaluated in registration order. Because MockServer matches expectations in priority/registration order, more specific handlers should be registered before the generic `tasks/send` catch-all.
 
+### Streaming and Push Notifications
+
+Both A2A capabilities are opt-in and additive — by default the agent card still advertises `streaming: false` and `pushNotifications: false`, and `build()` produces the same expectations as before.
+
+| Builder method | Effect |
+|---|---|
+| `withStreaming()` / `withStreamingMethod(String)` | Agent card advertises `capabilities.streaming: true`. Adds an `httpSseResponse` expectation matching `POST {path}` + `JsonRpcBody({streamingMethod})` (default `message/stream`, legacy `tasks/sendSubscribe`). The SSE stream emits three events, each a JSON-RPC 2.0 response envelope: a `TaskStatusUpdateEvent` with `status.state: working` (`final: false`), a `TaskArtifactUpdateEvent` carrying the default task response text, and a final `TaskStatusUpdateEvent` with `status.state: completed` (`final: true`). The expectation reuses the existing `HttpSseResponse` / `HttpSseResponseActionHandler` SSE infrastructure. |
+| `withPushNotifications(webhookUrl)` | Agent card advertises `capabilities.pushNotifications: true`. Adds a `tasks/pushNotificationConfig/set` expectation that echoes the registered config (`{"url": "..."}`), and replaces the generic `tasks/send` expectation with an `HttpOverrideForwardedRequest` that POSTs the completed task (the push payload) to the parsed webhook host/port/scheme/path. The caller's JSON-RPC response is produced by a Velocity *response template* so the request's id is echoed (`$!{request.jsonRpcRawId}`), matching the non-push `tasks/send` contract. |
+
+Because the streaming and push-delivery expectations match `message/stream` / `tasks/send` respectively and are registered before the generic `tasks/send` catch-all (which is omitted when push is configured), they take precedence in registration order.
+
+Notes and limitations:
+
+- **Escaping**: the caller response is Velocity-templated (response text is Velocity-escaped so `$`/`#` render literally), whereas the webhook POST body is a literal request override (JSON-escaped only — no Velocity escaping, which would corrupt `$`/`#`).
+- **Custom handlers + push**: push delivery fires only for the generic `tasks/send` catch-all. Custom `onTaskSend(...)` handlers still return a task response to the caller but do not POST to the webhook.
+- **Delivery failures are non-fatal-but-visible**: the caller response template renders only when the webhook returns a response; if the webhook is unreachable the caller receives the forward error rather than a synthesised 200.
+- **Streaming JSON-RPC id**: the SSE event envelopes use a fixed placeholder id (`"1"`) because `HttpSseResponse` events are static (not templated), so the streaming response id is not correlated to the request id — streaming clients correlate by the stream itself.
+
 ### Usage
 
 ```java
@@ -683,10 +701,10 @@ All overrides are cleared on `HttpState.reset()`. An empty `service` string sets
 | `ExpectationWithSseAndJsonRpcSerializationTest` | core | 4 | Unit |
 | `HttpRequestTemplateObjectJsonRpcTest` | core | 11 | Unit |
 | `McpMockBuilderTest` | client-java | 12 | Unit |
-| `A2aMockBuilderTest` | client-java | 11 | Unit |
+| `A2aMockBuilderTest` | client-java | 25 | Unit |
 | `SseStreamingIntegrationTest` | netty | 9 | Integration |
 | `McpMockBuilderIntegrationTest` | netty | 12 | Integration |
-| `A2aMockBuilderIntegrationTest` | netty | 7 | Integration |
+| `A2aMockBuilderIntegrationTest` | netty | 13 | Integration |
 | `WebSocketMessageTest` | core | 14 | Unit |
 | `HttpWebSocketResponseTest` | core | 19 | Unit |
 | `WebSocketMessageModelDTOTest` | core | 5 | Unit |

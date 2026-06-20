@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **A2A mock builder: streaming and push notifications** (`A2aMockBuilder`, `mockserver-client-java`). The builder
+  previously hard-coded the agent card's `capabilities.streaming` and `capabilities.pushNotifications` to `false`.
+  Two opt-in features now make those advertise `true` when configured (default off = unchanged behaviour):
+  - `withStreaming()` (and `withStreamingMethod(String)`) generates an SSE expectation for the A2A streaming
+    JSON-RPC method (default `message/stream`, legacy `tasks/sendSubscribe`) that returns an `httpSseResponse`
+    stream of `TaskStatusUpdateEvent` (`working` → `completed`, the last with `"final": true`) and
+    `TaskArtifactUpdateEvent` chunks, each wrapped in a JSON-RPC 2.0 response envelope.
+  - `withPushNotifications(webhookUrl)` makes `tasks/pushNotificationConfig/set` echo the registered config and
+    makes each `tasks/send` additionally POST the completed task to the configured webhook URL (via an
+    override-forwarded-request) while still returning the JSON-RPC task response to the caller.
 - **LLM embeddings for Gemini/Ollama/Bedrock, plus rerank mocking (Cohere/Voyage)**: `httpLlmResponse` embeddings
   now work for three more providers (previously only OpenAI/Azure-OpenAI returned a real embedding response):
   - **Gemini** — emits the `embedContent` shape (`{"embedding":{"values":[...]}}`, default 768 dimensions).
