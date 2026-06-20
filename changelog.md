@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **Response-content conditional breakpoints** (`mockserver-core`). A `RESPONSE`-phase breakpoint matcher now
+  accepts optional `responseStatusCodeMin`/`responseStatusCodeMax` (inclusive status-code range) and
+  `responseBodyContains` (regex searched within the response body) fields, so a breakpoint can pause only when
+  the response looks a certain way — e.g. break only on `5xx` responses or on a body containing a particular
+  message. When set, the breakpoint pauses only if the response satisfies all configured conditions; absent
+  fields preserve the previous behaviour (pause on every matching response). Conditions are evaluated only at
+  the response phase (the request/stream paths are unchanged), via the new
+  `BreakpointMatcherRegistry.findResponseMatch`; a matcher whose condition fails falls through to later
+  matchers. The `responseBodyContains` regex is compiled at registration; an invalid regex or an inverted
+  status range returns `400`. The fields are accepted by `PUT /mockserver/breakpoint/matcher`, echoed by the
+  register/list endpoints, and back-compatible (purely additive).
 - **Drift alerting webhook** (`mockserver-core`). When `mockserver.driftAlertWebhookEnabled=true` and
   `mockserver.driftAlertWebhookUrl` is set, MockServer fires a fire-and-forget HTTP `POST` to that URL each
   time a stored drift record meets the configured severity threshold, carrying the drift record as JSON

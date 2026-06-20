@@ -201,6 +201,42 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
     <strong>Skip count</strong> field in the matcher-registration form.
 </p>
 
+<h3>Conditional breakpoints (break only on certain responses)</h3>
+
+<p>
+    For <strong>response</strong> breakpoints you can also pause only when the response looks a certain way —
+    for example only on server errors, or only when the body contains a particular message. Add any of these
+    optional fields to a matcher with the <span class="inline_code">RESPONSE</span> phase:
+</p>
+
+<ul>
+    <li><span class="inline_code">responseStatusCodeMin</span> / <span class="inline_code">responseStatusCodeMax</span> —
+        pause only when the response status code falls within this inclusive range (either bound may be omitted to leave it open-ended).</li>
+    <li><span class="inline_code">responseBodyContains</span> — a regular expression; pause only when the response body contains a match.</li>
+</ul>
+
+<pre class="prettyprint lang-bash code"><code class="code"># Break only on responses with a 5xx status code
+curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest": { "path": "/api/.*" },
+    "phases": ["RESPONSE"],
+    "clientId": "my-ws-client-id",
+    "responseStatusCodeMin": 500
+  }'
+</code></pre>
+
+<p>
+    When more than one condition is set, the breakpoint pauses only when the response satisfies <em>all</em> of
+    them (status code in range <em>and</em> body matching the regex). Omitting all of them means pause on every
+    matching response (the default). These conditions apply to the response phase only — they have no effect on
+    request or stream-frame breakpoints, since the response is not yet known earlier in the exchange.
+    <span class="inline_code">responseBodyContains</span> must be a valid regular expression and
+    <span class="inline_code">responseStatusCodeMin</span> must not be greater than
+    <span class="inline_code">responseStatusCodeMax</span>, otherwise registration returns
+    <span class="inline_code">400</span>.
+</p>
+
 <h3>Matcher management endpoints</h3>
 
 <table class="table table-bordered table-striped">
@@ -211,8 +247,9 @@ curl -X PUT http://localhost:1080/mockserver/breakpoint/matcher \
         <tr>
             <td>PUT</td>
             <td><span class="inline_code">/mockserver/breakpoint/matcher</span></td>
-            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "...", "skipCount": N}</span>
-                (clientId is required; <span class="inline_code">skipCount</span> is optional — skip the first N matching hits).
+            <td>Register a matcher. Body: <span class="inline_code">{"httpRequest": {...}, "phases": [...], "clientId": "...", "skipCount": N, "responseStatusCodeMin": N, "responseStatusCodeMax": N, "responseBodyContains": "regex"}</span>
+                (clientId is required; <span class="inline_code">skipCount</span> is optional — skip the first N matching hits;
+                the <span class="inline_code">response*</span> fields are optional response-phase conditions).
                 Returns <span class="inline_code">{"id": "...", "phases": [...]}</span>.</td>
         </tr>
         <tr>

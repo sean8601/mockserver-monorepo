@@ -995,7 +995,7 @@ public class HttpActionHandler {
                             // Response breakpoint: hold non-streaming unmatched proxy responses before writing
                             {
                                 org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint =
-                                    !synchronous ? org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) : null;
+                                    !synchronous ? org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findResponseMatch(request, response, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) : null;
                                 if (responseBreakpoint != null) {
                                     java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                                         ? scheduler.getExecutorService()
@@ -1175,7 +1175,7 @@ public class HttpActionHandler {
                 // Response breakpoint: hold non-streaming unmatched proxy responses before writing
                 {
                     org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint2 =
-                        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(originalRequest, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
+                        org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findResponseMatch(originalRequest, response, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
                     if (responseBreakpoint2 != null) {
                         java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                             ? scheduler.getExecutorService()
@@ -2194,7 +2194,7 @@ public class HttpActionHandler {
             if (!synchronous && isMockResponseBreakpointEligible(action)) {
                 final org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint =
                     org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                        .findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
+                        .findResponseMatch(request, effectiveResponse, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
                 if (responseBreakpoint != null) {
                     final java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                         ? scheduler.getExecutorService() : Runnable::run;
@@ -2442,7 +2442,7 @@ public class HttpActionHandler {
                 // decision future via thenAcceptAsync (same pattern as request breakpoints).
                 {
                     org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint3 =
-                        (!synchronous && !isStreaming) ? org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) : null;
+                        (!synchronous && !isStreaming) ? org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance().findResponseMatch(request, effectiveResponse, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE) : null;
                     if (responseBreakpoint3 != null) {
                         java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                             ? scheduler.getExecutorService()
@@ -2975,7 +2975,7 @@ public class HttpActionHandler {
         if (!synchronous) {
             final org.mockserver.mock.breakpoint.BreakpointMatcher responseBreakpoint =
                 org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                    .findMatch(request, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
+                    .findResponseMatch(request, response, org.mockserver.mock.breakpoint.BreakpointPhase.RESPONSE);
             if (responseBreakpoint != null) {
                 final java.util.concurrent.Executor continuationExecutor = scheduler.getExecutorService() != null
                     ? scheduler.getExecutorService() : Runnable::run;

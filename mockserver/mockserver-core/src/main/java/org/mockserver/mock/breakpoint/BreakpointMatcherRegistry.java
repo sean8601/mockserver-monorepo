@@ -4,6 +4,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.HttpRequestMatcher;
 import org.mockserver.matchers.MatcherBuilder;
+import org.mockserver.model.HttpResponse;
 import org.mockserver.model.RequestDefinition;
 import org.mockserver.uuid.UUIDService;
 
@@ -90,9 +91,41 @@ public class BreakpointMatcherRegistry {
     public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
                            String clientId, Integer skipCount,
                            Configuration configuration, MockServerLogger logger) {
+        return register(matcher, phases, clientId, skipCount, null, null, null, configuration, logger);
+    }
+
+    /**
+     * Registers a new breakpoint matcher with a required owner clientId, an optional
+     * skip-count for conditional (Nth-hit) breakpoints, and optional
+     * response-content conditions that gate whether a RESPONSE-phase breakpoint pauses.
+     *
+     * <p>The response conditions ({@code responseStatusCodeMin}/{@code responseStatusCodeMax}
+     * for an inclusive status-code range, and {@code responseBodyContains} for a regex
+     * searched within the response body) are only evaluated at the response phase (the
+     * response is not known at the request phase). When set, the breakpoint pauses only
+     * when the response satisfies all configured conditions. When all are {@code null}
+     * (the default) the breakpoint pauses regardless of response content (legacy
+     * behaviour).
+     *
+     * @param matcher               the request definition to match against
+     * @param phases                the set of phases at which matching exchanges should break
+     * @param clientId              the callback WS client that owns this breakpoint (required in production)
+     * @param skipCount             the number of matching hits to skip before pausing, or {@code null} to pause every time
+     * @param responseStatusCodeMin inclusive lower bound of the response status-code condition, or {@code null}
+     * @param responseStatusCodeMax inclusive upper bound of the response status-code condition, or {@code null}
+     * @param responseBodyContains  a regex searched (find semantics) within the response body, or {@code null}
+     * @param configuration         the active server configuration (passed to MatcherBuilder)
+     * @param logger                the server logger (passed to MatcherBuilder)
+     * @return the assigned UUID id for the registered breakpoint
+     */
+    public String register(RequestDefinition matcher, Set<BreakpointPhase> phases,
+                           String clientId, Integer skipCount,
+                           Integer responseStatusCodeMin, Integer responseStatusCodeMax, String responseBodyContains,
+                           Configuration configuration, MockServerLogger logger) {
         String id = UUIDService.getUUID();
         HttpRequestMatcher prebuilt = new MatcherBuilder(configuration, logger).transformsToMatcher(matcher);
-        BreakpointMatcher entry = new BreakpointMatcher(id, matcher, phases, prebuilt, clientId, skipCount);
+        BreakpointMatcher entry = new BreakpointMatcher(id, matcher, phases, prebuilt, clientId, skipCount,
+            responseStatusCodeMin, responseStatusCodeMax, responseBodyContains);
         entries.add(entry);
         return id;
     }
@@ -127,6 +160,51 @@ public class BreakpointMatcherRegistry {
             if (entry.getPhases().contains(phase) && entry.getPrebuiltMatcher().matches(request)) {
                 // First matcher to match owns the decision for this hit. Record the
                 // hit and pause only if it falls outside any configured skip window.
+                return entry.shouldPause() ? entry : null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Response-phase variant of {@link #findMatch} that additionally evaluates each
+     * matcher's optional response-content conditions (status-code range / body regex)
+     * against the actual {@code response} about to be written.
+     *
+     * <p>Selection semantics:
+     * <ul>
+     *   <li>A matcher is considered only if its phases contain {@code phase} and its
+     *       prebuilt request matcher matches {@code request}.</li>
+     *   <li>If the matcher has a response condition that the {@code response} does NOT
+     *       satisfy, it is treated as not applicable and iteration <em>falls through</em>
+     *       to later matchers (a response condition is part of what the matcher selects,
+     *       so a non-matching response means this matcher simply does not want this
+     *       exchange).</li>
+     *   <li>The first matcher that matches the request AND satisfies its response
+     *       condition (or has none) owns the decision: its per-matcher hit counter is
+     *       incremented and it pauses only if it falls outside any configured skip
+     *       window — identical to {@link #findMatch}.</li>
+     * </ul>
+     *
+     * <p>Matchers with no response condition behave exactly as in {@link #findMatch}.
+     * This method is safe to call on the data plane (no allocation beyond the matcher's
+     * own logic and the condition evaluation).
+     *
+     * @param request  the inbound request to match against
+     * @param response the response about to be written to the downstream client
+     * @param phase    the phase to check (typically {@link BreakpointPhase#RESPONSE})
+     * @return the first matching {@link BreakpointMatcher} that should pause, or {@code null}
+     */
+    public BreakpointMatcher findResponseMatch(RequestDefinition request, HttpResponse response, BreakpointPhase phase) {
+        if (entries.isEmpty()) {
+            return null;
+        }
+        for (BreakpointMatcher entry : entries) {
+            if (entry.getPhases().contains(phase) && entry.getPrebuiltMatcher().matches(request)) {
+                if (entry.hasResponseCondition() && !entry.responseConditionMatches(response)) {
+                    // response does not satisfy this matcher's condition — try later matchers
+                    continue;
+                }
                 return entry.shouldPause() ? entry : null;
             }
         }

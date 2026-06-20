@@ -6,6 +6,7 @@ import org.junit.Test;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpRequest;
+import org.mockserver.model.HttpResponse;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.Set;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.mockserver.model.HttpRequest.request;
+import static org.mockserver.model.HttpResponse.response;
 
 /**
  * Tests the matcher-based breakpoint registry: registration, per-phase matching,
@@ -465,5 +467,227 @@ public class BreakpointMatcherRegistryTest {
         // exactly `skip` hits are skipped, the rest pause — no lost/double counts
         assertThat(pauses.get(), is(totalHits - skip));
         assertThat(registry.entries().get(0).getHitCount(), is((long) totalHits));
+    }
+
+    // --- response-content conditional breakpoints ---
+
+    @Test
+    public void shouldPauseOnlyWhenResponseStatusCodeWithinRange() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // break only on server errors (status >= 500)
+        String id = registry.register(
+            request().withPath("/api/.*"),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "client-1", null,
+            500, null, null,
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/api/widgets");
+
+        // 200 — does NOT match the response condition => no pause
+        assertThat("200 should not pause",
+            registry.findResponseMatch(matching, response().withStatusCode(200), BreakpointPhase.RESPONSE), is(nullValue()));
+        // 500 — matches => pause
+        BreakpointMatcher m500 = registry.findResponseMatch(matching, response().withStatusCode(500), BreakpointPhase.RESPONSE);
+        assertThat("500 should pause", m500, is(notNullValue()));
+        assertThat(m500.getId(), is(id));
+        // 503 — matches => pause
+        assertThat("503 should pause",
+            registry.findResponseMatch(matching, response().withStatusCode(503), BreakpointPhase.RESPONSE), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldPauseOnlyWhenResponseStatusCodeInInclusiveBoundedRange() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // break only on 4xx (400..499)
+        registry.register(
+            request(),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "c", null,
+            400, 499, null,
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/x");
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(399), BreakpointPhase.RESPONSE), is(nullValue()));
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(400), BreakpointPhase.RESPONSE), is(notNullValue()));
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(499), BreakpointPhase.RESPONSE), is(notNullValue()));
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(500), BreakpointPhase.RESPONSE), is(nullValue()));
+    }
+
+    @Test
+    public void shouldPauseOnlyWhenResponseBodyMatchesRegex() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // break only when the response body contains a quota error
+        registry.register(
+            request(),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "c", null,
+            null, null, "quota.*exceeded",
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/x");
+        assertThat("non-matching body should not pause",
+            registry.findResponseMatch(matching, response().withBody("{\"ok\":true}"), BreakpointPhase.RESPONSE), is(nullValue()));
+        assertThat("matching body should pause",
+            registry.findResponseMatch(matching, response().withBody("error: quota was exceeded for tenant"), BreakpointPhase.RESPONSE), is(notNullValue()));
+        // a null body should not pause when a body condition is set
+        assertThat("null body should not pause",
+            registry.findResponseMatch(matching, response().withStatusCode(200), BreakpointPhase.RESPONSE), is(nullValue()));
+    }
+
+    @Test
+    public void shouldRequireAllResponseConditionsToMatch() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // break only on a 500 whose body mentions "timeout"
+        registry.register(
+            request(),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "c", null,
+            500, 599, "timeout",
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/x");
+        // status matches but body does not
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(500).withBody("ok"), BreakpointPhase.RESPONSE), is(nullValue()));
+        // body matches but status does not
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(200).withBody("timeout"), BreakpointPhase.RESPONSE), is(nullValue()));
+        // both match
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(503).withBody("upstream timeout"), BreakpointPhase.RESPONSE), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldPauseRegardlessOfResponseWhenNoResponseCondition() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // no response condition => legacy behaviour: pause on any response
+        registry.register(
+            request().withPath("/legacy"),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/legacy");
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(200), BreakpointPhase.RESPONSE), is(notNullValue()));
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(500), BreakpointPhase.RESPONSE), is(notNullValue()));
+        // findResponseMatch with a null response still pauses when no condition is set
+        assertThat(registry.findResponseMatch(matching, null, BreakpointPhase.RESPONSE), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldFallThroughToLaterMatcherWhenResponseConditionFails() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // first matcher only wants 500s; second (catch-all) wants any response
+        String idErrors = registry.register(
+            request().withPath("/api/.*"),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "c", null,
+            500, null, null,
+            configuration, logger
+        );
+        String idAny = registry.register(
+            request().withPath("/api/.*"),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/api/widgets");
+        // 200 — first matcher's condition fails, so the second (catch-all) owns it
+        BreakpointMatcher m200 = registry.findResponseMatch(matching, response().withStatusCode(200), BreakpointPhase.RESPONSE);
+        assertThat(m200, is(notNullValue()));
+        assertThat(m200.getId(), is(idAny));
+        // 500 — first matcher's condition matches, so it owns it
+        BreakpointMatcher m500 = registry.findResponseMatch(matching, response().withStatusCode(500), BreakpointPhase.RESPONSE);
+        assertThat(m500, is(notNullValue()));
+        assertThat(m500.getId(), is(idErrors));
+    }
+
+    @Test
+    public void shouldNotAdvanceSkipCounterWhenResponseConditionFails() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // response condition (500) + skipCount 1: only responses that satisfy the
+        // condition count toward the skip window
+        registry.register(
+            request().withPath("/x"),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "c", 1,
+            500, null, null,
+            configuration, logger
+        );
+
+        HttpRequest matching = request().withPath("/x");
+        // two non-matching responses — condition fails, counter must NOT advance
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(200), BreakpointPhase.RESPONSE), is(nullValue()));
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(200), BreakpointPhase.RESPONSE), is(nullValue()));
+        assertThat(registry.entries().get(0).getHitCount(), is(0L));
+        // first matching response — counted but within the skip window (skipCount 1) => no pause
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(500), BreakpointPhase.RESPONSE), is(nullValue()));
+        // second matching response — pauses
+        assertThat(registry.findResponseMatch(matching, response().withStatusCode(500), BreakpointPhase.RESPONSE), is(notNullValue()));
+        assertThat(registry.entries().get(0).getHitCount(), is(2L));
+    }
+
+    @Test
+    public void shouldExposeResponseConditionFieldsOnEntry() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        registry.register(
+            request().withPath("/x"),
+            EnumSet.of(BreakpointPhase.RESPONSE),
+            "c", null,
+            500, 599, "boom",
+            configuration, logger
+        );
+
+        BreakpointMatcher entry = registry.entries().get(0);
+        assertThat(entry.getResponseStatusCodeMin(), is(500));
+        assertThat(entry.getResponseStatusCodeMax(), is(599));
+        assertThat(entry.getResponseBodyContains(), is("boom"));
+        assertThat(entry.hasResponseCondition(), is(true));
+    }
+
+    @Test
+    public void shouldRejectInvalidResponseBodyRegexAtConstruction() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+        try {
+            registry.register(
+                request(),
+                EnumSet.of(BreakpointPhase.RESPONSE),
+                "c", null,
+                null, null, "[unclosed",
+                configuration, logger
+            );
+            org.junit.Assert.fail("expected IllegalArgumentException for invalid regex");
+        } catch (IllegalArgumentException expected) {
+            assertThat(expected.getMessage(), containsString("responseBodyContains"));
+        }
+    }
+
+    @Test
+    public void plainFindMatchIgnoresResponseConditionsForRequestPhase() {
+        BreakpointMatcherRegistry registry = BreakpointMatcherRegistry.getInstance();
+
+        // a matcher with a response condition still pauses at REQUEST phase via the
+        // request-only findMatch (the response is not known at the request phase)
+        String id = registry.register(
+            request().withPath("/api/.*"),
+            EnumSet.of(BreakpointPhase.REQUEST, BreakpointPhase.RESPONSE),
+            "c", null,
+            500, null, null,
+            configuration, logger
+        );
+
+        BreakpointMatcher reqMatch = registry.findMatch(request().withPath("/api/x"), BreakpointPhase.REQUEST);
+        assertThat(reqMatch, is(notNullValue()));
+        assertThat(reqMatch.getId(), is(id));
     }
 }

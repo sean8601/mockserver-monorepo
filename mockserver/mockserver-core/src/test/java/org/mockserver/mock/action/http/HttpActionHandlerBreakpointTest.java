@@ -147,6 +147,12 @@ public class HttpActionHandlerBreakpointTest {
             request().withPath(path), EnumSet.of(phase), CLIENT_ID, configuration, mockServerLogger);
     }
 
+    private void registerResponseConditionalBreakpoint(String path, Integer statusMin, Integer statusMax, String bodyContains) {
+        BreakpointMatcherRegistry.getInstance().register(
+            request().withPath(path), EnumSet.of(BreakpointPhase.RESPONSE), CLIENT_ID, null,
+            statusMin, statusMax, bodyContains, configuration, mockServerLogger);
+    }
+
     private WebSocketRequestCallback captureRequestCallback() {
         ArgumentCaptor<WebSocketRequestCallback> captor = ArgumentCaptor.forClass(WebSocketRequestCallback.class);
         verify(mockWebSocketClientRegistry, timeout(2000)).registerForwardCallbackHandler(anyString(), captor.capture());
@@ -251,6 +257,66 @@ public class HttpActionHandlerBreakpointTest {
         verify(mockResponseWriter, timeout(2000)).writeResponse(eq(request), responseCaptor.capture(), eq(false));
         assertThat(responseCaptor.getValue().getStatusCode(), is(202));
         assertThat(responseCaptor.getValue().getBodyAsString(), is("modified body"));
+    }
+
+    @Test
+    public void responseConditionalBreakpointPausesWhenStatusConditionMatches() {
+        HttpRequest request = request("/api/mock");
+        // mock response is a 500 — matches the >=500 response condition
+        HttpResponse mockResponse = response("boom").withStatusCode(500);
+        Expectation expectation = new Expectation(request).thenRespond(mockResponse);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(mockResponse);
+        registerResponseConditionalBreakpoint("/api/mock", 500, null, null);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
+
+        // condition matched → exchange paused → WS dispatch happened; resolve MODIFY
+        captureResponseCallback().handle(response("handled").withStatusCode(200));
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter, timeout(2000)).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(responseCaptor.getValue().getStatusCode(), is(200));
+        assertThat(responseCaptor.getValue().getBodyAsString(), is("handled"));
+    }
+
+    @Test
+    public void responseConditionalBreakpointDoesNotPauseWhenStatusConditionFails() {
+        HttpRequest request = request("/api/mock");
+        // mock response is a 200 — does NOT match the >=500 response condition
+        HttpResponse mockResponse = response("ok body").withStatusCode(200);
+        Expectation expectation = new Expectation(request).thenRespond(mockResponse);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(mockResponse);
+        registerResponseConditionalBreakpoint("/api/mock", 500, null, null);
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
+
+        // condition NOT matched → response written directly, no breakpoint pause
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter, timeout(2000)).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(responseCaptor.getValue().getStatusCode(), is(200));
+        assertThat(responseCaptor.getValue().getBodyAsString(), is("ok body"));
+        // no WS response-callback dispatch should have occurred
+        verify(mockWebSocketClientRegistry, never()).registerResponseCallbackHandler(anyString(), any());
+    }
+
+    @Test
+    public void responseConditionalBreakpointPausesWhenBodyConditionMatches() {
+        HttpRequest request = request("/api/mock");
+        HttpResponse mockResponse = response("error: quota was exceeded").withStatusCode(200);
+        Expectation expectation = new Expectation(request).thenRespond(mockResponse);
+        when(mockHttpStateHandler.firstMatchingExpectation(request)).thenReturn(expectation);
+        when(mockHttpResponseActionHandler.handle(any(HttpResponse.class), any(HttpRequest.class), any(RequestDefinition.class))).thenReturn(mockResponse);
+        registerResponseConditionalBreakpoint("/api/mock", null, null, "quota.*exceeded");
+
+        actionHandler.processAction(request, mockResponseWriter, null, new HashSet<>(), false, false);
+
+        captureResponseCallback().handle(response("retry later").withStatusCode(429));
+
+        ArgumentCaptor<HttpResponse> responseCaptor = ArgumentCaptor.forClass(HttpResponse.class);
+        verify(mockResponseWriter, timeout(2000)).writeResponse(eq(request), responseCaptor.capture(), eq(false));
+        assertThat(responseCaptor.getValue().getStatusCode(), is(429));
     }
 
     // -------------------------------------------------------------------

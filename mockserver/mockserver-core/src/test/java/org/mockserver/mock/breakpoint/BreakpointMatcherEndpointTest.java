@@ -187,6 +187,91 @@ public class BreakpointMatcherEndpointTest {
         assertThat(responseWriter.response.getBodyAsString(), containsString("skipCount"));
     }
 
+    // --- response-content conditions ---
+
+    @Test
+    public void shouldRegisterWithResponseStatusAndBodyConditions() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/api/.*\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\","
+                + "\"responseStatusCodeMin\":500,\"responseStatusCodeMax\":599,\"responseBodyContains\":\"quota.*exceeded\"}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(201));
+        String body = responseWriter.response.getBodyAsString();
+        assertThat(body, containsString("\"responseStatusCodeMin\""));
+        assertThat(body, containsString("\"responseStatusCodeMax\""));
+        assertThat(body, containsString("\"responseBodyContains\""));
+
+        BreakpointMatcher entry = BreakpointMatcherRegistry.getInstance().entries().get(0);
+        assertThat(entry.getResponseStatusCodeMin(), is(500));
+        assertThat(entry.getResponseStatusCodeMax(), is(599));
+        assertThat(entry.getResponseBodyContains(), is("quota.*exceeded"));
+        assertThat(entry.hasResponseCondition(), is(true));
+    }
+
+    @Test
+    public void shouldListResponseConditions() {
+        registerMatcher("{\"httpRequest\":{\"path\":\"/x\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\",\"responseStatusCodeMin\":500}");
+
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        httpState.handle(request("/mockserver/breakpoint/matchers").withMethod("GET"), responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("\"responseStatusCodeMin\""));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("500"));
+    }
+
+    @Test
+    public void shouldOmitResponseConditionsWhenAbsent() {
+        registerMatcher("{\"httpRequest\":{\"path\":\"/plain\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\"}");
+
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        httpState.handle(request("/mockserver/breakpoint/matchers").withMethod("GET"), responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(200));
+        assertThat(responseWriter.response.getBodyAsString(), not(containsString("responseStatusCode")));
+        assertThat(responseWriter.response.getBodyAsString(), not(containsString("responseBodyContains")));
+        assertThat(BreakpointMatcherRegistry.getInstance().entries().get(0).hasResponseCondition(), is(false));
+    }
+
+    @Test
+    public void shouldReturn400WhenResponseStatusCodeNotInteger() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/x\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\",\"responseStatusCodeMin\":\"oops\"}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("responseStatusCodeMin"));
+    }
+
+    @Test
+    public void shouldReturn400WhenResponseStatusCodeRangeInverted() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/x\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\",\"responseStatusCodeMin\":599,\"responseStatusCodeMax\":500}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("responseStatusCodeMin"));
+    }
+
+    @Test
+    public void shouldReturn400WhenResponseBodyContainsInvalidRegex() {
+        FakeResponseWriter responseWriter = new FakeResponseWriter();
+        HttpRequest registerRequest = request("/mockserver/breakpoint/matcher")
+            .withMethod("PUT")
+            .withBody("{\"httpRequest\":{\"path\":\"/x\"},\"phases\":[\"RESPONSE\"],\"clientId\":\"test-client\",\"responseBodyContains\":\"[unclosed\"}");
+        httpState.handle(registerRequest, responseWriter, false);
+
+        assertThat(responseWriter.response.getStatusCode(), is(400));
+        assertThat(responseWriter.response.getBodyAsString(), containsString("responseBodyContains"));
+    }
+
     // --- validation ---
 
     @Test

@@ -5821,9 +5821,55 @@ public class HttpState {
                 skipCount = sc > 0 ? sc : null;
             }
 
+            // optional response-content conditions — RESPONSE-phase only: pause only when
+            // the response status code falls within [responseStatusCodeMin, responseStatusCodeMax]
+            // (inclusive) and/or the response body matches the responseBodyContains regex.
+            // Absent => pause regardless of response content (legacy behaviour).
+            Integer responseStatusCodeMin = null;
+            com.fasterxml.jackson.databind.JsonNode minNode = node.get("responseStatusCodeMin");
+            if (minNode != null && !minNode.isNull() && !minNode.isMissingNode()) {
+                if (!minNode.isIntegralNumber() || !minNode.canConvertToInt()) {
+                    return response().withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":\"'responseStatusCodeMin' must be an integer\"}", MediaType.JSON_UTF_8);
+                }
+                responseStatusCodeMin = minNode.asInt();
+            }
+            Integer responseStatusCodeMax = null;
+            com.fasterxml.jackson.databind.JsonNode maxNode = node.get("responseStatusCodeMax");
+            if (maxNode != null && !maxNode.isNull() && !maxNode.isMissingNode()) {
+                if (!maxNode.isIntegralNumber() || !maxNode.canConvertToInt()) {
+                    return response().withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":\"'responseStatusCodeMax' must be an integer\"}", MediaType.JSON_UTF_8);
+                }
+                responseStatusCodeMax = maxNode.asInt();
+            }
+            if (responseStatusCodeMin != null && responseStatusCodeMax != null && responseStatusCodeMin > responseStatusCodeMax) {
+                return response().withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"'responseStatusCodeMin' must not be greater than 'responseStatusCodeMax'\"}", MediaType.JSON_UTF_8);
+            }
+            String responseBodyContains = null;
+            com.fasterxml.jackson.databind.JsonNode bodyContainsNode = node.get("responseBodyContains");
+            if (bodyContainsNode != null && !bodyContainsNode.isNull() && !bodyContainsNode.isMissingNode()) {
+                if (!bodyContainsNode.isTextual()) {
+                    return response().withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":\"'responseBodyContains' must be a string\"}", MediaType.JSON_UTF_8);
+                }
+                String bc = bodyContainsNode.asText();
+                if (!bc.isEmpty()) {
+                    try {
+                        java.util.regex.Pattern.compile(bc);
+                    } catch (java.util.regex.PatternSyntaxException e) {
+                        return response().withStatusCode(BAD_REQUEST.code())
+                            .withBody("{\"error\":\"'responseBodyContains' is not a valid regular expression\"}", MediaType.JSON_UTF_8);
+                    }
+                    responseBodyContains = bc;
+                }
+            }
+
             // register
             String id = org.mockserver.mock.breakpoint.BreakpointMatcherRegistry.getInstance()
-                .register(requestMatcher, phases, clientId, skipCount, configuration, mockServerLogger);
+                .register(requestMatcher, phases, clientId, skipCount,
+                    responseStatusCodeMin, responseStatusCodeMax, responseBodyContains, configuration, mockServerLogger);
 
             // build response
             com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
@@ -5836,6 +5882,15 @@ public class HttpState {
             result.put("clientId", clientId);
             if (skipCount != null) {
                 result.put("skipCount", skipCount);
+            }
+            if (responseStatusCodeMin != null) {
+                result.put("responseStatusCodeMin", responseStatusCodeMin);
+            }
+            if (responseStatusCodeMax != null) {
+                result.put("responseStatusCodeMax", responseStatusCodeMax);
+            }
+            if (responseBodyContains != null) {
+                result.put("responseBodyContains", responseBodyContains);
             }
 
             return response().withStatusCode(CREATED.code())
@@ -5868,6 +5923,15 @@ public class HttpState {
                 }
                 if (matcher.getSkipCount() != null) {
                     matcherNode.put("skipCount", matcher.getSkipCount());
+                }
+                if (matcher.getResponseStatusCodeMin() != null) {
+                    matcherNode.put("responseStatusCodeMin", matcher.getResponseStatusCodeMin());
+                }
+                if (matcher.getResponseStatusCodeMax() != null) {
+                    matcherNode.put("responseStatusCodeMax", matcher.getResponseStatusCodeMax());
+                }
+                if (matcher.getResponseBodyContains() != null) {
+                    matcherNode.put("responseBodyContains", matcher.getResponseBodyContains());
                 }
                 matchersArray.add(matcherNode);
             }
