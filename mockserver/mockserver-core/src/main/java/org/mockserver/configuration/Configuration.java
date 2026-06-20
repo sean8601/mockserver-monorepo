@@ -64,6 +64,7 @@ public class Configuration {
     private Boolean deduplicateRecordedExpectations;
     private Boolean templatizeRecordedValues;
     private Boolean redactSecretsInRecordedExpectations;
+    private Boolean redactSecretsInLog;
     private Double llmCostBudgetUsd;
     private Boolean otelPropagateTraceContext;
     private Boolean otelGenerateTraceId;
@@ -543,6 +544,28 @@ public class Configuration {
      */
     public Configuration redactSecretsInRecordedExpectations(Boolean redactSecretsInRecordedExpectations) {
         this.redactSecretsInRecordedExpectations = redactSecretsInRecordedExpectations;
+        return this;
+    }
+
+    public Boolean redactSecretsInLog() {
+        if (redactSecretsInLog == null) {
+            return ConfigurationProperties.redactSecretsInLog();
+        }
+        return redactSecretsInLog;
+    }
+
+    /**
+     * Enable opt-in redaction of secrets in the live event log and dashboard. When enabled,
+     * sensitive request/response header values (such as {@code Authorization}, {@code Cookie},
+     * {@code x-api-key} and bearer/token credentials) are masked in the logged requests returned by
+     * {@code retrieveLogMessages}/{@code retrieveRecordedRequests} and in the dashboard event view.
+     * Redaction is applied only to the displayed/retrieved copies — matching and verification still
+     * see the original values — so off by default.
+     *
+     * @param redactSecretsInLog enable redaction of secrets in the event log and dashboard
+     */
+    public Configuration redactSecretsInLog(Boolean redactSecretsInLog) {
+        this.redactSecretsInLog = redactSecretsInLog;
         return this;
     }
 

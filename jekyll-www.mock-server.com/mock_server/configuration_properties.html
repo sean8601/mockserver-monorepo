@@ -1791,6 +1791,22 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.deduplicateRecordedExpectations="true" -Dmockserver.templatizeRecordedValues="true"</code></pre>
 </div>
 
+<button id="button_configuration_redact_secrets_in_log" class="accordion title"><strong>Redact Secrets In Event Log &amp; Dashboard</strong></button>
+<div class="panel title">
+    <p>The live event log &mdash; the entries returned by <span class="inline_code">retrieveLogMessages</span> / <span class="inline_code">retrieveRecordedRequests</span> and the request / response panes shown in the dashboard &mdash; normally includes the exact headers seen for each request and response, including credentials such as <span class="inline_code">Authorization</span> (bearer / token values), <span class="inline_code">Proxy-Authorization</span>, <span class="inline_code">Cookie</span>, <span class="inline_code">Set-Cookie</span>, <span class="inline_code">x-api-key</span> and <span class="inline_code">api-key</span>. When this setting is enabled, MockServer masks those header values with <span class="inline_code">***REDACTED***</span> wherever the log is displayed or retrieved, so secrets do not leak into a shared dashboard or an exported log. JSON body fields you list in <span class="inline_code">fixtureBodyRedactFields</span> are masked in the log too.</p>
+    <p>Redaction is applied only to the copies shown / returned &mdash; request matching and verification still see the original, unmasked values, so turning this on does <strong>not</strong> change which expectations match or how verification behaves.</p>
+    <p>This is <strong>off by default</strong> so the event log is unchanged. It complements <span class="inline_code">redactSecretsInRecordedExpectations</span> (which masks secrets on the recorded-expectation export path); enable both when you want secrets masked everywhere they could be observed.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.redactSecretsInLog(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.redactSecretsInLog=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_REDACT_SECRETS_IN_LOG=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.redactSecretsInLog="true"</code></pre>
+</div>
+
 <button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>

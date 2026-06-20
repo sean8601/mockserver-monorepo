@@ -175,6 +175,40 @@ public class FixtureRedactor {
         return result;
     }
 
+    /**
+     * Redact sensitive headers (and configured JSON body fields) in a single
+     * request definition, returning a redacted clone. The original is never
+     * mutated. Non-{@link HttpRequest} request definitions (e.g. OpenAPI
+     * definitions) are returned unchanged.
+     * <p>
+     * Used by the live event-log / dashboard redaction path so the masked copy
+     * is shown without affecting verification, which reads the unredacted
+     * request directly.
+     *
+     * @param requestDefinition the request to redact (may be {@code null})
+     * @return a redacted clone, or the original for null / non-HttpRequest inputs
+     */
+    public RequestDefinition redactRequestDefinition(RequestDefinition requestDefinition) {
+        if (requestDefinition instanceof HttpRequest) {
+            return redactRequest((HttpRequest) requestDefinition);
+        }
+        return requestDefinition;
+    }
+
+    /**
+     * Redact sensitive headers (and configured JSON body fields) in a single
+     * response, returning a redacted clone. The original is never mutated.
+     *
+     * @param response the response to redact (may be {@code null})
+     * @return a redacted clone, or {@code null} when {@code response} is null
+     */
+    public HttpResponse redactResponseObject(HttpResponse response) {
+        if (response == null) {
+            return null;
+        }
+        return redactResponse(response);
+    }
+
     private HttpRequest redactRequest(HttpRequest request) {
         HttpRequest redacted = request.clone();
         if (redacted.getHeaderList() != null) {

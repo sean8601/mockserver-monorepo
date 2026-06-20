@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Opt-in secret redaction in the event log and dashboard** (`mockserver-core`). New configuration
+  property `mockserver.redactSecretsInLog` (env `MOCKSERVER_REDACT_SECRETS_IN_LOG`, default `false`).
+  When enabled, sensitive request/response header values (`Authorization`, `Proxy-Authorization`,
+  `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` — covering bearer/token credentials) are masked with
+  `***REDACTED***` in the requests/responses returned by `retrieveLogMessages`, `retrieveRecordedRequests`
+  and `retrieveRecordedRequestsAndResponses` (and the JSON/HAR/cURL/OpenAPI/Postman export formats derived
+  from them) and in the dashboard event view; JSON body fields named in `mockserver.fixtureBodyRedactFields`
+  are masked too. Redaction applies only to the displayed/retrieved copies — request matching and
+  verification continue to see the original values, so enabling it does not change matching behaviour.
+  Reuses the existing `FixtureRedactor` helper. Off by default so the log is byte-for-byte unchanged.
+
 - **Dashboard UI (`mockserver-ui`): forced the transitive `dompurify` dependency to `3.4.11`** via an npm
   `overrides` entry, resolving all 16 open Dependabot advisories. The `monaco-editor` body-matcher editor
   (added recently) bundles a pinned `dompurify@3.2.7`; the override hoists every copy to `3.4.11`. Advisories

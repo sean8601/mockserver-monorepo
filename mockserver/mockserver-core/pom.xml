@@ -571,6 +571,8 @@
                         <exclude>**/LlmMetricsTest.java</exclude>
                         <!-- WS7.6: mutates the mockserver.perExpectationMetrics system property + static Metrics / default PrometheusRegistry -->
                         <exclude>**/PerExpectationMetricsTest.java</exclude>
+                        <!-- T10: mutates the global mockserver.redactSecretsInLog system property -->
+                        <exclude>**/LogEntryRedactionTest.java</exclude>
                         <!-- WS3.3: mutate global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/GenerationOptionsTest.java</exclude>
                         <exclude>**/OpenAPIConverterGenerationOptionsTest.java</exclude>
@@ -691,6 +693,7 @@
                                 <include>**/LlmCostBudgetMonitorTest.java</include>
                                 <include>**/LlmMetricsTest.java</include>
                                 <include>**/PerExpectationMetricsTest.java</include>
+                                <include>**/LogEntryRedactionTest.java</include>
                                 <include>**/GenerationOptionsTest.java</include>
                                 <include>**/OpenAPIConverterGenerationOptionsTest.java</include>
                                 <include>**/LlmBackendResolverTest.java</include>

@@ -160,6 +160,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS = "mockserver.deduplicateRecordedExpectations";
     private static final String MOCKSERVER_TEMPLATIZE_RECORDED_VALUES = "mockserver.templatizeRecordedValues";
     private static final String MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS = "mockserver.redactSecretsInRecordedExpectations";
+    private static final String MOCKSERVER_REDACT_SECRETS_IN_LOG = "mockserver.redactSecretsInLog";
     private static final String MOCKSERVER_LLM_COST_BUDGET_USD = "mockserver.llmCostBudgetUsd";
     private static final String MOCKSERVER_USE_SEMICOLON_AS_QUERY_PARAMETER_SEPARATOR = "mockserver.useSemicolonAsQueryParameterSeparator";
     private static final String MOCKSERVER_ASSUME_ALL_REQUESTS_ARE_HTTP = "mockserver.assumeAllRequestsAreHttp";
@@ -2516,6 +2517,32 @@ public class ConfigurationProperties {
      */
     public static void redactSecretsInRecordedExpectations(boolean enable) {
         setProperty(MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS, "" + enable);
+    }
+
+    public static boolean redactSecretsInLog() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_REDACT_SECRETS_IN_LOG, "MOCKSERVER_REDACT_SECRETS_IN_LOG", "" + false));
+    }
+
+    /**
+     * Enable opt-in redaction of secrets in the live event log and dashboard. When enabled,
+     * sensitive request/response header values ({@code Authorization}, {@code Proxy-Authorization},
+     * {@code Cookie}, {@code Set-Cookie}, {@code x-api-key}, {@code api-key} — which also covers
+     * bearer/token credentials carried in those headers) are masked with a placeholder in the
+     * logged requests shown by {@code retrieveLogMessages}/{@code retrieveRecordedRequests} and in
+     * the dashboard event view. JSON body fields named in {@link #fixtureBodyRedactFields()} are
+     * masked too. This prevents proxied or received credentials leaking into a shared dashboard or
+     * exported log.
+     * <p>
+     * Redaction is applied only to the copies that are serialised for display/retrieval — request
+     * matching and verification continue to see the original, unredacted values, so enabling this
+     * does not change matching behaviour.
+     * <p>
+     * Default is false (off) so the event log and dashboard are byte-for-byte unchanged.
+     *
+     * @param enable enable redaction of secrets in the event log and dashboard
+     */
+    public static void redactSecretsInLog(boolean enable) {
+        setProperty(MOCKSERVER_REDACT_SECRETS_IN_LOG, "" + enable);
     }
 
     /**

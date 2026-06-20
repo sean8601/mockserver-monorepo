@@ -86,6 +86,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | LLM mocking | `llmProvider`, `llmApiKey`, `llmModel`, `llmBaseUrl`, `llmBackendsConfig`, `llmSemanticMatchingEnabled`, `llmVcrStrict`, `fixtureBodyRedactFields` |
 | LLM metrics & budget | `llmMetricsEnabled`, `llmCostBudgetUsd`, `perExpectationMetricsEnabled` |
 | Recorded expectations | `deduplicateRecordedExpectations`, `redactSecretsInRecordedExpectations` |
+| Event log / dashboard | `redactSecretsInLog` |
 | Lifecycle | `stopDrainMillis` |
 
 The example file documents the most commonly tuned properties (≈220 lines). For the complete list including newer subsystems, read `ConfigurationProperties.java` or the consumer reference page.
@@ -95,6 +96,12 @@ The example file documents the most commonly tuned properties (≈220 lines). Fo
 Opt-in (default `false`). When `true`, MockServer masks sensitive header values — `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` (which also covers bearer/token credentials carried in those headers) — with `***REDACTED***` on the recorded-expectation retrieval path (`HttpState.postProcessRecordedExpectations`). Because that path feeds every retrieve format, redaction covers retrieve-as-JSON, retrieve-as-code (generated client code), and persisted recorded JSON. Redaction reuses `FixtureRedactor` (the same masking already applied on the import path) and operates on copies, so the live event log is never mutated. On this path it uses the constraint-preserving variant (`redact(..., preserveConstraints=true)`), so the redacted recordings keep their original `times`, `timeToLive`, `priority`, and `id` — only the sensitive values are masked.
 
 **Trade-off:** a redacted recorded expectation can no longer replay against an upstream that requires the masked credential, so this is off by default — enable it only when you want to share or persist recordings without leaking proxied secrets.
+
+### `redactSecretsInLog`
+
+Opt-in (default `false`). When `true`, MockServer masks the same sensitive header values — `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `x-api-key`, `api-key` — with `***REDACTED***` in the **live event log and dashboard**: the requests/responses returned by `retrieveLogMessages`, `retrieveRecordedRequests` and `retrieveRecordedRequestsAndResponses` (and the JSON/HAR/cURL/OpenAPI/Postman export formats derived from them) and the request/response panes shown in the dashboard event view. JSON body fields named in `fixtureBodyRedactFields` are masked too. Reuses `FixtureRedactor` and operates only on clones produced by `LogEntry`'s display/retrieve getters (`getHttpUpdatedRequests()`/`getHttpUpdatedResponse()` for the log/dashboard view, `getRedactedHttpRequests()`/`getRedactedHttpResponse()` for the recorded-request/export retrieval paths) — the underlying log entry read by request matching and verification keeps the original, unredacted values, so enabling this does **not** change matching or verification behaviour. Off by default so the log is byte-for-byte unchanged.
+
+This complements `redactSecretsInRecordedExpectations` (which masks the recorded-expectation *export* path); set both when you want secrets masked everywhere they could be observed.
 
 ### `controlPlaneAuditEnabled`, `controlPlaneAuditMaxEntries`, `controlPlaneAuditReads`
 

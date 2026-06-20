@@ -178,14 +178,67 @@ public class LogEntry implements EventTranslator<LogEntry> {
         if (httpRequests == null) {
             return EMPTY_REQUEST_DEFINITIONS;
         } else if (httpUpdatedRequests == null) {
+            org.mockserver.fixture.FixtureRedactor redactor = logRedactor();
             httpUpdatedRequests = Arrays
                 .stream(httpRequests)
                 .map(this::updateBody)
+                .map(requestDefinition -> redactor == null ? requestDefinition : redactor.redactRequestDefinition(requestDefinition))
                 .toArray(RequestDefinition[]::new);
             return httpUpdatedRequests;
         } else {
             return httpUpdatedRequests;
         }
+    }
+
+    /**
+     * Like {@link #getHttpRequests()} but with sensitive headers / configured JSON body
+     * fields masked when {@code mockserver.redactSecretsInLog} is enabled. Unlike
+     * {@link #getHttpUpdatedRequests()} this does NOT apply body templating ({@code updateBody}),
+     * so when redaction is off it returns the raw requests byte-for-byte unchanged — it is the
+     * redaction-aware view for the {@code retrieveRecordedRequests} / export paths, which must
+     * otherwise preserve the captured request exactly.
+     */
+    @JsonIgnore
+    public RequestDefinition[] getRedactedHttpRequests() {
+        RequestDefinition[] requests = getHttpRequests();
+        org.mockserver.fixture.FixtureRedactor redactor = logRedactor();
+        if (redactor == null) {
+            return requests;
+        }
+        return Arrays
+            .stream(requests)
+            .map(redactor::redactRequestDefinition)
+            .toArray(RequestDefinition[]::new);
+    }
+
+    /**
+     * Like {@link #getHttpRequest()} but with sensitive data masked when
+     * {@code mockserver.redactSecretsInLog} is enabled; returns the raw request unchanged
+     * when redaction is off. Used by the {@code retrieveRecordedRequestsAndResponses} path.
+     */
+    @JsonIgnore
+    public RequestDefinition getRedactedHttpRequest() {
+        RequestDefinition request = getHttpRequest();
+        org.mockserver.fixture.FixtureRedactor redactor = logRedactor();
+        if (redactor == null || request == null) {
+            return request;
+        }
+        return redactor.redactRequestDefinition(request);
+    }
+
+    /**
+     * Like {@link #getHttpResponse()} but with sensitive data masked when
+     * {@code mockserver.redactSecretsInLog} is enabled; returns the raw response unchanged
+     * when redaction is off. Used by the {@code retrieveRecordedRequestsAndResponses} path.
+     */
+    @JsonIgnore
+    public HttpResponse getRedactedHttpResponse() {
+        HttpResponse response = getHttpResponse();
+        org.mockserver.fixture.FixtureRedactor redactor = logRedactor();
+        if (redactor == null || response == null) {
+            return response;
+        }
+        return redactor.redactResponseObject(response);
     }
 
     @JsonIgnore
@@ -240,7 +293,9 @@ public class LogEntry implements EventTranslator<LogEntry> {
         if (httpResponse == null) {
             return null;
         } else if (httpUpdatedResponse == null) {
-            httpUpdatedResponse = updateBody(httpResponse);
+            HttpResponse updated = updateBody(httpResponse);
+            org.mockserver.fixture.FixtureRedactor redactor = logRedactor();
+            httpUpdatedResponse = redactor == null ? updated : redactor.redactResponseObject(updated);
             return httpUpdatedResponse;
         } else {
             return httpUpdatedResponse;
@@ -394,6 +449,31 @@ public class LogEntry implements EventTranslator<LogEntry> {
     public LogEntry setBecause(String because) {
         this.because = because;
         return this;
+    }
+
+    /**
+     * Build the redactor applied to the displayed/retrieved copies of the request and
+     * response when {@code mockserver.redactSecretsInLog} is enabled, or {@code null}
+     * when redaction is off (the default) so the log is byte-for-byte unchanged.
+     * <p>
+     * Sensitive headers are the {@link org.mockserver.fixture.FixtureRedactor} defaults
+     * (Authorization, Proxy-Authorization, Cookie, Set-Cookie, x-api-key, api-key); JSON
+     * body fields named in {@code mockserver.fixtureBodyRedactFields} are masked too. The
+     * redactor only ever operates on clones, so the live log entry is never mutated and
+     * matching/verification (which read the unredacted request) are unaffected.
+     */
+    private static org.mockserver.fixture.FixtureRedactor logRedactor() {
+        if (!org.mockserver.configuration.ConfigurationProperties.redactSecretsInLog()) {
+            return null;
+        }
+        String bodyFields = org.mockserver.configuration.ConfigurationProperties.fixtureBodyRedactFields();
+        List<String> bodyFieldList = isBlank(bodyFields)
+            ? Collections.emptyList()
+            : Arrays.asList(bodyFields.split(","));
+        return new org.mockserver.fixture.FixtureRedactor(
+            org.mockserver.fixture.FixtureRedactor.defaultSensitiveHeaders(),
+            bodyFieldList
+        );
     }
 
     private RequestDefinition updateBody(RequestDefinition requestDefinition) {

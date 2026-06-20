@@ -100,12 +100,30 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         -> !input.isDeleted() && input.getType() == EXPECTATION_RESPONSE;
     private static final Predicate<LogEntry> forwardedRequestLogPredicate = input
         -> !input.isDeleted() && input.getType() == FORWARDED_REQUEST;
-    private static final Function<LogEntry, RequestDefinition[]> logEntryToRequest = LogEntry::getHttpRequests;
+    // Redaction-aware getter: when mockserver.redactSecretsInLog is enabled it masks sensitive
+    // headers / body fields on clones so retrieveRecordedRequests (and the JSON / HAR / cURL /
+    // OpenAPI / Postman export formats derived from it) does not leak proxied credentials. When the
+    // flag is off (the default) it returns the raw requests byte-for-byte unchanged. Request matching
+    // and verification read the un-redacted fields directly elsewhere; this mapper is used only on the
+    // request-retrieval / export surface (where the result is displayed/exported, or counted — and
+    // redaction never adds/drops entries, so the verification count is unaffected).
+    private static final Function<LogEntry, RequestDefinition[]> logEntryToRequest = LogEntry::getRedactedHttpRequests;
     private static final Function<LogEntry, Expectation> logEntryToExpectation = LogEntry::getExpectation;
+    // Raw request/response pair — used by the response-aware verification DECISION path, which must
+    // match against the original (un-redacted) content so enabling redaction never changes a
+    // verification pass/fail result.
     private static final Function<LogEntry, LogEventRequestAndResponse> logEntryToHttpRequestAndHttpResponse =
         logEntry -> new LogEventRequestAndResponse()
             .withHttpRequest((HttpRequest) logEntry.getHttpRequest())
             .withHttpResponse(logEntry.getHttpResponse())
+            .withTimestamp(logEntry.getTimestamp());
+    // Redacted request/response pair — used only by the retrieveRecordedRequestsAndResponses
+    // retrieve/export surface, so secrets are masked in the exported/displayed copy while the
+    // verification path above keeps matching raw content.
+    private static final Function<LogEntry, LogEventRequestAndResponse> logEntryToRedactedHttpRequestAndHttpResponse =
+        logEntry -> new LogEventRequestAndResponse()
+            .withHttpRequest((HttpRequest) logEntry.getRedactedHttpRequest())
+            .withHttpResponse(logEntry.getRedactedHttpResponse())
             .withTimestamp(logEntry.getTimestamp());
     private static final String[] EXCLUDED_FIELDS = {"id", "disruptor"};
     private final Configuration configuration;
@@ -484,14 +502,21 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
     }
 
     public void retrieveRequestResponses(RequestDefinition requestDefinition, Consumer<List<LogEventRequestAndResponse>> listConsumer) {
-        retrieveRequestResponses(requestDefinition, requestResponseLogPredicate, listConsumer);
+        // Public retrieve/export surface (retrieveRecordedRequestsAndResponses) — redact when enabled.
+        retrieveRequestResponses(requestDefinition, requestResponseLogPredicate, logEntryToRedactedHttpRequestAndHttpResponse, listConsumer);
     }
 
     private void retrieveRequestResponses(RequestDefinition requestDefinition, Predicate<LogEntry> logEntryPredicate, Consumer<List<LogEventRequestAndResponse>> listConsumer) {
+        // Internal verification-decision callers pass the raw mapper so response matching always sees
+        // the original, un-redacted content (redaction must not change a verification pass/fail result).
+        retrieveRequestResponses(requestDefinition, logEntryPredicate, logEntryToHttpRequestAndHttpResponse, listConsumer);
+    }
+
+    private void retrieveRequestResponses(RequestDefinition requestDefinition, Predicate<LogEntry> logEntryPredicate, Function<LogEntry, LogEventRequestAndResponse> logEntryMapper, Consumer<List<LogEventRequestAndResponse>> listConsumer) {
         retrieveLogEntries(
             requestDefinition,
             logEntryPredicate,
-            logEntryToHttpRequestAndHttpResponse,
+            logEntryMapper,
             logEventStream -> listConsumer.accept(logEventStream.filter(Objects::nonNull).collect(Collectors.toList()))
         );
     }
