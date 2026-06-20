@@ -27,6 +27,7 @@ import org.mockserver.mock.breakpoint.BreakpointPhase;
 import org.mockserver.oidc.OidcProviderConfiguration;
 import org.mockserver.model.*;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
+import org.mockserver.saml.SamlProviderConfiguration;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.*;
 import org.mockserver.serialization.model.HttpChaosProfileDTO;
@@ -2063,6 +2064,64 @@ public class MockServerClient implements Stoppable {
             if (httpResponse != null && isNotBlank(httpResponse.getBodyAsString())) {
                 return expectationSerializer.deserializeArray(httpResponse.getBodyAsString(), true);
             }
+        }
+        return new Expectation[0];
+    }
+
+    /**
+     * Stand up a complete mock SAML 2.0 Identity Provider with default settings: a metadata endpoint,
+     * an SP-initiated Web-Browser-SSO POST endpoint, and a Single-Logout endpoint, signed with a
+     * freshly generated self-signed RSA credential whose certificate is published in the metadata.
+     *
+     * @return the upserted expectations (metadata + SSO + SLO)
+     */
+    public Expectation[] mockSamlProvider() {
+        return mockSamlProvider(new SamlProviderConfiguration());
+    }
+
+    /**
+     * Stand up a complete mock SAML 2.0 Identity Provider from the given configuration. The
+     * configuration controls the IdP/SP entity ids, endpoint paths, the asserted subject and
+     * attributes, the signing algorithm, and the negative-test flags (expired assertion, wrong
+     * audience, tampered signature) for exercising an SP's rejection paths.
+     *
+     * @param samlProviderConfiguration the SAML provider configuration (defaults applied for unset fields)
+     * @return the upserted expectations (metadata + SSO + SLO)
+     */
+    public Expectation[] mockSamlProvider(SamlProviderConfiguration samlProviderConfiguration) {
+        if (samlProviderConfiguration == null) {
+            samlProviderConfiguration = new SamlProviderConfiguration();
+        }
+        String body;
+        try {
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode configNode = objectMapper.valueToTree(samlProviderConfiguration);
+            // signingPrivateKeyPem is WRITE_ONLY on the configuration so the SERVER never serializes
+            // the private key back out (no key leak via JSON / metadata / response). That same
+            // annotation, however, excludes it from this outbound serialization, which would silently
+            // drop a user-supplied PEM credential. Re-add it explicitly for this CLIENT -> server
+            // control-plane PUT only, so a supplied signing key actually reaches the IdP.
+            if (isNotBlank(samlProviderConfiguration.getSigningPrivateKeyPem())) {
+                configNode.put("signingPrivateKeyPem", samlProviderConfiguration.getSigningPrivateKeyPem());
+            }
+            body = objectMapper.writeValueAsString(configNode);
+        } catch (Exception e) {
+            throw new ClientException(formatLogMessage("error:{}while serializing SAML provider configuration:{}", e.getMessage(), samlProviderConfiguration), e);
+        }
+        HttpResponse httpResponse =
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("saml"))
+                    .withBody(body, StandardCharsets.UTF_8),
+                false
+            );
+        if (httpResponse != null && httpResponse.getStatusCode() != 201) {
+            throw new ClientException(formatLogMessage("error:{}while submitting SAML provider configuration:{}", httpResponse, samlProviderConfiguration));
+        }
+        if (httpResponse != null && isNotBlank(httpResponse.getBodyAsString())) {
+            return expectationSerializer.deserializeArray(httpResponse.getBodyAsString(), true);
         }
         return new Expectation[0];
     }

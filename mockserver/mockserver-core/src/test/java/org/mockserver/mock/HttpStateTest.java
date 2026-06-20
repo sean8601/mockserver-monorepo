@@ -4292,7 +4292,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(7));
+        assertThat(returnedExpectations.length, is(8));
 
         // Verify the discovery endpoint is now matchable
         HttpResponse discoveryResponse = httpState.firstMatchingExpectation(
@@ -4346,7 +4346,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(7));
+        assertThat(returnedExpectations.length, is(8));
     }
 
     @Test
@@ -4383,7 +4383,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(2));
+        assertThat(returnedExpectations.length, is(3));
 
         // Verify the metadata endpoint is now matchable and returns SAML metadata
         HttpResponse metadataResponse = httpState.firstMatchingExpectation(
@@ -4436,7 +4436,7 @@ public class HttpStateTest {
         Expectation[] returnedExpectations = expectationSerializer.deserializeArray(
             responseWriter.response.getBodyAsString(), true
         );
-        assertThat(returnedExpectations.length, is(2));
+        assertThat(returnedExpectations.length, is(3));
     }
 
     @Test

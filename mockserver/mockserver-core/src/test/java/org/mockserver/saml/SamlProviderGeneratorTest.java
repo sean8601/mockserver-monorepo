@@ -44,8 +44,19 @@ public class SamlProviderGeneratorTest {
     // --- generation shape ---
 
     @Test
-    public void defaultsProduceTwoExpectations() {
+    public void defaultsProduceThreeExpectations() {
         java.util.List<Expectation> expectations = generator.generate(new SamlProviderConfiguration());
+
+        assertThat(expectations.size(), is(3));
+        assertThat(expectations.get(0).getId(), is("saml.metadata"));
+        assertThat(expectations.get(1).getId(), is("saml.sso"));
+        assertThat(expectations.get(2).getId(), is("saml.slo"));
+    }
+
+    @Test
+    public void noSloPathOmitsSloExpectation() {
+        java.util.List<Expectation> expectations =
+            generator.generate(new SamlProviderConfiguration().setSloServiceUrl(null));
 
         assertThat(expectations.size(), is(2));
         assertThat(expectations.get(0).getId(), is("saml.metadata"));
@@ -466,7 +477,217 @@ public class SamlProviderGeneratorTest {
         assertThat(publishedCertB64, is(generated.getCertificateBase64()));
     }
 
+    // --- Wave 3: configurable signing algorithm ---
+
+    @Test
+    public void ecdsaSigningAlgorithmProducesResponseThatVerifiesAgainstMetadataCert() throws Exception {
+        assertSignatureVerifiesForAlgorithm("ES256");
+    }
+
+    @Test
+    public void rsaSha512SigningAlgorithmProducesResponseThatVerifiesAgainstMetadataCert() throws Exception {
+        assertSignatureVerifiesForAlgorithm("RS512");
+    }
+
+    @Test
+    public void unknownSigningAlgorithmFallsBackToDefaultRsaAndStillVerifies() throws Exception {
+        // an unrecognised name must not break generation — it falls back to the RSA-SHA256 default
+        assertSignatureVerifiesForAlgorithm("not-a-real-alg");
+    }
+
+    private void assertSignatureVerifiesForAlgorithm(String signingAlgorithm) throws Exception {
+        SamlProviderConfiguration config = new SamlProviderConfiguration()
+            .setSigningAlgorithm(signingAlgorithm)
+            .setSubjectNameId("dave@example.com");
+        java.util.List<Expectation> expectations = generator.generate(config);
+
+        PublicKey idpPublicKey = idpPublicKeyFromMetadata(expectations.get(0));
+
+        HttpResponse response = new SamlSsoCallback().handle(
+            request().withMethod("GET").withPath("/saml/sso")
+        );
+        Document doc = parse(decodeSamlMessage(response.getBodyAsString(), "SAMLResponse"));
+
+        Element assertion = (Element) elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion").item(0);
+        assertion.setIdAttribute("ID", true);
+
+        NodeList signatures = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+        assertThat("expected a ds:Signature on the assertion", signatures.getLength(), is(1));
+        DOMValidateContext valContext = new DOMValidateContext(idpPublicKey, signatures.item(0));
+        XMLSignature signature = XMLSignatureFactory.getInstance("DOM").unmarshalXMLSignature(valContext);
+
+        assertTrue("assertion signed with " + signingAlgorithm + " must validate against the metadata cert",
+            signature.validate(valContext));
+    }
+
+    // --- Wave 3: Single Logout (SLO) ---
+
+    @Test
+    public void metadataPublishesSingleLogoutServiceWithPostBinding() throws Exception {
+        SamlProviderConfiguration config = new SamlProviderConfiguration()
+            .setIdpEntityId("https://idp.example.com/saml/idp")
+            .setSloServiceUrl("/saml/logout");
+        Document doc = parse(generator.generate(config).get(0).getHttpResponse().getBodyAsString());
+
+        NodeList sloServices = elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:metadata", "SingleLogoutService");
+        assertThat(sloServices.getLength(), is(1));
+        Element sloService = (Element) sloServices.item(0);
+        assertThat(sloService.getAttribute("Binding"), is("urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"));
+        assertThat(sloService.getAttribute("Location"), is("https://idp.example.com/saml/logout"));
+    }
+
+    @Test
+    public void sloRequestProducesSignedLogoutResponseWithRelayStateEchoed() throws Exception {
+        SamlProviderConfiguration config = new SamlProviderConfiguration()
+            .setSpSingleLogoutServiceUrl("https://sp.test/slo");
+        java.util.List<Expectation> expectations = generator.generate(config);
+        PublicKey idpPublicKey = idpPublicKeyFromMetadata(expectations.get(0));
+
+        // the SLO expectation is the third one
+        assertThat(expectations.get(2).getId(), is("saml.slo"));
+
+        String logoutRequest = "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\""
+            + " ID=\"_logout123\" Version=\"2.0\"/>";
+        String samlRequestB64 = Base64.getEncoder().encodeToString(logoutRequest.getBytes(StandardCharsets.UTF_8));
+
+        HttpResponse response = new SamlSloCallback().handle(
+            request().withMethod("GET").withPath("/saml/logout")
+                .withQueryStringParameter("SAMLRequest", samlRequestB64)
+                .withQueryStringParameter("RelayState", "/loggedout")
+        );
+
+        assertThat(response.getStatusCode(), is(200));
+        String html = response.getBodyAsString();
+        assertThat(html, containsString("action=\"https://sp.test/slo\""));
+        assertThat(html, containsString("name=\"RelayState\""));
+        assertThat(html, containsString("/loggedout"));
+
+        Document doc = parse(decodeSamlMessage(html, "SAMLResponse"));
+        assertThat(doc.getDocumentElement().getLocalName(), is("LogoutResponse"));
+        assertThat(doc.getDocumentElement().getAttribute("InResponseTo"), is("_logout123"));
+        assertThat(doc.getDocumentElement().getAttribute("Destination"), is("https://sp.test/slo"));
+
+        // status success
+        NodeList statusCodes = elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:protocol", "StatusCode");
+        assertThat(statusCodes.getLength(), is(1));
+        assertThat(((Element) statusCodes.item(0)).getAttribute("Value"),
+            is("urn:oasis:names:tc:SAML:2.0:status:Success"));
+
+        // the LogoutResponse envelope is signed and verifies against the IdP cert
+        Element root = doc.getDocumentElement();
+        root.setIdAttribute("ID", true);
+        NodeList signatures = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+        assertThat("expected a ds:Signature on the LogoutResponse", signatures.getLength(), is(1));
+        DOMValidateContext valContext = new DOMValidateContext(idpPublicKey, signatures.item(0));
+        XMLSignature signature = XMLSignatureFactory.getInstance("DOM").unmarshalXMLSignature(valContext);
+        assertTrue("LogoutResponse signature must validate against the IdP certificate",
+            signature.validate(valContext));
+    }
+
+    @Test
+    public void sloForUnregisteredPathReturns404() {
+        // store reset by @Before; nothing registered for this path
+        HttpResponse response = new SamlSloCallback().handle(
+            request().withMethod("GET").withPath("/saml/logout")
+        );
+        assertThat(response.getStatusCode(), is(404));
+    }
+
+    // --- Wave 3: negative-test flags ---
+
+    @Test
+    public void expiredAssertionFlagPutsConditionsNotOnOrAfterInThePast() throws Exception {
+        generator.generate(new SamlProviderConfiguration().setExpiredAssertion(true));
+
+        Document doc = signedResponseDocument();
+        Element conditions = (Element) elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Conditions").item(0);
+        java.time.Instant notOnOrAfter = java.time.Instant.parse(conditions.getAttribute("NotOnOrAfter"));
+        assertTrue("expiredAssertion must place Conditions/NotOnOrAfter in the past",
+            notOnOrAfter.isBefore(java.time.Instant.now()));
+
+        Element scd = (Element) elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "SubjectConfirmationData").item(0);
+        java.time.Instant scdNotOnOrAfter = java.time.Instant.parse(scd.getAttribute("NotOnOrAfter"));
+        assertTrue("expiredAssertion must place SubjectConfirmationData/NotOnOrAfter in the past",
+            scdNotOnOrAfter.isBefore(java.time.Instant.now()));
+    }
+
+    @Test
+    public void wrongAudienceFlagEmitsAudienceThatDoesNotMatchSpEntityId() throws Exception {
+        java.util.List<Expectation> expectations = generator.generate(new SamlProviderConfiguration()
+            .setSpEntityId("https://sp.test/metadata")
+            .setWrongAudience(true));
+        PublicKey idpPublicKey = idpPublicKeyFromMetadata(expectations.get(0));
+
+        Document doc = signedResponseDocument();
+        NodeList audiences = elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Audience");
+        assertThat(audiences.getLength(), is(1));
+        assertThat("wrongAudience must NOT equal the SP entityId",
+            audiences.item(0).getTextContent(), is(not("https://sp.test/metadata")));
+
+        // wrongAudience is a CONTENT defect, not a signature defect: the assertion is still correctly
+        // signed and its signature MUST still validate against the IdP certificate. This documents that
+        // an SP rejecting it does so on audience-restriction grounds, not because the signature broke.
+        Element assertion = (Element) elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion").item(0);
+        assertion.setIdAttribute("ID", true);
+        NodeList signatures = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+        assertThat(signatures.getLength(), is(1));
+        DOMValidateContext valContext = new DOMValidateContext(idpPublicKey, signatures.item(0));
+        XMLSignature signature = XMLSignatureFactory.getInstance("DOM").unmarshalXMLSignature(valContext);
+        assertThat("wrongAudience must NOT break the assertion signature (content defect only)",
+            signature.validate(valContext), is(true));
+    }
+
+    @Test
+    public void tamperedSignatureFlagProducesAssertionThatFailsSignatureValidation() throws Exception {
+        java.util.List<Expectation> expectations =
+            generator.generate(new SamlProviderConfiguration().setTamperedSignature(true));
+        PublicKey idpPublicKey = idpPublicKeyFromMetadata(expectations.get(0));
+
+        Document doc = signedResponseDocument();
+        Element assertion = (Element) elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion").item(0);
+        assertion.setIdAttribute("ID", true);
+
+        NodeList signatures = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+        assertThat(signatures.getLength(), is(1));
+        DOMValidateContext valContext = new DOMValidateContext(idpPublicKey, signatures.item(0));
+        XMLSignature signature = XMLSignatureFactory.getInstance("DOM").unmarshalXMLSignature(valContext);
+
+        assertThat("tamperedSignature flag must produce a signature that fails validation",
+            signature.validate(valContext), is(false));
+    }
+
+    @Test
+    public void defaultsProduceValidNonExpiredCorrectAudienceAssertion() throws Exception {
+        // sanity: with no negative flags set the assertion is valid (guards against the flags leaking on)
+        generator.generate(new SamlProviderConfiguration().setSpEntityId("https://sp.ok/meta"));
+        Document doc = signedResponseDocument();
+        Element conditions = (Element) elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Conditions").item(0);
+        assertTrue(java.time.Instant.parse(conditions.getAttribute("NotOnOrAfter")).isAfter(java.time.Instant.now()));
+        assertThat(elementsNS(doc, "urn:oasis:names:tc:SAML:2.0:assertion", "Audience").item(0).getTextContent(),
+            is("https://sp.ok/meta"));
+    }
+
     // --- helpers ---
+
+    private Document signedResponseDocument() throws Exception {
+        HttpResponse response = new SamlSsoCallback().handle(
+            request().withMethod("GET").withPath("/saml/sso")
+        );
+        return parse(decodeSamlMessage(response.getBodyAsString(), "SAMLResponse"));
+    }
+
+    private static String decodeSamlMessage(String html, String fieldName) {
+        return new String(Base64.getDecoder().decode(extractHiddenInput(html, fieldName)), StandardCharsets.UTF_8);
+    }
+
+    private static PublicKey idpPublicKeyFromMetadata(Expectation metadataExpectation) throws Exception {
+        Document metadataDoc = parse(metadataExpectation.getHttpResponse().getBodyAsString());
+        String certB64 = metadataDoc.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "X509Certificate")
+            .item(0).getTextContent().trim();
+        return ((java.security.cert.X509Certificate)
+            java.security.cert.CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(Base64.getDecoder().decode(certB64)))).getPublicKey();
+    }
 
     private static Document parse(String xml) throws Exception {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();

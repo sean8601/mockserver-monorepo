@@ -48,28 +48,46 @@ public class SamlSigningCredential {
 
     private final PrivateKey privateKey;
     private final X509Certificate certificate;
+    private final AsymmetricKeyPairAlgorithm algorithm;
 
-    private SamlSigningCredential(PrivateKey privateKey, X509Certificate certificate) {
+    private SamlSigningCredential(PrivateKey privateKey, X509Certificate certificate,
+                                  AsymmetricKeyPairAlgorithm algorithm) {
         this.privateKey = privateKey;
         this.certificate = certificate;
+        this.algorithm = algorithm;
     }
 
     /**
      * Builds the signing credential from configuration: parses a supplied PEM pair if present,
-     * otherwise generates a self-signed RSA credential keyed to the IdP entity id.
+     * otherwise generates a self-signed credential keyed to the IdP entity id. The signing algorithm
+     * defaults to RSA-2048/SHA-256 (the historic default) but can be overridden via
+     * {@link SamlProviderConfiguration#getSigningAlgorithm()} (e.g. {@code ES256}, {@code RS512}).
      */
     public static SamlSigningCredential from(SamlProviderConfiguration config) {
+        AsymmetricKeyPairAlgorithm algorithm = resolveAlgorithm(config.getSigningAlgorithm());
         String certPem = config.getSigningCertificatePem();
         String keyPem = config.getSigningPrivateKeyPem();
         if (certPem != null && !certPem.trim().isEmpty() && keyPem != null && !keyPem.trim().isEmpty()) {
-            return new SamlSigningCredential(privateKeyFromPEM(keyPem), x509FromPEM(certPem));
+            // A supplied credential carries its own key type; honour an explicit signingAlgorithm if
+            // given, otherwise default to RSA-SHA256 (the historic behaviour for supplied PEM pairs).
+            return new SamlSigningCredential(privateKeyFromPEM(keyPem), x509FromPEM(certPem), algorithm);
         }
-        return generateSelfSigned(config.getIdpEntityId());
+        return generateSelfSigned(config.getIdpEntityId(), algorithm);
     }
 
-    private static SamlSigningCredential generateSelfSigned(String idpEntityId) {
+    /**
+     * Maps the configured signing algorithm short name to an {@link AsymmetricKeyPairAlgorithm},
+     * falling back to RSA-2048/SHA-256 when unset or unrecognised so the historic default is
+     * preserved when {@code signingAlgorithm} is not supplied.
+     */
+    static AsymmetricKeyPairAlgorithm resolveAlgorithm(String signingAlgorithm) {
+        AsymmetricKeyPairAlgorithm resolved = AsymmetricKeyPairAlgorithm.fromJwtAlgorithm(signingAlgorithm);
+        return resolved != null ? resolved : AsymmetricKeyPairAlgorithm.RSA2048_SHA256;
+    }
+
+    private static SamlSigningCredential generateSelfSigned(String idpEntityId, AsymmetricKeyPairAlgorithm algorithm) {
         try {
-            KeyPair keyPair = AsymmetricKeyGenerator.createKeyPair(AsymmetricKeyPairAlgorithm.RSA2048_SHA256);
+            KeyPair keyPair = AsymmetricKeyGenerator.createKeyPair(algorithm);
             PublicKey publicKey = keyPair.getPublic();
             PrivateKey privateKey = keyPair.getPrivate();
 
@@ -84,13 +102,16 @@ public class SamlSigningCredential {
             );
             builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
 
-            ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
+            // The certificate's own signature algorithm must match the key type so the self-signed
+            // cert verifies — use the JCA signing algorithm name from the enum (e.g. SHA256withRSA,
+            // SHA256WITHECDSA), keeping the published metadata X.509 cert in step with the signing key.
+            ContentSigner signer = new JcaContentSignerBuilder(algorithm.getSigningAlgorithm())
                 .setProvider(PROVIDER_NAME).build(privateKey);
             X509Certificate certificate = new JcaX509CertificateConverter()
                 .setProvider(PROVIDER_NAME).getCertificate(builder.build(signer));
             certificate.verify(publicKey);
 
-            return new SamlSigningCredential(privateKey, certificate);
+            return new SamlSigningCredential(privateKey, certificate, algorithm);
         } catch (Exception e) {
             throw new RuntimeException("Exception generating self-signed SAML signing credential", e);
         }
@@ -98,6 +119,14 @@ public class SamlSigningCredential {
 
     public PrivateKey getPrivateKey() {
         return privateKey;
+    }
+
+    /**
+     * The signing algorithm used by this credential, which determines the XML-DSig
+     * {@code SignatureMethod}/{@code DigestMethod} used when enveloped-signing assertions.
+     */
+    public AsymmetricKeyPairAlgorithm getAlgorithm() {
+        return algorithm;
     }
 
     public X509Certificate getCertificate() {

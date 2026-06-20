@@ -1,10 +1,12 @@
 package org.mockserver.saml;
 
+import org.mockserver.keys.AsymmetricKeyPairAlgorithm;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import javax.xml.crypto.dsig.CanonicalizationMethod;
-import javax.xml.crypto.dsig.DigestMethod;
 import javax.xml.crypto.dsig.Reference;
 import javax.xml.crypto.dsig.SignedInfo;
 import javax.xml.crypto.dsig.Transform;
@@ -63,8 +65,13 @@ public class SamlResponseBuilder {
             Document doc = builder.newDocument();
 
             String now = DateTimeFormatter.ISO_INSTANT.format(Instant.now().with(java.time.temporal.ChronoField.NANO_OF_SECOND, 0));
+            // expiredAssertion negative-test flag: place NotOnOrAfter in the past so a conformant SP
+            // rejects the assertion as expired. Otherwise it sits sessionDuration seconds in the future.
+            Instant validityEnd = provider.expiredAssertion
+                ? Instant.now().minusSeconds(3600)
+                : Instant.now().plusSeconds(provider.sessionDurationSeconds);
             String notOnOrAfter = DateTimeFormatter.ISO_INSTANT.format(
-                Instant.now().plusSeconds(provider.sessionDurationSeconds).with(java.time.temporal.ChronoField.NANO_OF_SECOND, 0)
+                validityEnd.with(java.time.temporal.ChronoField.NANO_OF_SECOND, 0)
             );
             String responseId = "_" + UUID.randomUUID();
             String assertionId = "_" + UUID.randomUUID();
@@ -130,7 +137,11 @@ public class SamlResponseBuilder {
             conditions.setAttribute("NotOnOrAfter", notOnOrAfter);
             Element audienceRestriction = doc.createElementNS(NS_ASSERTION, "saml:AudienceRestriction");
             Element audience = doc.createElementNS(NS_ASSERTION, "saml:Audience");
-            audience.setTextContent(provider.spEntityId);
+            // wrongAudience negative-test flag: emit an Audience that does NOT match the SP entityId so
+            // a conformant SP rejects the assertion for failing the audience restriction.
+            audience.setTextContent(provider.wrongAudience
+                ? provider.spEntityId + "/wrong-audience"
+                : provider.spEntityId);
             audienceRestriction.appendChild(audience);
             conditions.appendChild(audienceRestriction);
             assertion.appendChild(conditions);
@@ -172,7 +183,14 @@ public class SamlResponseBuilder {
             reparsedAssertion.setIdAttribute("ID", true);
 
             // enveloped-sign the Assertion
-            signAssertion(reparsedAssertion, provider.signingPrivateKey, provider.signingCertificate);
+            signAssertion(reparsedAssertion, provider.signingPrivateKey, provider.signingCertificate,
+                provider.signingAlgorithm);
+
+            // tamperedSignature negative-test flag: corrupt the computed SignatureValue so signature
+            // verification against the IdP certificate fails (the SP must reject the assertion).
+            if (provider.tamperedSignature) {
+                corruptSignatureValue(reparsed);
+            }
 
             return serialize(reparsed);
         } catch (Exception e) {
@@ -191,13 +209,19 @@ public class SamlResponseBuilder {
      * child of the Assertion (immediately after {@code <saml:Issuer>}), which is where the SAML
      * schema requires it.
      */
-    private void signAssertion(Element assertion, PrivateKey privateKey, X509Certificate certificate) throws Exception {
+    private void signAssertion(Element assertion, PrivateKey privateKey, X509Certificate certificate,
+                               AsymmetricKeyPairAlgorithm algorithm) throws Exception {
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
         String assertionId = assertion.getAttribute("ID");
 
+        // The SignatureMethod + DigestMethod are derived from the configured signing algorithm
+        // (default RSA-SHA256), keeping them consistent with the key type published in the metadata.
+        AsymmetricKeyPairAlgorithm effectiveAlgorithm =
+            algorithm != null ? algorithm : AsymmetricKeyPairAlgorithm.RSA2048_SHA256;
+
         Reference reference = fac.newReference(
             "#" + assertionId,
-            fac.newDigestMethod(DigestMethod.SHA256, null),
+            fac.newDigestMethod(effectiveAlgorithm.getXmlDigestMethod(), null),
             java.util.Arrays.asList(
                 fac.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null),
                 fac.newTransform(CanonicalizationMethod.EXCLUSIVE, (TransformParameterSpec) null)
@@ -207,7 +231,7 @@ public class SamlResponseBuilder {
 
         SignedInfo signedInfo = fac.newSignedInfo(
             fac.newCanonicalizationMethod(CanonicalizationMethod.EXCLUSIVE, (C14NMethodParameterSpec) null),
-            fac.newSignatureMethod("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", null),
+            fac.newSignatureMethod(effectiveAlgorithm.getXmlSignatureMethod(), null),
             Collections.singletonList(reference)
         );
 
@@ -224,6 +248,27 @@ public class SamlResponseBuilder {
 
         XMLSignature signature = fac.newXMLSignature(signedInfo, keyInfo);
         signature.sign(signContext);
+    }
+
+    /**
+     * Corrupts the {@code <ds:SignatureValue>} of the signed assertion in place by flipping its first
+     * base64 character. The XML stays well-formed and the certificate is unchanged, but the signature
+     * no longer verifies — exercising an SP's signature-rejection path. No-op if no SignatureValue is
+     * present.
+     */
+    private void corruptSignatureValue(Document doc) {
+        NodeList signatureValues = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "SignatureValue");
+        if (signatureValues.getLength() == 0) {
+            return;
+        }
+        Node signatureValue = signatureValues.item(0);
+        String value = signatureValue.getTextContent();
+        if (value == null || value.trim().isEmpty()) {
+            return;
+        }
+        char first = value.charAt(0);
+        char replacement = (first == 'A') ? 'B' : 'A';
+        signatureValue.setTextContent(replacement + value.substring(1));
     }
 
     private Document reparse(String xml) throws Exception {

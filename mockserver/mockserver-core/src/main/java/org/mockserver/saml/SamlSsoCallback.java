@@ -59,12 +59,12 @@ public class SamlSsoCallback implements ExpectationResponseCallback {
         }
 
         String relayState = param(request, "RelayState");
-        String samlRequestId = extractAuthnRequestId(param(request, "SAMLRequest"));
+        String samlRequestId = extractRootElementId(param(request, "SAMLRequest"));
 
         String signedResponseXml = new SamlResponseBuilder().buildSignedResponse(provider, samlRequestId);
         String samlResponseB64 = Base64.getEncoder().encodeToString(signedResponseXml.getBytes(StandardCharsets.UTF_8));
 
-        String html = buildAutoPostForm(provider.assertionConsumerServiceUrl, samlResponseB64, relayState);
+        String html = buildAutoPostForm(provider.assertionConsumerServiceUrl, "SAMLResponse", samlResponseB64, relayState);
 
         return response()
             .withStatusCode(200)
@@ -72,15 +72,20 @@ public class SamlSsoCallback implements ExpectationResponseCallback {
             .withBody(html);
     }
 
-    private static String buildAutoPostForm(String acsUrl, String samlResponseB64, String relayState) {
+    /**
+     * Builds a self-submitting HTML form that POSTs the given SAML message (under the supplied field
+     * name, e.g. {@code SAMLResponse}) and an optional echoed {@code RelayState} to {@code actionUrl}.
+     * Shared by the SSO and SLO callbacks.
+     */
+    static String buildAutoPostForm(String actionUrl, String fieldName, String samlMessageB64, String relayState) {
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>\n")
-            .append("<html>\n<head><title>SAML 2.0 SSO</title></head>\n")
+            .append("<html>\n<head><title>SAML 2.0</title></head>\n")
             .append("<body onload=\"document.forms[0].submit()\">\n")
             .append("<noscript><p>Your browser does not support JavaScript. ")
             .append("Please click the button below to continue.</p></noscript>\n")
-            .append("<form method=\"post\" action=\"").append(escapeAttr(acsUrl)).append("\">\n")
-            .append("<input type=\"hidden\" name=\"SAMLResponse\" value=\"").append(escapeAttr(samlResponseB64)).append("\"/>\n");
+            .append("<form method=\"post\" action=\"").append(escapeAttr(actionUrl)).append("\">\n")
+            .append("<input type=\"hidden\" name=\"").append(escapeAttr(fieldName)).append("\" value=\"").append(escapeAttr(samlMessageB64)).append("\"/>\n");
         if (relayState != null && !relayState.isEmpty()) {
             html.append("<input type=\"hidden\" name=\"RelayState\" value=\"").append(escapeAttr(relayState)).append("\"/>\n");
         }
@@ -89,7 +94,7 @@ public class SamlSsoCallback implements ExpectationResponseCallback {
         return html.toString();
     }
 
-    private static String param(HttpRequest request, String name) {
+    static String param(HttpRequest request, String name) {
         String value = request.getFirstQueryStringParameter(name);
         if (value != null && !value.isEmpty()) {
             return value;
@@ -118,7 +123,7 @@ public class SamlSsoCallback implements ExpectationResponseCallback {
      * decoy comment/child {@code ID="..."} could forge. The value is validated against the SAML
      * {@code xs:ID} lexical form before being echoed.
      */
-    private static String extractAuthnRequestId(String samlRequest) {
+    static String extractRootElementId(String samlRequest) {
         if (samlRequest == null || samlRequest.isEmpty()) {
             return null;
         }

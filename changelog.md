@@ -1159,6 +1159,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labelled by stable expectation id, for per-endpoint match dashboards (cardinality is bounded by expectation
   count; off by default to avoid surprise series).
 
+#### SAML identity provider mocking
+- **Mock SAML 2.0 IdP polish** (`mockserver-core`, `mockserver-client-java`). The `PUT /mockserver/saml`
+  mock Identity Provider gains:
+  - **Configurable signing algorithm** via `signingAlgorithm` (`RS256`/`RS384`/`RS512`/`ES256`/`ES384`/`ES512`);
+    the published metadata X.509 certificate always matches the signing key. Defaults to the existing
+    self-signed RSA / SHA-256 behaviour when unset.
+  - **Single Logout (SLO)**: a `SingleLogoutService` (HTTP-POST binding) is published in the metadata and a
+    new `/saml/logout` (configurable via `sloServiceUrl`) endpoint accepts a `LogoutRequest` and returns a
+    signed `LogoutResponse` form-POSTed to the SP's SLO URL (`spSingleLogoutServiceUrl`), echoing `RelayState`.
+  - **Negative-test flags** `expiredAssertion`, `wrongAudience`, and `tamperedSignature` deliberately mint a
+    defective assertion so an SP's rejection paths can be exercised.
+  - **Typed Java client API**: `MockServerClient.mockSamlProvider(SamlProviderConfiguration)` and a no-arg
+    default stand up the whole IdP in one call and return the upserted expectations.
+  - New consumer documentation page "Mocking a SAML Identity Provider".
+
 
 ### Changed
 

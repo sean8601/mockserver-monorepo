@@ -30,11 +30,26 @@ public class SamlProviderConfiguration implements Serializable {
     private String spEntityId = "http://localhost:8080/saml/sp";
     private String assertionConsumerServiceUrl = "http://localhost:8080/saml/acs";
 
+    // Single Logout (SLO): the IdP-side endpoint path published in metadata and matched by the mock,
+    // and the SP-side SLO endpoint the signed LogoutResponse is form-POSTed back to.
+    private String sloServiceUrl = "/saml/logout";
+    private String spSingleLogoutServiceUrl = "http://localhost:8080/saml/slo";
+
     private String subjectNameId = "mock-user@example.com";
     private String nameIdFormat = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
     private Map<String, String> attributes = new LinkedHashMap<>();
 
     private long sessionDurationSeconds = 3600;
+
+    // Optional signing algorithm. When null the existing default (RSA with SHA-256) is used.
+    // Accepts the JWT-style names from AsymmetricKeyPairAlgorithm (RS256/RS384/RS512/ES256/ES384/ES512).
+    private String signingAlgorithm;
+
+    // Negative-test flags — deliberately produce a defective assertion so an SP's rejection paths can
+    // be exercised. All default to false (a valid, correctly-signed assertion).
+    private boolean expiredAssertion;
+    private boolean wrongAudience;
+    private boolean tamperedSignature;
 
     // Optional PEM-encoded signing credential. When null a self-signed RSA credential is generated.
     private String signingCertificatePem;
@@ -96,6 +111,26 @@ public class SamlProviderConfiguration implements Serializable {
         return this;
     }
 
+    @JsonProperty("sloServiceUrl")
+    public String getSloServiceUrl() {
+        return sloServiceUrl;
+    }
+
+    public SamlProviderConfiguration setSloServiceUrl(String sloServiceUrl) {
+        this.sloServiceUrl = sloServiceUrl;
+        return this;
+    }
+
+    @JsonProperty("spSingleLogoutServiceUrl")
+    public String getSpSingleLogoutServiceUrl() {
+        return spSingleLogoutServiceUrl;
+    }
+
+    public SamlProviderConfiguration setSpSingleLogoutServiceUrl(String spSingleLogoutServiceUrl) {
+        this.spSingleLogoutServiceUrl = spSingleLogoutServiceUrl;
+        return this;
+    }
+
     @JsonProperty("subjectNameId")
     public String getSubjectNameId() {
         return subjectNameId;
@@ -133,6 +168,46 @@ public class SamlProviderConfiguration implements Serializable {
 
     public SamlProviderConfiguration setSessionDurationSeconds(long sessionDurationSeconds) {
         this.sessionDurationSeconds = sessionDurationSeconds;
+        return this;
+    }
+
+    @JsonProperty("signingAlgorithm")
+    public String getSigningAlgorithm() {
+        return signingAlgorithm;
+    }
+
+    public SamlProviderConfiguration setSigningAlgorithm(String signingAlgorithm) {
+        this.signingAlgorithm = signingAlgorithm;
+        return this;
+    }
+
+    @JsonProperty("expiredAssertion")
+    public boolean isExpiredAssertion() {
+        return expiredAssertion;
+    }
+
+    public SamlProviderConfiguration setExpiredAssertion(boolean expiredAssertion) {
+        this.expiredAssertion = expiredAssertion;
+        return this;
+    }
+
+    @JsonProperty("wrongAudience")
+    public boolean isWrongAudience() {
+        return wrongAudience;
+    }
+
+    public SamlProviderConfiguration setWrongAudience(boolean wrongAudience) {
+        this.wrongAudience = wrongAudience;
+        return this;
+    }
+
+    @JsonProperty("tamperedSignature")
+    public boolean isTamperedSignature() {
+        return tamperedSignature;
+    }
+
+    public SamlProviderConfiguration setTamperedSignature(boolean tamperedSignature) {
+        this.tamperedSignature = tamperedSignature;
         return this;
     }
 

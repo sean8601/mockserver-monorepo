@@ -14,14 +14,18 @@ import static org.mockserver.model.HttpResponse.response;
  * Provider implementing the SP-initiated Web-Browser-SSO POST profile, so applications using SAML
  * SSO can be tested without a real IdP.
  *
- * <p>Two endpoints are generated:
+ * <p>Up to three endpoints are generated:
  * <ul>
  *   <li>{@code GET <metadataUrl>} — returns SAML 2.0 IdP metadata XML (an {@code EntityDescriptor}
- *       with an {@code IDPSSODescriptor}, the signing X.509 certificate, and a {@code
- *       SingleSignOnService} with the HTTP-POST binding pointing at the SSO endpoint).</li>
+ *       with an {@code IDPSSODescriptor}, the signing X.509 certificate, a {@code SingleSignOnService}
+ *       and (when an SLO path is configured) a {@code SingleLogoutService}, both with the HTTP-POST
+ *       binding).</li>
  *   <li>{@code GET}/{@code POST <ssoServiceUrl>} — a {@link SamlSsoCallback} class callback that
  *       returns an auto-submitting HTML form POSTing a base64-encoded, XML-DSig-signed SAML
  *       {@code Response} to the SP's assertion consumer service, echoing {@code RelayState}.</li>
+ *   <li>{@code GET}/{@code POST <sloServiceUrl>} — a {@link SamlSloCallback} class callback that
+ *       returns an auto-submitting HTML form POSTing a signed SAML {@code LogoutResponse} to the SP's
+ *       Single-Logout service, echoing {@code RelayState} (omitted when no SLO path is configured).</li>
  * </ul>
  *
  * <p>The signing credential is taken from the configuration if supplied, otherwise a self-signed
@@ -75,9 +79,22 @@ public class SamlProviderGenerator {
             .withId("saml.sso")
             .thenRespond(HttpClassCallback.callback(SamlSsoCallback.class.getName())));
 
-        // Register provider state so the SSO callback can build + sign the Response per request.
+        // 3. Single-Logout (SLO) endpoint (class callback — builds + signs a fresh LogoutResponse).
+        //    Only generated when an SLO path is configured (it is by default).
+        if (config.getSloServiceUrl() != null && !config.getSloServiceUrl().trim().isEmpty()) {
+            expectations.add(new Expectation(
+                request()
+                    .withPath(config.getSloServiceUrl())
+            )
+                .withId("saml.slo")
+                .thenRespond(HttpClassCallback.callback(SamlSloCallback.class.getName())));
+        }
+
+        // Register provider state so the SSO/SLO callbacks can build + sign the Response per request.
         SamlAssertionStore.getInstance().registerProvider(new SamlAssertionStore.Provider(
             config.getSsoServiceUrl(),
+            config.getSloServiceUrl(),
+            config.getSpSingleLogoutServiceUrl(),
             config.getIdpEntityId(),
             config.getSpEntityId(),
             config.getAssertionConsumerServiceUrl(),
@@ -86,7 +103,11 @@ public class SamlProviderGenerator {
             config.getAttributes(),
             config.getSessionDurationSeconds(),
             credential.getPrivateKey(),
-            credential.getCertificate()
+            credential.getCertificate(),
+            credential.getAlgorithm(),
+            config.isExpiredAssertion(),
+            config.isWrongAudience(),
+            config.isTamperedSignature()
         ));
 
         return expectations;
@@ -99,7 +120,16 @@ public class SamlProviderGenerator {
      */
     private String buildMetadataXml(SamlProviderConfiguration config, String certificateBase64) {
         String idpEntityId = escape(config.getIdpEntityId());
-        String ssoUrl = escape(buildAbsoluteSsoLocation(config));
+        String ssoUrl = escape(buildAbsoluteLocation(config.getSsoServiceUrl(), config.getIdpEntityId()));
+
+        StringBuilder sloElement = new StringBuilder();
+        if (config.getSloServiceUrl() != null && !config.getSloServiceUrl().trim().isEmpty()) {
+            String sloUrl = escape(buildAbsoluteLocation(config.getSloServiceUrl(), config.getIdpEntityId()));
+            // SingleLogoutService must appear before NameIDFormat in the metadata schema ordering.
+            sloElement.append("    <md:SingleLogoutService Binding=\"")
+                .append(BINDING_POST).append("\" Location=\"").append(sloUrl).append("\"/>\n");
+        }
+
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
             + "<md:EntityDescriptor xmlns:md=\"" + METADATA_NS + "\""
             + " xmlns:ds=\"" + DS_NS + "\""
@@ -113,6 +143,7 @@ public class SamlProviderGenerator {
             + "        </ds:X509Data>\n"
             + "      </ds:KeyInfo>\n"
             + "    </md:KeyDescriptor>\n"
+            + sloElement
             + "    <md:NameIDFormat>" + escape(config.getNameIdFormat()) + "</md:NameIDFormat>\n"
             + "    <md:SingleSignOnService Binding=\"" + BINDING_POST + "\" Location=\"" + ssoUrl + "\"/>\n"
             + "  </md:IDPSSODescriptor>\n"
@@ -120,29 +151,27 @@ public class SamlProviderGenerator {
     }
 
     /**
-     * The SingleSignOnService Location. If the SSO service URL is already absolute it is used as-is;
-     * otherwise it is resolved against the IdP entity id's origin when that is an absolute URL, so
-     * the published metadata points at a usable absolute endpoint.
+     * Resolves a service path to an absolute metadata {@code Location}. If the path is already
+     * absolute it is used as-is; otherwise it is resolved against the IdP entity id's origin when that
+     * is an absolute URL, so the published metadata points at a usable absolute endpoint.
      */
-    private String buildAbsoluteSsoLocation(SamlProviderConfiguration config) {
-        String sso = config.getSsoServiceUrl();
-        if (sso == null) {
+    private String buildAbsoluteLocation(String path, String entityId) {
+        if (path == null) {
             return "";
         }
-        if (sso.startsWith("http://") || sso.startsWith("https://")) {
-            return sso;
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            return path;
         }
-        String entityId = config.getIdpEntityId();
         if (entityId != null && (entityId.startsWith("http://") || entityId.startsWith("https://"))) {
             try {
                 java.net.URI uri = java.net.URI.create(entityId);
                 String origin = uri.getScheme() + "://" + uri.getAuthority();
-                return origin + (sso.startsWith("/") ? sso : "/" + sso);
+                return origin + (path.startsWith("/") ? path : "/" + path);
             } catch (Exception ignored) {
                 // fall through to the raw path
             }
         }
-        return sso;
+        return path;
     }
 
     private static String escape(String value) {
