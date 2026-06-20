@@ -87,8 +87,15 @@ classDiagram
         +headers: Headers
         +cookies: Cookies
         +connectionOptions: ConnectionOptions
+        +recoverAfter: RecoverAfter
         +timing: Timing
     }
+    class RecoverAfter {
+        +failTimes: Integer
+        +failResponse: HttpResponse
+        +idempotencyHeader: String
+    }
+    HttpResponse --> RecoverAfter : optional
     class HttpForward {
         +host: String
         +port: Integer
@@ -355,6 +362,41 @@ GraphQLBody.graphQL("query GetUser { user profile }")
 | `keepAliveOverride` | Boolean | If true, `Connection: keep-alive`; if false, `Connection: close` |
 | `closeSocket` | Boolean | Force close (true) or keep open (false) the socket after responding |
 | `closeSocketDelay` | Delay | Delay before closing the socket (ignored if socket is not being closed) |
+
+### RecoverAfter (Retry/Backoff Recovery)
+
+`RecoverAfter` is an optional, nullable field on `HttpResponse` (`org.mockserver.model.RecoverAfter`) that makes a mocked response "fail N times then succeed" — a deterministic recovery primitive for testing a client's retry/backoff logic against a transiently-failing dependency. It is a response-level value object (not a chaos field and not a new action type), so a response without a `recoverAfter` clause behaves and serializes byte-for-byte as before.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `failTimes` | Integer | K — the number of leading attempts that serve the failure response. `null` or `<= 0` makes the primitive inert (the configured response is served unchanged) |
+| `failResponse` | HttpResponse | Optional failure response. When omitted, a default `503 Service Unavailable` is served for the failing attempts |
+| `idempotencyHeader` | String | Optional request header whose value scopes an independent failure window (see below) |
+
+Counting is 1-based over attempt `n`: attempts `1..failTimes` serve the failure response; attempt `failTimes + 1` and beyond serve the configured success response. So `failTimes = K` yields exactly K failures followed by success.
+
+**Counter source.** By default the counter is per-expectation, taken from the expectation's match count (`capturedMatchCount`) — so no extra state is held. When `idempotencyHeader` is set and present on the request, the counter is instead keyed per `(expectationId, header-value)` in the node-local `RecoveryAttemptRegistry` (`org.mockserver.mock.action.http.RecoveryAttemptRegistry`), so each distinct idempotency key gets its own `1..K` window while requests sharing a key share one window. If the header is configured but absent on a request, that request falls back to the per-expectation count. The keyed registry is touched only on the keyed path; the default path adds zero new state or overhead. The registry is **bounded** (a synchronized access-ordered `LinkedHashMap` capped at 10,000 keys, mirroring `DnsIntentRegistry`) so client-supplied idempotency keys — typically fresh UUIDs — cannot exhaust the heap; once full, the least-recently-used key is evicted and a subsequent request under that key restarts its failure window at attempt 1 (matching `reset()` semantics). The composite key uses a NUL separator (`expectationId + NUL + keyValue`) so a client-settable expectation id containing a space cannot collide with another `(id, key)` pair. The registry is node-local in v1 (clustering deferred) and is cleared by `HttpState.reset()`.
+
+**Independence from `Times`.** Recovery counting is independent of `Times`: a failing attempt still matches the expectation but does not consume an extra `Times` use, so the expectation keeps matching across the whole failure window. For example `Times.exactly(5)` with `failTimes = 2` yields `503, 503, 200, 200, 200` over five matches.
+
+**Relationship to chaos `succeedFirst`/`failRequestCount`.** `HttpChaosProfile`'s `succeedFirst`/`failRequestCount` define a count-window over which *probabilistic* faults are injected. `RecoverAfter` is the simpler, deterministic, response-level "fail-then-succeed" with optional idempotency-key scoping, expressed directly on the response action. v1 covers RESPONSE actions only (FORWARD-action support is deferred).
+
+Example JSON (default 503 for the first 3 attempts, then the configured 200):
+
+```json
+{ "httpResponse": { "statusCode": 200, "body": "ok", "recoverAfter": { "failTimes": 3 } } }
+```
+
+Example with an explicit failure response and idempotency-key scoping:
+
+```json
+{ "httpResponse": { "statusCode": 200, "body": "ok",
+  "recoverAfter": {
+    "failTimes": 3,
+    "failResponse": { "statusCode": 503, "headers": { "Retry-After": ["1"] } },
+    "idempotencyHeader": "Idempotency-Key"
+  } } }
+```
 
 ### Timing (Forward Response Metadata)
 

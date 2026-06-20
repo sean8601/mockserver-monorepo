@@ -20,6 +20,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private Headers trailers;
     private DelayDTO delay;
     private ConnectionOptionsDTO connectionOptions;
+    private RecoverAfterDTO recoverAfter;
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean primary;
 
@@ -38,6 +39,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             cookies = httpResponse.getCookies();
             delay = (httpResponse.getDelay() != null ? new DelayDTO(httpResponse.getDelay()) : null);
             connectionOptions = (httpResponse.getConnectionOptions() != null ? new ConnectionOptionsDTO(httpResponse.getConnectionOptions()) : null);
+            recoverAfter = (httpResponse.getRecoverAfter() != null ? new RecoverAfterDTO(httpResponse.getRecoverAfter()) : null);
             primary = httpResponse.isPrimary();
         }
     }
@@ -54,6 +56,7 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withCookies(cookies)
             .withDelay((delay != null ? delay.buildObject() : null))
             .withConnectionOptions(connectionOptions != null ? connectionOptions.buildObject() : null)
+            .withRecoverAfter(recoverAfter != null ? recoverAfter.buildObject() : null)
             .withPrimary(primary);
     }
 
@@ -144,6 +147,15 @@ public class HttpResponseDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public HttpResponseDTO setConnectionOptions(ConnectionOptionsDTO connectionOptions) {
         this.connectionOptions = connectionOptions;
+        return this;
+    }
+
+    public RecoverAfterDTO getRecoverAfter() {
+        return recoverAfter;
+    }
+
+    public HttpResponseDTO setRecoverAfter(RecoverAfterDTO recoverAfter) {
+        this.recoverAfter = recoverAfter;
         return this;
     }
 

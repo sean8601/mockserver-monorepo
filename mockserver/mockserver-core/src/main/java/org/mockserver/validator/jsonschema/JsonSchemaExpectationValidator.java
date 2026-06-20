@@ -49,6 +49,7 @@ public class JsonSchemaExpectationValidator extends JsonSchemaValidator {
             "bodyWithContentType",
             "delay",
             "connectionOptions",
+            "recoverAfter",
             "keyToMultiValue",
             "keyToValue",
             "socketAddress",

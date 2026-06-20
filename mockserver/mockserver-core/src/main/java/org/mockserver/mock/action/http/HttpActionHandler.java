@@ -58,6 +58,7 @@ import static org.mockserver.log.model.LogEntryMessages.*;
 import static org.mockserver.model.HttpResponse.badGatewayResponse;
 import static org.mockserver.model.HttpResponse.notFoundResponse;
 import static org.mockserver.model.HttpResponse.response;
+import static org.mockserver.model.HttpStatusCode.SERVICE_UNAVAILABLE_503;
 import static org.slf4j.event.Level.TRACE;
 
 /**
@@ -150,8 +151,10 @@ public class HttpActionHandler {
                 // chaos: gate by the time-based outage window + apply degradation ramp (see effectiveChaos)
                 final HttpChaosProfile effectiveChaos = effectiveChaos(expectation);
                 final RateLimit rateLimit = expectation.getRateLimit();
+                // recovery: apply the same fail-then-succeed selection as the main RESPONSE path (RecoverAfter)
+                final HttpResponse selectedResponse = selectRecoveryResponse((HttpResponse) action, expectation, request, capturedMatchCount);
                 scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
-                    final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action, request, expectation.getHttpRequest());
+                    final HttpResponse response = getHttpResponseActionHandler().handle(selectedResponse, request, expectation.getHttpRequest());
                     // chaos: inject HTTP chaos faults on early mocked responses
                     writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit);
                 }, expectationPostProcessor), synchronous);
@@ -344,9 +347,15 @@ public class HttpActionHandler {
             // breakpoint: REQUEST-phase pause gates each mock-response dispatch; chaos faults and the
             // RESPONSE-phase breakpoint are applied inside writeResponseActionResponse. MODIFY feeds the
             // modified request into template/class-callback generation; logging keys off the original request.
-            case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
-                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
-                    req -> getHttpResponseActionHandler().handle((HttpResponse) action, req, expectation.getHttpRequest())), expectationPostProcessor), synchronous);
+            case RESPONSE -> {
+                // recovery: serve the failure response for the first K matches, then the configured
+                // success response (RecoverAfter). Selection is per-expectation off capturedMatchCount,
+                // or per-(expectationId, idempotency-key) when an idempotencyHeader is configured.
+                final HttpResponse selectedResponse = selectRecoveryResponse((HttpResponse) action, expectation, request, capturedMatchCount);
+                scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
+                    dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
+                        req -> getHttpResponseActionHandler().handle(selectedResponse, req, expectation.getHttpRequest())), expectationPostProcessor), synchronous);
+            }
             case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, actionDelay);
@@ -1768,6 +1777,50 @@ public class HttpActionHandler {
             .withErrorProbability(chaos.getErrorProbability() != null ? chaos.getErrorProbability() * f : null)
             .withDropConnectionProbability(chaos.getDropConnectionProbability() != null ? chaos.getDropConnectionProbability() * f : null)
             .withDegradationRampMillis(null);
+    }
+
+    /**
+     * Applies the {@link RecoverAfter} retry/backoff recovery primitive: returns the failure
+     * response for the first {@code failTimes} matches, otherwise the configured success response.
+     *
+     * <p>The configured response is returned unchanged (identity) when {@code recoverAfter} is
+     * {@code null}, {@code failTimes} is {@code null} or {@code <= 0} — so a response without the
+     * recovery clause behaves byte-for-byte as before, with no new state touched.
+     *
+     * <p>Counting is 1-based (attempt {@code n}). By default {@code n} is the per-expectation
+     * {@code capturedMatchCount}. When an {@code idempotencyHeader} is configured AND present on the
+     * request, {@code n} is instead the per-{@code (expectationId, header-value)} attempt from the
+     * node-local {@link RecoveryAttemptRegistry} (so each idempotency key gets its own window). When
+     * the header is configured but absent, it falls back to {@code capturedMatchCount}. The keyed
+     * counter increments ONLY on the keyed path, so the default path adds zero overhead.
+     *
+     * <p>When {@code n <= failTimes} the failure response is served — the configured
+     * {@code failResponse}, or a default {@code 503 Service Unavailable} when none is configured.
+     */
+    HttpResponse selectRecoveryResponse(final HttpResponse action, final Expectation expectation, final HttpRequest request, final int capturedMatchCount) {
+        final RecoverAfter recoverAfter = action.getRecoverAfter();
+        if (recoverAfter == null || recoverAfter.getFailTimes() == null || recoverAfter.getFailTimes() <= 0) {
+            return action;
+        }
+        final int failTimes = recoverAfter.getFailTimes();
+        final String idempotencyHeader = recoverAfter.getIdempotencyHeader();
+        final int attempt;
+        if (isNotBlank(idempotencyHeader)) {
+            final String keyValue = request.getFirstHeader(idempotencyHeader);
+            if (isNotBlank(keyValue)) {
+                attempt = RecoveryAttemptRegistry.getInstance().nextAttempt(expectation.getId(), keyValue);
+            } else {
+                // header configured but absent on this request: fall back to the per-expectation count
+                attempt = capturedMatchCount;
+            }
+        } else {
+            attempt = capturedMatchCount;
+        }
+        if (attempt <= failTimes) {
+            final HttpResponse failResponse = recoverAfter.getFailResponse();
+            return failResponse != null ? failResponse : response().withStatusCode(SERVICE_UNAVAILABLE_503.code()).withReasonPhrase(SERVICE_UNAVAILABLE_503.reasonPhrase());
+        }
+        return action;
     }
 
     /**

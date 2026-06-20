@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `token_bucket` algorithms, a named shared counter (multiple expectations can share one limit), and an
   overridable error status. Off by default (no clause = no behaviour); the named-counter store is node-local and
   bounded by `rateLimitMaxNamedQuotas`.
+- **Retry/backoff recovery primitive — "fail N times then succeed"** (`mockserver-core`). A new opt-in
+  `recoverAfter` clause on `httpResponse` returns a failure response (configurable `failResponse`, default
+  `503`) for the first `failTimes` matches and then the configured success response — so a test can
+  deterministically exercise a client's retry/backoff logic. An optional `idempotencyHeader` scopes the
+  attempt counter per request-header value (distinct keys each recover independently); without it the counter
+  is per-expectation. Independent of `Times`. A response without `recoverAfter` is unchanged; the keyed counter
+  registry is bounded (LRU eviction) to prevent unbounded growth.
 - **API-driven load generation via Load Scenarios** (`mockserver-core`, `mockserver-netty`). A new opt-in
   control plane (`PUT/GET/DELETE /mockserver/loadScenario`) drives outbound traffic at a target: a
   `LoadScenario` is an ordered list of request steps (modelled on a verification sequence) with per-step

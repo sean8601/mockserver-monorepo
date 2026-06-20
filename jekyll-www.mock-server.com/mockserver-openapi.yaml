@@ -2661,6 +2661,8 @@ components:
           type: integer
         reasonPhrase:
           type: string
+        recoverAfter:
+          $ref: "#/components/schemas/RecoverAfter"
     HttpTemplate:
       description: "template to generate response / request"
       type: object
@@ -3335,6 +3337,19 @@ components:
             stdDev:
               type: integer
               minimum: 0
+    RecoverAfter:
+      description: "fail the first failTimes matches then serve the configured response (deterministic retry/backoff recovery primitive)"
+      type: object
+      additionalProperties: false
+      properties:
+        failTimes:
+          type: integer
+          description: "number of leading matches that serve the failure response before the configured response is served; null or <= 0 makes this inert"
+        failResponse:
+          $ref: "#/components/schemas/HttpResponse"
+        idempotencyHeader:
+          type: string
+          description: "optional request header whose value keys an independent failure window per (expectation, header-value); when absent on a request the per-expectation match count is used"
     ConnectionOptions:
       description: "connection options"
       type: object

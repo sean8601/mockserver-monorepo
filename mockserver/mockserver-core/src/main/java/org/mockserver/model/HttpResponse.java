@@ -33,6 +33,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
     private Headers trailers;
     private Cookies cookies;
     private ConnectionOptions connectionOptions;
+    private RecoverAfter recoverAfter;
     private Integer streamId = null;
     private Timing timing;
     private transient StreamingBody streamingBody;
@@ -723,6 +724,26 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
         return connectionOptions;
     }
 
+    /**
+     * Attach a retry/backoff recovery primitive: serve a failure response for the first
+     * {@code failTimes} matches, then serve this configured response. Lets a client's
+     * retry/backoff logic be tested deterministically against a transiently-failing
+     * dependency. A {@code null} {@code recoverAfter} (the default) is inert and leaves
+     * this response unchanged.
+     *
+     * @param recoverAfter the recovery primitive, or {@code null} for no recovery behaviour
+     * @see RecoverAfter
+     */
+    public HttpResponse withRecoverAfter(RecoverAfter recoverAfter) {
+        this.recoverAfter = recoverAfter;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public RecoverAfter getRecoverAfter() {
+        return recoverAfter;
+    }
+
     public HttpResponse withStreamId(Integer streamId) {
         this.streamId = streamId;
         this.hashCode = 0;
@@ -780,6 +801,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withCookies(cookies)
             .withDelay(getDelay())
             .withConnectionOptions(connectionOptions)
+            .withRecoverAfter(recoverAfter)
             .withStreamId(streamId)
             .withTiming(timing);
     }
@@ -798,6 +820,7 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             .withCookies(cookies != null ? cookies.clone() : null)
             .withDelay(getDelay())
             .withConnectionOptions(connectionOptions)
+            .withRecoverAfter(recoverAfter)
             .withStreamId(streamId)
             .withTiming(timing)
             .withStreamingBody(streamingBody);
@@ -871,13 +894,14 @@ public class HttpResponse extends Action<HttpResponse> implements HttpMessage<Ht
             Objects.equals(trailers, that.trailers) &&
             Objects.equals(cookies, that.cookies) &&
             Objects.equals(connectionOptions, that.connectionOptions) &&
+            Objects.equals(recoverAfter, that.recoverAfter) &&
             Objects.equals(streamId, that.streamId);
     }
 
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), statusCode, statusCodeRange, reasonPhrase, body, generateFromSchema, headers, trailers, cookies, connectionOptions, streamId);
+            hashCode = Objects.hash(super.hashCode(), statusCode, statusCodeRange, reasonPhrase, body, generateFromSchema, headers, trailers, cookies, connectionOptions, recoverAfter, streamId);
         }
         return hashCode;
     }

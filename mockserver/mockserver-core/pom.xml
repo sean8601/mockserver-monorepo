@@ -527,7 +527,10 @@
                         <exclude>**/ExpectationTest.java</exclude>
                         <exclude>**/HttpActionHandlerChaosTest.java</exclude>
                         <exclude>**/HttpActionHandlerRateLimitTest.java</exclude>
+                        <exclude>**/RateLimitRegistryTest.java</exclude>
                         <exclude>**/HttpActionHandlerForwardChaosTest.java</exclude>
+                        <exclude>**/HttpActionHandlerRecoverAfterTest.java</exclude>
+                        <exclude>**/RecoveryAttemptRegistryTest.java</exclude>
                         <exclude>**/ServiceChaosRegistryTest.java</exclude>
                         <exclude>**/TcpChaosRegistryTest.java</exclude>
                         <exclude>**/MetricsTest.java</exclude>
@@ -651,7 +654,10 @@
                                 <include>**/ExpectationTest.java</include>
                                 <include>**/HttpActionHandlerChaosTest.java</include>
                                 <include>**/HttpActionHandlerRateLimitTest.java</include>
+                                <include>**/RateLimitRegistryTest.java</include>
                                 <include>**/HttpActionHandlerForwardChaosTest.java</include>
+                                <include>**/HttpActionHandlerRecoverAfterTest.java</include>
+                                <include>**/RecoveryAttemptRegistryTest.java</include>
                                 <include>**/ServiceChaosRegistryTest.java</include>
                                 <include>**/TcpChaosRegistryTest.java</include>
                                 <include>**/MetricsTest.java</include>

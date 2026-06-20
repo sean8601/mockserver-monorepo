@@ -18,6 +18,9 @@
     "connectionOptions": {
       "$ref": "#/definitions/connectionOptions"
     },
+    "recoverAfter": {
+      "$ref": "#/definitions/recoverAfter"
+    },
     "headers": {
       "$ref": "#/definitions/keyToMultiValue"
     },

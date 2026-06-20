@@ -28,6 +28,7 @@ public class JsonSchemaHttpRequestAndHttpResponseValidator extends JsonSchemaVal
             "bodyWithContentType",
             "delay",
             "connectionOptions",
+            "recoverAfter",
             "draft-07"
         );
     }

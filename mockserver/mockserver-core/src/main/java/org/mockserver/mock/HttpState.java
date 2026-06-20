@@ -470,6 +470,7 @@ public class HttpState {
         org.mockserver.llm.LlmQuotaRegistry.getInstance().reset();
         org.mockserver.mock.action.http.HttpQuotaRegistry.getInstance().reset();
         org.mockserver.ratelimit.RateLimitRegistry.getInstance().reset();
+        org.mockserver.mock.action.http.RecoveryAttemptRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ServiceChaosRegistry.getInstance().reset();
         org.mockserver.mock.action.http.ChaosAutoHaltMonitor.getInstance().reset();
         org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
