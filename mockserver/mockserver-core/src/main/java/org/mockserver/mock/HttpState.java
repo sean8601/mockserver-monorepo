@@ -4668,12 +4668,30 @@ public class HttpState {
 
     private boolean controlPlaneRequestAuthenticated(HttpRequest request, ResponseWriter responseWriter) {
         try {
-            if (controlPlaneAuthenticationHandler == null || controlPlaneAuthenticationHandler.controlPlaneRequestAuthenticated(request)) {
-                recordAudit(request);
+            org.mockserver.authentication.AuthenticationResult authenticationResult =
+                controlPlaneAuthenticationHandler == null
+                    ? org.mockserver.authentication.AuthenticationResult.authenticated(null, "none", java.util.Map.of(), java.util.Set.of())
+                    : controlPlaneAuthenticationHandler.authenticate(request);
+            if (authenticationResult.isAuthenticated()) {
+                recordAudit(request, authenticationResult);
                 return true;
             }
         } catch (AuthenticationException authenticationException) {
-            responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane - " + authenticationException.getMessage(), MediaType.create("text", "plain").toString());
+            if (authenticationException.isClientSafeMessage()) {
+                responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane - " + authenticationException.getMessage(), MediaType.create("text", "plain").toString());
+            } else {
+                // OIDC path: log the detailed reason server-side only and return a generic
+                // body so the expected issuer/audience/scopes are not disclosed to the client.
+                mockServerLogger.logEvent(
+                    new org.mockserver.log.model.LogEntry()
+                        .setLogLevel(org.slf4j.event.Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("control plane request failed authentication:{}")
+                        .setArguments(authenticationException.getMessage())
+                        .setThrowable(authenticationException)
+                );
+                responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
+            }
             return false;
         }
         responseWriter.writeResponse(request, UNAUTHORIZED, "Unauthorized for control plane", MediaType.create("text", "plain").toString());
@@ -4692,6 +4710,18 @@ public class HttpState {
      * operation behaves byte-for-byte identically. Never throws into the request path.
      */
     private void recordAudit(HttpRequest request) {
+        recordAudit(request, null);
+    }
+
+    /**
+     * As {@link #recordAudit(HttpRequest)} but, when the authentication handler produced
+     * a VERIFIED principal (e.g. an OIDC-verified {@code sub} with source
+     * {@code verified-oidc}), records that principal/source instead of the unverified
+     * best-effort extraction. When {@code authenticationResult} is null or carries no
+     * principal (e.g. auth disabled, or a legacy boolean handler), falls back to the
+     * unchanged {@link #bestEffortPrincipal} behaviour. Remains fail-soft.
+     */
+    private void recordAudit(HttpRequest request, org.mockserver.authentication.AuthenticationResult authenticationResult) {
         try {
             if (request == null || !configuration.controlPlaneAuditEnabled()) {
                 return;
@@ -4706,7 +4736,10 @@ public class HttpState {
             if (sourceAddress == null || sourceAddress.isEmpty()) {
                 sourceAddress = "unknown";
             }
-            String[] principalAndSource = bestEffortPrincipal(request);
+            String[] principalAndSource =
+                authenticationResult != null && authenticationResult.getPrincipal() != null
+                    ? new String[]{authenticationResult.getPrincipal(), authenticationResult.getPrincipalSource()}
+                    : bestEffortPrincipal(request);
             org.mockserver.mock.audit.AuditEntry entry = new org.mockserver.mock.audit.AuditEntry(
                 org.mockserver.time.EpochService.currentTimeMillis(),
                 method,

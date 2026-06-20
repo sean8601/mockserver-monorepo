@@ -18,6 +18,7 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.mockserver.configuration.Configuration.configuration;
 import static org.mockserver.model.HttpRequest.request;
 
@@ -115,5 +116,33 @@ public class HttpStateAuditEndpointTest {
         HttpResponse response = get(null);
         assertThat(response.getStatusCode(), is(401));
         assertThat(response.getBodyAsString(), containsString("Unauthorized for control plane"));
+    }
+
+    @Test
+    public void clientSafeAuthExceptionDetailEchoedToClient() {
+        // legacy JWT / mTLS path: the detailed reason has always been surfaced to the client (unchanged)
+        AuthenticationHandler handler = req -> {
+            throw new org.mockserver.authentication.AuthenticationException("Expired JWT");
+        };
+        httpState.setControlPlaneAuthenticationHandler(handler);
+        HttpResponse response = get(null);
+        assertThat(response.getStatusCode(), is(401));
+        assertThat(response.getBodyAsString(), is("Unauthorized for control plane - Expired JWT"));
+    }
+
+    @Test
+    public void oidcClientUnsafeAuthExceptionReturnsGenericBody() {
+        // OIDC path: detail (expected issuer/audience/scopes) is logged server-side only;
+        // the client receives a generic body that does NOT disclose the reason
+        AuthenticationHandler handler = req -> {
+            throw new org.mockserver.authentication.AuthenticationException(
+                "JWT iss claim has value https://evil.example.com, must be https://idp.example.com", false);
+        };
+        httpState.setControlPlaneAuthenticationHandler(handler);
+        HttpResponse response = get(null);
+        assertThat(response.getStatusCode(), is(401));
+        assertThat(response.getBodyAsString(), is("Unauthorized for control plane"));
+        assertThat(response.getBodyAsString(), not(containsString("evil.example.com")));
+        assertThat(response.getBodyAsString(), not(containsString("idp.example.com")));
     }
 }

@@ -273,6 +273,12 @@ public class Configuration {
     private String controlPlaneJWTAuthenticationExpectedAudience;
     private Map<String, String> controlPlaneJWTAuthenticationMatchingClaims;
     private Set<String> controlPlaneJWTAuthenticationRequiredClaims;
+    private Boolean controlPlaneOidcAuthenticationRequired;
+    private String controlPlaneOidcIssuer;
+    private String controlPlaneOidcJwksUri;
+    private String controlPlaneOidcAudience;
+    private Set<String> controlPlaneOidcRequiredScopes;
+    private String controlPlaneOidcScopeClaim;
 
     // TLS
     private Boolean proactivelyInitialiseTLS;
@@ -3711,6 +3717,123 @@ public class Configuration {
      */
     public Configuration controlPlaneJWTAuthenticationRequiredClaims(Set<String> controlPlaneJWTAuthenticationRequiredClaims) {
         this.controlPlaneJWTAuthenticationRequiredClaims = controlPlaneJWTAuthenticationRequiredClaims;
+        return this;
+    }
+
+    public Boolean controlPlaneOidcAuthenticationRequired() {
+        if (controlPlaneOidcAuthenticationRequired == null) {
+            return ConfigurationProperties.controlPlaneOidcAuthenticationRequired();
+        }
+        return controlPlaneOidcAuthenticationRequired;
+    }
+
+    /**
+     * <p>
+     * Require verified OIDC bearer-token authentication for all control plane requests, validating tokens issued by an external OIDC IdP
+     * </p>
+     *
+     * @param controlPlaneOidcAuthenticationRequired verified OIDC authentication for all control plane requests
+     */
+    public Configuration controlPlaneOidcAuthenticationRequired(Boolean controlPlaneOidcAuthenticationRequired) {
+        this.controlPlaneOidcAuthenticationRequired = controlPlaneOidcAuthenticationRequired;
+        return this;
+    }
+
+    public String controlPlaneOidcIssuer() {
+        if (controlPlaneOidcIssuer == null) {
+            return ConfigurationProperties.controlPlaneOidcIssuer();
+        }
+        return controlPlaneOidcIssuer;
+    }
+
+    /**
+     * <p>
+     * OIDC issuer (i.e. iss) required on control plane tokens; also used to discover the JWKS URI via {issuer}/.well-known/openid-configuration when controlPlaneOidcJwksUri is not set
+     * </p>
+     *
+     * @param controlPlaneOidcIssuer required value for issuer claim (i.e. iss)
+     */
+    public Configuration controlPlaneOidcIssuer(String controlPlaneOidcIssuer) {
+        this.controlPlaneOidcIssuer = controlPlaneOidcIssuer;
+        return this;
+    }
+
+    public String controlPlaneOidcJwksUri() {
+        if (controlPlaneOidcJwksUri == null) {
+            return ConfigurationProperties.controlPlaneOidcJwksUri();
+        }
+        return controlPlaneOidcJwksUri;
+    }
+
+    /**
+     * <p>
+     * JWKS URI used to verify control plane OIDC token signatures; if not set it is discovered from the issuer's OIDC discovery document
+     * </p>
+     *
+     * @param controlPlaneOidcJwksUri URL (or file/classpath path) of the JWK source
+     */
+    public Configuration controlPlaneOidcJwksUri(String controlPlaneOidcJwksUri) {
+        this.controlPlaneOidcJwksUri = controlPlaneOidcJwksUri;
+        return this;
+    }
+
+    public String controlPlaneOidcAudience() {
+        if (controlPlaneOidcAudience == null) {
+            return ConfigurationProperties.controlPlaneOidcAudience();
+        }
+        return controlPlaneOidcAudience;
+    }
+
+    /**
+     * <p>
+     * Audience claim (i.e. aud) required on control plane OIDC tokens
+     * </p>
+     *
+     * @param controlPlaneOidcAudience required value for audience claim (i.e. aud)
+     */
+    public Configuration controlPlaneOidcAudience(String controlPlaneOidcAudience) {
+        this.controlPlaneOidcAudience = controlPlaneOidcAudience;
+        return this;
+    }
+
+    public Set<String> controlPlaneOidcRequiredScopes() {
+        if (controlPlaneOidcRequiredScopes == null) {
+            return ConfigurationProperties.controlPlaneOidcRequiredScopes();
+        }
+        return controlPlaneOidcRequiredScopes;
+    }
+
+    /**
+     * <p>
+     * Scopes that must all be present in a control plane OIDC token before it is accepted
+     * </p>
+     * <p>
+     * Value should be a string with comma separated values, for example: mockserver.read,mockserver.write
+     * </p>
+     *
+     * @param controlPlaneOidcRequiredScopes required scopes
+     */
+    public Configuration controlPlaneOidcRequiredScopes(Set<String> controlPlaneOidcRequiredScopes) {
+        this.controlPlaneOidcRequiredScopes = controlPlaneOidcRequiredScopes;
+        return this;
+    }
+
+    public String controlPlaneOidcScopeClaim() {
+        if (controlPlaneOidcScopeClaim == null) {
+            return ConfigurationProperties.controlPlaneOidcScopeClaim();
+        }
+        return controlPlaneOidcScopeClaim;
+    }
+
+    /**
+     * <p>
+     * Name of the claim holding granted scopes on a control plane OIDC token, default "scope" (space-delimited); array claims such as scp, roles or groups are also supported
+     * </p>
+     *
+     * @param controlPlaneOidcScopeClaim name of the scope claim
+     */
+    public Configuration controlPlaneOidcScopeClaim(String controlPlaneOidcScopeClaim) {
+        this.controlPlaneOidcScopeClaim = controlPlaneOidcScopeClaim;
         return this;
     }
 

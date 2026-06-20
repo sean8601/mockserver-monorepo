@@ -50,6 +50,14 @@ sitemap:
 
 {% include_subpage _includes/control_plane_authentication_jwt_configuration.html %}
 
+<a id="control_plane_oidc_authentication" class="anchor" href="#control_plane_oidc_authentication">&nbsp;</a>
+
+<h3>Control Plane OIDC Authentication</h3>
+
+<p>When OIDC authentication is enabled all control plane requests need a Bearer access token via an <strong>authorization</strong> header issued by an external OpenID Connect identity provider. The token signature is verified against the provider's JWK set (configured directly via <a href="#button_configuration_control_plane_oidc_jwks_uri">controlPlaneOidcJwksUri</a> or discovered from <a href="#button_configuration_control_plane_oidc_issuer">controlPlaneOidcIssuer</a>), and its issuer, <a href="#button_configuration_control_plane_oidc_audience">audience</a>, expiry and <a href="#button_configuration_control_plane_oidc_required_scopes">required scopes</a> are checked. The verified subject is recorded as the principal in the control plane audit log.</p>
+
+{% include_subpage _includes/control_plane_authentication_oidc_configuration.html %}
+
 <a id="configuration_hardening" class="anchor" href="#configuration_hardening">&nbsp;</a>
 
 <h2>Configuration Hardening</h2>

@@ -10,9 +10,11 @@ import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
+import org.mockserver.authentication.AuthenticationHandler;
 import org.mockserver.authentication.ChainedAuthenticationHandler;
 import org.mockserver.authentication.jwt.JWTAuthenticationHandler;
 import org.mockserver.authentication.mtls.MTLSAuthenticationHandler;
+import org.mockserver.authentication.oidc.OidcAuthenticationHandler;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.lifecycle.ExpectationsListener;
 import org.mockserver.lifecycle.LifeCycle;
@@ -28,6 +30,7 @@ import org.slf4j.event.Level;
 
 import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -169,26 +172,37 @@ public class MockServer extends LifeCycle {
 
         final NettySslContextFactory nettyServerSslContextFactory = new NettySslContextFactory(configuration, mockServerLogger, true);
         final NettySslContextFactory nettyClientSslContextFactory = new NettySslContextFactory(configuration, mockServerLogger, false);
-        if (configuration.controlPlaneTLSMutualAuthenticationRequired() && configuration.controlPlaneJWTAuthenticationRequired()) {
-            httpState.setControlPlaneAuthenticationHandler(
-                new ChainedAuthenticationHandler(
-                    new MTLSAuthenticationHandler(mockServerLogger, nettyServerSslContextFactory.trustCertificateChain(configuration.controlPlaneTLSMutualAuthenticationCAChain())),
-                    new JWTAuthenticationHandler(mockServerLogger, configuration.controlPlaneJWTAuthenticationJWKSource())
-                        .withExpectedAudience(configuration.controlPlaneJWTAuthenticationExpectedAudience())
-                        .withMatchingClaims(configuration.controlPlaneJWTAuthenticationMatchingClaims())
-                        .withRequiredClaims(configuration.controlPlaneJWTAuthenticationRequiredClaims())
-                )
-            );
-        } else if (configuration.controlPlaneTLSMutualAuthenticationRequired()) {
-            httpState.setControlPlaneAuthenticationHandler(
+        List<AuthenticationHandler> controlPlaneAuthenticationHandlers = new ArrayList<>();
+        if (configuration.controlPlaneTLSMutualAuthenticationRequired()) {
+            controlPlaneAuthenticationHandlers.add(
                 new MTLSAuthenticationHandler(mockServerLogger, nettyServerSslContextFactory.trustCertificateChain(configuration.controlPlaneTLSMutualAuthenticationCAChain()))
             );
-        } else if (configuration.controlPlaneJWTAuthenticationRequired()) {
-            httpState.setControlPlaneAuthenticationHandler(
+        }
+        if (configuration.controlPlaneJWTAuthenticationRequired()) {
+            controlPlaneAuthenticationHandlers.add(
                 new JWTAuthenticationHandler(mockServerLogger, configuration.controlPlaneJWTAuthenticationJWKSource())
                     .withExpectedAudience(configuration.controlPlaneJWTAuthenticationExpectedAudience())
                     .withMatchingClaims(configuration.controlPlaneJWTAuthenticationMatchingClaims())
                     .withRequiredClaims(configuration.controlPlaneJWTAuthenticationRequiredClaims())
+            );
+        }
+        if (configuration.controlPlaneOidcAuthenticationRequired()) {
+            controlPlaneAuthenticationHandlers.add(
+                new OidcAuthenticationHandler(
+                    mockServerLogger,
+                    configuration.controlPlaneOidcJwksUri(),
+                    configuration.controlPlaneOidcIssuer(),
+                    configuration.controlPlaneOidcAudience(),
+                    configuration.controlPlaneOidcScopeClaim(),
+                    configuration.controlPlaneOidcRequiredScopes()
+                )
+            );
+        }
+        if (controlPlaneAuthenticationHandlers.size() == 1) {
+            httpState.setControlPlaneAuthenticationHandler(controlPlaneAuthenticationHandlers.get(0));
+        } else if (controlPlaneAuthenticationHandlers.size() > 1) {
+            httpState.setControlPlaneAuthenticationHandler(
+                new ChainedAuthenticationHandler(controlPlaneAuthenticationHandlers.toArray(new AuthenticationHandler[0]))
             );
         }
         MockServerUnificationInitializer initializer = new MockServerUnificationInitializer(configuration, MockServer.this, httpState, new HttpActionHandler(configuration, getEventLoopGroup(), httpState, proxyConfigurations, nettyClientSslContextFactory), nettyServerSslContextFactory);

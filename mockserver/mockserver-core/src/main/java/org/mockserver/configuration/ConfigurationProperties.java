@@ -303,6 +303,12 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CONTROL_PLANE_JWT_AUTHENTICATION_EXPECTED_AUDIENCE = "mockserver.controlPlaneJWTAuthenticationExpectedAudience";
     private static final String MOCKSERVER_CONTROL_PLANE_JWT_AUTHENTICATION_MATCHING_CLAIMS = "mockserver.controlPlaneJWTAuthenticationMatchingClaims";
     private static final String MOCKSERVER_CONTROL_PLANE_JWT_AUTHENTICATION_REQUIRED_CLAIMS = "mockserver.controlPlaneJWTAuthenticationRequiredClaims";
+    private static final String MOCKSERVER_CONTROL_PLANE_OIDC_AUTHENTICATION_REQUIRED = "mockserver.controlPlaneOidcAuthenticationRequired";
+    private static final String MOCKSERVER_CONTROL_PLANE_OIDC_ISSUER = "mockserver.controlPlaneOidcIssuer";
+    private static final String MOCKSERVER_CONTROL_PLANE_OIDC_JWKS_URI = "mockserver.controlPlaneOidcJwksUri";
+    private static final String MOCKSERVER_CONTROL_PLANE_OIDC_AUDIENCE = "mockserver.controlPlaneOidcAudience";
+    private static final String MOCKSERVER_CONTROL_PLANE_OIDC_REQUIRED_SCOPES = "mockserver.controlPlaneOidcRequiredScopes";
+    private static final String MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM = "mockserver.controlPlaneOidcScopeClaim";
 
     // TLS
     private static final String MOCKSERVER_PROACTIVELY_INITIALISE_TLS = "mockserver.proactivelyInitialiseTLS";
@@ -3930,6 +3936,104 @@ public class ConfigurationProperties {
      */
     public static void controlPlaneJWTAuthenticationRequiredClaims(Set<String> controlPlaneJWTAuthenticationRequiredClaims) {
         setProperty(MOCKSERVER_CONTROL_PLANE_JWT_AUTHENTICATION_REQUIRED_CLAIMS, Joiner.on(",").join(controlPlaneJWTAuthenticationRequiredClaims));
+    }
+
+    public static boolean controlPlaneOidcAuthenticationRequired() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_OIDC_AUTHENTICATION_REQUIRED, "MOCKSERVER_CONTROL_PLANE_OIDC_AUTHENTICATION_REQUIRED", "false"));
+    }
+
+    /**
+     * <p>
+     * Require verified OIDC bearer-token authentication for all control plane requests, validating tokens issued by an external OIDC IdP
+     * </p>
+     *
+     * @param enable verified OIDC authentication for all control plane requests
+     */
+    public static void controlPlaneOidcAuthenticationRequired(boolean enable) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_AUTHENTICATION_REQUIRED, "" + enable);
+    }
+
+    public static String controlPlaneOidcIssuer() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_OIDC_ISSUER, "MOCKSERVER_CONTROL_PLANE_OIDC_ISSUER", "");
+    }
+
+    /**
+     * <p>
+     * OIDC issuer (i.e. iss) required on control plane tokens; also used to discover the JWKS URI via {issuer}/.well-known/openid-configuration when controlPlaneOidcJwksUri is not set
+     * </p>
+     *
+     * @param controlPlaneOidcIssuer required value for issuer claim (i.e. iss)
+     */
+    public static void controlPlaneOidcIssuer(String controlPlaneOidcIssuer) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_ISSUER, "" + controlPlaneOidcIssuer);
+    }
+
+    public static String controlPlaneOidcJwksUri() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_OIDC_JWKS_URI, "MOCKSERVER_CONTROL_PLANE_OIDC_JWKS_URI", "");
+    }
+
+    /**
+     * <p>
+     * JWKS URI used to verify control plane OIDC token signatures; if not set it is discovered from the issuer's OIDC discovery document
+     * </p>
+     *
+     * @param controlPlaneOidcJwksUri URL (or file/classpath path) of the JWK source
+     */
+    public static void controlPlaneOidcJwksUri(String controlPlaneOidcJwksUri) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_JWKS_URI, "" + controlPlaneOidcJwksUri);
+    }
+
+    public static String controlPlaneOidcAudience() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_OIDC_AUDIENCE, "MOCKSERVER_CONTROL_PLANE_OIDC_AUDIENCE", "");
+    }
+
+    /**
+     * <p>
+     * Audience claim (i.e. aud) required on control plane OIDC tokens
+     * </p>
+     *
+     * @param controlPlaneOidcAudience required value for audience claim (i.e. aud)
+     */
+    public static void controlPlaneOidcAudience(String controlPlaneOidcAudience) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_AUDIENCE, "" + controlPlaneOidcAudience);
+    }
+
+    public static Set<String> controlPlaneOidcRequiredScopes() {
+        String requiredScopes = readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_OIDC_REQUIRED_SCOPES, "MOCKSERVER_CONTROL_PLANE_OIDC_REQUIRED_SCOPES", "");
+        if (isNotBlank(requiredScopes)) {
+            return Sets.newConcurrentHashSet(Arrays.asList(requiredScopes.split(",")));
+        } else {
+            return ImmutableSet.of();
+        }
+    }
+
+    /**
+     * <p>
+     * Scopes that must all be present in a control plane OIDC token before it is accepted
+     * </p>
+     * <p>
+     * Value should be a string with comma separated values, for example: mockserver.read,mockserver.write
+     * </p>
+     *
+     * @param controlPlaneOidcRequiredScopes required scopes
+     */
+    public static void controlPlaneOidcRequiredScopes(Set<String> controlPlaneOidcRequiredScopes) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_REQUIRED_SCOPES, Joiner.on(",").join(controlPlaneOidcRequiredScopes));
+    }
+
+    public static String controlPlaneOidcScopeClaim() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM, "MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM", "scope");
+    }
+
+    /**
+     * <p>
+     * Name of the claim holding granted scopes on a control plane OIDC token, default "scope" (space-delimited); array claims such as scp, roles or groups are also supported
+     * </p>
+     *
+     * @param controlPlaneOidcScopeClaim name of the scope claim
+     */
+    public static void controlPlaneOidcScopeClaim(String controlPlaneOidcScopeClaim) {
+        setProperty(MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM, "" + controlPlaneOidcScopeClaim);
     }
 
     // TLS

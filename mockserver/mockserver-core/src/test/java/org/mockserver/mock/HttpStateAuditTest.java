@@ -3,6 +3,8 @@ package org.mockserver.mock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockserver.authentication.AuthenticationHandler;
+import org.mockserver.authentication.AuthenticationResult;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.audit.AuditEntry;
@@ -15,6 +17,8 @@ import org.mockserver.scheduler.Scheduler;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -150,6 +154,48 @@ public class HttpStateAuditTest {
         assertThat(AuditStore.getInstance().size(), is(1));
         httpState.reset();
         assertThat(AuditStore.getInstance().size(), is(0));
+    }
+
+    @Test
+    public void verifiedOidcResultRecordsVerifiedPrincipalAndSource() {
+        // a handler that returns a VERIFIED principal must override the best-effort extraction
+        httpState.setControlPlaneAuthenticationHandler(new AuthenticationHandler() {
+            @Override
+            public boolean controlPlaneRequestAuthenticated(HttpRequest request) {
+                return true;
+            }
+
+            @Override
+            public AuthenticationResult authenticate(HttpRequest request) {
+                return AuthenticationResult.authenticated("service-account-ci", "verified-oidc", Map.of("sub", "service-account-ci"), Set.of("mockserver.write"));
+            }
+        });
+
+        // include an unverified bearer token with a DIFFERENT sub to prove the verified principal wins
+        handle(request("/mockserver/expectation").withMethod("PUT")
+            .withHeader("Authorization", "Bearer " + unsignedJwt("mallory"))
+            .withBody("[{\"httpRequest\":{\"path\":\"/x\"},\"httpResponse\":{\"statusCode\":200}}]"));
+
+        List<AuditEntry> entries = AuditStore.getInstance().getRecent(10);
+        assertThat(entries.size(), is(1));
+        assertThat(entries.get(0).getPrincipal(), is("service-account-ci"));
+        assertThat(entries.get(0).getPrincipalSource(), is("verified-oidc"));
+    }
+
+    @Test
+    public void legacyBooleanHandlerFallsBackToBestEffortPrincipal() {
+        // a handler implementing ONLY the boolean SPI authenticates via the default adapter
+        // (no verified principal) and audit must fall back to best-effort extraction
+        httpState.setControlPlaneAuthenticationHandler(request -> true);
+
+        handle(request("/mockserver/expectation").withMethod("PUT")
+            .withHeader("Authorization", "Bearer " + unsignedJwt("alice"))
+            .withBody("[{\"httpRequest\":{\"path\":\"/x\"},\"httpResponse\":{\"statusCode\":200}}]"));
+
+        List<AuditEntry> entries = AuditStore.getInstance().getRecent(10);
+        assertThat(entries.size(), is(1));
+        assertThat(entries.get(0).getPrincipal(), is("alice"));
+        assertThat(entries.get(0).getPrincipalSource(), is("jwt"));
     }
 
     @Test

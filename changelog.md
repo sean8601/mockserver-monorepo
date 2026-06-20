@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Verified OIDC control-plane authentication (Tier 1.5-A) -->
+- **Verified OIDC bearer authentication for the control plane** (`mockserver-core`, `mockserver-netty`). Setting
+  `controlPlaneOidcAuthenticationRequired=true` makes MockServer verify control-plane requests against an external
+  OpenID Connect identity provider: it checks the `Authorization: Bearer` access-token signature against the IdP's
+  JWK set (set directly via `controlPlaneOidcJwksUri`, or discovered from `controlPlaneOidcIssuer`'s
+  `/.well-known/openid-configuration`), and asserts issuer, audience (`controlPlaneOidcAudience`), `exp`/`nbf`, and
+  that the token's granted scopes contain every `controlPlaneOidcRequiredScopes` entry (scopes read from
+  `controlPlaneOidcScopeClaim`, default `scope`; `scp`/`roles`/`groups` array claims also supported). The verified
+  `sub` is now recorded as the control-plane audit principal with source `verified-oidc` (replacing the unverified
+  best-effort extraction when a verified principal is available). OIDC can be combined with existing mTLS and/or JWT
+  control-plane authentication (all enabled handlers must pass). The `AuthenticationHandler` SPI gains a richer,
+  default-adapted `authenticate(...) -> AuthenticationResult` method; existing and third-party boolean handlers keep
+  working unchanged. Off by default — with no `controlPlaneOidc*` configuration the control plane is byte-for-byte
+  unchanged. See [Control Plane Authentication](/mock_server/control_plane_authorisation.html).
+
 <!-- SCIM provider mocking (Wave 4) -->
 - **Mock a SCIM 2.0 identity provider** (`mockserver-core`, `mockserver-client-java`). A single control-plane
   call — `PUT /mockserver/scim` (empty body or a `ScimProviderConfiguration`), or
