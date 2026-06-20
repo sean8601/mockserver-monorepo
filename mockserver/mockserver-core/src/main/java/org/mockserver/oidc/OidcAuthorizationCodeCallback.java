@@ -29,6 +29,8 @@ public class OidcAuthorizationCodeCallback implements ExpectationResponseCallbac
         String responseType = request.getFirstQueryStringParameter("response_type");
         String redirectUri = request.getFirstQueryStringParameter("redirect_uri");
         String state = request.getFirstQueryStringParameter("state");
+        String scope = emptyToNull(request.getFirstQueryStringParameter("scope"));
+        String nonce = emptyToNull(request.getFirstQueryStringParameter("nonce"));
         String codeChallenge = emptyToNull(request.getFirstQueryStringParameter("code_challenge"));
         String codeChallengeMethod = emptyToNull(request.getFirstQueryStringParameter("code_challenge_method"));
 
@@ -55,7 +57,7 @@ public class OidcAuthorizationCodeCallback implements ExpectationResponseCallbac
 
         String code = "mock-auth-code-" + UUID.randomUUID();
         store.putCode(code, new OidcAuthorizationStore.AuthorizationCode(
-            redirectUri, codeChallenge, codeChallengeMethod, provider.tokenResponseJson
+            redirectUri, codeChallenge, codeChallengeMethod, scope, nonce
         ));
 
         StringBuilder location = new StringBuilder(redirectUri);

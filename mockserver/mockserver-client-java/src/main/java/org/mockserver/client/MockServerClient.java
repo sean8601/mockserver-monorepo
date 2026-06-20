@@ -24,6 +24,7 @@ import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.OpenAPIExpectation;
 import org.mockserver.mock.breakpoint.BreakpointPhase;
+import org.mockserver.oidc.OidcProviderConfiguration;
 import org.mockserver.model.*;
 import org.mockserver.proxyconfiguration.ProxyConfiguration;
 import org.mockserver.scheduler.Scheduler;
@@ -1968,6 +1969,59 @@ public class MockServerClient implements Stoppable {
      */
     public ForwardChainExpectation when(RequestDefinition requestDefinition, Times times, TimeToLive timeToLive, Integer priority) {
         return new ForwardChainExpectation(configuration, MOCK_SERVER_LOGGER, getMockServerEventBus(), this, new Expectation(requestDefinition, times, timeToLive, priority));
+    }
+
+    /**
+     * Mock a complete OpenID Connect / OAuth2 identity provider with a single call, using the default
+     * configuration (issuer {@code http://localhost:1080}, standard endpoint paths, RS256 signing).
+     *
+     * <p>This generates and upserts the discovery document, JWKS, token, authorize, userinfo,
+     * introspection, revocation, and end-session endpoints, all signed with a freshly generated key
+     * pair whose public key is published at the JWKS endpoint so issued tokens verify end-to-end.
+     *
+     * @return the upserted OIDC provider expectations
+     */
+    public Expectation[] mockOpenIdProvider() {
+        return mockOpenIdProvider(null);
+    }
+
+    /**
+     * Mock a complete OpenID Connect / OAuth2 identity provider with a single call.
+     *
+     * <p>This generates and upserts the discovery document, JWKS, token, authorize, userinfo,
+     * introspection, revocation, and end-session endpoints. Tokens are minted at request time and
+     * signed with the configured (or generated) key pair, whose public key is published at the JWKS
+     * endpoint so issued tokens verify end-to-end. The configuration controls the issuer, endpoint
+     * paths, subject / clientId / audience / scopes, token expiry, additional claims, signing
+     * algorithm and key material, and the negative-testing flags.
+     *
+     * @param configuration the OIDC provider configuration, or {@code null} to use the defaults
+     * @return the upserted OIDC provider expectations
+     */
+    public Expectation[] mockOpenIdProvider(OidcProviderConfiguration configuration) {
+        String body = "";
+        if (configuration != null) {
+            try {
+                body = ObjectMapperFactory.createObjectMapper().writeValueAsString(configuration);
+            } catch (Throwable throwable) {
+                throw new ClientException(formatLogMessage("error:{}while serializing OIDC provider configuration:{}", throwable.getMessage(), configuration), throwable);
+            }
+        }
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("oidc"))
+                .withBody(body, StandardCharsets.UTF_8),
+            false
+        );
+        if (httpResponse != null && httpResponse.getStatusCode() != 201) {
+            throw new ClientException(formatLogMessage("error:{}while submitting OIDC provider configuration:{}", httpResponse, configuration));
+        }
+        if (httpResponse != null && isNotBlank(httpResponse.getBodyAsString())) {
+            return expectationSerializer.deserializeArray(httpResponse.getBodyAsString(), true);
+        }
+        return new Expectation[0];
     }
 
     /**

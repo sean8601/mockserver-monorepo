@@ -3,7 +3,9 @@ package org.mockserver.oidc;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -27,8 +29,10 @@ import java.util.Map;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertFalse;
@@ -57,10 +61,10 @@ public class OidcProviderGeneratorTest {
     }
 
     @Test
-    public void defaultsProduceSevenExpectations() {
+    public void defaultsProduceEightExpectations() {
         List<Expectation> expectations = generator.generate(new OidcProviderConfiguration());
 
-        assertThat(expectations.size(), is(7));
+        assertThat(expectations.size(), is(8));
         assertThat(expectations.get(0).getId(), is("oidc.discovery"));
         assertThat(expectations.get(1).getId(), is("oidc.jwks"));
         assertThat(expectations.get(2).getId(), is("oidc.token"));
@@ -68,6 +72,7 @@ public class OidcProviderGeneratorTest {
         assertThat(expectations.get(4).getId(), is("oidc.userinfo"));
         assertThat(expectations.get(5).getId(), is("oidc.introspect"));
         assertThat(expectations.get(6).getId(), is("oidc.revoke"));
+        assertThat(expectations.get(7).getId(), is("oidc.logout"));
     }
 
     @Test
@@ -94,11 +99,30 @@ public class OidcProviderGeneratorTest {
         assertThat(doc.get("introspection_endpoint").asText(), is("https://idp.example.com/introspect"));
         assertThat(doc.get("revocation_endpoint").asText(), is("https://idp.example.com/revoke"));
 
-        // Check supported values
+        assertThat(doc.get("end_session_endpoint").asText(), is("https://idp.example.com/logout"));
+
+        // Check supported values — only implemented grants advertised (no device_code).
         assertTrue(doc.get("grant_types_supported").isArray());
-        assertThat(doc.get("grant_types_supported").size(), is(4));
+        assertThat(doc.get("grant_types_supported").size(), is(3));
+        List<String> grants = new java.util.ArrayList<>();
+        doc.get("grant_types_supported").forEach(node -> grants.add(node.asText()));
+        assertThat(grants, hasItems("authorization_code", "client_credentials", "refresh_token"));
+        assertFalse(grants.stream().anyMatch(g -> g.contains("device_code")));
+
         assertThat(doc.get("id_token_signing_alg_values_supported").get(0).asText(), is("RS256"));
         assertThat(doc.get("subject_types_supported").get(0).asText(), is("public"));
+
+        // PKCE methods advertised (PKCE is implemented)
+        List<String> pkceMethods = new java.util.ArrayList<>();
+        doc.get("code_challenge_methods_supported").forEach(node -> pkceMethods.add(node.asText()));
+        assertThat(pkceMethods, hasItems("S256", "plain"));
+
+        // Token endpoint auth methods advertised
+        List<String> authMethods = new java.util.ArrayList<>();
+        doc.get("token_endpoint_auth_methods_supported").forEach(node -> authMethods.add(node.asText()));
+        assertThat(authMethods, hasItems("client_secret_basic", "client_secret_post", "none"));
+
+        assertTrue(doc.get("claims_supported").isArray());
     }
 
     @Test
@@ -592,6 +616,211 @@ public class OidcProviderGeneratorTest {
                 containsString("application/json")
             );
         }
+    }
+
+    // --- Wave 1: token correctness, nonce, configurable signing, refresh tokens ---
+
+    @Test
+    public void idTokenAudIsClientIdAndAccessTokenAudIsAudience() throws Exception {
+        OidcProviderConfiguration config = new OidcProviderConfiguration()
+            .setClientId("my-client-id")
+            .setAudience("my-resource-audience");
+        generator.generate(config);
+
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
+        SignedJWT accessToken = SignedJWT.parse(tokenResponse.get("access_token").asText());
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.get("id_token").asText());
+
+        assertThat(accessToken.getJWTClaimsSet().getAudience().get(0), is("my-resource-audience"));
+        assertThat(accessToken.getJWTClaimsSet().getStringClaim("client_id"), is("my-client-id"));
+        assertThat(idToken.getJWTClaimsSet().getAudience().get(0), is("my-client-id"));
+    }
+
+    @Test
+    public void bothTokensHaveNbfEqualToIat() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
+        SignedJWT accessToken = SignedJWT.parse(tokenResponse.get("access_token").asText());
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.get("id_token").asText());
+
+        assertThat(accessToken.getJWTClaimsSet().getNotBeforeTime(), is(notNullValue()));
+        assertThat(accessToken.getJWTClaimsSet().getNotBeforeTime(),
+            is(accessToken.getJWTClaimsSet().getIssueTime()));
+        assertThat(idToken.getJWTClaimsSet().getNotBeforeTime(), is(notNullValue()));
+        assertThat(idToken.getJWTClaimsSet().getNotBeforeTime(),
+            is(idToken.getJWTClaimsSet().getIssueTime()));
+    }
+
+    @Test
+    public void nonceFromAuthorizeAppearsInIdTokenAfterCodeExchange() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+                .withQueryStringParameter("scope", "openid profile")
+                .withQueryStringParameter("nonce", "n-0S6_WzA2Mj")
+        ).getFirstHeader("location"));
+
+        HttpResponse tokenResponse = new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=" + code + "&redirect_uri=" + enc("https://app/cb")
+        ));
+        JsonNode body = objectMapper.readTree(tokenResponse.getBodyAsString());
+        SignedJWT idToken = SignedJWT.parse(body.get("id_token").asText());
+        assertThat(idToken.getJWTClaimsSet().getStringClaim("nonce"), is("n-0S6_WzA2Mj"));
+    }
+
+    @Test
+    public void authorizationCodeGrantReturnsRefreshToken() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        String code = extractCode(new OidcAuthorizationCodeCallback().handle(
+            request().withMethod("GET").withPath("/authorize")
+                .withQueryStringParameter("response_type", "code")
+                .withQueryStringParameter("redirect_uri", "https://app/cb")
+                .withQueryStringParameter("scope", "openid")
+        ).getFirstHeader("location"));
+
+        JsonNode body = objectMapper.readTree(new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=authorization_code&code=" + code + "&redirect_uri=" + enc("https://app/cb")
+        )).getBodyAsString());
+        assertTrue("authorization_code grant should return a refresh_token", body.has("refresh_token"));
+        assertThat(body.get("refresh_token").asText(), containsString("mock-refresh-"));
+    }
+
+    @Test
+    public void refreshTokenGrantReturnsRefreshToken() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        JsonNode body = objectMapper.readTree(new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=refresh_token&refresh_token=mock-refresh-abc"
+        )).getBodyAsString());
+        assertTrue("refresh_token grant should return a refresh_token", body.has("refresh_token"));
+        assertTrue(body.has("access_token"));
+    }
+
+    @Test
+    public void clientCredentialsWithoutOpenidScopeOmitsIdToken() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        JsonNode body = objectMapper.readTree(new OidcTokenCallback().handle(tokenRequest(
+            "grant_type=client_credentials&scope=" + enc("api.read api.write")
+        )).getBodyAsString());
+        assertTrue(body.has("access_token"));
+        assertFalse("id_token should be omitted when openid scope absent", body.has("id_token"));
+        assertFalse("client_credentials should not return a refresh_token", body.has("refresh_token"));
+    }
+
+    @Test
+    public void configurableSigningAlgorithmEs256VerifiesAgainstEcJwks() throws Exception {
+        OidcProviderConfiguration config = new OidcProviderConfiguration()
+            .setSigningAlgorithm("ES256");
+        List<Expectation> expectations = generator.generate(config);
+
+        // JWKS should be an EC key
+        JWKSet jwkSet = JWKSet.parse(expectations.get(1).getHttpResponse().getBodyAsString());
+        JWK jwk = jwkSet.getKeys().get(0);
+        assertThat(jwk.getKeyType().getValue(), is("EC"));
+        JWSVerifier verifier = new ECDSAVerifier((ECKey) jwk);
+
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
+        SignedJWT accessToken = SignedJWT.parse(tokenResponse.get("access_token").asText());
+        assertThat(accessToken.getHeader().getAlgorithm().getName(), is("ES256"));
+        assertTrue("ES256 access token should verify against the EC JWKS", accessToken.verify(verifier));
+
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.get("id_token").asText());
+        assertTrue("ES256 id token should verify against the EC JWKS", idToken.verify(verifier));
+
+        // discovery should reflect the configured algorithm
+        JsonNode discovery = objectMapper.readTree(expectations.get(0).getHttpResponse().getBodyAsString());
+        assertThat(discovery.get("id_token_signing_alg_values_supported").get(0).asText(), is("ES256"));
+    }
+
+    @Test
+    public void atHashUsesSha384DigestForEs384Provider() throws Exception {
+        OidcProviderConfiguration config = new OidcProviderConfiguration()
+            .setSigningAlgorithm("ES384");
+        generator.generate(config);
+
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
+        String accessTokenStr = tokenResponse.get("access_token").asText();
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.get("id_token").asText());
+
+        String atHash = idToken.getJWTClaimsSet().getStringClaim("at_hash");
+        assertThat("id_token must carry an at_hash", atHash, is(notNullValue()));
+
+        // Independently compute the OIDC at_hash for ES384: base64url(no-pad) of the left-most half
+        // of SHA-384 of the ASCII access token.
+        MessageDigest sha384 = MessageDigest.getInstance("SHA-384");
+        byte[] hash = sha384.digest(accessTokenStr.getBytes(StandardCharsets.US_ASCII));
+        byte[] leftHalf = Arrays.copyOf(hash, hash.length / 2);
+        String expected = Base64.getUrlEncoder().withoutPadding().encodeToString(leftHalf);
+
+        assertThat("ES384 at_hash must use SHA-384, not SHA-256", atHash, is(expected));
+
+        // Sanity: the (incorrect) SHA-256-based hash must NOT match, proving the fix is exercised.
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        byte[] hash256 = sha256.digest(accessTokenStr.getBytes(StandardCharsets.US_ASCII));
+        String sha256AtHash = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(Arrays.copyOf(hash256, hash256.length / 2));
+        assertThat(atHash, is(not(sha256AtHash)));
+    }
+
+    @Test
+    public void atHashUsesSha256DigestForDefaultRs256Provider() throws Exception {
+        generator.generate(new OidcProviderConfiguration());
+
+        JsonNode tokenResponse = objectMapper.readTree(tokenResponseBody());
+        String accessTokenStr = tokenResponse.get("access_token").asText();
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.get("id_token").asText());
+
+        String atHash = idToken.getJWTClaimsSet().getStringClaim("at_hash");
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        byte[] hash = sha256.digest(accessTokenStr.getBytes(StandardCharsets.US_ASCII));
+        String expected = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(Arrays.copyOf(hash, hash.length / 2));
+        assertThat("RS256 at_hash must use SHA-256 (default path unchanged)", atHash, is(expected));
+    }
+
+    @Test
+    public void suppliedFixedKeyIdIsStableAcrossGenerateCalls() throws Exception {
+        OidcProviderConfiguration config = new OidcProviderConfiguration()
+            .setKeyId("stable-kid-123");
+
+        List<Expectation> first = generator.generate(config);
+        List<Expectation> second = generator.generate(config);
+
+        String firstKid = objectMapper.readTree(first.get(1).getHttpResponse().getBodyAsString())
+            .get("keys").get(0).get("kid").asText();
+        String secondKid = objectMapper.readTree(second.get(1).getHttpResponse().getBodyAsString())
+            .get("keys").get(0).get("kid").asText();
+
+        assertThat(firstKid, is("stable-kid-123"));
+        assertThat(secondKid, is("stable-kid-123"));
+    }
+
+    @Test
+    public void logoutWithoutRedirectReturns200() {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse response = new OidcLogoutCallback().handle(
+            request().withMethod("GET").withPath("/logout"));
+        assertThat(response.getStatusCode(), is(200));
+    }
+
+    @Test
+    public void logoutWithPostLogoutRedirectUriRedirects() {
+        generator.generate(new OidcProviderConfiguration());
+
+        HttpResponse response = new OidcLogoutCallback().handle(
+            request().withMethod("GET").withPath("/logout")
+                .withQueryStringParameter("post_logout_redirect_uri", "https://app/home")
+                .withQueryStringParameter("state", "s1"));
+        assertThat(response.getStatusCode(), is(302));
+        assertThat(response.getFirstHeader("location"), containsString("https://app/home"));
+        assertThat(response.getFirstHeader("location"), containsString("state=s1"));
     }
 
     // --- helpers ---

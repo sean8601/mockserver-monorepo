@@ -18,15 +18,17 @@ import static org.mockserver.model.HttpResponse.response;
 /**
  * Mock OIDC {@code /token} endpoint.
  *
- * <p>Backward compatible: for {@code client_credentials}, {@code refresh_token}, or any request
- * without an {@code authorization_code} grant, it returns the same pre-minted token response the
- * static {@code /token} expectation previously served.
+ * <p>For {@code client_credentials}, {@code refresh_token}, or any request without an
+ * {@code authorization_code} grant, the provider's {@link OidcTokenMinter} mints a fresh token
+ * response at request time, honouring the requested scope (and including a refresh_token for the
+ * {@code refresh_token} grant).
  *
  * <p>For {@code grant_type=authorization_code} it completes the authorization-code flow: it consumes
  * the single-use {@code code} issued by {@link OidcAuthorizationCodeCallback}, validates the
  * {@code redirect_uri} matches the one bound at {@code /authorize}, validates the PKCE
- * {@code code_verifier} against the stored {@code code_challenge} (when one was supplied), and
- * returns the associated token response.
+ * {@code code_verifier} against the stored {@code code_challenge} (when one was supplied), then mints
+ * the token response at request time — embedding the {@code nonce} echoed from the authorize request
+ * into the {@code id_token}.
  */
 public class OidcTokenCallback implements ExpectationResponseCallback {
 
@@ -40,13 +42,23 @@ public class OidcTokenCallback implements ExpectationResponseCallback {
         OidcAuthorizationStore store = OidcAuthorizationStore.getInstance();
         OidcAuthorizationStore.Provider provider = store.providerForTokenPath(request.getPath().getValue());
 
-        if (!"authorization_code".equals(grantType)) {
-            // client_credentials, refresh_token, or unspecified — preserve existing behaviour
-            String body = provider != null ? provider.tokenResponseJson : "{}";
+        if (provider == null) {
             return response()
                 .withStatusCode(200)
                 .withHeader("content-type", JSON_CONTENT_TYPE)
-                .withBody(body);
+                .withBody("{}");
+        }
+
+        if (!"authorization_code".equals(grantType)) {
+            // client_credentials, refresh_token, or unspecified. Tokens are minted at request time so
+            // the requested scope is honoured. No nonce/id_token for client_credentials unless the
+            // openid scope is requested; the refresh_token grant returns a fresh refresh_token.
+            boolean refreshGrant = "refresh_token".equals(grantType);
+            String tokenResponse = provider.tokenMinter.mintTokenResponse(form.get("scope"), null, refreshGrant);
+            return response()
+                .withStatusCode(200)
+                .withHeader("content-type", JSON_CONTENT_TYPE)
+                .withBody(tokenResponse);
         }
 
         String code = form.get("code");
@@ -70,10 +82,14 @@ public class OidcTokenCallback implements ExpectationResponseCallback {
             }
         }
 
+        // Mint at exchange time so the id_token carries the nonce echoed from /authorize. The
+        // authorization_code grant always returns a refresh_token.
+        String tokenResponse = provider.tokenMinter.mintTokenResponse(
+            authorizationCode.scope, authorizationCode.nonce, true);
         return response()
             .withStatusCode(200)
             .withHeader("content-type", JSON_CONTENT_TYPE)
-            .withBody(authorizationCode.tokenResponseJson);
+            .withBody(tokenResponse);
     }
 
     private HttpResponse tokenError(String error, String description) {

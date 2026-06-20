@@ -244,6 +244,51 @@ public class MockServerClientTest {
     }
 
     @Test
+    public void shouldMockOpenIdProviderAndReturnExpectations() {
+        // given
+        Expectation discovery = new Expectation(request().withPath("/.well-known/openid-configuration"))
+            .thenRespond(response().withBody("{}"));
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(CREATED.code()).withBody("[ {} ]"));
+        when(mockExpectationSerializer.deserializeArray("[ {} ]", true))
+            .thenReturn(new Expectation[]{discovery});
+
+        // when
+        Expectation[] result = mockServerClient.mockOpenIdProvider(
+            new org.mockserver.oidc.OidcProviderConfiguration().setIssuer("https://idp.test"));
+
+        // then — round-trips and returns the deserialized expectations
+        assertThat(result.length, is(1));
+        assertThat(result[0], is(discovery));
+        verify(mockHttpClient, atLeastOnce()).sendRequest(
+            httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getAllValues().stream()
+            .filter(r -> "/mockserver/oidc".equals(r.getPath().getValue()))
+            .findFirst().orElseThrow(() -> new AssertionError("no PUT /mockserver/oidc was sent"));
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getBodyAsString(), containsString("https://idp.test"));
+    }
+
+    @Test
+    public void shouldMockOpenIdProviderWithDefaultsSendsEmptyBody() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(CREATED.code()).withBody(""));
+
+        // when
+        Expectation[] result = mockServerClient.mockOpenIdProvider();
+
+        // then — empty body, empty result
+        assertThat(result.length, is(0));
+        verify(mockHttpClient, atLeastOnce()).sendRequest(
+            httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getAllValues().stream()
+            .filter(r -> "/mockserver/oidc".equals(r.getPath().getValue()))
+            .findFirst().orElseThrow(() -> new AssertionError("no PUT /mockserver/oidc was sent"));
+        assertThat(sent.getBodyAsString(), is(""));
+    }
+
+    @Test
     public void shouldImportExpectationsFromJson() {
         // given
         Expectation expectationOne = new Expectation(request().withPath("/some_path"), unlimited(), TimeToLive.unlimited(), 0)

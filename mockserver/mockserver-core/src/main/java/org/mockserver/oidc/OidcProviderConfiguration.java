@@ -35,6 +35,14 @@ public class OidcProviderConfiguration implements Serializable {
     private int tokenExpirySeconds = 3600;
     private Map<String, Serializable> additionalClaims = new LinkedHashMap<>();
 
+    // Signing configuration (optional). When no key material is supplied a fresh key pair is
+    // generated per generate() using signingAlgorithm (default RS256 / RSA-2048).
+    private String signingAlgorithm = "RS256";
+    private String privateKeyPem;
+    private String certificatePem;
+    private String jwkJson;
+    private String keyId;
+
     // Negative-testing flags
     private boolean issueExpiredToken = false;
     private boolean wrongIssuer = false;
@@ -170,6 +178,56 @@ public class OidcProviderConfiguration implements Serializable {
 
     public OidcProviderConfiguration setAdditionalClaims(Map<String, Serializable> additionalClaims) {
         this.additionalClaims = additionalClaims;
+        return this;
+    }
+
+    @JsonProperty("signingAlgorithm")
+    public String getSigningAlgorithm() {
+        return signingAlgorithm;
+    }
+
+    public OidcProviderConfiguration setSigningAlgorithm(String signingAlgorithm) {
+        this.signingAlgorithm = signingAlgorithm;
+        return this;
+    }
+
+    @JsonProperty("privateKeyPem")
+    public String getPrivateKeyPem() {
+        return privateKeyPem;
+    }
+
+    public OidcProviderConfiguration setPrivateKeyPem(String privateKeyPem) {
+        this.privateKeyPem = privateKeyPem;
+        return this;
+    }
+
+    @JsonProperty("certificatePem")
+    public String getCertificatePem() {
+        return certificatePem;
+    }
+
+    public OidcProviderConfiguration setCertificatePem(String certificatePem) {
+        this.certificatePem = certificatePem;
+        return this;
+    }
+
+    @JsonProperty("jwkJson")
+    public String getJwkJson() {
+        return jwkJson;
+    }
+
+    public OidcProviderConfiguration setJwkJson(String jwkJson) {
+        this.jwkJson = jwkJson;
+        return this;
+    }
+
+    @JsonProperty("keyId")
+    public String getKeyId() {
+        return keyId;
+    }
+
+    public OidcProviderConfiguration setKeyId(String keyId) {
+        this.keyId = keyId;
         return this;
     }
 

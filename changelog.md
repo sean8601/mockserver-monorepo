@@ -900,6 +900,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Real gRPC (`application/grpc`) traffic is unaffected. (Connect streaming is not yet supported.)
 
 #### Chaos, resilience & SRE
+- **Mock an OIDC / OAuth2 identity provider in one call — consolidation (Wave 1)** (`mockserver-core`,
+  `mockserver-client-java`). `PUT /mockserver/oidc` (and a new typed Java client `mockOpenIdProvider()` /
+  `mockOpenIdProvider(OidcProviderConfiguration)`) generate a complete mock IdP — discovery, JWKS, token,
+  authorize, userinfo, introspection, revocation, and a new end-session (`/logout`) endpoint. Tokens are now
+  minted at request time so the `/authorize` **`nonce`** is echoed into the `id_token`, and the `id_token`
+  (`aud=clientId`, `nonce`, `at_hash`, scope-gated profile/email claims, issued only with the `openid` scope)
+  is correctly split from the `access_token` (`aud=audience`, `scope`, `client_id`); both carry `nbf`, and a
+  `refresh_token` is returned for the `authorization_code`/`refresh_token` grants. Signing is configurable
+  (`signingAlgorithm` RS/ES 256/384/512, optional supplied key + stable `keyId`; JWKS always publishes the
+  public half of the signing key). Discovery now reflects the configured algorithm and advertises only
+  implemented grants plus PKCE/auth-method/claims metadata. Authorization codes are single-use and TTL-bounded.
 - **Response-content conditional breakpoints** (`mockserver-core`). A `RESPONSE`-phase breakpoint matcher now
   accepts optional `responseStatusCodeMin`/`responseStatusCodeMax` (inclusive status-code range) and
   `responseBodyContains` (regex searched within the response body) fields, so a breakpoint can pause only when
