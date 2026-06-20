@@ -158,46 +158,120 @@ public class HttpLlmResponseActionHandler {
      * the warning is logged.
      */
     void validateStructuredOutput(Completion completion, HttpResponse encoded, Provider provider, HttpRequest request) {
-        if (completion == null) {
+        String error = structuredOutputError(completion, provider, request);
+        if (error == null) {
             return;
+        }
+        if (encoded != null) {
+            encoded.withHeader(STRUCTURED_OUTPUT_INVALID_HEADER, compactHeaderValue(error));
+        }
+        if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(EXPECTATION_RESPONSE)
+                    .setLogLevel(Level.WARN)
+                    .setCorrelationId(request.getLogCorrelationId())
+                    .setHttpRequest(request)
+                    .setMessageFormat("configured LLM completion text for provider {} does not conform to its declared outputSchema:{}")
+                    .setArguments(provider, error)
+            );
+        }
+    }
+
+    /**
+     * Validate the completion text against its declared {@link Completion#getOutputSchema()
+     * output schema}. Returns the validation error message when the text is present, the
+     * schema is non-blank and parseable, and the text does not conform; returns {@code null}
+     * in every "nothing to check" case (no completion, blank schema, absent text, or a
+     * malformed schema) so structured-output checking can never throw and can never break a
+     * response. Shared by the fail-soft diagnostic path ({@link #validateStructuredOutput})
+     * and the strict enforcement path ({@link #enforcementErrorResponseOrNull}). {@code provider}
+     * and {@code request} are used only to enrich the malformed-schema warning (correlation id +
+     * provider context) and may be {@code null}.
+     */
+    private String structuredOutputError(Completion completion, Provider provider, HttpRequest request) {
+        if (completion == null) {
+            return null;
         }
         String schema = completion.getOutputSchema();
         String text = completion.getText();
         if (schema == null || schema.trim().isEmpty() || text == null) {
-            return;
+            return null;
         }
         try {
             String error = new JsonSchemaValidator(mockServerLogger, schema).isValid(text, false);
-            if (error != null && !error.isEmpty()) {
-                if (encoded != null) {
-                    encoded.withHeader(STRUCTURED_OUTPUT_INVALID_HEADER, compactHeaderValue(error));
-                }
-                if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
-                    mockServerLogger.logEvent(
-                        new LogEntry()
-                            .setType(EXPECTATION_RESPONSE)
-                            .setLogLevel(Level.WARN)
-                            .setCorrelationId(request.getLogCorrelationId())
-                            .setHttpRequest(request)
-                            .setMessageFormat("configured LLM completion text for provider {} does not conform to its declared outputSchema:{}")
-                            .setArguments(provider, error)
-                    );
-                }
-            }
+            return (error != null && !error.isEmpty()) ? error : null;
         } catch (Exception e) {
-            // a malformed schema must never break the response — surface it as a warning only
+            // a malformed schema must never break the response — treat it as a no-op
             if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(EXPECTATION_RESPONSE)
                         .setLogLevel(Level.WARN)
-                        .setCorrelationId(request.getLogCorrelationId())
+                        .setCorrelationId(request != null ? request.getLogCorrelationId() : null)
                         .setHttpRequest(request)
                         .setMessageFormat("could not validate LLM completion text against outputSchema for provider {} — treating schema as a no-op:{}")
                         .setArguments(provider, e.getMessage())
                 );
             }
+            return null;
         }
+    }
+
+    static final int STRUCTURED_OUTPUT_ENFORCEMENT_STATUS = 502;
+
+    /**
+     * Strict structured-output enforcement, opt-in via
+     * {@link Completion#getEnforceOutputSchema()}. When enforcement is enabled and the
+     * completion's configured {@link Completion#getText() text} does not conform to its
+     * declared {@link Completion#getOutputSchema() output schema}, returns a provider-correct
+     * error {@link HttpResponse} (status {@value #STRUCTURED_OUTPUT_ENFORCEMENT_STATUS}, with
+     * the {@code x-mockserver-structured-output-invalid} diagnostic header) so the mock fails
+     * loudly rather than returning a non-conforming body. Returns {@code null} when
+     * enforcement is off, no schema is declared, or the text conforms — in which case the
+     * response is delivered normally.
+     *
+     * <p>Models real providers' strict {@code response_format: json_schema} mode, which
+     * guarantees schema-valid output: a non-conforming strict fixture is a configuration
+     * error and surfaces as an error rather than silently passing. Applies to both the
+     * streaming and non-streaming paths (checked before dispatch by {@code HttpActionHandler},
+     * mirroring {@link #chaosErrorResponseOrNull}), so a strict streaming completion with a
+     * non-conforming body never begins streaming.
+     */
+    public HttpResponse enforcementErrorResponseOrNull(HttpLlmResponse httpLlmResponse, HttpRequest request) {
+        if (httpLlmResponse == null) {
+            return null;
+        }
+        Completion completion = httpLlmResponse.getCompletion();
+        if (completion == null || !Boolean.TRUE.equals(completion.getEnforceOutputSchema())) {
+            return null;
+        }
+        Provider provider = httpLlmResponse.getProvider();
+        String error = structuredOutputError(completion, provider, request);
+        if (error == null) {
+            return null;
+        }
+        if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setType(EXPECTATION_RESPONSE)
+                    .setLogLevel(Level.WARN)
+                    .setCorrelationId(request != null ? request.getLogCorrelationId() : null)
+                    .setHttpRequest(request)
+                    .setMessageFormat("strict structured-output enforcement is enabled but the configured LLM completion text for provider {} does not conform to its declared outputSchema — returning an enforcement error:{}")
+                    .setArguments(provider, error)
+            );
+        }
+        String message = "structured-output enforcement failed: configured response does not conform to the declared outputSchema";
+        String body = LlmErrorBodies.bodyFor(provider, LlmErrorBodies.Kind.SERVER_ERROR, STRUCTURED_OUTPUT_ENFORCEMENT_STATUS, message);
+        if (body == null) {
+            body = "{\"error\":{\"type\":\"structured_output_enforcement_failed\",\"message\":\"" + message + "\"}}";
+        }
+        return response()
+            .withStatusCode(STRUCTURED_OUTPUT_ENFORCEMENT_STATUS)
+            .withHeader("content-type", "application/json")
+            .withHeader(STRUCTURED_OUTPUT_INVALID_HEADER, compactHeaderValue(error))
+            .withBody(body);
     }
 
     /**

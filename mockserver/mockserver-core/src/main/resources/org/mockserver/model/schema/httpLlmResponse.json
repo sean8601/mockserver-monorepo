@@ -71,6 +71,9 @@
         "outputSchema": {
           "type": "string"
         },
+        "enforceOutputSchema": {
+          "type": "boolean"
+        },
         "toolChoice": {
           "type": "string"
         },

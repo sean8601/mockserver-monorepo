@@ -142,6 +142,31 @@ public class CompletionTest {
     }
 
     @Test
+    public void shouldDefaultEnforceOutputSchemaToNull() {
+        assertThat(completion().getEnforceOutputSchema(), is(nullValue()));
+    }
+
+    @Test
+    public void shouldSetEnforceOutputSchema() {
+        assertThat(completion().withEnforceOutputSchema(true).getEnforceOutputSchema(), is(true));
+        assertThat(completion().enforceOutputSchema().getEnforceOutputSchema(), is(true));
+    }
+
+    @Test
+    public void shouldNotBeEqualWhenDifferentEnforceOutputSchema() {
+        assertThat(completion().withEnforceOutputSchema(true),
+            is(not(completion().withEnforceOutputSchema(false))));
+    }
+
+    @Test
+    public void shouldBeEqualWithSameEnforceOutputSchema() {
+        Completion c1 = completion().withOutputSchema("{\"type\":\"object\"}").enforceOutputSchema();
+        Completion c2 = completion().withOutputSchema("{\"type\":\"object\"}").enforceOutputSchema();
+        assertThat(c1, is(c2));
+        assertThat(c1.hashCode(), is(c2.hashCode()));
+    }
+
+    @Test
     public void shouldNotBeEqualToNull() {
         assertThat(completion().withText("Hello").equals(null), is(false));
     }

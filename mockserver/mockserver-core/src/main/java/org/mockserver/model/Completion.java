@@ -14,6 +14,7 @@ public class Completion extends ObjectWithJsonToString {
     private Boolean streaming;
     private StreamingPhysics streamingPhysics;
     private String outputSchema;
+    private Boolean enforceOutputSchema;
     private String model;
     private String toolChoice;
 
@@ -161,6 +162,37 @@ public class Completion extends ObjectWithJsonToString {
     }
 
     /**
+     * Opt-in strict structured-output enforcement. When {@code true} <em>and</em> an
+     * {@link #getOutputSchema() outputSchema} is declared, the LLM response handler
+     * <strong>enforces</strong> conformance instead of merely flagging it: if the
+     * configured {@link #getText() text} does not conform to the schema, the handler
+     * fails loudly with a provider-correct error response rather than returning the
+     * non-conforming body.
+     *
+     * <p>This models real providers' strict {@code response_format: json_schema} mode,
+     * where the provider <em>guarantees</em> schema-valid output — so a non-conforming
+     * fixture is a configuration error that should surface rather than pass silently.
+     *
+     * <p>When unset or {@code false} (the default), behaviour is unchanged: a mismatch
+     * is fail-soft — the body is returned as configured and only the
+     * {@code x-mockserver-structured-output-invalid} diagnostic header + a warning log
+     * are added. Has no effect without an {@code outputSchema}.
+     */
+    public Completion withEnforceOutputSchema(Boolean enforceOutputSchema) {
+        this.enforceOutputSchema = enforceOutputSchema;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public Completion enforceOutputSchema() {
+        return withEnforceOutputSchema(Boolean.TRUE);
+    }
+
+    public Boolean getEnforceOutputSchema() {
+        return enforceOutputSchema;
+    }
+
+    /**
      * Optional model identifier extracted from the provider response. Set by
      * {@code parseCompletionResponse} implementations so the caller can read
      * the model without re-parsing the response body.
@@ -212,6 +244,7 @@ public class Completion extends ObjectWithJsonToString {
             Objects.equals(streaming, that.streaming) &&
             Objects.equals(streamingPhysics, that.streamingPhysics) &&
             Objects.equals(outputSchema, that.outputSchema) &&
+            Objects.equals(enforceOutputSchema, that.enforceOutputSchema) &&
             Objects.equals(model, that.model) &&
             Objects.equals(toolChoice, that.toolChoice);
     }
@@ -219,7 +252,7 @@ public class Completion extends ObjectWithJsonToString {
     @Override
     public int hashCode() {
         if (hashCode == 0) {
-            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, model, toolChoice);
+            hashCode = Objects.hash(text, toolCalls, stopReason, usage, streaming, streamingPhysics, outputSchema, enforceOutputSchema, model, toolChoice);
         }
         return hashCode;
     }

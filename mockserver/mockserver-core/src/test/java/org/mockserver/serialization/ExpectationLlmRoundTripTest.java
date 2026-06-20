@@ -86,6 +86,34 @@ public class ExpectationLlmRoundTripTest {
     }
 
     @Test
+    public void shouldRoundTripCompletionWithEnforceOutputSchema() {
+        // given — a completion opting in to strict structured-output enforcement
+        String schema = "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}";
+        Expectation original = when(request().withPath("/v1/messages"))
+            .thenRespondWithLlm(
+                llmResponse()
+                    .withProvider(Provider.ANTHROPIC)
+                    .withModel("claude-sonnet-4-20250514")
+                    .withCompletion(
+                        completion()
+                            .withText("{\"name\":\"Ada\"}")
+                            .withOutputSchema(schema)
+                            .enforceOutputSchema()
+                    )
+            );
+
+        // when
+        String json = serializer.serialize(original);
+        Expectation[] deserialized = serializer.deserializeArray(json, false);
+
+        // then — the enforcement flag survives the JSON round-trip intact
+        assertThat(deserialized, is(notNullValue()));
+        assertThat(deserialized.length, is(1));
+        assertThat(deserialized[0].getHttpLlmResponse().getCompletion().getEnforceOutputSchema(), is(true));
+        assertThat(deserialized[0].getHttpLlmResponse().getCompletion().getOutputSchema(), is(schema));
+    }
+
+    @Test
     public void shouldRoundTripCompletionWithToolChoice() {
         // given — a completion carrying a tool_choice directive
         Expectation original = when(request().withPath("/v1/chat/completions"))

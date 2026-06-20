@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
+  completion that declares an `outputSchema` can now opt in to strict enforcement via a new
+  `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,
+  the `enforceOutputSchema` expectation-JSON field, or the `mock_llm_completion` MCP parameter). When enabled
+  and the configured response does not conform to the schema, the mock **fails loudly** with a provider-correct
+  error (HTTP `502`, plus the `x-mockserver-structured-output-invalid` diagnostic header) instead of returning
+  the non-conforming body — modelling a real provider's strict `response_format: json_schema` mode, which
+  guarantees schema-valid output. The check runs before dispatch on both the streaming and non-streaming paths,
+  so a strict streaming completion with a non-conforming body never begins streaming. Enforcement is opt-in and
+  fully back-compatible: the default (unset/`false`) keeps the existing fail-soft validate-and-log behaviour
+  (diagnostic header only), and the flag has no effect without an `outputSchema`. A blank, absent-text, or
+  malformed schema remains a no-op and never produces an enforcement error.
 - **`verifyAll(...)` soft/collecting verification and verify-by-disposition filter** (`mockserver-core`,
   Java client). Two additive, back-compatible verification ergonomics:
   - **Soft/collecting verify** — `MockServerClient.verifyAll(Verification...)` runs every supplied

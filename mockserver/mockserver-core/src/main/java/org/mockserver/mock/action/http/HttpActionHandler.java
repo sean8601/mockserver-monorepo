@@ -445,7 +445,15 @@ public class HttpActionHandler {
                 // Chaos: a probabilistic provider error short-circuits to a normal
                 // (non-streaming) HTTP error response, even for a would-be stream.
                 final HttpResponse chaosErrorResponse = getHttpLlmResponseActionHandler().chaosErrorResponseOrNull(llmAction);
-                boolean isStreaming = chaosErrorResponse == null && llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
+                // Strict structured-output enforcement: when enabled and the configured body
+                // does not conform to the declared schema, fail loudly with a provider-correct
+                // error (also a non-streaming response, so a strict stream never begins). Chaos
+                // takes priority — it models a transport-level failure independent of the body.
+                final HttpResponse enforcementErrorResponse = chaosErrorResponse == null
+                    ? getHttpLlmResponseActionHandler().enforcementErrorResponseOrNull(llmAction, request)
+                    : null;
+                final HttpResponse preEmptiveErrorResponse = chaosErrorResponse != null ? chaosErrorResponse : enforcementErrorResponse;
+                boolean isStreaming = preEmptiveErrorResponse == null && llmAction.getCompletion() != null && Boolean.TRUE.equals(llmAction.getCompletion().getStreaming());
                 if (isStreaming) {
                     if (ctx == null) {
                         writeResponseActionResponse(
@@ -522,8 +530,8 @@ public class HttpActionHandler {
                                     .setMessageFormat("returning LLM response for request:{}for action:{}from expectation:{}")
                                     .setArguments(request, action, action.getExpectationId())
                             );
-                            HttpResponse llmResponse = chaosErrorResponse != null
-                                ? chaosErrorResponse
+                            HttpResponse llmResponse = preEmptiveErrorResponse != null
+                                ? preEmptiveErrorResponse
                                 : getHttpLlmResponseActionHandler().handle(llmAction, request);
                             if (chaosErrorResponse != null) {
                                 metrics.increment(org.mockserver.metrics.Metrics.Name.LLM_CHAOS_INJECTED_COUNT);

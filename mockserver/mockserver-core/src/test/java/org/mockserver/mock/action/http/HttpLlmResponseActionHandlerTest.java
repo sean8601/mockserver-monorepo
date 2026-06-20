@@ -349,6 +349,146 @@ public class HttpLlmResponseActionHandlerTest {
         assertThat(response.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), is(""));
     }
 
+    // --- strict structured-output enforcement (opt-in) ---
+
+    @Test
+    public void shouldReturnNoEnforcementErrorWhenEnforcementOff() {
+        // given — outputSchema declared but enforcement NOT enabled (the default): a
+        // non-conforming body must remain fail-soft (no enforcement error), so the
+        // existing validate-and-log behaviour is unchanged
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion()
+                .withText("{\"name\":\"Ada\"}")
+                .withOutputSchema(PERSON_SCHEMA));
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // when
+        HttpResponse enforcementError = handler.enforcementErrorResponseOrNull(llmResponse, request);
+
+        // then — no enforcement error, the response is delivered normally (fail-soft path)
+        assertThat(enforcementError, is(nullValue()));
+        // and the fail-soft path still flags the non-conformance via the diagnostic header
+        HttpResponse response = handler.handle(llmResponse, request);
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), containsString("Ada"));
+        assertThat(response.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), not(is("")));
+    }
+
+    @Test
+    public void shouldReturnEnforcementErrorWhenEnforcementOnAndBodyNonConformant() {
+        // given — enforcement enabled and the configured text violates the schema (missing "age")
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion()
+                .withText("{\"name\":\"Ada\"}")
+                .withOutputSchema(PERSON_SCHEMA)
+                .enforceOutputSchema());
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // when
+        HttpResponse enforcementError = handler.enforcementErrorResponseOrNull(llmResponse, request);
+
+        // then — fail loudly: a provider-correct error with the enforcement status, NOT the
+        // non-conforming body
+        assertThat(enforcementError, is(notNullValue()));
+        assertThat(enforcementError.getStatusCode(), is(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_ENFORCEMENT_STATUS));
+        // Anthropic provider-correct error envelope
+        assertThat(enforcementError.getBodyAsString(), containsString("\"type\":\"error\""));
+        assertThat(enforcementError.getBodyAsString(), containsString("api_error"));
+        // the non-conforming text is not leaked into the error body
+        assertThat(enforcementError.getBodyAsString(), not(containsString("Ada")));
+        String diagnostic = enforcementError.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER);
+        assertThat(diagnostic, not(is("")));
+        assertThat(diagnostic.contains("\n") || diagnostic.contains("\r"), is(false));
+    }
+
+    @Test
+    public void shouldReturnNoEnforcementErrorWhenEnforcementOnAndBodyConformant() {
+        // given — enforcement enabled and the configured text conforms to the schema
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion()
+                .withText("{\"name\":\"Ada\",\"age\":36}")
+                .withOutputSchema(PERSON_SCHEMA)
+                .enforceOutputSchema());
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // when
+        HttpResponse enforcementError = handler.enforcementErrorResponseOrNull(llmResponse, request);
+
+        // then — conformant, so no enforcement error; the response is delivered normally
+        assertThat(enforcementError, is(nullValue()));
+        HttpResponse response = handler.handle(llmResponse, request);
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getBodyAsString(), containsString("Ada"));
+        assertThat(response.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), is(""));
+    }
+
+    @Test
+    public void shouldReturnNoEnforcementErrorWhenEnforcementOnButNoSchema() {
+        // given — enforcement enabled but no outputSchema: nothing to check, so no error
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion()
+                .withText("anything at all")
+                .enforceOutputSchema());
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // when / then
+        assertThat(handler.enforcementErrorResponseOrNull(llmResponse, request), is(nullValue()));
+    }
+
+    @Test
+    public void shouldReturnNoEnforcementErrorWhenEnforcementOnButSchemaMalformed() {
+        // given — enforcement enabled but the schema is rejected by the validator: a
+        // malformed schema is a no-op and must never produce an enforcement error
+        MockServerLogger mockLogger = mock(MockServerLogger.class);
+        when(mockLogger.isEnabledForInstance(any(Level.class))).thenReturn(true);
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(mockLogger);
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion()
+                .withText("{\"name\":\"Ada\"}")
+                .withOutputSchema("{ this is not valid json schema")
+                .enforceOutputSchema());
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // when / then
+        assertThat(handler.enforcementErrorResponseOrNull(llmResponse, request), is(nullValue()));
+    }
+
+    @Test
+    public void shouldUseProviderCorrectEnforcementErrorForOpenAi() {
+        // given — enforcement on, OpenAI provider, non-conformant body
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.OPENAI)
+            .withModel("gpt-4o")
+            .withCompletion(completion()
+                .withText("not json at all")
+                .withOutputSchema(PERSON_SCHEMA)
+                .enforceOutputSchema());
+        HttpRequest request = request().withPath("/v1/chat/completions");
+
+        // when
+        HttpResponse enforcementError = handler.enforcementErrorResponseOrNull(llmResponse, request);
+
+        // then — OpenAI error envelope at the enforcement status
+        assertThat(enforcementError, is(notNullValue()));
+        assertThat(enforcementError.getStatusCode(), is(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_ENFORCEMENT_STATUS));
+        assertThat(enforcementError.getBodyAsString(), containsString("server_error"));
+    }
+
     // --- stateful quota (chaos rate limit) ---
 
     @Test

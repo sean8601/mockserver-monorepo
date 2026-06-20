@@ -2637,6 +2637,7 @@ public class McpToolRegistry {
         ArrayNode outputSchemaAnyOf = outputSchemaProp.putArray("anyOf");
         outputSchemaAnyOf.add(objectMapper.createObjectNode().put("type", "string"));
         outputSchemaAnyOf.add(objectMapper.createObjectNode().put("type", "object"));
+        properties.putObject("enforceOutputSchema").put("type", "boolean").put("description", "Opt-in strict structured-output enforcement (default false). When true and an 'outputSchema' is set, a non-conforming configured response fails loudly with a provider-correct error (HTTP 502) instead of the fail-soft diagnostic header — modelling a provider's strict response_format:json_schema mode that guarantees schema-valid output.");
         putChaosSchema(properties);
         ArrayNode required = schema.putArray("required");
         required.add("provider");
@@ -2747,6 +2748,12 @@ public class McpToolRegistry {
                 } else {
                     return errorResult("'outputSchema' must be a JSON Schema string or object");
                 }
+            }
+
+            // Optional strict structured-output enforcement
+            JsonNode enforceOutputSchemaNode = params.path("enforceOutputSchema");
+            if (enforceOutputSchemaNode.isBoolean() && enforceOutputSchemaNode.asBoolean()) {
+                completion.enforceOutputSchema();
             }
 
             // Model
