@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
+  `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
+  `closest match diff:` block for the specific sequence step that failed to match — listing which fields
+  (method/path/headers/body/...) differ from the closest recorded request — exactly as single-request and
+  single-response verification already do. Response-aware sequences (`withResponses(...)`) get the same
+  field-level closest-response diff for the failing step. The diff is diagnostic only and never changes the
+  pass/fail outcome; the existing failure-message format is otherwise unchanged, and when
+  `detailedVerificationFailures` is disabled the message is byte-for-byte the same as before.
 - **A2A mock builder: streaming and push notifications** (`A2aMockBuilder`, `mockserver-client-java`). The builder
   previously hard-coded the agent card's `capabilities.streaming` and `capabilities.pushNotifications` to `false`.
   Two opt-in features now make those advertise `true` when configured (default off = unchanged behaviour):

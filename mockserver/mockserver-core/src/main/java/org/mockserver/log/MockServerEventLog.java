@@ -860,7 +860,10 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                                     }
                                 }
                                 if (!foundRequest) {
-                                    failureMessage = verificationSequenceFailureMessage(verificationSequence, logCorrelationId, requestDefinitions);
+                                    // expectation-ID sequence steps match by recorded expectation id, not by
+                                    // request fields, so there is no per-field template to diff against — pass
+                                    // null so no closest-match diff is appended for this path
+                                    failureMessage = verificationSequenceFailureMessage(verificationSequence, logCorrelationId, requestDefinitions, null);
                                     break;
                                 }
                             }
@@ -923,7 +926,7 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                                 List<HttpResponse> recordedResponses = allPairs.stream()
                                     .map(LogEventRequestAndResponse::getHttpResponse)
                                     .collect(Collectors.toList());
-                                failureMessage = verificationResponseSequenceFailureMessage(verificationSequence, logCorrelationId, recordedResponses);
+                                failureMessage = verificationResponseSequenceFailureMessage(verificationSequence, logCorrelationId, recordedResponses, verificationHttpRequest, verificationHttpResponse);
                                 break;
                             }
                         }
@@ -949,7 +952,7 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                                     }
                                 }
                                 if (!foundRequest) {
-                                    failureMessage = verificationSequenceFailureMessage(verificationSequence, logCorrelationId, allRequests);
+                                    failureMessage = verificationSequenceFailureMessage(verificationSequence, logCorrelationId, allRequests, verificationHttpRequest);
                                     break;
                                 }
                             }
@@ -1080,7 +1083,7 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         resultConsumer.accept(failureMessage);
     }
 
-    private String verificationSequenceFailureMessage(VerificationSequence verificationSequence, String logCorrelationId, List<RequestDefinition> allRequests) {
+    private String verificationSequenceFailureMessage(VerificationSequence verificationSequence, String logCorrelationId, List<RequestDefinition> allRequests, RequestDefinition unmatchedStepRequest) {
         String failureMessage;
         String serializedRequestToBeVerified = requestDefinitionSerializer.serialize(true, verificationSequence.getHttpRequests());
         Integer maximumNumberOfRequestToReturnInVerificationFailure = verificationSequence.getMaximumNumberOfRequestToReturnInVerificationFailure() != null ? verificationSequence.getMaximumNumberOfRequestToReturnInVerificationFailure() : configuration.maximumNumberOfRequestToReturnInVerificationFailure();
@@ -1089,6 +1092,17 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
             failureMessage = "Request sequence not found, expected:<" + serializedRequestToBeVerified + "> but was:<" + serializedAllRequestInLog + ">";
         } else {
             failureMessage = "Request sequence not found, expected:<" + serializedRequestToBeVerified + "> but was not found, found " + allRequests.size() + " other requests";
+        }
+        // Mirror the single-request verify path (verifyRequest -> buildClosestMatchDiff): when detailed
+        // failures are enabled and there is a recorded request to compare against, append a field-level
+        // closest-match diff for the specific sequence step that failed to match, so the failure shows
+        // which fields (method/path/headers/body/...) differ from the closest actual request. This is
+        // diagnostic only — it never changes the pass/fail outcome (already inside the failed branch).
+        if (configuration.detailedVerificationFailures() && unmatchedStepRequest instanceof HttpRequest && !allRequests.isEmpty()) {
+            String diffSummary = buildClosestMatchDiff((HttpRequest) unmatchedStepRequest, allRequests);
+            if (isNotBlank(diffSummary)) {
+                failureMessage += diffSummary;
+            }
         }
         final Object[] arguments = new Object[]{verificationSequence.getHttpRequests(), allRequests.size() == 1 ? allRequests.get(0) : allRequests};
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
@@ -1105,7 +1119,7 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
         return failureMessage;
     }
 
-    private String verificationResponseSequenceFailureMessage(VerificationSequence verificationSequence, String logCorrelationId, List<HttpResponse> recordedResponses) {
+    private String verificationResponseSequenceFailureMessage(VerificationSequence verificationSequence, String logCorrelationId, List<HttpResponse> recordedResponses, RequestDefinition unmatchedStepRequest, HttpResponse unmatchedStepResponse) {
         // for a response-aware sequence the meaningful "expected" and "actual" are the RESPONSES,
         // not the requests — serialize the expected response sequence and the recorded responses
         HttpResponseSerializer httpResponseSerializer = new HttpResponseSerializer(mockServerLogger);
@@ -1122,6 +1136,24 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
             failureMessage = "Response sequence not found, expected:<" + serializedExpectedResponses + "> but was:<" + serializedRecordedResponses + ">";
         } else {
             failureMessage = "Response sequence not found, expected:<" + serializedExpectedResponses + "> but was not found, found " + recordedResponses.size() + " other responses";
+        }
+        // Mirror the single-response verify path (verifyResponse -> buildClosestResponseMatchDiff): when
+        // detailed failures are enabled and the failed step constrains the response, append a field-level
+        // closest-response diff for that step against the recorded responses. Diagnostic only.
+        if (configuration.detailedVerificationFailures() && unmatchedStepResponse != null && !recordedResponses.isEmpty()) {
+            List<HttpResponse> nonNullRecordedResponses = recordedResponses.stream()
+                .filter(Objects::nonNull)
+                .limit(maximumNumberOfRequestToReturnInVerificationFailure)
+                .collect(Collectors.toList());
+            if (!nonNullRecordedResponses.isEmpty()) {
+                Verification diffVerification = new Verification()
+                    .withRequest(unmatchedStepRequest instanceof HttpRequest ? unmatchedStepRequest : null)
+                    .withResponse(unmatchedStepResponse);
+                String diffSummary = buildClosestResponseMatchDiff(diffVerification, unmatchedStepResponse, nonNullRecordedResponses);
+                if (isNotBlank(diffSummary)) {
+                    failureMessage += diffSummary;
+                }
+            }
         }
         if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
             mockServerLogger.logEvent(
