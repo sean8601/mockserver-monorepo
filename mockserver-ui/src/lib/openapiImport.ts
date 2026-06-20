@@ -85,7 +85,9 @@ export function discoverNamedExamples(specOrUrl: string): OperationExamples[] {
 }
 
 /**
- * Discover every operationId declared by an inline JSON spec, in document order.
+ * Discover every operationId the server will use for an inline JSON spec, in
+ * document order — including the ids it SYNTHESIZES for operations that declare
+ * no explicit `operationId`.
  *
  * Mirrors {@link discoverNamedExamples} in input handling: only an inline JSON
  * payload is inspected (a URL or YAML payload is sent untouched and yields an
@@ -97,6 +99,21 @@ export function discoverNamedExamples(specOrUrl: string): OperationExamples[] {
  * whose id is a key of that map). So when the user pins a named example for one
  * operation, every other operation must still appear in the map — with a
  * default-preserving value — or it would be silently dropped from the import.
+ *
+ * For an operation WITHOUT an explicit `operationId`, the server synthesizes one
+ * (see `OpenAPIParser.synthesizeOperationIds`) of the exact form
+ * `"<UPPERCASE_METHOD> <path>"`, e.g. `"GET /pets"`. We replicate that format
+ * byte-for-byte (see {@link synthesizeOperationId}) so the synthesized key is a
+ * key of `operationsAndResponses` too — otherwise an id-less operation would be
+ * filtered out and silently dropped whenever ANY example is pinned.
+ *
+ * Limitation: the server disambiguates colliding ids by appending ` (n)` (see
+ * `OpenAPIParser.ensureUnique`). We do not replicate that here — a synthesized
+ * id can only collide with an authored id that happens to equal `"METHOD path"`,
+ * or with another synthesized id for the same method+path (impossible within one
+ * pathItem). In the unlikely collision case the server renames its synthesized
+ * id and that operation falls back to the server default — never dropped — so
+ * the data-loss path stays closed.
  */
 export function discoverAllOperationIds(specOrUrl: string): string[] {
   const trimmed = specOrUrl.trim();
@@ -113,18 +130,33 @@ export function discoverAllOperationIds(specOrUrl: string): string[] {
     return [];
   }
   const operationIds: string[] = [];
-  for (const pathItem of Object.values(spec.paths)) {
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
     if (!isRecord(pathItem)) {
       continue;
     }
     for (const method of HTTP_METHODS) {
       const operation = pathItem[method];
-      if (isRecord(operation) && typeof operation.operationId === 'string') {
-        operationIds.push(operation.operationId);
+      if (!isRecord(operation)) {
+        continue;
       }
+      const operationId =
+        typeof operation.operationId === 'string' && operation.operationId.trim() !== ''
+          ? operation.operationId
+          : synthesizeOperationId(method, path);
+      operationIds.push(operationId);
     }
   }
   return operationIds;
+}
+
+/**
+ * Synthesize the operationId the server generates for an operation that declares
+ * no explicit `operationId`. Matches `OpenAPIParser.synthesizeOperationIds`
+ * byte-for-byte: the UPPERCASE HTTP method, a single space, then the path —
+ * e.g. `synthesizeOperationId('get', '/pets')` returns `"GET /pets"`.
+ */
+function synthesizeOperationId(method: string, path: string): string {
+  return `${method.toUpperCase()} ${path}`;
 }
 
 /**

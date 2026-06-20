@@ -120,6 +120,50 @@ describe('importOpenApi', () => {
     expect(opsAndResponses.getPet).toBe('');
     expect(opsAndResponses.deletePet).toBe('');
   });
+
+  // Data-loss regression: the server SYNTHESIZES an operationId of the form
+  // "<METHOD> <path>" (OpenAPIParser.synthesizeOperationIds) for any operation
+  // that declares no operationId, then OpenAPIConverter filters generation by
+  // that synthesized key. So a spec mixing a pinned, id-bearing operation with
+  // an id-LESS operation must still send the synthesized key (with a blank,
+  // default-preserving value) — otherwise the id-less operation is dropped.
+  it('keeps an id-less operation (via its synthesized key) when another operation pins an example', async () => {
+    const mixedSpec = JSON.stringify({
+      openapi: '3.0.0',
+      paths: {
+        '/pets': {
+          get: {
+            operationId: 'listPets',
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    examples: { oneCat: { value: [] }, twoDogs: { value: [] } },
+                  },
+                },
+              },
+            },
+          },
+        },
+        // NOTE: no operationId — the server will synthesize "POST /pets/import"
+        '/pets/import': {
+          post: { responses: { '202': {} } },
+        },
+      },
+    });
+    const calls = stubFetch(201, []);
+    await importOpenApi(params, mixedSpec, {
+      listPets: { statusCode: '200', exampleName: 'twoDogs' },
+    });
+    const sent = JSON.parse(String(calls[0]?.init?.body)) as Array<Record<string, unknown>>;
+    const opsAndResponses = sent[0]?.operationsAndResponses as Record<string, unknown>;
+    // the pinned, id-bearing operation
+    expect(opsAndResponses.listPets).toEqual({ statusCode: '200', exampleName: 'twoDogs' });
+    // the id-less operation must survive under the server's synthesized key,
+    // with a default-preserving blank value — not silently dropped
+    expect(opsAndResponses).toHaveProperty('POST /pets/import', '');
+    expect(Object.keys(opsAndResponses).sort()).toEqual(['POST /pets/import', 'listPets'].sort());
+  });
 });
 
 describe('discoverAllOperationIds', () => {
@@ -135,6 +179,37 @@ describe('discoverAllOperationIds', () => {
   it('returns an empty list for unparseable JSON or a spec without paths', () => {
     expect(discoverAllOperationIds('{ not valid json')).toEqual([]);
     expect(discoverAllOperationIds('{"openapi":"3.0.0"}')).toEqual([]);
+  });
+
+  // The server synthesizes "<UPPERCASE_METHOD> <path>" for an id-less operation
+  // (OpenAPIParser.synthesizeOperationIds). We must emit the same key so it is a
+  // key of operationsAndResponses (and therefore not filtered out by the server).
+  it('synthesizes "<METHOD> <path>" for operations without an explicit operationId', () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      paths: {
+        '/pets': {
+          get: { operationId: 'listPets', responses: { '200': {} } },
+          post: { responses: { '201': {} } },
+        },
+        '/pets/{id}': {
+          delete: { responses: { '204': {} } },
+        },
+      },
+    });
+    expect(discoverAllOperationIds(spec)).toEqual([
+      'listPets',
+      'POST /pets',
+      'DELETE /pets/{id}',
+    ]);
+  });
+
+  it('treats a blank operationId the same as a missing one (synthesizes a key)', () => {
+    const spec = JSON.stringify({
+      openapi: '3.0.0',
+      paths: { '/ping': { get: { operationId: '   ', responses: { '200': {} } } } },
+    });
+    expect(discoverAllOperationIds(spec)).toEqual(['GET /ping']);
   });
 });
 

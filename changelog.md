@@ -88,7 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OpenAPIConverter` already honours), so no server change was needed. Because `operationsAndResponses`
   also acts as an operation filter on the server, picking an example for one operation still imports
   **all** operations — the picked one with its example and every other operation with the spec default
-  — rather than silently dropping the rest. Leaving every picker on **Default** sends no override at all,
+  — rather than silently dropping the rest. Operations that declare no `operationId` are preserved too:
+  the dialog replicates the server's synthesized `"<METHOD> <path>"` id (e.g. `GET /pets`) so an id-less
+  operation survives the import even when another operation pins an example. Leaving every picker on **Default** sends no override at all,
   preserving MockServer's default example selection. URL and YAML specs are sent untouched (no picker),
   and `$ref`-resolved examples are not surfaced since the dialog inspects the raw pasted JSON.
 - **LLM audio content parts and `tool_choice` support (OpenAI codec)**: the OpenAI Chat Completions decoder now
