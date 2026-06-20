@@ -869,6 +869,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 ### Fixed
+- **mTLS server startup with a supplied leaf+CA certificate chain on Java 17**: when MockServer was
+  configured with a TLS X.509 certificate file that already contained the full chain (leaf followed by
+  the CA), the CA was appended a second time, producing a `[leaf, CA, CA]` chain. Java 17's PKCS12
+  keystore rejects the duplicate with `KeyStoreException: Certificate chain is not valid`, so the server
+  failed to start its TLS context (Java 21 tolerated it, masking the bug). The certificate chain now
+  de-duplicates the CA, so a supplied full-chain PEM yields `[leaf, CA]` and mTLS starts correctly on
+  Java 17.
 - **JetBrains IDE plugin no longer capped to old IDE builds**: the plugin previously declared
   `untilBuild=253.*`, which excluded it from newer IDEs (e.g. build 261+) and triggered JetBrains
   Marketplace "limited `until-build`" warnings. Compatibility is now left open-ended (empty
