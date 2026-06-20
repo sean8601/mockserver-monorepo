@@ -63,6 +63,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ENABLED = "mockserver.chaosAutoHaltEnabled";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD = "mockserver.chaosAutoHaltErrorThreshold";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS = "mockserver.chaosAutoHaltWindowMillis";
+    private static final String MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED = "mockserver.connectionLifecycleChaosEnabled";
+    private static final String MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS = "mockserver.preemptionSimulationMaxDrainMillis";
+    private static final String MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST = "mockserver.connectionLifecycleAutoHaltCountsRst";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
@@ -664,6 +667,54 @@ public class ConfigurationProperties {
      */
     public static void chaosAutoHaltWindowMillis(long millis) {
         setProperty(MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS, "" + millis);
+    }
+
+    public static boolean connectionLifecycleChaosEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED, "MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED", "" + true));
+    }
+
+    /**
+     * Master switch for connection-lifecycle / graceful-shutdown fault injection (mid-response RST,
+     * host-scoped slow close, HTTP/2 GOAWAY, and the preemption/SIGTERM simulator). Default true.
+     * The response-path lookups are gated on the active registration count, so when no
+     * connection-lifecycle faults and no preemption are configured the feature adds nothing to the
+     * hot path even when enabled — set this to false only to hard-disable the feature.
+     *
+     * @param enable enable connection-lifecycle chaos
+     */
+    public static void connectionLifecycleChaosEnabled(boolean enable) {
+        setProperty(MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED, "" + enable);
+    }
+
+    public static long preemptionSimulationMaxDrainMillis() {
+        return Math.max(0L, readLongProperty(MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS, "MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS", 86_400_000L));
+    }
+
+    /**
+     * Hard upper bound (in milliseconds) on a preemption simulation's drain window and TTL. A
+     * {@code PUT /mockserver/preemption} request asking for a larger value is clamped to this cap, so
+     * a forgotten or runaway simulation cannot cordon the server indefinitely. Default is 86400000
+     * (24 hours).
+     *
+     * @param millis maximum drain/TTL milliseconds
+     */
+    public static void preemptionSimulationMaxDrainMillis(long millis) {
+        setProperty(MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS, "" + millis);
+    }
+
+    public static boolean connectionLifecycleAutoHaltCountsRst() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST, "MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST", "" + true));
+    }
+
+    /**
+     * When true, a connection-lifecycle RST (the mid-response RST) counts as a destructive "drop"
+     * fault for the chaos auto-halt circuit-breaker, so a RST storm trips the breaker and halts
+     * chaos. Default true.
+     *
+     * @param enable count lifecycle RSTs toward auto-halt
+     */
+    public static void connectionLifecycleAutoHaltCountsRst(boolean enable) {
+        setProperty(MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST, "" + enable);
     }
 
     public static boolean mcpEnabled() {

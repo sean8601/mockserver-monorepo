@@ -167,7 +167,8 @@ deterministically via `advanceNow()` without wall-clock sleeps.
 
 `ChaosAutoHaltMonitor` is a safety circuit-breaker for service-scoped chaos. When
 enabled, it maintains a sliding window of **destructive fault** timestamps. If the
-count in the window exceeds the threshold, it calls `ServiceChaosRegistry.reset()`.
+count in the window exceeds the threshold, it calls both `ServiceChaosRegistry.reset()`
+and `TcpChaosRegistry.reset()`.
 
 An experiment detects this at the next stage boundary: if
 `ServiceChaosRegistry.entries().isEmpty()` and the status is `running`, the
@@ -179,6 +180,7 @@ sequenceDiagram
     participant M as Metrics
     participant AHM as ChaosAutoHaltMonitor
     participant SCR as ServiceChaosRegistry
+    participant TCR as TcpChaosRegistry
     participant EO as ChaosExperimentOrchestrator
 
     C->>M: Metrics.incrementHttpChaosInjected("error")
@@ -186,6 +188,7 @@ sequenceDiagram
     AHM->>AHM: Add timestamp to sliding window
     AHM->>AHM: Evict expired; check count >= threshold
     AHM->>SCR: reset() [if threshold exceeded]
+    AHM->>TCR: reset() [also resets TCP/lifecycle chaos]
     Note over EO: At next stage advance...
     EO->>SCR: entries().isEmpty() ?
     SCR-->>EO: true
@@ -197,6 +200,15 @@ Only **destructive** fault types count toward the window: `"error"` (synthetic
 `"slow"`, `"truncate"`, `"malformed"`, `"graphql"`) do not contribute — a
 latency-only experiment never auto-halts.
 
+Connection-lifecycle faults integrate as follows:
+- A mid-response RST (L1 `resetMidResponse`) records a `"drop"` fault,
+  contributing to the window (gated by `connectionLifecycleAutoHaltCountsRst`,
+  default `true`).
+- An HTTP/2 GOAWAY and a preemption 503 cordon are graceful drain signals and
+  are NOT counted.
+- When the breaker fires, `TcpChaosRegistry.reset()` is called alongside
+  `ServiceChaosRegistry.reset()`, so a lifecycle RST storm stops immediately.
+
 Auto-halt configuration (all `ConfigurationProperties`):
 
 | Property | Default | Description |
@@ -206,6 +218,135 @@ Auto-halt configuration (all `ConfigurationProperties`):
 | `chaosAutoHaltWindowMillis` | `60000` | Sliding window duration in ms |
 
 See [Metrics & Monitoring](metrics.md) for the `mock_server_chaos_auto_halt` counter.
+
+## Connection-Lifecycle Faults
+
+MockServer can simulate the fault patterns that appear when a server crashes mid-response, closes connections slowly, or signals graceful shutdown to HTTP/2 clients. These faults fire at response/dispatch time — the client sees them while or after the response head is written — as opposed to the connect-time faults in `TcpChaosHandler`.
+
+### Response-Path Faults (L1 / L2 / L3)
+
+The three faults are carried as new fields on `TcpChaosProfile` and are registered via the same `PUT /mockserver/tcpChaos` endpoint used for connect-time TCP faults. Lookup is keyed on the request `Host` header via `TcpChaosRegistry`.
+
+| Layer | Field | Behaviour |
+|-------|-------|-----------|
+| L1 | `resetMidResponse` | After the response head is flushed, forces a TCP RST (SO_LINGER 0 + `channel.close()`, the same RST mechanism as `TcpChaosHandler`) instead of a clean FIN. The client sees "connection reset" mid-stream — the "server crashed while replying" fault. |
+| L2 | `slowCloseDelay` | A `Delay` (with optional jitter) applied before the socket FIN on the response path, even when `ConnectionOptions.closeSocketDelay` is null. Lets a host linger on close without a per-expectation connection option. |
+| L3 | `http2GoAway` | On HTTP/2 connections, emits a GOAWAY frame on the response path before the response head so the client stops opening new streams. `http2GoAwayErrorCode` (default 0 = NO_ERROR) and `http2GoAwayLastStreamId` (default: current connection last-stream) are also configurable. HTTP/1.1 connections have no GOAWAY concept; callers degrade to `Connection: close` + 503 instead. |
+
+Example registration:
+
+```json
+PUT /mockserver/tcpChaos
+{
+  "host": "payments.svc",
+  "chaos": {
+    "resetMidResponse": true
+  }
+}
+```
+
+**Hot-path guarantee.** `NettyResponseWriter.resolveLifecycleProfile()` returns `null` (and adds zero overhead) when `connectionLifecycleChaosEnabled` is `false` OR when `TcpChaosRegistry.activeCount() == 0`. The `activeCount()` check is a single volatile read. The normal response path is byte-for-byte unchanged when no lifecycle chaos is registered.
+
+**Streaming carve-out (v1).** The L1/L2/L3 response-path faults (`resetMidResponse`, `slowCloseDelay`, `http2GoAway`) are applied in `NettyResponseWriter.writeAndCloseSocket()` — the non-streaming response path. The streaming response path (`writeStreamingResponse`, used for SSE / chunked-streaming responses) does **not** apply these faults in v1; a streaming response completes normally even when a host has a lifecycle profile registered. This is a deliberate v1 limitation, not a bug.
+
+**Host-scoping is not control-plane-exempt.** Like the connect-time `TcpChaosHandler`, the response-path lifecycle faults are keyed on the request `Host` header. They are **not** exempt from the control plane: a profile registered against the host MockServer itself is served on (e.g. `localhost`) will apply to control-plane responses (`/mockserver/...`) on that host too — so a `resetMidResponse` profile on the chaos host can RST a control-plane response. Register lifecycle profiles against the *mocked upstream* host, not the MockServer host, to avoid disrupting the control plane. (The L6 preemption cordon, by contrast, *is* control-plane-exempt.)
+
+### Preemption Simulation (`/mockserver/preemption`)
+
+The preemption endpoint simulates a Kubernetes node drain, Spot reclamation, or pre-SIGTERM sequence: the server **cordons** itself (turning away new data-plane exchanges), allows in-flight requests to drain for a bounded window, and signals HTTP/2 clients to drain via GOAWAY. It is a simulation only — it never stops the JVM or event loops.
+
+While cordoned, a new exchange is turned away **lazily on its next request** (there is no per-channel registry and no broadcast at cordon time):
+- **HTTP/1.1** — when the mode rejects new exchanges (`reject503` or `both`), the request is answered with `503 + Retry-After + Connection: close` so a load balancer routes elsewhere. HTTP/1.1 has no GOAWAY, so a `goaway`-only cordon cannot signal an HTTP/1.1 client and the request is served normally.
+- **HTTP/2** — when the mode includes GOAWAY (`goaway` or `both`), a connection-level GOAWAY is emitted on the cordoned connection so the client stops opening new streams. In `both` mode the request is additionally answered with 503; in `goaway`-only mode the in-flight request still completes normally after the GOAWAY.
+
+In-flight requests are allowed to drain; `GET /mockserver/preemption` reports the **live** in-flight count (wired from `LifeCycle.getRequestsInFlight()`). The cordon clears on an explicit `DELETE` or automatically after `ttlMillis` (a dead-man's switch). There is no force-RST of stragglers in v1 — once the drain window elapses the state simply reports `"drained"` and the cordon persists until TTL/uncordon.
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant PS as PreemptionSimulator
+    participant H as HttpRequestHandler
+    participant C as Client
+
+    OP->>PS: PUT /mockserver/preemption
+    PS->>PS: start(): set cordoned=true, drainDeadline, ttlExpiry
+
+    C->>H: New HTTP/2 request on cordoned connection
+    H->>PS: isCordoned() + emitsGoAway()
+    PS-->>H: true
+    H-->>C: HTTP/2 GOAWAY (+ 503 in both mode)
+
+    C->>H: New HTTP/1.1 request (reject503 / both)
+    H->>PS: isCordoned() + rejectsNewExchanges()
+    PS-->>H: true
+    H-->>C: 503 + Retry-After + Connection: close
+
+    Note over PS: drain window elapses
+    PS->>PS: drainDeadlinePassed(): state = "drained"
+
+    OP->>PS: DELETE /mockserver/preemption
+    PS->>PS: uncordon(): cordoned=false
+```
+
+**Mode enum** (`PreemptionRequest.Mode`):
+
+| Mode | HTTP/1.1 | HTTP/2 |
+|------|----------|--------|
+| `reject503` | 503 + Retry-After + Connection: close | 503 + Retry-After + Connection: close (no GOAWAY) |
+| `goaway` | served normally (HTTP/1.1 has no GOAWAY, and 503 is not requested) | connection-level GOAWAY emitted; the in-flight request still completes (no 503) |
+| `both` (default) | 503 + Retry-After + Connection: close | GOAWAY **and** 503 |
+
+**Control-plane endpoints:**
+
+| Endpoint | Action |
+|----------|--------|
+| `PUT /mockserver/preemption` | Start (or replace) a preemption simulation. Body: `PreemptionRequest` JSON. Returns 200 + effective request (with defaults/clamping resolved). |
+| `GET /mockserver/preemption` | Return current state: `{state, inFlight, drainRemainingMillis, mode}`. `state` is `"inactive"`, `"draining"`, or `"drained"`. |
+| `DELETE /mockserver/preemption` | Uncordon immediately. Idempotent. |
+
+**L6 cordon check in `HttpRequestHandler`.** When `connectionLifecycleChaosEnabled` is true and `PreemptionSimulator.isCordoned()` is true, any non-control-plane request (path does not start with `/mockserver/`) is handled by the cordon branch: if the mode `emitsGoAway()` and the connection is HTTP/2, a GOAWAY is emitted (the `Http2GoAwayEmitter.emit(...)` return value is the HTTP/2 detection — it is a no-op returning `false` on HTTP/1.1); if the mode `rejectsNewExchanges()`, the request is answered with 503 + `Retry-After` + `Connection: close` and the in-flight token is completed immediately. The control plane (`/mockserver/...`) is exempt so the operator can always observe and uncordon. The in-flight token is completed on every branch, so the drain counter can never leak. The `isCordoned()` probe is a single volatile read when no simulation is active.
+
+**Request fields:**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `mode` | `both` | Rejection + GOAWAY strategy (see table above) |
+| `drainMillis` | `stopDrainMillis` config value | Drain window; clamped to `preemptionSimulationMaxDrainMillis` |
+| `ttlMillis` | `0` (no auto-uncordon) | Dead-man's switch: auto-clears the cordon after this many ms; clamped to `preemptionSimulationMaxDrainMillis` |
+| `lastStreamId` | `null` (current connection last-stream) | `lastStreamId` carried on the GOAWAY frame (HTTP/2 modes only) |
+
+**TTL dead-man's switch.** If `ttlMillis` is set, the cordon auto-clears lazily on the next `isCordoned()` call once the TTL has elapsed. This prevents a forgotten simulation from permanently blocking traffic.
+
+**Hard cap.** Both `drainMillis` and `ttlMillis` are clamped to `preemptionSimulationMaxDrainMillis` (default 86400000 ms = 24 h), preventing runaway simulations.
+
+**State is cleared on server reset** (`HttpState.reset()`).
+
+### C1 Auto-Halt: Connection-Lifecycle Integration
+
+The `ChaosAutoHaltMonitor` circuit-breaker now also covers connection-lifecycle faults:
+
+- **`TcpChaosRegistry` is cleared on halt.** When the breaker fires, `ChaosAutoHaltMonitor.recordError()` calls both `ServiceChaosRegistry.getInstance().reset()` and `TcpChaosRegistry.getInstance().reset()`. Without the TCP-registry clear, a mid-response RST storm driven by a host TCP-chaos profile would keep firing even after the breaker tripped.
+- **Mid-response RST counts as a "drop" fault.** When `connectionLifecycleAutoHaltCountsRst` is true (default), a `resetMidResponse` records `Metrics.incrementHttpChaosInjected("drop")`, which routes into the auto-halt sliding window alongside connection drops from service-scoped chaos. Set `connectionLifecycleAutoHaltCountsRst=false` to exclude lifecycle RSTs from the breaker count.
+- **GOAWAY and the preemption 503 cordon are benign.** An HTTP/2 GOAWAY and a preemption 503 are graceful drain signals and are NOT counted toward the auto-halt window.
+
+### New Configuration Properties
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `connectionLifecycleChaosEnabled` | `true` | Master switch for the response-path faults (L1/L2/L3) and the L6 cordon check. When `false`, `resolveLifecycleProfile()` always returns null and the cordon check is skipped entirely. |
+| `preemptionSimulationMaxDrainMillis` | `86400000` (24 h) | Hard cap applied to both `drainMillis` and `ttlMillis` on a `PreemptionRequest`. |
+| `connectionLifecycleAutoHaltCountsRst` | `true` | When true, a mid-response RST (L1) records a "drop" fault toward the auto-halt circuit-breaker. |
+
+### Key Classes
+
+| Class | Module | Path |
+|-------|--------|------|
+| `TcpChaosProfile` | mockserver-core | `org.mockserver.model.TcpChaosProfile` (new fields: `resetMidResponse`, `resetAfterResponseChunks`, `slowCloseDelay`, `http2GoAway`, `http2GoAwayErrorCode`, `http2GoAwayLastStreamId`) |
+| `PreemptionRequest` | mockserver-core | `org.mockserver.model.PreemptionRequest` |
+| `PreemptionSimulator` | mockserver-core | `org.mockserver.mock.action.http.PreemptionSimulator` |
+| `Http2GoAwayEmitter` | mockserver-netty | `org.mockserver.netty.unification.Http2GoAwayEmitter` |
+| `NettyResponseWriter` | mockserver-netty | `org.mockserver.netty.responsewriter.NettyResponseWriter` (L1/L2/L3 faults, `resolveLifecycleProfile()`) |
+| `HttpRequestHandler` | mockserver-netty | `org.mockserver.netty.HttpRequestHandler` (L6 cordon check) |
 
 ## Relationship to Service-Scoped Chaos
 

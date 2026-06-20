@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Live Streams** list where each can be Continued, Modified (with a new Base64 payload), or Dropped, replying
   over the frozen callback WebSocket with a `StreamFrameDecisionDTO` — completing parity with the dashboard and
   the VS Code extension's stream-frame contract.
+- **Connection-lifecycle fault injection + preemption simulation** (`mockserver-core`, `mockserver-netty`).
+  Extends the per-host TCP chaos profile with response-path lifecycle faults — mid-response TCP RST
+  (`resetMidResponse`), host-scoped jittered slow-close (`slowCloseDelay`), and HTTP/2 GOAWAY (`http2GoAway`) —
+  configured through the existing `PUT /mockserver/tcpChaos`. Adds a `PUT/GET/DELETE /mockserver/preemption`
+  control plane that simulates a Kubernetes rolling-update / spot-reclaim drain: it cordons new exchanges
+  (HTTP/2 GOAWAY or `503` + `Connection: close`), reports the live in-flight count while draining, and
+  auto-uncordons after a TTL — without stopping the JVM. Destructive RSTs feed the chaos auto-halt
+  circuit-breaker (which now also clears the TCP chaos registry); graceful drain signals do not. Off by
+  default; zero cost on the normal response path when inactive.
 - **Field-level closest-match diff for sequence verification failures** (`mockserver-core`). When
   `detailedVerificationFailures` is enabled (on by default), a failed `verify(...)` sequence now appends a
   `closest match diff:` block for the specific sequence step that failed to match — listing which fields

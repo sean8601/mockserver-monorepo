@@ -4,6 +4,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http.*;
 import io.netty.util.ReferenceCountUtil;
 import org.mockserver.configuration.Configuration;
@@ -11,6 +12,7 @@ import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
+import org.mockserver.mock.action.http.TcpChaosRegistry;
 import org.mockserver.mock.breakpoint.PausedStreamFrame;
 import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
 import org.mockserver.mock.breakpoint.StreamFrameDecision;
@@ -19,6 +21,8 @@ import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.StreamingBody;
+import org.mockserver.model.TcpChaosProfile;
+import org.mockserver.netty.unification.Http2GoAwayEmitter;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 
@@ -344,14 +348,88 @@ public class NettyResponseWriter extends ResponseWriter {
             closeChannel = !(request.isKeepAlive() != null && request.isKeepAlive());
         }
 
+        // Connection-lifecycle response-path faults (mid-response RST, HTTP/2 GOAWAY). Resolved from a
+        // host-scoped TcpChaosProfile. The lookup is gated on the feature flag AND the active
+        // registration count, so it adds nothing to the hot path when no TCP-layer chaos is configured.
+        TcpChaosProfile lifecycleProfile = resolveLifecycleProfile(request);
+
+        // L3: HTTP/2 GOAWAY on the response path. Emit before the response head is written so the
+        // client learns the connection is going away; the in-flight stream's response still completes.
+        if (lifecycleProfile != null && Boolean.TRUE.equals(lifecycleProfile.getHttp2GoAway())) {
+            long errorCode = lifecycleProfile.getHttp2GoAwayErrorCode() != null ? lifecycleProfile.getHttp2GoAwayErrorCode() : 0L;
+            long lastStreamId = lifecycleProfile.getHttp2GoAwayLastStreamId() != null ? lifecycleProfile.getHttp2GoAwayLastStreamId() : -1L;
+            Http2GoAwayEmitter.emit(ctx, lastStreamId, errorCode);
+            // GOAWAY is benign (graceful drain signal) so it is NOT counted toward the auto-halt window.
+        }
+
+        // L1: mid-stream RST — write the response head then force a TCP RST (SO_LINGER 0 + forced
+        // close) instead of a clean FIN, so the client sees "connection reset" mid-stream. This is a
+        // destructive fault, so it records a "drop" toward the chaos auto-halt circuit-breaker.
+        if (lifecycleProfile != null && Boolean.TRUE.equals(lifecycleProfile.getResetMidResponse())) {
+            writeHeadThenReset(ctx, response);
+            return;
+        }
+
         Delay chunkDelay = connectionOptions != null ? connectionOptions.getChunkDelay() : null;
         Integer chunkSize = connectionOptions != null ? connectionOptions.getChunkSize() : null;
         if (chunkDelay != null && chunkSize != null && chunkSize > 0) {
-            writeChunkedResponseWithDelay(ctx, response, connectionOptions, closeChannel, chunkDelay);
+            writeChunkedResponseWithDelay(ctx, response, connectionOptions, closeChannel, chunkDelay, lifecycleProfile);
         } else {
             ChannelFuture channelFuture = ctx.writeAndFlush(response);
-            addCloseSocketListener(channelFuture, connectionOptions, closeChannel);
+            addCloseSocketListener(channelFuture, connectionOptions, closeChannel, lifecycleProfile);
         }
+    }
+
+    /**
+     * Resolve the host-scoped {@link TcpChaosProfile} for connection-lifecycle response-path faults,
+     * keyed on the request's {@code Host} header (the mocked service identity), mirroring the
+     * host-keyed lookup used by {@code TcpChaosHandler}. Returns {@code null} (zero hot-path cost)
+     * when the feature is disabled or no TCP-layer chaos is registered.
+     */
+    private TcpChaosProfile resolveLifecycleProfile(HttpRequest request) {
+        if (request == null || !ConfigurationProperties.connectionLifecycleChaosEnabled()) {
+            return null;
+        }
+        TcpChaosRegistry registry = TcpChaosRegistry.getInstance();
+        if (registry.activeCount() == 0) {
+            return null;
+        }
+        String host = request.getFirstHeader("host");
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        return registry.get(host);
+    }
+
+    /**
+     * Write the response head, then force a TCP RST instead of a clean FIN once the head has been
+     * flushed: set {@code SO_LINGER 0} and {@code closeForcibly()} (mechanism from
+     * {@code TcpChaosHandler}). Records a "drop" toward the auto-halt circuit-breaker so a RST storm
+     * trips the breaker (which also resets the TcpChaosRegistry).
+     */
+    private void writeHeadThenReset(final ChannelHandlerContext ctx, HttpResponse response) {
+        ChannelFuture headFuture = ctx.writeAndFlush(response);
+        if (ConfigurationProperties.connectionLifecycleAutoHaltCountsRst()) {
+            // "drop" is a destructive fault type, so recordError runs the auto-halt evaluation.
+            Metrics.incrementHttpChaosInjected("drop");
+        }
+        headFuture.addListener((ChannelFutureListener) future -> forceReset(future.channel()));
+    }
+
+    /**
+     * Force a TCP RST on the channel: {@code SO_LINGER 0} makes the subsequent close send an RST
+     * rather than a clean FIN, then {@code channel.close()} closes the socket — which now aborts with
+     * an RST because of the zero linger. This matches the proven RST mechanism in
+     * {@code TcpChaosHandler} ({@code setOption(SO_LINGER, 0)} + {@code close()}), avoiding the
+     * {@code Unsafe} API. Pending writes are aborted; their buffers are released by Netty on close.
+     */
+    private void forceReset(io.netty.channel.Channel channel) {
+        try {
+            channel.config().setOption(ChannelOption.SO_LINGER, 0);
+        } catch (Exception ignore) {
+            // some channel types reject SO_LINGER; fall through to a close which still tears down
+        }
+        channel.close();
     }
 
     private void writeChunkedResponseWithDelay(
@@ -359,13 +437,14 @@ public class NettyResponseWriter extends ResponseWriter {
         HttpResponse response,
         ConnectionOptions connectionOptions,
         boolean closeChannel,
-        Delay chunkDelay
+        Delay chunkDelay,
+        TcpChaosProfile lifecycleProfile
     ) {
         List<DefaultHttpObject> httpObjects = new org.mockserver.mappers.MockServerHttpResponseToFullHttpResponse(mockServerLogger)
             .mapMockServerResponseToNettyResponse(response);
         if (httpObjects.size() <= 1) {
             ChannelFuture channelFuture = ctx.writeAndFlush(response);
-            addCloseSocketListener(channelFuture, connectionOptions, closeChannel);
+            addCloseSocketListener(channelFuture, connectionOptions, closeChannel, lifecycleProfile);
             return;
         }
         ChannelFuture headerFuture = ctx.writeAndFlush(httpObjects.get(0));
@@ -374,7 +453,7 @@ public class NettyResponseWriter extends ResponseWriter {
                 for (int i = 1; i < httpObjects.size(); i++) {
                     ReferenceCountUtil.release(httpObjects.get(i));
                 }
-                addCloseSocketListener(headerFuture, connectionOptions, closeChannel);
+                addCloseSocketListener(headerFuture, connectionOptions, closeChannel, lifecycleProfile);
                 return;
             }
             long cumulativeDelayMs = 0;
@@ -386,7 +465,7 @@ public class NettyResponseWriter extends ResponseWriter {
                     if (ctx.channel().isActive()) {
                         ChannelFuture chunkFuture = ctx.writeAndFlush(chunk);
                         if (isLast) {
-                            addCloseSocketListener(chunkFuture, connectionOptions, closeChannel);
+                            addCloseSocketListener(chunkFuture, connectionOptions, closeChannel, lifecycleProfile);
                         }
                     } else {
                         ReferenceCountUtil.release(chunk);
@@ -396,10 +475,23 @@ public class NettyResponseWriter extends ResponseWriter {
         });
     }
 
-    private void addCloseSocketListener(ChannelFuture channelFuture, ConnectionOptions connectionOptions, boolean closeChannel) {
+    /**
+     * Schedule the socket close after the terminating write completes. The close delay is resolved
+     * as: the per-expectation {@code ConnectionOptions.closeSocketDelay} when set; otherwise the
+     * host-scoped {@code TcpChaosProfile.slowCloseDelay} (L2 connection-lifecycle fault) when a chaos
+     * profile is active; otherwise an immediate close. The chaos branch is only ever reached when
+     * {@code lifecycleProfile} is non-null, which is the case only when connection-lifecycle chaos is
+     * enabled AND a host profile is registered — so the non-chaos path is byte-for-byte unchanged.
+     */
+    private void addCloseSocketListener(ChannelFuture channelFuture, ConnectionOptions connectionOptions, boolean closeChannel, TcpChaosProfile lifecycleProfile) {
         if (closeChannel || configuration.alwaysCloseSocketConnections()) {
             channelFuture.addListener((ChannelFutureListener) future -> {
                 Delay closeSocketDelay = connectionOptions != null ? connectionOptions.getCloseSocketDelay() : null;
+                if (closeSocketDelay == null && lifecycleProfile != null) {
+                    // L2: host-scoped slow close — linger before the FIN even without a per-expectation
+                    // connectionOptions.closeSocketDelay. Falls back to immediate close when unset.
+                    closeSocketDelay = lifecycleProfile.getSlowCloseDelay();
+                }
                 if (closeSocketDelay == null) {
                     disconnectAndCloseChannel(future);
                 } else {

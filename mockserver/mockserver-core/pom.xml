@@ -556,6 +556,8 @@
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
                         <exclude>**/HttpActionHandlerGraphQLChaosTest.java</exclude>
                         <exclude>**/ChaosAutoHaltMonitorTest.java</exclude>
+                        <!-- Mutates global ConfigurationProperties.preemptionSimulationMaxDrainMillis + PreemptionSimulator singleton -->
+                        <exclude>**/PreemptionSimulatorTest.java</exclude>
                         <exclude>**/LlmCostBudgetMonitorTest.java</exclude>
                         <exclude>**/LlmMetricsTest.java</exclude>
                         <!-- WS7.6: mutates the mockserver.perExpectationMetrics system property + static Metrics / default PrometheusRegistry -->
@@ -656,6 +658,7 @@
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>
+                                <include>**/PreemptionSimulatorTest.java</include>
                                 <include>**/LlmCostBudgetMonitorTest.java</include>
                                 <include>**/LlmMetricsTest.java</include>
                                 <include>**/PerExpectationMetricsTest.java</include>

@@ -472,6 +472,7 @@ public class HttpState {
         org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance().reset();
         org.mockserver.mock.action.http.LlmCostBudgetMonitor.getInstance().reset();
         org.mockserver.mock.action.http.TcpChaosRegistry.getInstance().reset();
+        org.mockserver.mock.action.http.PreemptionSimulator.getInstance().reset();
         org.mockserver.mock.action.http.GrpcChaosRegistry.getInstance().reset();
         org.mockserver.grpc.GrpcHealthRegistry.getInstance().reset();
         org.mockserver.oidc.OidcAuthorizationStore.getInstance().reset();
@@ -2166,6 +2167,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/preemption", "/preemption")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handlePreemptionPut(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/grpcChaos", "/grpcChaos")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2619,6 +2627,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/preemption", "/preemption")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handlePreemptionGet()), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/grpcChaos", "/grpcChaos")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleGrpcChaosGet()), true);
@@ -2754,6 +2768,12 @@ public class HttpState {
             if (request.matches("DELETE", PATH_PREFIX + "/cassettes", "/cassettes")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesDelete(request)), true);
+                }
+                return true;
+            }
+            if (request.matches("DELETE", PATH_PREFIX + "/preemption", "/preemption")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handlePreemptionDelete()), true);
                 }
                 return true;
             }
@@ -3446,6 +3466,85 @@ public class HttpState {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to process TCP chaos request\"}", MediaType.JSON_UTF_8);
         }
+    }
+
+    // --- Preemption / SIGTERM simulation endpoint helpers ---
+
+    private HttpResponse handlePreemptionPut(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.model.PreemptionRequest preemptionRequest;
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                // an empty body starts a preemption with all defaults (drain = stopDrainMillis, mode = both)
+                preemptionRequest = org.mockserver.model.PreemptionRequest.preemptionRequest();
+            } else {
+                preemptionRequest = objectMapper.readValue(body, org.mockserver.model.PreemptionRequest.class);
+                if (preemptionRequest == null) {
+                    preemptionRequest = org.mockserver.model.PreemptionRequest.preemptionRequest();
+                }
+            }
+            org.mockserver.model.PreemptionRequest effective =
+                org.mockserver.mock.action.http.PreemptionSimulator.getInstance().start(preemptionRequest);
+            // No start-time channel orchestration: the cordon state is now authoritative, and an HTTP/2
+            // GOAWAY (when the mode includes it) is emitted lazily by HttpRequestHandler on the next
+            // request that hits a cordoned connection, so no per-channel registry is required.
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(new LogEntry()
+                    .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                    .setLogLevel(Level.INFO)
+                    .setHttpRequest(request)
+                    .setMessageFormat("started preemption simulation (mode " + effective.getMode()
+                        + ", drain " + effective.getDrainMillis() + "ms"
+                        + (effective.getTtlMillis() != null && effective.getTtlMillis() > 0 ? ", ttl " + effective.getTtlMillis() + "ms" : "") + ")"));
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(preemptionStatusNode(objectMapper)), MediaType.JSON_UTF_8);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"invalid preemption request: " + sanitizeJsonError(e.getMessage()) + "\"}", MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to process preemption request\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handlePreemptionGet() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(preemptionStatusNode(objectMapper)), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response().withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get preemption status\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    private HttpResponse handlePreemptionDelete() {
+        // Idempotent uncordon: a 200 whether or not a simulation was active.
+        org.mockserver.mock.action.http.PreemptionSimulator.getInstance().uncordon();
+        return response().withStatusCode(OK.code())
+            .withBody("{\"state\":\"inactive\"}", MediaType.JSON_UTF_8);
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode preemptionStatusNode(com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+        org.mockserver.mock.action.http.PreemptionSimulator simulator = org.mockserver.mock.action.http.PreemptionSimulator.getInstance();
+        com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+        result.put("state", simulator.state());
+        result.put("inFlight", simulator.inFlight());
+        result.put("drainRemainingMillis", simulator.drainRemainingMillis());
+        org.mockserver.model.PreemptionRequest.Mode mode = simulator.getMode();
+        if (mode != null) {
+            result.put("mode", mode.name());
+        }
+        return result;
+    }
+
+    private static String sanitizeJsonError(String message) {
+        if (message == null) {
+            return "unparseable JSON";
+        }
+        return message.replace("\"", "'").replace("\n", " ").replace("\r", " ");
     }
 
     // --- gRPC Chaos endpoint helpers ---

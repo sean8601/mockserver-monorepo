@@ -46,6 +46,9 @@ public class Configuration {
     private Boolean chaosAutoHaltEnabled;
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
+    private Boolean connectionLifecycleChaosEnabled;
+    private Long preemptionSimulationMaxDrainMillis;
+    private Boolean connectionLifecycleAutoHaltCountsRst;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
@@ -605,6 +608,66 @@ public class Configuration {
      */
     public Configuration chaosAutoHaltWindowMillis(Long chaosAutoHaltWindowMillis) {
         this.chaosAutoHaltWindowMillis = chaosAutoHaltWindowMillis;
+        return this;
+    }
+
+    public Boolean connectionLifecycleChaosEnabled() {
+        if (connectionLifecycleChaosEnabled == null) {
+            return ConfigurationProperties.connectionLifecycleChaosEnabled();
+        }
+        return connectionLifecycleChaosEnabled;
+    }
+
+    /**
+     * Master switch for connection-lifecycle / graceful-shutdown fault injection (mid-response RST,
+     * host-scoped slow close, HTTP/2 GOAWAY, and the preemption/SIGTERM simulator). Default true.
+     * The response-path lookups are gated on the active registration count, so when no
+     * connection-lifecycle faults and no preemption are configured the feature adds nothing to the
+     * hot path even when enabled — set this to false only to hard-disable the feature.
+     *
+     * @param connectionLifecycleChaosEnabled enable connection-lifecycle chaos
+     */
+    public Configuration connectionLifecycleChaosEnabled(Boolean connectionLifecycleChaosEnabled) {
+        this.connectionLifecycleChaosEnabled = connectionLifecycleChaosEnabled;
+        return this;
+    }
+
+    public Long preemptionSimulationMaxDrainMillis() {
+        if (preemptionSimulationMaxDrainMillis == null) {
+            return ConfigurationProperties.preemptionSimulationMaxDrainMillis();
+        }
+        return preemptionSimulationMaxDrainMillis;
+    }
+
+    /**
+     * Hard upper bound (in milliseconds) on a preemption simulation's drain window and TTL. A
+     * {@code PUT /mockserver/preemption} request asking for a larger value is clamped to this cap, so
+     * a forgotten or runaway simulation cannot cordon the server indefinitely. Default is 86400000
+     * (24 hours).
+     *
+     * @param preemptionSimulationMaxDrainMillis maximum drain/TTL milliseconds
+     */
+    public Configuration preemptionSimulationMaxDrainMillis(Long preemptionSimulationMaxDrainMillis) {
+        this.preemptionSimulationMaxDrainMillis = preemptionSimulationMaxDrainMillis;
+        return this;
+    }
+
+    public Boolean connectionLifecycleAutoHaltCountsRst() {
+        if (connectionLifecycleAutoHaltCountsRst == null) {
+            return ConfigurationProperties.connectionLifecycleAutoHaltCountsRst();
+        }
+        return connectionLifecycleAutoHaltCountsRst;
+    }
+
+    /**
+     * When true, a connection-lifecycle RST (the mid-response RST) counts as a destructive "drop"
+     * fault for the chaos auto-halt circuit-breaker, so a RST storm trips the breaker and halts
+     * chaos. Default true.
+     *
+     * @param connectionLifecycleAutoHaltCountsRst count lifecycle RSTs toward auto-halt
+     */
+    public Configuration connectionLifecycleAutoHaltCountsRst(Boolean connectionLifecycleAutoHaltCountsRst) {
+        this.connectionLifecycleAutoHaltCountsRst = connectionLifecycleAutoHaltCountsRst;
         return this;
     }
 

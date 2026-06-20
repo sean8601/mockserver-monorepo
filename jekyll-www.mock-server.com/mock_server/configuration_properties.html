@@ -1435,6 +1435,35 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.chaosAutoHaltEnabled="true" -Dmockserver.chaosAutoHaltErrorThreshold="20" -Dmockserver.chaosAutoHaltWindowMillis="30000"</code></pre>
 </div>
 
+<button id="button_configuration_connection_lifecycle_chaos" class="accordion title"><strong>Connection-Lifecycle Faults &amp; Preemption Simulation</strong></button>
+<div class="panel title">
+    <p>Connection-lifecycle faults let you reproduce the failure patterns that appear when a server crashes mid-response or signals a graceful shutdown: a host-scoped mid-response TCP reset (<code>resetMidResponse</code>), a slow socket close (<code>slowCloseDelay</code>), and an HTTP/2 GOAWAY (<code>http2GoAway</code>), all registered via <code>PUT /mockserver/tcpChaos</code>. The same feature powers the <strong>preemption simulation</strong> (<code>PUT /mockserver/preemption</code>), which makes the server <em>cordon</em> itself &mdash; new data-plane requests are turned away (HTTP/1.1 gets <code>503</code> + <code>Retry-After</code> + <code>Connection: close</code>; HTTP/2 clients receive a GOAWAY) while in-flight requests drain &mdash; so you can test how your clients react to a Kubernetes node drain, Spot reclamation, or pre-SIGTERM sequence. It is a simulation only and never stops the server. Control-plane requests (<code>/mockserver/...</code>) are always exempt from the cordon.</p>
+    <p><strong>Enable connection-lifecycle chaos</strong> &mdash; master switch for the mid-response RST / slow-close / HTTP/2 GOAWAY response-path faults and the preemption cordon. When <code>false</code> these faults are never applied and add no overhead. Default is <code>true</code> (the response path is byte-for-byte unchanged unless a fault is actually registered).</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.connectionLifecycleChaosEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.connectionLifecycleChaosEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED=...</code></pre>
+    <p><strong>Preemption max drain</strong> &mdash; a safety hard cap (in milliseconds) applied to both the drain window and the TTL dead-man's-switch of a preemption simulation, so a mistaken value can never cordon the server for longer than this. Default is <code>86400000</code> (24 hours).</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">86400000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.preemptionSimulationMaxDrainMillis(long millis)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.preemptionSimulationMaxDrainMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS=...</code></pre>
+    <p><strong>Count lifecycle RST toward auto-halt</strong> &mdash; when <code>true</code>, a mid-response TCP reset (<code>resetMidResponse</code>) is counted as a destructive fault toward the <a href="#button_configuration_chaos_auto_halt">chaos auto-halt circuit-breaker</a>, so a storm of mid-response resets can trip the breaker. The graceful signals (HTTP/2 GOAWAY and the preemption 503 cordon) are never counted. Set to <code>false</code> to exclude lifecycle resets from the breaker. Default is <code>true</code>.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.connectionLifecycleAutoHaltCountsRst(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.connectionLifecycleAutoHaltCountsRst=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST=...</code></pre>
+</div>
+
 <button id="button_configuration_llm_metrics" class="accordion title"><strong>LLM Token &amp; Cost Metrics</strong></button>
 <div class="panel title">
     <p>When enabled (alongside <span class="inline_code">metricsEnabled</span>), MockServer parses forwarded LLM responses to extract token usage and estimated cost, incrementing Prometheus counters labeled by provider and model. The parse is the same one used for GenAI span export; enabling this property activates the forward-path response parse even when OTLP tracing is off.</p>

@@ -86,6 +86,9 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         // Wire the replay handler so PUT /mockserver/replay can re-issue
         // requests using the existing NettyHttpClient (forward/proxy client).
         httpState.setReplayHandler(req -> httpActionHandler.getHttpClient().sendRequest(req));
+        // Wire the preemption simulator's in-flight count to the live LifeCycle gauge so
+        // GET /mockserver/preemption reports the real number of draining requests (not 0).
+        org.mockserver.mock.action.http.PreemptionSimulator.getInstance().setInFlightSupplier(server::getRequestsInFlight);
     }
 
     private static boolean isProxyingRequest(ChannelHandlerContext ctx) {
@@ -140,6 +143,57 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
         final InFlightRequest inFlightRequest = InFlightRequest.started(server);
         if (inFlightRequest != null) {
             ctx.channel().closeFuture().addListener(future -> inFlightRequest.complete());
+        }
+
+        // L6: connection-lifecycle preemption cordon. When a preemption/SIGTERM simulation is active
+        // the server is "cordoned": new data-plane exchanges are turned away while in-flight requests
+        // drain. HTTP/1.1 exchanges that the active mode rejects get 503 + Retry-After +
+        // Connection: close so a load-balancer routes elsewhere. HTTP/2 clients additionally (or, in
+        // goaway-only mode, instead) get a connection-level GOAWAY — the canonical "this connection is
+        // going away" drain signal — emitted lazily on this request. The control plane (/mockserver/...)
+        // is exempt so the operator can still observe and uncordon. The isCordoned() probe is a single
+        // volatile read when no simulation is active, so this adds nothing measurable to the hot path.
+        if (configuration.connectionLifecycleChaosEnabled()) {
+            String requestPath = request.getPath() != null ? request.getPath().getValue() : null;
+            boolean controlPlane = requestPath != null && requestPath.startsWith(PATH_PREFIX);
+            org.mockserver.mock.action.http.PreemptionSimulator simulator = org.mockserver.mock.action.http.PreemptionSimulator.getInstance();
+            if (!controlPlane && simulator.isCordoned()) {
+                // Lazily emit an HTTP/2 GOAWAY when the mode includes goaway and this is an HTTP/2
+                // connection. emit(...) returns false on HTTP/1.1 (no Http2ConnectionHandler on the
+                // pipeline), so this is also our h2 detection. GOAWAY is a graceful drain signal, NOT a
+                // destructive RST, so it is deliberately NOT counted toward the chaos auto-halt breaker.
+                boolean emittedGoAway = false;
+                if (simulator.emitsGoAway()) {
+                    emittedGoAway = org.mockserver.netty.unification.Http2GoAwayEmitter.emit(
+                        ctx, simulator.goAwayLastStreamId(), 0L);
+                }
+                if (simulator.rejectsNewExchanges()) {
+                    // HTTP/1.1 (and "both" mode on HTTP/2): turn the new exchange away with a 503.
+                    // Like GOAWAY this is a graceful "retry elsewhere" signal, NOT counted toward
+                    // auto-halt — only the mid-response RST records a "drop".
+                    completeInFlight(inFlightRequest);
+                    long retryAfterSeconds = Math.max(1L, (simulator.drainRemainingMillis() + 999L) / 1000L);
+                    ctx.writeAndFlush(response()
+                        .withStatusCode(SERVICE_UNAVAILABLE.code())
+                        .withHeader(CONNECTION.toString(), "close")
+                        .withHeader("Retry-After", String.valueOf(retryAfterSeconds))
+                        .withBody("{\"error\":\"server is draining (simulated preemption); retry elsewhere\"}", MediaType.JSON_UTF_8)
+                    ).addListener(io.netty.channel.ChannelFutureListener.CLOSE);
+                    return;
+                }
+                if (emittedGoAway) {
+                    // goaway-only mode on an HTTP/2 connection: the GOAWAY is the drain signal; the
+                    // in-flight stream's own response still completes normally, so fall through to
+                    // serve this request rather than rejecting it.
+                    if (mockServerLogger.isEnabledForInstance(Level.DEBUG)) {
+                        mockServerLogger.logEvent(new LogEntry()
+                            .setLogLevel(Level.DEBUG)
+                            .setMessageFormat("emitted HTTP/2 GOAWAY on cordoned connection (preemption goaway mode)"));
+                    }
+                }
+                // goaway-only on HTTP/1.1 (no GOAWAY possible, reject503 not requested): fall through
+                // and serve the request — the simulation cannot signal drain on HTTP/1.1.
+            }
         }
 
         // Ensure the per-server WebSocketClientRegistry is available as a channel attribute

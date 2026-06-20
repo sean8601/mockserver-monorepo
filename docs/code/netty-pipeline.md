@@ -395,6 +395,104 @@ branches — it is handed to a `DefaultHttpContent` only when non-empty and rele
 response attaches an empty `Unpooled.EMPTY_BUFFER` `LastHttpContent`. The existing chunk-delay
 and HTTP/3 writer paths retain/release as before.
 
+## Connection-Lifecycle Response-Path Faults
+
+These faults fire at response/dispatch time (not connect time) and are distinct from
+the connect-time `TcpChaosHandler` faults. They are implemented in `NettyResponseWriter`
+and `Http2GoAwayEmitter`, and gated by `HttpRequestHandler`'s L6 cordon check.
+
+### Hot-path guarantee
+
+`NettyResponseWriter.resolveLifecycleProfile(HttpRequest)` resolves the host-scoped
+`TcpChaosProfile` keyed on the request `Host` header. It returns `null` immediately when:
+
+1. `ConfigurationProperties.connectionLifecycleChaosEnabled()` is `false`, OR
+2. `TcpChaosRegistry.getInstance().activeCount() == 0` (a single volatile read)
+
+When either condition holds the normal write-and-close path is taken byte-for-byte
+unchanged. There is no allocation and no additional branching on the hot path in the
+common (no-lifecycle-chaos) case.
+
+### L1 — Mid-response RST (`resetMidResponse`)
+
+`NettyResponseWriter.writeHeadThenReset()` writes the response head via `ctx.writeAndFlush(response)`,
+then on the write-complete future sets `SO_LINGER 0` and calls `channel.close()` — the same proven RST
+mechanism as `TcpChaosHandler` (zero linger makes the close emit a TCP RST rather than a FIN). The
+client sees "connection reset" while reading the body — the "server crashed mid-reply" fault.
+
+When `connectionLifecycleAutoHaltCountsRst` is true (default), the RST records
+`Metrics.incrementHttpChaosInjected("drop")` so a RST storm trips the auto-halt circuit-breaker.
+
+**Streaming carve-out (v1):** these L1/L2/L3 faults are applied only in the non-streaming
+`writeAndCloseSocket()` path. The streaming response path (`writeStreamingResponse`, SSE / chunked
+streaming) ignores lifecycle faults in v1 and completes normally even when a host profile is registered.
+
+**Host-scoping is not control-plane-exempt:** like `TcpChaosHandler`, these faults are keyed on the
+request `Host` header and are *not* control-plane-exempt — a profile registered against the MockServer
+host itself can RST a control-plane response on that host. Register lifecycle profiles against the
+mocked-upstream host. (The L6 preemption cordon below *is* control-plane-exempt.)
+
+### L2 — Host-scoped slow close (`slowCloseDelay`)
+
+`NettyResponseWriter.addCloseSocketListener()` applies the close delay in priority order:
+
+1. `ConnectionOptions.closeSocketDelay` (per-expectation)
+2. `TcpChaosProfile.slowCloseDelay` (host-scoped, L2 — only reached when no per-expectation delay is set)
+3. Immediate close (default)
+
+This means a single `PUT /mockserver/tcpChaos` registration can make every response to a given
+host linger on close without touching individual expectations.
+
+### L3 — HTTP/2 GOAWAY on the response path (`http2GoAway`)
+
+`Http2GoAwayEmitter.emit(ctx, lastStreamId, errorCode)` emits a connection-level GOAWAY frame
+so the client stops opening new streams. It is called in `NettyResponseWriter.writeAndCloseSocket()`
+before the response head is written, so the client receives the GOAWAY and can avoid opening
+further streams while the current stream still completes normally.
+
+**Implementation:** `Http2GoAwayEmitter` resolves the `Http2ConnectionHandler` via
+`ctx.pipeline().context(Http2ConnectionHandler.class)` — the same lookup pattern as
+`HttpErrorActionHandler.resetHttp2Stream`. A negative `lastStreamId` argument is converted to
+`Integer.MAX_VALUE` and clamped down by the connection handler to the actual last-processed stream.
+
+**v1 scope:** connection-level HTTP/2 pipeline only. The multiplex pipeline (per-stream child
+channels used for gRPC bidi streaming) is deferred — see [chaos.md](chaos.md).
+
+**HTTP/1.1 degradation:** when no `Http2ConnectionHandler` is found on the pipeline (HTTP/1.1
+connection), `Http2GoAwayEmitter.emit()` returns `false` and callers degrade to
+`Connection: close` + 503. GOAWAY is benign (graceful drain signal) and is NOT counted toward
+the auto-halt window.
+
+### L6 — Preemption cordon check in `HttpRequestHandler`
+
+`HttpRequestHandler.channelRead0()` checks the preemption cordon early in request processing,
+before any expectation matching:
+
+```mermaid
+flowchart TD
+    REQ["Incoming request"] --> FEAT{"connectionLifecycleChaosEnabled?"}
+    FEAT -->|No| NORMAL["Normal processing"]
+    FEAT -->|Yes| CP{"path starts with /mockserver/?"}
+    CP -->|Yes control-plane| NORMAL
+    CP -->|No| CORD{"PreemptionSimulator.isCordoned()?"}
+    CORD -->|No| NORMAL
+    CORD -->|Yes| GA{"emitsGoAway() and HTTP/2?\n(Http2GoAwayEmitter.emit returns true)"}
+    GA -->|Yes| EMIT["emit connection-level GOAWAY"]
+    GA -->|No| REJ
+    EMIT --> REJ{"rejectsNewExchanges()?"}
+    REJ -->|Yes| REJECT["503 + Retry-After + Connection: close\ncompleteInFlight() + CLOSE listener"]
+    REJ -->|No| NORMAL2["serve request normally\n(goaway-only: GOAWAY already sent / HTTP/1.1 no-op)"]
+```
+
+The control plane (`/mockserver/...`) is always exempt so the operator can observe state and issue
+`DELETE /mockserver/preemption` to uncordon. The GOAWAY is emitted lazily on a cordoned HTTP/2
+connection's next request — `Http2GoAwayEmitter.emit()` is the HTTP/2 detection (it returns `false`,
+a no-op, on HTTP/1.1). The in-flight token is completed on every branch so the drain counter cannot
+leak, and `GET /mockserver/preemption` reports the live in-flight count from `LifeCycle.getRequestsInFlight()`.
+The `isCordoned()` probe is a single volatile read when no simulation is active, so this branch adds
+nothing measurable to the hot path in the common case. GOAWAY is HTTP/2-only; HTTP/1.1 has no GOAWAY
+and falls back to the 503 path (or is served normally in goaway-only mode).
+
 ## Stream-Level Error Injection (HttpError streamError)
 
 An `HttpError` action can reset the individual request stream instead of returning a response, for
