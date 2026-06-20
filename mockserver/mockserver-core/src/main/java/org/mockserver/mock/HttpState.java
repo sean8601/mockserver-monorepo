@@ -94,6 +94,8 @@ public class HttpState {
     private final RequestMatchers requestMatchers;
     // G10 phase 2a: pluggable state backend (default in-memory, clustered in 2b+)
     private final StateBackend stateBackend;
+    // ADV3: persisted, named library of reusable chaos experiment profiles
+    private final org.mockserver.mock.action.http.ChaosProfileLibrary chaosProfileLibrary;
     private final Configuration configuration;
     // Adds CORS headers to dashboard-facing control-plane responses (e.g. service
     // chaos) so the dashboard works when served from another origin (a dev server),
@@ -181,6 +183,9 @@ public class HttpState {
         this.mockServerLog = new MockServerEventLog(configuration, mockServerLogger, scheduler, true);
         // G10 phase 2a: create the pluggable state backend (default in-memory, clustered in 2b+).
         this.stateBackend = StateBackendFactory.create(configuration);
+        // ADV3: persisted, named chaos-profile library backed by the state backend's
+        // CRUD-entity store (survives reset; replicates across the fleet when clustered).
+        this.chaosProfileLibrary = new org.mockserver.mock.action.http.ChaosProfileLibrary(stateBackend);
         // G10 phase 1: obtain the expectation store via the pluggable factory (default = standard
         // in-memory RequestMatchers; an optional clustered backend can register an alternative).
         this.requestMatchers = ExpectationStoreFactory.create(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
@@ -2133,6 +2138,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (chaosProfileName(request, "PUT", "/chaosExperiment/profiles/") != null) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosProfileSave(request, chaosProfileName(request, "PUT", "/chaosExperiment/profiles/"))), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2577,6 +2589,18 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/chaosExperiment/profiles", "/chaosExperiment/profiles")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosProfileList()), true);
+                }
+                return true;
+            }
+            if (chaosProfileName(request, "GET", "/chaosExperiment/profiles/") != null) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosProfileGet(chaosProfileName(request, "GET", "/chaosExperiment/profiles/"))), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosExperimentGet()), true);
@@ -2715,6 +2739,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (chaosProfileName(request, "DELETE", "/chaosExperiment/profiles/") != null) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosProfileDelete(chaosProfileName(request, "DELETE", "/chaosExperiment/profiles/"))), true);
+                }
+                return true;
+            }
             if (request.matches("DELETE", PATH_PREFIX + "/chaosExperiment", "/chaosExperiment")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosExperimentDelete()), true);
@@ -2724,6 +2754,16 @@ public class HttpState {
             if (request.matches("DELETE", PATH_PREFIX + "/cassettes", "/cassettes")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesDelete(request)), true);
+                }
+                return true;
+            }
+            return false;
+
+        } else if (request.matches("POST")) {
+
+            if (chaosProfileName(request, "POST", "/chaosExperiment/apply/") != null) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleChaosProfileApply(request, chaosProfileName(request, "POST", "/chaosExperiment/apply/"))), true);
                 }
                 return true;
             }
@@ -3108,6 +3148,156 @@ public class HttpState {
         } catch (Exception jsonError) {
             return response().withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to process chaos experiment request\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    // --- ADV3: saved chaos profile library endpoints ---
+
+    /**
+     * If {@code request} is the given {@code method} on a path that is
+     * {@code prefix}{name} (with or without the {@code /mockserver} prefix),
+     * returns the URL-decoded {name} segment; otherwise returns {@code null}.
+     * Returns {@code null} for an empty or multi-segment trailing path so that a
+     * bare {@code .../profiles} (no name) does not match a {name} route.
+     */
+    private String chaosProfileName(HttpRequest request, String method, String prefix) {
+        if (!request.getMethod().getValue().equals(method)) {
+            return null;
+        }
+        String path = request.getPath().getValue();
+        String rest = null;
+        if (path.startsWith(PATH_PREFIX + prefix)) {
+            rest = path.substring((PATH_PREFIX + prefix).length());
+        } else if (path.startsWith(prefix)) {
+            rest = path.substring(prefix.length());
+        }
+        if (rest == null || rest.isEmpty() || rest.contains("/")) {
+            return null;
+        }
+        try {
+            return java.net.URLDecoder.decode(rest, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return rest;
+        }
+    }
+
+    private HttpResponse handleChaosProfileSave(HttpRequest request, String name) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return chaosExperimentError(objectMapper, "request body is required with a chaos profile (experiment) definition");
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            // Validate it parses as an experiment definition before saving so a malformed
+            // profile fails at save time rather than at apply time.
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator.ExperimentDefinition.fromJson(node);
+            chaosProfileLibrary.save(name, node);
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("saved chaos profile:{}")
+                        .setArguments(name)
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "saved");
+            result.put("name", name);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return chaosExperimentError(objectMapper, "invalid chaos profile: " + e.getMessage());
+        } catch (Exception e) {
+            return chaosExperimentError(objectMapper, "failed to save chaos profile: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleChaosProfileList() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode names = result.putArray("profiles");
+            for (String name : chaosProfileLibrary.list()) {
+                names.add(name);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return chaosExperimentError(objectMapper, "failed to list chaos profiles: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleChaosProfileGet(String name) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            java.util.Optional<com.fasterxml.jackson.databind.node.ObjectNode> profile = chaosProfileLibrary.get(name);
+            if (profile.isEmpty()) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        objectMapper.createObjectNode().put("error", "no chaos profile named '" + name + "'")), MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(profile.get()), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return chaosExperimentError(objectMapper, "failed to get chaos profile: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleChaosProfileDelete(String name) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            boolean removed = chaosProfileLibrary.delete(name);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", removed ? "deleted" : "absent");
+            result.put("name", name);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return chaosExperimentError(objectMapper, "failed to delete chaos profile: " + e.getMessage());
+        }
+    }
+
+    private HttpResponse handleChaosProfileApply(HttpRequest request, String name) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            java.util.Optional<com.fasterxml.jackson.databind.node.ObjectNode> profile = chaosProfileLibrary.get(name);
+            if (profile.isEmpty()) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        objectMapper.createObjectNode().put("error", "no chaos profile named '" + name + "'")), MediaType.JSON_UTF_8);
+            }
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator.ExperimentDefinition definition =
+                org.mockserver.mock.action.http.ChaosExperimentOrchestrator.ExperimentDefinition.fromJson(profile.get());
+            org.mockserver.mock.action.http.ChaosExperimentOrchestrator orchestrator =
+                org.mockserver.mock.action.http.ChaosExperimentOrchestrator.getInstance();
+            String error = orchestrator.start(definition);
+            if (error != null) {
+                return chaosExperimentError(objectMapper, error);
+            }
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("applied saved chaos profile:{}")
+                        .setArguments(name)
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "started");
+            result.put("name", definition.name);
+            result.put("stages", definition.stages.size());
+            result.put("loop", definition.loop);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return chaosExperimentError(objectMapper, "invalid saved chaos profile: " + e.getMessage());
+        } catch (Exception e) {
+            return chaosExperimentError(objectMapper, "failed to apply chaos profile: " + e.getMessage());
         }
     }
 

@@ -3,6 +3,10 @@ import {
   startChaosExperiment,
   getChaosExperimentStatus,
   stopChaosExperiment,
+  listChaosProfiles,
+  saveChaosProfile,
+  applyChaosProfile,
+  deleteChaosProfile,
   formatDuration,
   type ExperimentDefinitionDTO,
 } from '../lib/chaosExperiment';
@@ -103,6 +107,56 @@ describe('stopChaosExperiment', () => {
     await stopChaosExperiment(params);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe('http://127.0.0.1:1080/mockserver/chaosExperiment');
+    expect(calls[0]?.init?.method).toBe('DELETE');
+  });
+});
+
+describe('saved chaos profile library', () => {
+  it('listChaosProfiles GETs the profiles endpoint and returns names', async () => {
+    const calls = stubFetch(200, { profiles: ['payments-outage', 'latency-soak'] });
+    const names = await listChaosProfiles(params);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://127.0.0.1:1080/mockserver/chaosExperiment/profiles');
+    expect(calls[0]?.init?.method).toBeUndefined(); // GET
+    expect(names).toEqual(['payments-outage', 'latency-soak']);
+  });
+
+  it('listChaosProfiles tolerates a missing/non-array profiles field', async () => {
+    stubFetch(200, {});
+    expect(await listChaosProfiles(params)).toEqual([]);
+  });
+
+  it('saveChaosProfile PUTs the definition under the (encoded) name', async () => {
+    const calls = stubFetch(200, { status: 'saved', name: 'pay outage' });
+    const definition: ExperimentDefinitionDTO = {
+      name: 'pay outage',
+      stages: [{ durationMillis: 5000, profiles: { 'a.svc': { errorStatus: 503 } } }],
+    };
+    await saveChaosProfile(params, 'pay outage', definition);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://127.0.0.1:1080/mockserver/chaosExperiment/profiles/pay%20outage');
+    expect(calls[0]?.init?.method).toBe('PUT');
+    expect(JSON.parse(String(calls[0]?.init?.body)).name).toBe('pay outage');
+  });
+
+  it('applyChaosProfile POSTs to the apply endpoint', async () => {
+    const calls = stubFetch(200, { status: 'started', name: 'payments-outage' });
+    await applyChaosProfile(params, 'payments-outage');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://127.0.0.1:1080/mockserver/chaosExperiment/apply/payments-outage');
+    expect(calls[0]?.init?.method).toBe('POST');
+  });
+
+  it('applyChaosProfile throws a clean error for an unknown profile', async () => {
+    stubFetch(404, { error: "no chaos profile named 'nope'" });
+    await expect(applyChaosProfile(params, 'nope')).rejects.toThrow("no chaos profile named 'nope'");
+  });
+
+  it('deleteChaosProfile DELETEs at the profile endpoint', async () => {
+    const calls = stubFetch(200, { status: 'deleted', name: 'payments-outage' });
+    await deleteChaosProfile(params, 'payments-outage');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://127.0.0.1:1080/mockserver/chaosExperiment/profiles/payments-outage');
     expect(calls[0]?.init?.method).toBe('DELETE');
   });
 });

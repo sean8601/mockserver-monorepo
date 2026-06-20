@@ -83,6 +83,65 @@ export async function stopChaosExperiment(
   await ensureOk(res);
 }
 
+// --- ADV3: saved chaos profile library ---
+//
+// A "profile" is a saved experiment definition (the same shape as
+// ExperimentDefinitionDTO) stored under a name on the server so it can be
+// re-applied without re-authoring it. Profiles are persisted in the server
+// state backend (survive reset; replicate across a cluster).
+
+function profilesEndpoint(params: ConnectionParams): string {
+  return `${buildBaseUrl(params)}/mockserver/chaosExperiment/profiles`;
+}
+
+/** List the names of all saved chaos profiles (GET). */
+export async function listChaosProfiles(
+  params: ConnectionParams,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const res = await fetch(profilesEndpoint(params), { signal });
+  await ensureOk(res);
+  const body = (await res.json()) as { profiles?: unknown };
+  return Array.isArray(body.profiles) ? (body.profiles as string[]) : [];
+}
+
+/** Save (or replace) a chaos profile under the given name (PUT). */
+export async function saveChaosProfile(
+  params: ConnectionParams,
+  name: string,
+  definition: ExperimentDefinitionDTO,
+): Promise<void> {
+  const res = await fetch(`${profilesEndpoint(params)}/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(definition),
+  });
+  await ensureOk(res);
+}
+
+/** Apply (start) a saved chaos profile by name (POST). */
+export async function applyChaosProfile(
+  params: ConnectionParams,
+  name: string,
+): Promise<void> {
+  const res = await fetch(
+    `${buildBaseUrl(params)}/mockserver/chaosExperiment/apply/${encodeURIComponent(name)}`,
+    { method: 'POST' },
+  );
+  await ensureOk(res);
+}
+
+/** Delete a saved chaos profile by name (DELETE). */
+export async function deleteChaosProfile(
+  params: ConnectionParams,
+  name: string,
+): Promise<void> {
+  const res = await fetch(`${profilesEndpoint(params)}/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  await ensureOk(res);
+}
+
 /** Format elapsed/remaining millis as a compact string (e.g. "1m 05s", "12s"). */
 export function formatDuration(millis: number): string {
   const totalSeconds = Math.max(0, Math.round(millis / 1000));

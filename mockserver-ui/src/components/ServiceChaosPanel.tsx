@@ -71,6 +71,10 @@ import {
   startChaosExperiment,
   getChaosExperimentStatus,
   stopChaosExperiment,
+  listChaosProfiles,
+  saveChaosProfile,
+  applyChaosProfile,
+  deleteChaosProfile,
   formatDuration,
   type ExperimentDefinitionDTO,
   type ExperimentStageDTO,
@@ -510,6 +514,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     latencyMs: '', dropProbability: '',
   }]);
 
+  // --- ADV3: saved chaos profile library state ---
+  const [savedProfiles, setSavedProfiles] = useState<string[]>([]);
+  const [profilesTick, setProfilesTick] = useState(0);
+  const refreshProfiles = useCallback(() => setProfilesTick((t) => t + 1), []);
+
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
   // --- Auto-halt configuration fetch + apply ---
@@ -689,6 +698,25 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       if (timer) clearTimeout(timer);
     };
   }, [connectionParams, experimentsExpanded, refreshTick]);
+
+  // ADV3: load saved chaos profile names while the experiments section is open.
+  useEffect(() => {
+    if (!experimentsExpanded) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const names = await listChaosProfiles(connectionParams, controller.signal);
+        if (!cancelled) setSavedProfiles(names);
+      } catch {
+        // ignore — saved-profile library is best-effort in the UI
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [connectionParams, experimentsExpanded, profilesTick]);
 
   const hosts = useMemo(() => Object.keys(data.services).sort(), [data.services]);
 
@@ -939,14 +967,16 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
         prev.map((s, i) => i === index ? { ...s, [field]: e.target.value } : s),
       );
 
-  const handleStartExperiment = useCallback(() => {
+  // Validate the editor rows and build an ExperimentDefinitionDTO, or set an
+  // action error and return null. Shared by Start Experiment and Save Profile.
+  const buildDefinitionFromEditor = useCallback((): ExperimentDefinitionDTO | null => {
     if (!expName.trim()) {
       setActionError({ message: 'Experiment name is required' });
-      return;
+      return null;
     }
     if (expStages.length === 0) {
       setActionError({ message: 'At least one stage is required' });
-      return;
+      return null;
     }
     const stages: ExperimentStageDTO[] = [];
     for (let i = 0; i < expStages.length; i++) {
@@ -954,11 +984,11 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       const durationMillis = num(s.durationMs);
       if (durationMillis == null || durationMillis <= 0) {
         setActionError({ message: `Stage ${i + 1}: duration must be > 0` });
-        return;
+        return null;
       }
       if (!s.host.trim()) {
         setActionError({ message: `Stage ${i + 1}: host is required` });
-        return;
+        return null;
       }
       const profile: HttpChaosProfileDTO = {};
       const errorStatus = num(s.errorStatus);
@@ -973,25 +1003,49 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
       if (dp != null) profile.dropConnectionProbability = dp;
       if (summarizeChaosProfile(profile).length === 0) {
         setActionError({ message: `Stage ${i + 1}: set at least one fault (error, latency, or drop)` });
-        return;
+        return null;
       }
       stages.push({ durationMillis, profiles: { [s.host.trim()]: profile } });
     }
-    const definition: ExperimentDefinitionDTO = {
-      name: expName.trim(),
-      loop: expLoop,
-      stages,
-    };
+    return { name: expName.trim(), loop: expLoop, stages };
+  }, [expName, expLoop, expStages]);
+
+  const handleStartExperiment = useCallback(() => {
+    const definition = buildDefinitionFromEditor();
+    if (!definition) return;
     void runAction(async () => {
       await startChaosExperiment(connectionParams, definition);
     });
-  }, [connectionParams, expName, expLoop, expStages, runAction]);
+  }, [connectionParams, buildDefinitionFromEditor, runAction]);
 
   const handleStopExperiment = useCallback(() => {
     void runAction(async () => {
       await stopChaosExperiment(connectionParams);
     });
   }, [connectionParams, runAction]);
+
+  // ADV3: save the current editor definition as a named profile.
+  const handleSaveProfile = useCallback(() => {
+    const definition = buildDefinitionFromEditor();
+    if (!definition) return;
+    void runAction(async () => {
+      await saveChaosProfile(connectionParams, definition.name, definition);
+      refreshProfiles();
+    });
+  }, [connectionParams, buildDefinitionFromEditor, runAction, refreshProfiles]);
+
+  const handleApplyProfile = useCallback((name: string) => {
+    void runAction(async () => {
+      await applyChaosProfile(connectionParams, name);
+    });
+  }, [connectionParams, runAction]);
+
+  const handleDeleteProfile = useCallback((name: string) => {
+    void runAction(async () => {
+      await deleteChaosProfile(connectionParams, name);
+      refreshProfiles();
+    });
+  }, [connectionParams, runAction, refreshProfiles]);
 
   // Load the running (or last-known) experiment definition into the editor so the
   // user can tweak it and re-start. Reverses the editor -> DTO mapping in
@@ -1975,6 +2029,14 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   Add Stage
                 </Button>
                 <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={busy}
+                  onClick={handleSaveProfile}
+                >
+                  Save as Profile
+                </Button>
+                <Button
                   variant="contained"
                   size="small"
                   startIcon={<PlayArrowIcon fontSize="small" />}
@@ -1983,6 +2045,34 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 >
                   Start Experiment
                 </Button>
+              </Box>
+
+              {/* ADV3: saved chaos profile library */}
+              <Box sx={{ mt: 1.5 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Saved Profiles
+                </Typography>
+                {savedProfiles.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No saved profiles. Use &quot;Save as Profile&quot; to store the current
+                    experiment definition under its name for one-click re-use.
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                    {savedProfiles.map((name) => (
+                      <Chip
+                        key={name}
+                        label={name}
+                        size="small"
+                        onClick={() => handleApplyProfile(name)}
+                        onDelete={() => handleDeleteProfile(name)}
+                        deleteIcon={<DeleteIcon fontSize="small" />}
+                        title={`Apply saved profile "${name}" (click) or delete (x)`}
+                        disabled={busy}
+                      />
+                    ))}
+                  </Box>
+                )}
               </Box>
             </Paper>
           </Box>

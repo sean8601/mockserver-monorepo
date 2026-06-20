@@ -40,6 +40,48 @@ flowchart TD
 All three endpoints go through `controlPlaneRequestAuthenticated()` (mTLS / JWT if
 configured). Implemented in `HttpState.handleChaosExperimentPut/Get/Delete()`.
 
+## Saved Profile Library (ADV3)
+
+Chaos experiments can be saved as reusable **named profiles** and re-applied by
+name, rather than re-sending the full experiment JSON each time. A "profile" is
+just a saved experiment definition (the same JSON shape the `PUT
+/mockserver/chaosExperiment` endpoint accepts) stored under a name.
+
+| Endpoint | Action |
+|----------|--------|
+| `PUT /mockserver/chaosExperiment/profiles/{name}` | Save (or replace) a profile under `{name}`. The body is an experiment definition; its `name` field is normalised to `{name}`. Validates as an experiment at save time. Returns 200. |
+| `POST /mockserver/chaosExperiment/apply/{name}` | Apply (start) the saved profile by name — equivalent to `PUT /mockserver/chaosExperiment` with the saved body. Returns 200, or 404 if no such profile. |
+| `GET /mockserver/chaosExperiment/profiles` | List saved profile names (`{"profiles":[...]}`, ascending). |
+| `GET /mockserver/chaosExperiment/profiles/{name}` | Return one profile's stored definition, or 404. |
+| `DELETE /mockserver/chaosExperiment/profiles/{name}` | Remove a profile (`status: deleted` / `absent`). |
+
+All routes go through `controlPlaneRequestAuthenticated()` and are implemented in
+`HttpState` (`handleChaosProfileSave/Apply/List/Get/Delete`); the `{name}` path
+segment is parsed by `HttpState.chaosProfileName(...)`. The `POST apply` route is
+dispatched in a dedicated `POST` branch of `HttpState.handle()` (there was no
+prior POST control-plane route).
+
+**Storage — `ChaosProfileLibrary`** (`org.mockserver.mock.action.http.ChaosProfileLibrary`):
+profiles are stored in the `StateBackend`'s `crudEntities("chaos-profiles")`
+key-value store, keyed by profile name, with the raw experiment-definition
+`ObjectNode` as the value. Unlike the chaos *registries* (which attach a backend
+only when clustered), the library **always** uses the backend store. This gives
+two properties:
+
+- **Survives `HttpState.reset()`** — reset clears active chaos (registries, the
+  running experiment) but intentionally does **not** clear the profile template
+  library, so saved profiles outlive a reset on the default single-node backend.
+- **Cluster-correct** — when the backend is clustered, profile saves/deletes
+  replicate across the fleet via the same CRUD-entity replication as the chaos
+  registries.
+
+Profile names are validated (`isValidName`): 1–128 chars of `[A-Za-z0-9._-]`.
+
+The dashboard Chaos panel (`mockserver-ui` `ServiceChaosPanel`) exposes the
+library as a *Saved Profiles* chip list with a "Save as Profile" button (saves
+the current experiment editor) and one-click apply / delete; the client helpers
+live in `mockserver-ui/src/lib/chaosExperiment.ts`.
+
 ## Experiment Definition (Request Body)
 
 ```json

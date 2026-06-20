@@ -37,6 +37,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Expectation` struct; Rust `llm`/`mcp` modules returning `serde_json::Value`; .NET `LlmMockBuilder`/
   `McpMockBuilder` under `MockServer.Client`; PHP `MockServer\Llm`/`MockServer\Mcp` builders) and ships
   with unit tests asserting the generated wire JSON.
+- **Saved chaos profile library (save/apply/list/delete chaos experiments by name)**: chaos experiments can now be
+  stored as reusable, named profiles instead of re-authoring the experiment JSON every time. A profile is simply a
+  saved chaos-experiment definition (the same JSON shape `PUT /mockserver/chaosExperiment` accepts) kept under a name.
+  - `PUT /mockserver/chaosExperiment/profiles/{name}` — save (or replace) a profile under `{name}`.
+  - `POST /mockserver/chaosExperiment/apply/{name}` — apply (start) a saved profile by name.
+  - `GET /mockserver/chaosExperiment/profiles` — list saved profile names; `GET /mockserver/chaosExperiment/profiles/{name}`
+    returns one profile's definition.
+  - `DELETE /mockserver/chaosExperiment/profiles/{name}` — remove a saved profile.
+
+  Profiles are persisted in the `StateBackend` CRUD-entity store, so they **survive a server reset** (unlike active
+  chaos, which a reset clears) and **replicate across the fleet** when a clustered backend is configured. The existing
+  `/mockserver/chaosExperiment` endpoint is unchanged. The dashboard Chaos panel gains a **Saved Profiles** list with a
+  "Save as Profile" button (saves the current experiment editor) and one-click apply / delete chips.
 - **LLM embeddings for Gemini/Ollama/Bedrock, plus rerank mocking (Cohere/Voyage)**: `httpLlmResponse` embeddings
   now work for three more providers (previously only OpenAI/Azure-OpenAI returned a real embedding response):
   - **Gemini** — emits the `embedContent` shape (`{"embedding":{"values":[...]}}`, default 768 dimensions).

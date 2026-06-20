@@ -95,6 +95,7 @@ schema_faq:
 			<td style="vertical-align: top;">
 				<ul>
 					<li><a href="#chaos_experiments">Scheduled experiments</a></li>
+						<li><a href="#chaos_profile_library">Saved profile library</a></li>
 					<li><a href="#chaos_auto_halt">Auto-halt circuit-breaker</a></li>
 					<li><a href="#chaos_observability">Observability</a></li>
 					<li><a href="#dashboard_ui">Dashboard UI</a></li>
@@ -1186,6 +1187,35 @@ new MockServerClient("localhost", 1080)
 <pre class="code"><code class="code">curl -sf -X DELETE http://mockserver:1080/mockserver/chaosExperiment</code></pre>
 
 <p>Stopping is idempotent &mdash; calling it when no experiment is running is a no-op.</p>
+
+<a id="chaos_profile_library" class="anchor" href="#chaos_profile_library">&nbsp;</a>
+
+<h3>Saved profile library (save / apply by name)</h3>
+
+<p>Frequently-used experiments can be saved as named, reusable <strong>profiles</strong> instead of re-sending the full experiment JSON every time. A profile is simply a saved experiment definition &mdash; the same JSON shape <code class="inline code">PUT /mockserver/chaosExperiment</code> accepts &mdash; stored under a name. Saving a profile does <em>not</em> start it; applying it does.</p>
+
+<p>Save (or replace) a profile under a name with <code class="inline code">PUT /mockserver/chaosExperiment/profiles/{name}</code>:</p>
+
+<pre class="code"><code class="code">curl -sf -X PUT http://mockserver:1080/mockserver/chaosExperiment/profiles/progressive-degradation \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "stages": [
+      {"durationMillis": 60000, "profiles": {"payments.svc": {"errorStatus": 503, "errorProbability": 0.5}}}
+    ]
+  }'</code></pre>
+
+<p>Apply (start) a saved profile by name with <code class="inline code">POST /mockserver/chaosExperiment/apply/{name}</code> &mdash; this starts that experiment exactly as if its definition had been sent to <code class="inline code">PUT /mockserver/chaosExperiment</code>:</p>
+
+<pre class="code"><code class="code">curl -sf -X POST http://mockserver:1080/mockserver/chaosExperiment/apply/progressive-degradation</code></pre>
+
+<p>List the saved profile names with <code class="inline code">GET /mockserver/chaosExperiment/profiles</code>, fetch one definition with <code class="inline code">GET /mockserver/chaosExperiment/profiles/{name}</code>, and delete a profile with <code class="inline code">DELETE /mockserver/chaosExperiment/profiles/{name}</code>:</p>
+
+<pre class="code"><code class="code">curl -sf http://mockserver:1080/mockserver/chaosExperiment/profiles
+# -> {"profiles":["progressive-degradation"]}
+
+curl -sf -X DELETE http://mockserver:1080/mockserver/chaosExperiment/profiles/progressive-degradation</code></pre>
+
+<p>Saved profiles are stored in MockServer's state backend, so they <strong>survive a server reset</strong> (unlike active chaos, which a reset clears) and <strong>replicate across all nodes</strong> in a <a href="/mock_server/centralized_deployment.html">clustered deployment</a>. Applying a profile that does not exist returns <code class="inline code">404 Not Found</code> with a clear error message. The dashboard Chaos panel exposes the same library as a <em>Saved Profiles</em> list with a "Save as Profile" button and one-click apply / delete.</p>
 
 <a id="chaos_auto_halt" class="anchor" href="#chaos_auto_halt">&nbsp;</a>
 

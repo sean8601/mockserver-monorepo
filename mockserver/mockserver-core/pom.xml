@@ -578,6 +578,8 @@
                         <exclude>**/MockStreamBreakpointTest.java</exclude>
                         <!-- Mutates ServiceChaosRegistry + ChaosAutoHaltMonitor singletons, Metrics, ConfigurationProperties -->
                         <exclude>**/ChaosExperimentOrchestratorTest.java</exclude>
+                        <!-- Resets the ChaosExperimentOrchestrator singleton in @After -->
+                        <exclude>**/HttpStateChaosProfileEndpointTest.java</exclude>
                         <!-- Mutate global ConfigurationProperties / singleton registries / Metrics (detected by GlobalStateMutationGuardTest) -->
                         <exclude>**/MaxLlmConversationBodySizeTest.java</exclude>
                         <exclude>**/SlowRequestConfigurationTest.java</exclude>
@@ -670,6 +672,7 @@
                                 <include>**/InboundBreakpointTest.java</include>
                                 <include>**/MockStreamBreakpointTest.java</include>
                                 <include>**/ChaosExperimentOrchestratorTest.java</include>
+                                <include>**/HttpStateChaosProfileEndpointTest.java</include>
                                 <include>**/MaxLlmConversationBodySizeTest.java</include>
                                 <include>**/SlowRequestConfigurationTest.java</include>
                                 <include>**/HttpActionHandlerLlmCostBudgetTest.java</include>
