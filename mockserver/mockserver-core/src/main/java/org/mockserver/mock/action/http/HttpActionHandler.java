@@ -149,10 +149,11 @@ public class HttpActionHandler {
                 final int capturedMatchCount = expectation.getMatchCount();
                 // chaos: gate by the time-based outage window + apply degradation ramp (see effectiveChaos)
                 final HttpChaosProfile effectiveChaos = effectiveChaos(expectation);
+                final RateLimit rateLimit = expectation.getRateLimit();
                 scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
                     final HttpResponse response = getHttpResponseActionHandler().handle((HttpResponse) action, request, expectation.getHttpRequest());
                     // chaos: inject HTTP chaos faults on early mocked responses
-                    writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+                    writeResponseActionResponse(response, earlyResponseWriter, request, action, synchronous, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit);
                 }, expectationPostProcessor), synchronous);
             }
             case ERROR -> scheduler.schedule(() -> handleAnyException(request, earlyResponseWriter, synchronous, action, () -> {
@@ -329,6 +330,10 @@ public class HttpActionHandler {
         final HttpChaosProfile forwardChaos = (effectiveChaos == null && expectation.getChaos() == null && action.getType().name().startsWith("FORWARD"))
             ? ServiceChaosRegistry.getInstance().get(request.getFirstHeader("host"))
             : effectiveChaos;
+        // rate limit (declarative, protocol-agnostic): threaded into the RESPONSE / RESPONSE_TEMPLATE /
+        // RESPONSE_CLASS_CALLBACK and FORWARD-family write paths so the over-limit 429 is produced once
+        // per matched request. Null (no clause) leaves the normal response byte-for-byte unchanged.
+        final RateLimit rateLimit = expectation.getRateLimit();
         // WS2.3: resolve an opt-in template delay (duration computed from the request) into a concrete
         // millisecond delay here, where the request is in scope, so it applies to every action type's
         // scheduled delay below. Non-template (static/distribution) delays resolve to themselves, so
@@ -340,13 +345,13 @@ public class HttpActionHandler {
             // RESPONSE-phase breakpoint are applied inside writeResponseActionResponse. MODIFY feeds the
             // modified request into template/class-callback generation; logging keys off the original request.
             case RESPONSE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
-                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
+                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpResponseActionHandler().handle((HttpResponse) action, req, expectation.getHttpRequest())), expectationPostProcessor), synchronous);
             case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
-                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
+                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, actionDelay);
             case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
-                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx,
+                dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, req)), expectationPostProcessor), synchronous, actionDelay);
             case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
                     getHttpResponseObjectCallbackActionHandler().handle(HttpActionHandler.this, (HttpObjectCallback) action, request, responseWriter, synchronous, expectationPostProcessor),
@@ -359,21 +364,21 @@ public class HttpActionHandler {
                     return;
                 }
                 // breakpoint: REQUEST-phase pause gates the forward; MODIFY feeds the modified request into the forward handler
-                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardActionHandler().handle((HttpForward) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardClassCallbackActionHandler().handle((HttpClassCallback) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             // deferred: FORWARD_OBJECT_CALLBACK chaos injection and REQUEST breakpoint — uses its own write path
@@ -384,21 +389,21 @@ public class HttpActionHandler {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpOverrideForwardedRequestCallbackActionHandler().handle((HttpOverrideForwardedRequest) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_VALIDATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardValidateActionHandler().handle((HttpForwardValidateAction) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case FORWARD_WITH_FALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
-                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx,
+                dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardWithFallbackActionHandler().handle((HttpForwardWithFallback) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
             case SSE_RESPONSE -> {
@@ -1797,6 +1802,48 @@ public class HttpActionHandler {
         return errorResponse;
     }
 
+    /**
+     * Builds the synthetic rate-limit-exceeded response when the matched expectation's
+     * {@link RateLimit} clause is over-limit for the current window, or returns
+     * {@code null} when there is no rate limit, the limit is misconfigured, or the
+     * request is within the limit (in which case the normal response is returned
+     * untouched). Records exactly one acquire against the shared
+     * {@link org.mockserver.ratelimit.RateLimitRegistry} — this method must be called
+     * from the single write path so each matched request is counted once.
+     *
+     * <p>On the over-limit response only, sets {@code Retry-After} (literal override
+     * else {@code max(1, reset - now)} seconds) and the {@code X-RateLimit-Limit} /
+     * {@code X-RateLimit-Remaining} (0) / {@code X-RateLimit-Reset} (unix seconds)
+     * headers. Allowed responses are never decorated.
+     *
+     * @param rateLimit    the declarative rate limit (may be null)
+     * @param expectationId the matched expectation id, used as the counter key when {@code rateLimit.getName()} is null
+     */
+    HttpResponse rateLimitResponseOrNull(final RateLimit rateLimit, final String expectationId) {
+        if (rateLimit == null) {
+            return null;
+        }
+        org.mockserver.ratelimit.RateLimitRegistry.Decision decision =
+            org.mockserver.ratelimit.RateLimitRegistry.getInstance().tryAcquire(rateLimit, expectationId);
+        if (decision.allowed) {
+            return null;
+        }
+        int status = rateLimit.getErrorStatus() != null ? rateLimit.getErrorStatus() : 429;
+        long nowEpochSecond = org.mockserver.time.TimeService.currentTimeMillis() / 1000L;
+        HttpResponse errorResponse = response()
+            .withStatusCode(status)
+            .withHeader("content-type", "application/json")
+            .withHeader("X-RateLimit-Limit", String.valueOf(decision.limit))
+            .withHeader("X-RateLimit-Remaining", "0")
+            .withHeader("X-RateLimit-Reset", String.valueOf(decision.resetEpochSecond))
+            .withBody("{\"error\":{\"type\":\"rate_limit_exceeded\",\"message\":\"request rate limit exceeded\"}}");
+        String retryAfter = (rateLimit.getRetryAfter() != null && !rateLimit.getRetryAfter().isEmpty())
+            ? rateLimit.getRetryAfter()
+            : String.valueOf(Math.max(1L, decision.resetEpochSecond - nowEpochSecond));
+        errorResponse.withHeader("Retry-After", retryAfter);
+        return errorResponse;
+    }
+
     // Appended to a body to make it malformed; an unterminated JSON object so any
     // JSON payload becomes unparseable and any other payload gains clear garbage.
     private static final byte[] MALFORMED_BODY_SUFFIX = "{\"__chaos_malformed__\":".getBytes(StandardCharsets.UTF_8);
@@ -1973,6 +2020,10 @@ public class HttpActionHandler {
     }
 
     void writeResponseActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final RequestDefinition requestDefinition, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx) {
+        writeResponseActionResponse(response, responseWriter, request, action, synchronous, requestDefinition, postProcessor, chaos, matchCount, ctx, null);
+    }
+
+    void writeResponseActionResponse(final HttpResponse response, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final RequestDefinition requestDefinition, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx, final RateLimit rateLimit) {
         // Chaos: drop connection takes priority over error and latency
         if (shouldDropConnection(chaos, matchCount)) {
             org.mockserver.metrics.Metrics.incrementHttpChaosInjected("drop");
@@ -1985,15 +2036,21 @@ public class HttpActionHandler {
             return;
         }
 
+        // Rate limit (declarative, protocol-agnostic) takes precedence over the chaos quota and the
+        // probabilistic chaos error. tryAcquire mutates registry state, so it is invoked exactly once
+        // here in the single write path.
+        HttpResponse rateLimitError = rateLimitResponseOrNull(rateLimit, action.getExpectationId());
         // Chaos: the deterministic quota (rate limit) takes priority over the probabilistic error
-        HttpResponse quotaError = quotaErrorResponseOrNull(chaos, matchCount);
-        HttpResponse chaosError = quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount);
+        HttpResponse quotaError = rateLimitError != null ? null : quotaErrorResponseOrNull(chaos, matchCount);
+        HttpResponse chaosError = rateLimitError != null ? rateLimitError : (quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount));
         final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyResponseChaos(response, chaos, matchCount);
         // Gate latency by the same count window as error injection
         final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
 
         // Metrics: record chaos faults only when they actually fire
-        if (quotaError != null) {
+        if (rateLimitError != null) {
+            org.mockserver.metrics.Metrics.incrementHttpChaosInjected("rateLimit");
+        } else if (quotaError != null) {
             org.mockserver.metrics.Metrics.incrementHttpChaosInjected("quota");
         } else if (chaosError != null) {
             org.mockserver.metrics.Metrics.incrementHttpChaosInjected("error");
@@ -2190,6 +2247,10 @@ public class HttpActionHandler {
     }
 
     void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx) {
+        writeForwardActionResponse(responseFuture, responseWriter, request, action, synchronous, postProcessor, chaos, matchCount, ctx, null);
+    }
+
+    void writeForwardActionResponse(final HttpForwardActionResult responseFuture, final ResponseWriter responseWriter, final HttpRequest request, final Action action, boolean synchronous, final Runnable postProcessor, final HttpChaosProfile chaos, int matchCount, final ChannelHandlerContext ctx, final RateLimit rateLimit) {
         scheduler.submit(responseFuture, () -> {
             try {
                 long forwardStartNanos = org.mockserver.time.TimeService.nanoTime();
@@ -2208,16 +2269,21 @@ public class HttpActionHandler {
                     return;
                 }
 
+                // Rate limit (declarative, protocol-agnostic) takes precedence over the chaos quota and the
+                // probabilistic chaos error. tryAcquire mutates registry state, so it is invoked exactly once here.
+                HttpResponse rateLimitError = rateLimitResponseOrNull(rateLimit, action.getExpectationId());
                 // chaos: quota (deterministic rate limit) then probabilistic error injection on forwarded responses — replaces the upstream response
-                HttpResponse quotaError = quotaErrorResponseOrNull(chaos, matchCount);
-                HttpResponse chaosError = quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount);
+                HttpResponse quotaError = rateLimitError != null ? null : quotaErrorResponseOrNull(chaos, matchCount);
+                HttpResponse chaosError = rateLimitError != null ? rateLimitError : (quotaError != null ? quotaError : chaosErrorResponseOrNull(chaos, matchCount));
                 final HttpResponse effectiveResponse = chaosError != null ? chaosError : applyResponseChaos(response, chaos, matchCount);
                 // Gate latency by the same count window as error injection
                 final Delay chaosLatency = chaos != null && chaos.countWindowEligible(matchCount) ? chaos.getLatency() : null;
                 final boolean chaosErrorInjected = chaosError != null;
 
                 // Metrics: record chaos faults only when they actually fire
-                if (quotaError != null) {
+                if (rateLimitError != null) {
+                    org.mockserver.metrics.Metrics.incrementHttpChaosInjected("rateLimit");
+                } else if (quotaError != null) {
                     org.mockserver.metrics.Metrics.incrementHttpChaosInjected("quota");
                 } else if (chaosErrorInjected) {
                     org.mockserver.metrics.Metrics.incrementHttpChaosInjected("error");
@@ -2643,13 +2709,14 @@ public class HttpActionHandler {
         final HttpChaosProfile forwardChaos,
         final int capturedMatchCount,
         final ChannelHandlerContext ctx,
+        final RateLimit rateLimit,
         final java.util.function.Function<HttpRequest, HttpForwardActionResult> forwarder
     ) {
         if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor,
-            req -> writeForwardActionResponse(forwarder.apply(req), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx))) {
+            req -> writeForwardActionResponse(forwarder.apply(req), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit))) {
             return;
         }
-        writeForwardActionResponse(forwarder.apply(request), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx);
+        writeForwardActionResponse(forwarder.apply(request), responseWriter, request, action, synchronous, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit);
     }
 
     /**
@@ -2668,13 +2735,14 @@ public class HttpActionHandler {
         final HttpChaosProfile effectiveChaos,
         final int capturedMatchCount,
         final ChannelHandlerContext ctx,
+        final RateLimit rateLimit,
         final java.util.function.Function<HttpRequest, HttpResponse> responder
     ) {
         if (attemptRequestBreakpoint(request, synchronous, responseWriter, expectationPostProcessor,
-            req -> writeResponseActionResponse(responder.apply(req), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx))) {
+            req -> writeResponseActionResponse(responder.apply(req), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit))) {
             return;
         }
-        writeResponseActionResponse(responder.apply(request), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx);
+        writeResponseActionResponse(responder.apply(request), responseWriter, request, action, synchronous, requestDefinition, expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit);
     }
 
     private void returnBadGateway(ResponseWriter responseWriter, HttpRequest request, String error) {

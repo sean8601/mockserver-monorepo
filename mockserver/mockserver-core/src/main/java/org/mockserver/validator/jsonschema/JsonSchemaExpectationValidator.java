@@ -41,6 +41,7 @@ public class JsonSchemaExpectationValidator extends JsonSchemaValidator {
             "captureRule",
             "expectationStep",
             "httpChaosProfile",
+            "rateLimit",
             "times",
             "timeToLive",
             "stringOrJsonSchema",

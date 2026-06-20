@@ -417,6 +417,12 @@ Expectation.when(request)      // RequestDefinition
 
 Scenario fields are optional. When `scenarioName` and `scenarioState` are set, the expectation only matches when the named scenario is in the required state. After matching, the scenario transitions to `newScenarioState` (if set). All scenarios start in the `"Started"` state. State is managed by `ScenarioManager` in `RequestMatchers`.
 
+#### Rate Limit (`rateLimit`)
+
+`Expectation.rateLimit` (a `RateLimit`, `org.mockserver.model`) is an optional, nullable clause — a sibling of `chaos` — that declaratively rate-limits the matched expectation. It follows the same model field / `withX` / getter convention as `HttpChaosProfile` (plain Jackson bean, no custom serializer) and round-trips through `RateLimitDTO` (`org.mockserver.serialization.model`), wired into `ExpectationDTO` exactly like `chaos` (nullable field, null-guarded copy in the constructor, `withRateLimit(...)` in `buildObject()`). An expectation **without** a `rateLimit` clause serializes and behaves byte-for-byte identically to before (the field is omitted from JSON, the response is untouched).
+
+`RateLimit` fields: `name` (shared counter key; `null` ⇒ the expectation id is used), `algorithm` (`FIXED_WINDOW` default, or `TOKEN_BUCKET`; serialized as a lowercase string), `limit` + `windowMillis` (fixed-window, each `>= 1`), `burst` + `refillPerSecond` (token-bucket, `>= 1` and `> 0`), `errorStatus` (default `429`), and `retryAfter` (literal `Retry-After` override, else computed). The `withX` setters carry the same `>= 1` / range guards as `HttpChaosProfile.withQuotaLimit`. Counting is backed by the node-local `RateLimitRegistry` (`org.mockserver.ratelimit`) and the over-limit response is produced in the write path — see [docs/code/request-processing.md](request-processing.md).
+
 #### Timed and Triggered Scenario Flows
 
 Beyond expectation-driven transitions, scenarios support timed auto-transitions and external triggers via REST endpoints:

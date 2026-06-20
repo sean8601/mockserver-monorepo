@@ -34,6 +34,7 @@ public class Expectation extends ObjectWithJsonToString {
     private int priority;
     private Integer percentage;
     private HttpChaosProfile chaos;
+    private RateLimit rateLimit;
     private SortableExpectationId sortableExpectationId;
     private final RequestDefinition httpRequest;
     private final Times times;
@@ -361,6 +362,16 @@ public class Expectation extends ObjectWithJsonToString {
 
     public HttpChaosProfile getChaos() {
         return chaos;
+    }
+
+    public Expectation withRateLimit(RateLimit rateLimit) {
+        this.rateLimit = rateLimit;
+        this.hashCode = 0;
+        return this;
+    }
+
+    public RateLimit getRateLimit() {
+        return rateLimit;
     }
 
     @JsonIgnore
@@ -1289,6 +1300,7 @@ public class Expectation extends ObjectWithJsonToString {
             .withCreated(created)
             .withPercentage(percentage)
             .withChaos(chaos)
+            .withRateLimit(rateLimit)
             .withNamespace(namespace)
             .withScenarioName(scenarioName)
             .withScenarioState(scenarioState)

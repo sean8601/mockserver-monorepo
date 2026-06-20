@@ -63,6 +63,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ENABLED = "mockserver.chaosAutoHaltEnabled";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD = "mockserver.chaosAutoHaltErrorThreshold";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_WINDOW_MILLIS = "mockserver.chaosAutoHaltWindowMillis";
+    private static final String MOCKSERVER_RATE_LIMIT_MAX_NAMED_QUOTAS = "mockserver.rateLimitMaxNamedQuotas";
     private static final String MOCKSERVER_CONNECTION_LIFECYCLE_CHAOS_ENABLED = "mockserver.connectionLifecycleChaosEnabled";
     private static final String MOCKSERVER_PREEMPTION_SIMULATION_MAX_DRAIN_MILLIS = "mockserver.preemptionSimulationMaxDrainMillis";
     private static final String MOCKSERVER_CONNECTION_LIFECYCLE_AUTO_HALT_COUNTS_RST = "mockserver.connectionLifecycleAutoHaltCountsRst";
@@ -657,6 +658,21 @@ public class ConfigurationProperties {
 
     public static long chaosAutoHaltErrorThreshold() {
         return readLongProperty(MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD, "MOCKSERVER_CHAOS_AUTO_HALT_ERROR_THRESHOLD", 50L);
+    }
+
+    public static int rateLimitMaxNamedQuotas() {
+        return readIntegerProperty(MOCKSERVER_RATE_LIMIT_MAX_NAMED_QUOTAS, "MOCKSERVER_RATE_LIMIT_MAX_NAMED_QUOTAS", 10000);
+    }
+
+    /**
+     * The maximum number of distinct named rate-limit counters held in the in-process
+     * {@link org.mockserver.ratelimit.RateLimitRegistry}. Once this cap is reached a
+     * request for a new counter key fails open (is allowed). Default is 10000.
+     *
+     * @param maxNamedQuotas maximum number of distinct named rate-limit counters
+     */
+    public static void rateLimitMaxNamedQuotas(int maxNamedQuotas) {
+        setProperty(MOCKSERVER_RATE_LIMIT_MAX_NAMED_QUOTAS, "" + maxNamedQuotas);
     }
 
     /**

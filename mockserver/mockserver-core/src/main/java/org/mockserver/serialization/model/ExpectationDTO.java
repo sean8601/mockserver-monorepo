@@ -23,6 +23,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
     private Integer priority;
     private Integer percentage;
     private HttpChaosProfileDTO chaos;
+    private RateLimitDTO rateLimit;
     private RequestDefinitionDTO httpRequest;
     private HttpResponseDTO httpResponse;
     private HttpTemplateDTO httpResponseTemplate;
@@ -74,6 +75,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             }
             this.percentage = expectation.getPercentage();
             this.chaos = expectation.getChaos() != null ? new HttpChaosProfileDTO(expectation.getChaos()) : null;
+            this.rateLimit = expectation.getRateLimit() != null ? new RateLimitDTO(expectation.getRateLimit()) : null;
             RequestDefinition requestMatcher = expectation.getHttpRequest();
             if (requestMatcher instanceof HttpRequest) {
                 this.httpRequest = new HttpRequestDTO((HttpRequest) requestMatcher);
@@ -327,6 +329,7 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
             .withId(this.id)
             .withPercentage(this.percentage)
             .withChaos(this.chaos != null ? this.chaos.buildObject() : null)
+            .withRateLimit(this.rateLimit != null ? this.rateLimit.buildObject() : null)
             .withNamespace(this.namespace)
             .withScenarioName(this.scenarioName)
             .withScenarioState(this.scenarioState)
@@ -399,6 +402,15 @@ public class ExpectationDTO extends ObjectWithJsonToString implements DTO<Expect
 
     public ExpectationDTO setChaos(HttpChaosProfileDTO chaos) {
         this.chaos = chaos;
+        return this;
+    }
+
+    public RateLimitDTO getRateLimit() {
+        return rateLimit;
+    }
+
+    public ExpectationDTO setRateLimit(RateLimitDTO rateLimit) {
+        this.rateLimit = rateLimit;
         return this;
     }
 

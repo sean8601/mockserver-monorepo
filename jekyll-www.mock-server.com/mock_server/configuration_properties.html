@@ -1517,6 +1517,41 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.chaosAutoHaltEnabled="true" -Dmockserver.chaosAutoHaltErrorThreshold="20" -Dmockserver.chaosAutoHaltWindowMillis="30000"</code></pre>
 </div>
 
+<button id="button_configuration_rate_limit_max_named_quotas" class="accordion title"><strong>Rate Limit Max Named Quotas</strong></button>
+<div class="panel title">
+    <p>An expectation can carry a <code>rateLimit</code> clause that returns a deterministic <code>429 Too Many Requests</code> (with <code>Retry-After</code> and <code>X-RateLimit-*</code> headers) once the matched requests exceed a limit, instead of the normal response. Each named limit (or, when no <code>name</code> is given, each expectation) keeps its own counter. This property caps how many such counters MockServer holds in memory at once.</p>
+    <p>Once the cap is reached, a request for a brand-new counter is <strong>allowed</strong> (fails open) rather than starting to reject traffic &mdash; so a large or unbounded set of rate-limit names can never exhaust memory or surprise you with unexpected throttling. The default of <code>10000</code> is comfortably high for normal use; raise it only if you genuinely use more than 10,000 distinct rate-limit names at once.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">10000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.rateLimitMaxNamedQuotas(int maxNamedQuotas)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.rateLimitMaxNamedQuotas=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_RATE_LIMIT_MAX_NAMED_QUOTAS=...</code></pre>
+    <p>Example expectation (fixed window &mdash; at most 100 requests per minute for one account):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">{
+    "httpRequest": { "path": "/api/widgets" },
+    "httpResponse": { "statusCode": 200, "body": "ok" },
+    "rateLimit": {
+        "name": "widgets-account",
+        "algorithm": "fixed_window",
+        "limit": 100,
+        "windowMillis": 60000,
+        "retryAfter": "60"
+    }
+}</code></pre>
+    <p>Example expectation (token bucket &mdash; burst of 20, refilling 5 tokens per second):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">{
+    "httpRequest": { "path": "/api/widgets" },
+    "httpResponse": { "statusCode": 200, "body": "ok" },
+    "rateLimit": {
+        "algorithm": "token_bucket",
+        "burst": 20,
+        "refillPerSecond": 5
+    }
+}</code></pre>
+</div>
+
 <button id="button_configuration_connection_lifecycle_chaos" class="accordion title"><strong>Connection-Lifecycle Faults &amp; Preemption Simulation</strong></button>
 <div class="panel title">
     <p>Connection-lifecycle faults let you reproduce the failure patterns that appear when a server crashes mid-response or signals a graceful shutdown: a host-scoped mid-response TCP reset (<code>resetMidResponse</code>), a slow socket close (<code>slowCloseDelay</code>), and an HTTP/2 GOAWAY (<code>http2GoAway</code>), all registered via <code>PUT /mockserver/tcpChaos</code>. The same feature powers the <strong>preemption simulation</strong> (<code>PUT /mockserver/preemption</code>), which makes the server <em>cordon</em> itself &mdash; new data-plane requests are turned away (HTTP/1.1 gets <code>503</code> + <code>Retry-After</code> + <code>Connection: close</code>; HTTP/2 clients receive a GOAWAY) while in-flight requests drain &mdash; so you can test how your clients react to a Kubernetes node drain, Spot reclamation, or pre-SIGTERM sequence. It is a simulation only and never stops the server. Control-plane requests (<code>/mockserver/...</code>) are always exempt from the cordon.</p>

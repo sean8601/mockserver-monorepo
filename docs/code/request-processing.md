@@ -520,6 +520,16 @@ When an expectation is configured with `httpResponses` (a list of `HttpResponse`
 
 The cycling/selection logic is in `Expectation.getPrimaryAction()` -> `selectFromResponses()`. The `matchCount` is tracked per-expectation via an `AtomicInteger` and is runtime-only state (`@JsonIgnore`). `responseWeights` is a serialized field that round-trips in expectation JSON; weights are ignored unless `responseMode` is `WEIGHTED`.
 
+### Rate Limiting (`rateLimit` clause)
+
+An expectation may carry a declarative, protocol-agnostic `rateLimit` clause (a sibling of `chaos` — see [docs/code/domain-model.md](domain-model.md)). When a matched expectation is over-limit for the current window, MockServer returns a deterministic `errorStatus` (default `429`) response — carrying `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` (`0`), and `X-RateLimit-Reset` (unix seconds) — **instead of** the normal response; within the limit the normal response is returned unchanged. An expectation without a `rateLimit` clause behaves and serializes byte-for-byte identically to before.
+
+`dispatchPrimaryAction()` reads `expectation.getRateLimit()` once per matched request and threads it into the single write path (`writeResponseActionResponse` for `RESPONSE` / `RESPONSE_TEMPLATE` / `RESPONSE_CLASS_CALLBACK`, and `writeForwardActionResponse` for the `FORWARD` family). The check `rateLimitResponseOrNull(rateLimit, expectationId)` calls `RateLimitRegistry.getInstance().tryAcquire(...)` — which **mutates** registry state — so it runs **exactly once** per matched request, in the write path only. Deferred in v1 (these thread `null` and so are NOT rate-limited): the matched-expectation `LLM_RESPONSE`, `SSE_RESPONSE`, gRPC, and WebSocket response actions, along with the object-callback and anonymous/unmatched proxy-pass paths.
+
+Precedence inside the write path (highest first): connection-drop chaos → **`rateLimit` (429)** → chaos `quota` (`HttpQuotaRegistry`) → probabilistic chaos `error` → real-response chaos (truncate/malformed/slow). The rate-limit gate is checked before the chaos quota and before the probabilistic chaos error, so a configured `rateLimit` deterministically wins.
+
+The counter is keyed by `rateLimit.name` (or, when `name` is omitted, the expectation id), so expectations sharing a `name` share one counter. Two algorithms are supported: `FIXED_WINDOW` (`limit` per `windowMillis`) and `TOKEN_BUCKET` (`burst` capacity refilling at `refillPerSecond`). State lives in the node-local `RateLimitRegistry` (`org.mockserver.ratelimit`), is cleared on `HttpState.reset()`, and is bounded by `rateLimitMaxNamedQuotas` (fail-open on a new key once the cap is reached). v1 is node-local; see [docs/code/clustered-state.md](clustered-state.md) for the clustering trade-off.
+
 ### Before & After Actions
 
 An expectation can carry two optional ordered lists of side-effect actions, both using the same `AfterAction` type (exactly one of `httpRequest`, `httpClassCallback`, or `httpObjectCallback`, plus an optional `Delay`):

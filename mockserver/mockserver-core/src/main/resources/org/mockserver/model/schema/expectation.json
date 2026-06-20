@@ -17,6 +17,9 @@
     "chaos": {
       "$ref": "#/definitions/httpChaosProfile"
     },
+    "rateLimit": {
+      "$ref": "#/definitions/rateLimit"
+    },
     "httpRequest": {
       "$ref": "#/definitions/requestDefinition"
     },

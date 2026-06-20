@@ -46,6 +46,7 @@ public class Configuration {
     private Boolean chaosAutoHaltEnabled;
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
+    private Integer rateLimitMaxNamedQuotas;
     private Boolean connectionLifecycleChaosEnabled;
     private Long preemptionSimulationMaxDrainMillis;
     private Boolean connectionLifecycleAutoHaltCountsRst;
@@ -612,6 +613,25 @@ public class Configuration {
             return ConfigurationProperties.chaosAutoHaltWindowMillis();
         }
         return chaosAutoHaltWindowMillis;
+    }
+
+    public Integer rateLimitMaxNamedQuotas() {
+        if (rateLimitMaxNamedQuotas == null) {
+            return ConfigurationProperties.rateLimitMaxNamedQuotas();
+        }
+        return rateLimitMaxNamedQuotas;
+    }
+
+    /**
+     * The maximum number of distinct named rate-limit counters held in the in-process
+     * rate-limit registry. Once this cap is reached a request for a new counter key
+     * fails open (is allowed). Default is 10000.
+     *
+     * @param rateLimitMaxNamedQuotas maximum number of distinct named rate-limit counters
+     */
+    public Configuration rateLimitMaxNamedQuotas(Integer rateLimitMaxNamedQuotas) {
+        this.rateLimitMaxNamedQuotas = rateLimitMaxNamedQuotas;
+        return this;
     }
 
     /**

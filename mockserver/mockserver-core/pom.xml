@@ -526,6 +526,7 @@
                         <exclude>**/TimeToLiveTest.java</exclude>
                         <exclude>**/ExpectationTest.java</exclude>
                         <exclude>**/HttpActionHandlerChaosTest.java</exclude>
+                        <exclude>**/HttpActionHandlerRateLimitTest.java</exclude>
                         <exclude>**/HttpActionHandlerForwardChaosTest.java</exclude>
                         <exclude>**/ServiceChaosRegistryTest.java</exclude>
                         <exclude>**/TcpChaosRegistryTest.java</exclude>
@@ -649,6 +650,7 @@
                                 <include>**/TimeToLiveTest.java</include>
                                 <include>**/ExpectationTest.java</include>
                                 <include>**/HttpActionHandlerChaosTest.java</include>
+                                <include>**/HttpActionHandlerRateLimitTest.java</include>
                                 <include>**/HttpActionHandlerForwardChaosTest.java</include>
                                 <include>**/ServiceChaosRegistryTest.java</include>
                                 <include>**/TcpChaosRegistryTest.java</include>

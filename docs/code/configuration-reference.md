@@ -73,6 +73,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Service mesh / transparent proxy | `transparentProxyEnabled`, `transparentProxyTproxy`, `transparentProxyEbpf`, `transparentProxyEbpfMapPath` |
 | OpenTelemetry | `otelMetricsEnabled`, `otelTracesEnabled`, `otelEndpoint`, `otelMetricsExportIntervalSeconds`, `otelPropagateTraceContext`, `otelGenerateTraceId` |
 | Chaos auto-halt | `chaosAutoHaltEnabled`, `chaosAutoHaltErrorThreshold`, `chaosAutoHaltWindowMillis` |
+| Rate limiting | `rateLimitMaxNamedQuotas` |
 | SLO verdicts | `sloTrackingEnabled`, `sloWindowRetentionMillis`, `sloWindowMaxSamples` |
 | Load generation | `loadGenerationEnabled`, `loadGenerationMaxVirtualUsers`, `loadGenerationMaxInFlightRequests`, `loadGenerationMaxRequestsPerSecond`, `loadGenerationMaxDurationMillis`, `loadGenerationMaxSteps` |
 | Breakpoints | `breakpointTimeoutMillis`, `breakpointMaxHeld` (breakpoint activation is now via the matcher-based registry REST API) |
@@ -120,6 +121,10 @@ Opt-in API-driven load generation that backs `PUT /mockserver/loadScenario` (see
 | `loadGenerationMaxSteps` | `50` | Hard cap on the number of request steps a single scenario may define. |
 
 The caps are enforced both at validation (VU count, duration, step count) and live at dispatch (in-flight, RPS), so the feature cannot self-DoS the server even when enabled.
+
+### `rateLimitMaxNamedQuotas`
+
+Default `10000` (env `MOCKSERVER_RATE_LIMIT_MAX_NAMED_QUOTAS`). Caps the number of distinct named counters held in the in-process `RateLimitRegistry` that backs the declarative `rateLimit` expectation clause (see [docs/code/request-processing.md](request-processing.md) and [docs/code/domain-model.md](domain-model.md)). Each distinct `rateLimit.name` (or, when `name` is omitted, each distinct expectation id) is one counter. Once the cap is reached, a request for a *new* counter key **fails open** (is allowed) rather than evicting an existing counter, so an unbounded set of keys can never exhaust memory and can never silently start rate-limiting a previously-unseen key. There is no enable flag — the registry is inert until an expectation carries a `rateLimit` clause.
 
 ### `failOnInitializationError`
 

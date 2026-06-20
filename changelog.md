@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-39q2-94rc-95cp, GHSA-cjmm-f4jc-qw8r, GHSA-cj63-jhhr-wcxv, GHSA-h8r8-wccr-v5f2, GHSA-v2wj-7wpq-c8vv.
 
 ### Added
+- **General-purpose rate limiting (`rateLimit` expectation clause)** (`mockserver-core`). A protocol-agnostic
+  `rateLimit` clause on an expectation (sibling of `chaos`) returns a deterministic `429` with `Retry-After` and
+  `X-RateLimit-Limit/Remaining/Reset` headers once a matched expectation exceeds its configured rate — so a test
+  can exercise a client's backoff/retry logic without wrapping a chaos profile. Supports `fixed_window` and
+  `token_bucket` algorithms, a named shared counter (multiple expectations can share one limit), and an
+  overridable error status. Off by default (no clause = no behaviour); the named-counter store is node-local and
+  bounded by `rateLimitMaxNamedQuotas`.
 - **API-driven load generation via Load Scenarios** (`mockserver-core`, `mockserver-netty`). A new opt-in
   control plane (`PUT/GET/DELETE /mockserver/loadScenario`) drives outbound traffic at a target: a
   `LoadScenario` is an ordered list of request steps (modelled on a verification sequence) with per-step
