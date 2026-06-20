@@ -168,7 +168,32 @@ curl http://localhost:1080/hello
         <strong><a href="/mock_server/verification.html">retrieve</a> logs</strong>, <strong>requests</strong> or <strong>expectations</strong> to help debug
         <p><img class="action_image" src="images/retrieve_logs.png" alt="Retrieve Logs"></p>
     </li>
+    <li>
+        <strong><a href="/mock_server/chaos_testing.html">inject chaos and faults</a></strong> &mdash; latency, error responses, dropped connections and malformed responses &mdash; when a request matches an <a href="/mock_server/creating_expectations.html">expectation</a> or is proxied
+        <p><img class="action_image" src="images/mockserver_chaos_action.png" alt="Chaos / Fault Injection Action"></p>
+    </li>
+    <li>
+        <strong><a href="/mock_server/llm_response_mocking.html">mock an LLM or AI-provider API</a></strong> (OpenAI, Anthropic, Bedrock &amp; more), returning a realistic token-by-token streamed response when a request matches an <a href="/mock_server/creating_expectations.html">expectation</a>
+        <p><img class="action_image" src="images/mockserver_llm_mocking.png" alt="LLM Response Mocking Action"></p>
+    </li>
 </ul>
+
+<a id="chaos_engineering" class="anchor" href="#chaos_engineering">&nbsp;</a>
+
+<h3>Chaos engineering &amp; resilience testing</h3>
+
+<p>Most testing proves a system works when its dependencies behave. MockServer also lets you prove it survives when they <em>don't</em>. Because the same instance is already in the path of your traffic &mdash; as a <a href="/mock_server/getting_started.html">mock</a> or a <a href="/proxy/getting_started.html">proxy</a> &mdash; it can deliberately degrade that traffic so failure modes are tested on purpose rather than discovered in production.</p>
+
+<p>MockServer can inject:</p>
+
+<ul>
+	<li><strong>latency</strong> &mdash; fixed or random delays before a response, to exercise timeouts, retries and back-pressure</li>
+	<li><strong>error responses</strong> &mdash; return 5xx (or any) status codes, or a configurable rate of errors across requests</li>
+	<li><strong>dropped &amp; reset connections</strong> &mdash; close the socket before, during or after the response to simulate network faults</li>
+	<li><strong>malformed responses</strong> &mdash; truncated bodies, bad framing and protocol-level corruption</li>
+</ul>
+
+<p>Faults work for <strong>HTTP, gRPC and TCP</strong>, on both mocked and proxied traffic, and can be applied per expectation or as a global <a href="/mock_server/chaos_testing.html">chaos experiment</a> &mdash; including <a href="/mock_server/chaos_testing_orchestrators.html">scheduled experiments with an automatic dead-man's-switch halt</a>, and fleet-wide chaos for <a href="/mock_server/chaos_testing_kubernetes.html">Kubernetes</a> and <a href="/mock_server/service_mesh.html">service meshes</a>. Live experiments can be started, watched and stopped from the <a href="/mock_server/mockserver_ui.html">dashboard</a>.</p>
 
 <a id="proxying_with_mockserver" class="anchor" href="#proxying_with_mockserver">&nbsp;</a>
 
@@ -258,6 +283,10 @@ curl http://localhost:1080/hello
 	<li><strong><a href="/mock_server/ai_protocol_mocking.html">AI Protocol Mocking</a></strong> — mock MCP, A2A, SSE and WebSocket AI-protocol servers</li>
 	<li><strong><a href="/mock_server/ai_openapi.html">OpenAPI Fallback for AI</a></strong> — use MockServer's <a href="/mockserver-openapi.yaml">OpenAPI spec</a> with AI tools that don't yet support MCP</li>
 </ul>
+
+<p>For example, put MockServer in front of a real provider to record live traffic, then export a one-click <a href="/mock_server/ai_optimisation.html">cost-optimisation brief</a>:</p>
+
+<p><img class="action_image" src="images/mockserver_llm_optimisation.png" alt="Proxy LLM traffic and export a cost-optimisation brief"></p>
 
 <p>The MCP endpoint requires <strong>no extra configuration</strong> — start MockServer and the AI surface is on the same port:</p>
 
@@ -361,11 +390,17 @@ curl http://localhost:1080/hello
 
 <p><img src="images/recording_requests_with_mockserver_proxy.png" alt="Recording service requests with MockServer Proxy" style="max-width:100%;"></p>
 
-<p><strong>Verifying Request</strong></p>
+<p><strong>Verifying Requests</strong></p>
 
 <p>MockServer can verify proxied service requests, as follows:</p>
 
 <p><img src="images/system_under_test_with_mockserver_proxy.png" alt="Verifying service requests with MockServer Proxy" style="max-width:100%;"></p>
+
+<p><strong>Verifying Responses</strong></p>
+
+<p>MockServer records the responses returned by proxied or forwarded upstreams as well as the requests, so a test can <a href="/mock_server/verification.html">verify the responses</a> a dependency actually returned &mdash; not just what was sent to it:</p>
+
+<p><img class="action_image" src="images/mockserver_response_verification.png" alt="Verifying upstream responses with MockServer"></p>
 
 <a id="developer-documentation" class="anchor" href="#developer-documentation">&nbsp;</a>
 
