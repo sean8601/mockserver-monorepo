@@ -140,7 +140,7 @@ public class Configuration {
     private Boolean driftAlertWebhookEnabled;
     private String driftAlertWebhookUrl;
     private String driftAlertSeverityThreshold;
-    private Long driftAlertCooldownMs;
+    private Long driftAlertCooldownMillis;
     private Boolean controlPlaneAuditEnabled;
     private Integer controlPlaneAuditMaxEntries;
     private Boolean controlPlaneAuditReads;
@@ -2067,21 +2067,21 @@ public class Configuration {
         return this;
     }
 
-    public Long driftAlertCooldownMs() {
-        if (driftAlertCooldownMs == null) {
-            return ConfigurationProperties.driftAlertCooldownMs();
+    public Long driftAlertCooldownMillis() {
+        if (driftAlertCooldownMillis == null) {
+            return ConfigurationProperties.driftAlertCooldownMillis();
         }
-        return driftAlertCooldownMs;
+        return driftAlertCooldownMillis;
     }
 
     /**
      * De-dup cooldown window in milliseconds: a webhook fires at most once per
      * expectation/driftType/field signature within this window. Default 60000 (60s).
      *
-     * @param driftAlertCooldownMs the cooldown window in milliseconds
+     * @param driftAlertCooldownMillis the cooldown window in milliseconds
      */
-    public Configuration driftAlertCooldownMs(Long driftAlertCooldownMs) {
-        this.driftAlertCooldownMs = driftAlertCooldownMs;
+    public Configuration driftAlertCooldownMillis(Long driftAlertCooldownMillis) {
+        this.driftAlertCooldownMillis = driftAlertCooldownMillis;
         return this;
     }
 

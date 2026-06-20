@@ -140,7 +140,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DRIFT_ALERT_WEBHOOK_ENABLED = "mockserver.driftAlertWebhookEnabled";
     private static final String MOCKSERVER_DRIFT_ALERT_WEBHOOK_URL = "mockserver.driftAlertWebhookUrl";
     private static final String MOCKSERVER_DRIFT_ALERT_SEVERITY_THRESHOLD = "mockserver.driftAlertSeverityThreshold";
-    private static final String MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS = "mockserver.driftAlertCooldownMs";
+    private static final String MOCKSERVER_DRIFT_ALERT_COOLDOWN_MILLIS = "mockserver.driftAlertCooldownMillis";
     private static final String MOCKSERVER_CONTROL_PLANE_AUDIT_ENABLED = "mockserver.controlPlaneAuditEnabled";
     private static final String MOCKSERVER_CONTROL_PLANE_AUDIT_MAX_ENTRIES = "mockserver.controlPlaneAuditMaxEntries";
     private static final String MOCKSERVER_CONTROL_PLANE_AUDIT_READS = "mockserver.controlPlaneAuditReads";
@@ -2260,12 +2260,12 @@ public class ConfigurationProperties {
      * De-dup cooldown window in milliseconds: a webhook fires at most once per
      * expectation/driftType/field signature within this window. Default 60000 (60s).
      */
-    public static long driftAlertCooldownMs() {
-        return readLongProperty(MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS, "MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS", 60000L);
+    public static long driftAlertCooldownMillis() {
+        return readLongProperty(MOCKSERVER_DRIFT_ALERT_COOLDOWN_MILLIS, "MOCKSERVER_DRIFT_ALERT_COOLDOWN_MILLIS", 60000L);
     }
 
-    public static void driftAlertCooldownMs(long cooldownMs) {
-        setProperty(MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS, "" + cooldownMs);
+    public static void driftAlertCooldownMillis(long cooldownMillis) {
+        setProperty(MOCKSERVER_DRIFT_ALERT_COOLDOWN_MILLIS, "" + cooldownMillis);
     }
 
     /**

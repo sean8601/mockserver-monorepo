@@ -104,7 +104,6 @@ public class MockServerClient implements Stoppable {
     private ExpectationSerializer expectationSerializer = new ExpectationSerializer(MOCK_SERVER_LOGGER);
     private OpenAPIExpectationSerializer openAPIExpectationSerializer = new OpenAPIExpectationSerializer(MOCK_SERVER_LOGGER);
     private CrudExpectationsDefinitionSerializer crudExpectationsDefinitionSerializer = new CrudExpectationsDefinitionSerializer(MOCK_SERVER_LOGGER);
-    private ScimProviderConfigurationSerializer scimProviderConfigurationSerializer = new ScimProviderConfigurationSerializer(MOCK_SERVER_LOGGER);
     private VerificationSerializer verificationSerializer = new VerificationSerializer(MOCK_SERVER_LOGGER);
     private VerificationSequenceSerializer verificationSequenceSerializer = new VerificationSequenceSerializer(MOCK_SERVER_LOGGER);
     private LogEntrySerializer logEntrySerializer = new LogEntrySerializer(MOCK_SERVER_LOGGER);
@@ -2005,7 +2004,21 @@ public class MockServerClient implements Stoppable {
         String body = "";
         if (configuration != null) {
             try {
-                body = ObjectMapperFactory.createObjectMapper().writeValueAsString(configuration);
+                ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+                ObjectNode configNode = objectMapper.valueToTree(configuration);
+                // clientSecret and privateKeyPem are WRITE_ONLY on the configuration so the SERVER
+                // never serializes the secret back out (no credential / key leak via JSON / discovery /
+                // response). That same annotation, however, excludes them from this outbound
+                // serialization, which would silently drop a user-supplied value. Re-add them
+                // explicitly for this CLIENT -> server control-plane PUT only, so a supplied secret
+                // actually reaches the provider.
+                if (isNotBlank(configuration.getClientSecret())) {
+                    configNode.put("clientSecret", configuration.getClientSecret());
+                }
+                if (isNotBlank(configuration.getPrivateKeyPem())) {
+                    configNode.put("privateKeyPem", configuration.getPrivateKeyPem());
+                }
+                body = objectMapper.writeValueAsString(configNode);
             } catch (Throwable throwable) {
                 throw new ClientException(formatLogMessage("error:{}while serializing OIDC provider configuration:{}", throwable.getMessage(), configuration), throwable);
             }
@@ -2272,26 +2285,52 @@ public class MockServerClient implements Stoppable {
      * envelopes, and inject {@code schemas}/{@code id}/{@code meta} on every resource.
      *
      * @param scimConfiguration the SCIM provider configuration (basePath, idStrategy, initial data, enforcement flags)
-     * @return this MockServerClient for fluent chaining
+     * @return the upserted SCIM provider expectations
      */
-    public MockServerClient mockScimProvider(ScimProviderConfiguration scimConfiguration) {
-        sendRequest(
-            request()
-                .withMethod("PUT")
-                .withContentType(APPLICATION_JSON_UTF_8)
-                .withPath(calculatePath("scim"))
-                .withBody(scimProviderConfigurationSerializer.serialize(scimConfiguration), StandardCharsets.UTF_8),
-            true
-        );
-        return clientClass.cast(this);
+    public Expectation[] mockScimProvider(ScimProviderConfiguration scimConfiguration) {
+        if (scimConfiguration == null) {
+            scimConfiguration = new ScimProviderConfiguration();
+        }
+        String body;
+        try {
+            ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            ObjectNode configNode = objectMapper.valueToTree(scimConfiguration);
+            // expectedBearerToken is WRITE_ONLY on the configuration so the SERVER never serializes
+            // the token back out (no credential leak via JSON / response). That same annotation,
+            // however, excludes it from this outbound serialization, which would silently drop a
+            // user-supplied token. Re-add it explicitly for this CLIENT -> server control-plane PUT
+            // only, so a supplied token actually reaches the provider.
+            if (isNotBlank(scimConfiguration.getExpectedBearerToken())) {
+                configNode.put("expectedBearerToken", scimConfiguration.getExpectedBearerToken());
+            }
+            body = objectMapper.writeValueAsString(configNode);
+        } catch (Exception e) {
+            throw new ClientException(formatLogMessage("error:{}while serializing SCIM provider configuration:{}", e.getMessage(), scimConfiguration), e);
+        }
+        HttpResponse httpResponse =
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath("scim"))
+                    .withBody(body, StandardCharsets.UTF_8),
+                false
+            );
+        if (httpResponse != null && httpResponse.getStatusCode() != 201) {
+            throw new ClientException(formatLogMessage("error:{}while submitting SCIM provider configuration:{}", httpResponse, scimConfiguration));
+        }
+        if (httpResponse != null && isNotBlank(httpResponse.getBodyAsString())) {
+            return expectationSerializer.deserializeArray(httpResponse.getBodyAsString(), true);
+        }
+        return new Expectation[0];
     }
 
     /**
      * Register a mock SCIM 2.0 provider using the default configuration (base path {@code /scim/v2}).
      *
-     * @return this MockServerClient for fluent chaining
+     * @return the upserted SCIM provider expectations
      */
-    public MockServerClient mockScimProvider() {
+    public Expectation[] mockScimProvider() {
         return mockScimProvider(new ScimProviderConfiguration());
     }
 

@@ -1218,7 +1218,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or the served response. Severity uses the LLM-assigned `semanticSeverity` when available, otherwise a
   structural fallback by drift type, and fires at or above `mockserver.driftAlertSeverityThreshold` (default
   `BREAKING`). A per-signature (`expectationId|driftType|field`) cooldown
-  (`mockserver.driftAlertCooldownMs`, default 60s) de-dups recurring drifts. The outbound sender is injected
+  (`mockserver.driftAlertCooldownMillis`, default 60s) de-dups recurring drifts. The outbound sender is injected
   from the Netty HTTP client (core does not depend on it), mirroring the load-scenario orchestrator wiring.
 
 - **Control-plane audit logging** (`mockserver-core`). An opt-in, append-only, bounded, in-memory audit log of

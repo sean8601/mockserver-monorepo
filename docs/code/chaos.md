@@ -377,6 +377,13 @@ The `ChaosAutoHaltMonitor` circuit-breaker now also covers connection-lifecycle 
 | `preemptionSimulationMaxDrainMillis` | `86400000` (24 h) | Hard cap applied to both `drainMillis` and `ttlMillis` on a `PreemptionRequest`. |
 | `connectionLifecycleAutoHaltCountsRst` | `true` | When true, a mid-response RST (L1) records a "drop" fault toward the auto-halt circuit-breaker. |
 
+> **Note — the one deliberate exception to "new flags default off".** `connectionLifecycleChaosEnabled`
+> defaults to `true` as an available-but-inert kill-switch. The data path additionally gates on an active
+> cordon via `PreemptionSimulator.isCordoned()` (and, for the response-path faults, a registered profile via
+> `TcpChaosRegistry.activeCount()`), so with nothing active the vanilla behaviour is byte-for-byte unchanged.
+> It defaults `true` precisely because it is inert until a cordon (or lifecycle profile) is activated; setting
+> it `false` is a hard master kill-switch that skips the cordon check and `resolveLifecycleProfile()` entirely.
+
 ### Key Classes
 
 | Class | Module | Path |

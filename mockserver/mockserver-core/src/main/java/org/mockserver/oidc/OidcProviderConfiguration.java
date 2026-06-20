@@ -1,5 +1,6 @@
 package org.mockserver.oidc;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -31,6 +32,11 @@ public class OidcProviderConfiguration implements Serializable {
 
     private String subject = "mock-user";
     private String clientId = "mock-client";
+    // Security: the client secret must NEVER be serialized back out (credential leak via JSON /
+    // discovery / response). WRITE_ONLY lets an inbound PUT body supply it while excluding it from
+    // serialization; the typed client re-injects it on the outbound PUT so a supplied value still
+    // reaches the server.
+    @JsonProperty(value = "clientSecret", access = JsonProperty.Access.WRITE_ONLY)
     private String clientSecret = "mock-client-secret";
     private String audience = "mock-audience";
     private List<String> scopes = Arrays.asList("openid", "profile", "email");
@@ -53,6 +59,11 @@ public class OidcProviderConfiguration implements Serializable {
     // Signing configuration (optional). When no key material is supplied a fresh key pair is
     // generated per generate() using signingAlgorithm (default RS256 / RSA-2048).
     private String signingAlgorithm = "RS256";
+    // Security: the signing private key must NEVER be serialized back out (key leak via JSON /
+    // JWKS / response). WRITE_ONLY lets an inbound PUT body supply it while excluding it from
+    // serialization; the typed client re-injects it on the outbound PUT so a supplied value still
+    // reaches the server.
+    @JsonProperty(value = "privateKeyPem", access = JsonProperty.Access.WRITE_ONLY)
     private String privateKeyPem;
     private String certificatePem;
     private String jwkJson;
@@ -166,7 +177,7 @@ public class OidcProviderConfiguration implements Serializable {
         return this;
     }
 
-    @JsonProperty("clientSecret")
+    @JsonIgnore
     public String getClientSecret() {
         return clientSecret;
     }
@@ -226,7 +237,7 @@ public class OidcProviderConfiguration implements Serializable {
         return this;
     }
 
-    @JsonProperty("privateKeyPem")
+    @JsonIgnore
     public String getPrivateKeyPem() {
         return privateKeyPem;
     }

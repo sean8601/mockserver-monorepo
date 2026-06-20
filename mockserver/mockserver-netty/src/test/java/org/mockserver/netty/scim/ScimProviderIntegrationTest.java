@@ -234,7 +234,13 @@ public class ScimProviderIntegrationTest {
         ScimProviderConfiguration config = new ScimProviderConfiguration()
             .setRequireBearerToken(true)
             .setExpectedBearerToken("secret-token");
-        mockServer.mockScimProvider(config);
+        // Fix 3 (WRITE_ONLY round-trip): expectedBearerToken is WRITE_ONLY so the server never echoes it
+        // back; the typed client re-injects it on the outbound PUT so the value-pinned gate still works.
+        org.mockserver.mock.Expectation[] returned = mockServer.mockScimProvider(config);
+
+        // (a) the server never echoes the secret token back out in the returned expectations
+        String returnedJson = MAPPER.writeValueAsString(returned);
+        assertThat("expected bearer token must not be echoed back", returnedJson.contains("secret-token"), is(false));
 
         // no token -> 401 + WWW-Authenticate
         HttpResponse<String> noToken = send("GET", "/scim/v2/Users", null);

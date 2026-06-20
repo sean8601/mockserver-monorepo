@@ -1,5 +1,6 @@
 package org.mockserver.scim;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -31,6 +32,11 @@ public class ScimProviderConfiguration implements Serializable {
     private boolean enforceFilter = true;
     private boolean enforcePatch = true;
     private boolean requireBearerToken = false;
+    // Security: the expected bearer token must NEVER be serialized back out (credential leak via
+    // JSON / response). WRITE_ONLY lets an inbound PUT body supply it while excluding it from
+    // serialization; the typed client re-injects it on the outbound PUT so a supplied value still
+    // reaches the server.
+    @JsonProperty(value = "expectedBearerToken", access = JsonProperty.Access.WRITE_ONLY)
     private String expectedBearerToken = null;
 
     public ScimProviderConfiguration() {
@@ -96,6 +102,14 @@ public class ScimProviderConfiguration implements Serializable {
         return this;
     }
 
+    /**
+     * Whether the mock SCIM endpoints require an {@code Authorization: Bearer <token>} header.
+     *
+     * <p>Note the interaction with {@link #getExpectedBearerToken()}: when
+     * {@code requireBearerToken=true} but {@code expectedBearerToken} is left unset (null/blank),
+     * the gate is presence-only — <em>any</em> non-empty bearer token is accepted (the value is not
+     * pinned). Set {@code expectedBearerToken} to additionally pin the token to a specific value.
+     */
     @JsonProperty("requireBearerToken")
     public boolean isRequireBearerToken() {
         return requireBearerToken;
@@ -106,7 +120,15 @@ public class ScimProviderConfiguration implements Serializable {
         return this;
     }
 
-    @JsonProperty("expectedBearerToken")
+    /**
+     * The exact bearer token incoming SCIM requests must present when {@link #isRequireBearerToken()}
+     * is enabled. When left unset (null/blank) with {@code requireBearerToken=true}, any non-empty
+     * bearer token is accepted (presence-only, not value-pinned).
+     *
+     * <p>Serialized {@code WRITE_ONLY}: the server never echoes this credential back out, so it does
+     * not leak via the control-plane response.
+     */
+    @JsonIgnore
     public String getExpectedBearerToken() {
         return expectedBearerToken;
     }

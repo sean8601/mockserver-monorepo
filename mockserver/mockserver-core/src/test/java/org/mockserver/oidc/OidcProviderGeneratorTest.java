@@ -1082,4 +1082,33 @@ public class OidcProviderGeneratorTest {
         byte[] hash = digest.digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
+
+    // --- secret fields are WRITE_ONLY: never serialized back out, but still deserialize from inbound PUT ---
+
+    @Test
+    public void clientSecretAndPrivateKeyAreNeverSerialized() throws Exception {
+        OidcProviderConfiguration config = new OidcProviderConfiguration()
+            .setClientSecret("SUPER-SECRET-CLIENT")
+            .setPrivateKeyPem("-----BEGIN PRIVATE KEY-----\nSUPER-SECRET-KEY\n-----END PRIVATE KEY-----");
+
+        String json = new ObjectMapper().writeValueAsString(config);
+
+        assertThat("client secret must not appear in serialized JSON", json, not(containsString("SUPER-SECRET-CLIENT")));
+        assertThat(json, not(containsString("clientSecret")));
+        assertThat("private key PEM must not appear in serialized JSON", json, not(containsString("SUPER-SECRET-KEY")));
+        assertThat(json, not(containsString("privateKeyPem")));
+        // non-secret fields are still serialized
+        assertThat(json, containsString("clientId"));
+    }
+
+    @Test
+    public void clientSecretAndPrivateKeyStillDeserializeFromInboundPut() throws Exception {
+        String inbound = "{\"clientSecret\":\"inbound-secret\","
+            + "\"privateKeyPem\":\"-----BEGIN PRIVATE KEY-----\\nKEYDATA\\n-----END PRIVATE KEY-----\"}";
+
+        OidcProviderConfiguration config = new ObjectMapper().readValue(inbound, OidcProviderConfiguration.class);
+
+        assertThat(config.getClientSecret(), is("inbound-secret"));
+        assertThat(config.getPrivateKeyPem(), containsString("KEYDATA"));
+    }
 }

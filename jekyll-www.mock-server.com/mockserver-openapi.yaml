@@ -42,6 +42,10 @@ tags:
     description: Inspect, set and trigger stateful scenario state (timed auto-transitions and external triggers) (only supported by MockServer)
   - name: oidc
     description: Generate a turnkey OpenID Connect / OAuth2 provider as a set of expectations (only supported by MockServer)
+  - name: saml
+    description: Generate a turnkey SAML 2.0 identity provider as a set of expectations (only supported by MockServer)
+  - name: scim
+    description: Generate a turnkey SCIM 2.0 provisioning provider as a set of expectations (only supported by MockServer)
   - name: asyncapi
     description: Mock and verify AsyncAPI message brokers (only supported by MockServer when mockserver-async is on the classpath)
   - name: wasm
@@ -1199,6 +1203,7 @@ paths:
     put:
       tags:
         - oidc
+      operationId: mockOidcProvider
       summary: generate a turnkey OIDC / OAuth2 provider
       description: >-
         Generates a set of expectations that emulate an OpenID Connect / OAuth2 provider (discovery document,
@@ -1216,13 +1221,37 @@ paths:
                 items:
                   $ref: "#/components/schemas/Expectation"
         '400':
-          description: invalid OIDC provider configuration
+          description: incorrect request format
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              description: OIDC provider configuration (issuer, client, claims, etc.); an empty body uses defaults
+              additionalProperties: true
+              description: OIDC provider configuration; an empty body uses defaults
+              properties:
+                issuer:
+                  type: string
+                  description: issuer URL advertised in the discovery document and token claims
+                clientId:
+                  type: string
+                  description: OAuth2 client identifier
+                clientSecret:
+                  type: string
+                  writeOnly: true
+                  description: OAuth2 client secret
+                privateKeyPem:
+                  type: string
+                  writeOnly: true
+                  description: PEM-encoded signing private key (never serialized back in responses)
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                  description: supported OAuth2 / OIDC scopes
+                tokenExpirySeconds:
+                  type: integer
+                  description: lifetime of issued access tokens in seconds
             example:
               issuer: http://localhost:1080
               clientId: my-app
@@ -1234,6 +1263,102 @@ paths:
                 - email
               tokenExpirySeconds: 7200
         description: OIDC provider configuration
+        required: false
+  /mockserver/saml:
+    put:
+      tags:
+        - saml
+      operationId: mockSamlProvider
+      summary: generate a turnkey SAML identity provider
+      description: >-
+        Generates a set of expectations that emulate a SAML 2.0 identity provider (metadata, single sign-on and
+        single logout endpoints) and adds them. An empty body uses the default provider configuration.
+      responses:
+        '201':
+          description: SAML provider expectations created
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: incorrect request format
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: SAML provider configuration; an empty body uses defaults
+              properties:
+                idpEntityId:
+                  type: string
+                  description: identity provider entity ID advertised in metadata
+                spEntityId:
+                  type: string
+                  description: service provider entity ID the assertions are issued for
+                signingCertificatePem:
+                  type: string
+                  description: PEM-encoded X.509 certificate used to verify signed assertions
+                signingPrivateKeyPem:
+                  type: string
+                  writeOnly: true
+                  description: PEM-encoded private key used to sign assertions
+            example:
+              idpEntityId: http://localhost:1080/saml/idp
+              spEntityId: urn:my-app:sp
+              scopes:
+                - profile
+                - email
+        description: SAML provider configuration
+        required: false
+  /mockserver/scim:
+    put:
+      tags:
+        - scim
+      operationId: mockScimProvider
+      summary: generate a turnkey SCIM provisioning provider
+      description: >-
+        Generates a set of expectations that emulate a SCIM 2.0 provisioning provider (Users, Groups and
+        ServiceProviderConfig endpoints) and adds them. An empty body uses the default provider configuration.
+      responses:
+        '201':
+          description: SCIM provider expectations created
+          content:
+            application/json:
+              schema:
+                description: "list of upserted expectations"
+                type: array
+                additionalProperties: false
+                items:
+                  $ref: "#/components/schemas/Expectation"
+        '400':
+          description: incorrect request format
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: SCIM provider configuration; an empty body uses defaults
+              properties:
+                basePath:
+                  type: string
+                  description: base path the SCIM endpoints are served under
+                requireBearerToken:
+                  type: boolean
+                  description: whether requests must present a bearer token
+                expectedBearerToken:
+                  type: string
+                  writeOnly: true
+                  description: bearer token that incoming requests must present when required
+            example:
+              basePath: /scim/v2
+              requireBearerToken: true
+        description: SCIM provider configuration
         required: false
   /mockserver/asyncapi:
     put:

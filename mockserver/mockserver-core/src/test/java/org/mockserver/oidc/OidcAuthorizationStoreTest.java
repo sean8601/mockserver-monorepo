@@ -140,4 +140,46 @@ public class OidcAuthorizationStoreTest {
         assertThat(store.peekDeviceCode("stale"), is(nullValue()));
         assertThat(store.peekDeviceCode("fresh"), is(notNullValue()));
     }
+
+    // --- hard cap (defence-in-depth): the maps never exceed MAX_OUTSTANDING even under a flood of
+    //     fresh, never-redeemed codes that the TTL sweep cannot reclaim ---
+
+    @Test
+    public void codesMapIsHardCappedAtMaxOutstanding() {
+        // a fixed clock so NOTHING expires — only the hard cap can bound the map
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+
+        for (int i = 0; i < OidcAuthorizationStore.MAX_OUTSTANDING + 500; i++) {
+            store.putCode("code-" + i, newCode());
+        }
+
+        assertThat("codes map must never exceed the hard cap",
+            store.codeCount(), is(OidcAuthorizationStore.MAX_OUTSTANDING));
+    }
+
+    @Test
+    public void deviceCodesMapIsHardCappedAtMaxOutstanding() {
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+
+        for (int i = 0; i < OidcAuthorizationStore.MAX_OUTSTANDING + 500; i++) {
+            store.putDeviceCode("device-" + i, newDeviceCode());
+        }
+
+        assertThat("device-codes map must never exceed the hard cap",
+            store.deviceCodeCount(), is(OidcAuthorizationStore.MAX_OUTSTANDING));
+    }
+
+    @Test
+    public void opaqueTokensMapIsHardCappedAtMaxOutstanding() {
+        ClockDrivenStore store = new ClockDrivenStore(1_000L);
+
+        for (int i = 0; i < OidcAuthorizationStore.MAX_OUTSTANDING + 500; i++) {
+            // expiresAtEpochSeconds=0 means "no expiry recorded" so nothing is reclaimed by TTL
+            store.putOpaqueToken("token-" + i,
+                new OidcAuthorizationStore.OpaqueToken(new java.util.LinkedHashMap<>(), 0L));
+        }
+
+        assertThat("opaque-tokens map must never exceed the hard cap",
+            store.opaqueTokenCount(), is(OidcAuthorizationStore.MAX_OUTSTANDING));
+    }
 }

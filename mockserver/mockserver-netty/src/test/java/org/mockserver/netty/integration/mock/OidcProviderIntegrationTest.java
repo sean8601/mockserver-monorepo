@@ -80,6 +80,44 @@ public class OidcProviderIntegrationTest {
     }
 
     @Test
+    public void suppliedSigningKeyAndSecretViaClientReachServerButAreNotEchoedBack() throws Exception {
+        // Fix 3 (WRITE_ONLY round-trip): privateKeyPem and clientSecret are WRITE_ONLY on the config so
+        // the server never serializes them back out. The typed client re-injects them on the outbound
+        // PUT, so a user-supplied signing key and secret still reach the provider. This proves BOTH:
+        //   (a) the secret/key are NOT in the server's serialized response (no leak), and
+        //   (b) the client-sent PUT still carried them — the issued token signs with the SUPPLIED key.
+
+        // generate an RSA-2048 signing key, export its PKCS8 private key to PEM, pin a stable kid
+        com.nimbusds.jose.jwk.RSAKey rsaKey = new com.nimbusds.jose.jwk.gen.RSAKeyGenerator(2048)
+            .keyID("supplied-kid")
+            .generate();
+        String privateKeyPem = "-----BEGIN PRIVATE KEY-----\n"
+            + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8))
+                .encodeToString(rsaKey.toRSAKey().toPrivateKey().getEncoded())
+            + "\n-----END PRIVATE KEY-----\n";
+
+        Expectation[] expectations = mockServer.mockOpenIdProvider(new OidcProviderConfiguration()
+            .setIssuer(base())
+            .setClientId("integration-client")
+            .setClientSecret("SUPER-SECRET-CLIENT")
+            .setKeyId("supplied-kid")
+            .setPrivateKeyPem(privateKeyPem));
+
+        // (a) the server never echoes the secret/key back out in the returned expectations
+        String returnedJson = objectMapper.writeValueAsString(expectations);
+        assertTrue("private key PEM must not be echoed back", !returnedJson.contains("BEGIN PRIVATE KEY"));
+        assertTrue("client secret must not be echoed back", !returnedJson.contains("SUPER-SECRET-CLIENT"));
+
+        // (b) the published JWKS carries the SUPPLIED public key (proves the client-sent key reached the server)
+        JWKSet jwkSet = JWKSet.parse(get(pathOf(objectMapper.readTree(
+            get("/.well-known/openid-configuration")).get("jwks_uri").asText())));
+        RSAKey publishedKey = (RSAKey) jwkSet.getKeys().get(0);
+        assertThat("published kid must be the supplied kid", publishedKey.getKeyID(), is("supplied-kid"));
+        assertThat("published modulus must be the SUPPLIED key's modulus, not a generated fallback",
+            publishedKey.getModulus(), is(rsaKey.getModulus()));
+    }
+
+    @Test
     public void fullAuthorizationCodePkceNonceFlowOverHttp() throws Exception {
         // 1. one-call OIDC provider, issuer pointing at this running server
         mockServer.mockOpenIdProvider(new OidcProviderConfiguration()

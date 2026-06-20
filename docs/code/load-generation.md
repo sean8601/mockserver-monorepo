@@ -135,6 +135,11 @@ load scenario produces the SLIs that `PUT /mockserver/verifySLO` ([SLO verdicts]
 generate load, then assert a resilience verdict over the same window. Load generation owns *producing*
 traffic; the SLO feature owns *judging* it.
 
+> **Note:** `verifySLO` over a window that overlaps an active load scenario on the same host will include
+> the load scenario's synthetic samples, because both real proxied traffic and load-scenario traffic record
+> latency samples under `Scope.FORWARD` keyed by host. Scope or time-bound the verification window to exclude
+> synthetic load if you need to assert only on real traffic.
+
 ## Deferred (not in v1)
 
 - Advanced ramp shapes (`STEP`, `SPIKE`, `SOAK`).

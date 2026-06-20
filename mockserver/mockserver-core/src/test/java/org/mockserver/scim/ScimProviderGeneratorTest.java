@@ -18,6 +18,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertThrows;
 
 public class ScimProviderGeneratorTest {
@@ -123,5 +124,31 @@ public class ScimProviderGeneratorTest {
         assertThat(ScimProviderGenerator.normalizeBasePath("/scim/v2/"), is("/scim/v2"));
         assertThat(ScimProviderGenerator.normalizeBasePath(""), is("/scim/v2"));
         assertThat(ScimProviderGenerator.normalizeBasePath("  "), is("/scim/v2"));
+    }
+
+    // --- expectedBearerToken is WRITE_ONLY: never serialized back out, but still deserializes from inbound PUT ---
+
+    @Test
+    public void expectedBearerTokenIsNeverSerialized() throws Exception {
+        ScimProviderConfiguration config = new ScimProviderConfiguration()
+            .setRequireBearerToken(true)
+            .setExpectedBearerToken("SUPER-SECRET-TOKEN");
+
+        String json = new ObjectMapper().writeValueAsString(config);
+
+        assertThat("expected bearer token must not appear in serialized JSON", json, not(containsString("SUPER-SECRET-TOKEN")));
+        assertThat(json, not(containsString("expectedBearerToken")));
+        // the non-secret flag is still serialized
+        assertThat(json, containsString("requireBearerToken"));
+    }
+
+    @Test
+    public void expectedBearerTokenStillDeserializesFromInboundPut() throws Exception {
+        String inbound = "{\"requireBearerToken\":true,\"expectedBearerToken\":\"inbound-token\"}";
+
+        ScimProviderConfiguration config = new ObjectMapper().readValue(inbound, ScimProviderConfiguration.class);
+
+        assertThat(config.isRequireBearerToken(), is(true));
+        assertThat(config.getExpectedBearerToken(), is("inbound-token"));
     }
 }

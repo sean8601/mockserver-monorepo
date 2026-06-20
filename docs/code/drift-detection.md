@@ -237,7 +237,7 @@ When `mockserver.driftResponseTimeThresholdMs` is set to a positive value, MockS
 | `mockserver.driftAlertWebhookEnabled` | `false` | Enable the fire-and-forget drift-alert webhook (see "Drift Alerting (Push)") |
 | `mockserver.driftAlertWebhookUrl` | `""` | URL to POST drift alerts to |
 | `mockserver.driftAlertSeverityThreshold` | `BREAKING` | Minimum effective severity that fires the webhook |
-| `mockserver.driftAlertCooldownMs` | `60000` | De-dup window in ms per drift signature |
+| `mockserver.driftAlertCooldownMillis` | `60000` | De-dup window in ms per drift signature |
 
 ## Drift Alerting (Push)
 
@@ -310,7 +310,7 @@ enrichment).
 
 To avoid a flood when the same drift recurs on every request, the notifier de-dups by
 `expectationId|driftType|field` signature: a given signature fires at most once per
-`driftAlertCooldownMs` window (default 60s). The cooldown map is bounded (cap 1000, with eviction of
+`driftAlertCooldownMillis` window (default 60s). The cooldown map is bounded (cap 1000, with eviction of
 entries older than the cooldown on write) so a high-cardinality drift stream cannot grow it unbounded.
 
 ### Reset behaviour
@@ -326,7 +326,7 @@ the de-dup cooldown map **only**. The installed sender and the webhook configura
 | `mockserver.driftAlertWebhookEnabled` | `false` | Enable the drift-alert webhook |
 | `mockserver.driftAlertWebhookUrl` | `""` | URL to POST drift alerts to (empty leaves the webhook off) |
 | `mockserver.driftAlertSeverityThreshold` | `BREAKING` | Minimum effective severity that fires the webhook (`BREAKING`, `WARNING`, or `INFORMATIONAL`) |
-| `mockserver.driftAlertCooldownMs` | `60000` | De-dup window in ms per drift signature |
+| `mockserver.driftAlertCooldownMillis` | `60000` | De-dup window in ms per drift signature |
 
 ## Thread Safety
 

@@ -79,7 +79,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | SLO verdicts | `sloTrackingEnabled`, `sloWindowRetentionMillis`, `sloWindowMaxSamples` |
 | Load generation | `loadGenerationEnabled`, `loadGenerationMaxVirtualUsers`, `loadGenerationMaxInFlightRequests`, `loadGenerationMaxRequestsPerSecond`, `loadGenerationMaxDurationMillis`, `loadGenerationMaxSteps` |
 | Breakpoints | `breakpointTimeoutMillis`, `breakpointMaxHeld` (breakpoint activation is now via the matcher-based registry REST API) |
-| Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs`, `driftAlertWebhookEnabled`, `driftAlertWebhookUrl`, `driftAlertSeverityThreshold`, `driftAlertCooldownMs` |
+| Drift detection | `driftSemanticAnalysisEnabled`, `driftResponseTimeThresholdMs`, `driftAlertWebhookEnabled`, `driftAlertWebhookUrl`, `driftAlertSeverityThreshold`, `driftAlertCooldownMillis` |
 | Control-plane audit | `controlPlaneAuditEnabled`, `controlPlaneAuditMaxEntries`, `controlPlaneAuditReads` |
 | Clustered state | `stateBackend`, `clusterEnabled`, `clusterName`, `clusterTransportConfig`, `clusterSharedTimesEnabled` |
 | Blob store | `blobStoreType`, `blobStoreBucket`, `blobStoreRegion`, `blobStoreEndpoint`, `blobStoreKeyPrefix`, `blobStoreAccessKeyId`, `blobStoreSecretAccessKey`, `blobStoreContainer`, `blobStoreConnectionString`, `blobStoreProjectId` |

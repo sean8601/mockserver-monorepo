@@ -376,4 +376,38 @@ public class OidcAuthenticationHandlerTest {
         AuthenticationException exception = assertThrows(AuthenticationException.class, () -> handler.authenticate(req));
         assertThat(exception.getMessage(), is("OIDC validator is not initialised"));
     }
+
+    // Fix 5 — the auth-failure log must summarise the request WITHOUT the bearer token
+
+    @Test
+    public void requestSummaryIsTokenFree() {
+        HttpRequest req = request()
+            .withMethod("PUT")
+            .withPath("/mockserver/oidc")
+            .withRemoteAddress("203.0.113.7:5555")
+            .withHeader(AUTHORIZATION.toString(), "Bearer super-secret-jwt-value");
+
+        String summary = OidcAuthenticationHandler.requestSummary(req);
+
+        // includes a token-free operational summary
+        assertThat(summary, is("PUT /mockserver/oidc from 203.0.113.7:5555"));
+        // and never the bearer token / authorization header
+        org.junit.Assert.assertFalse("request summary must not leak the bearer token",
+            summary.contains("super-secret-jwt-value"));
+        org.junit.Assert.assertFalse("request summary must not leak the authorization header",
+            summary.toLowerCase().contains("bearer"));
+    }
+
+    @Test
+    public void requestSummaryOmitsRemoteAddressWhenAbsent() {
+        HttpRequest req = request()
+            .withMethod("PUT")
+            .withPath("/mockserver/oidc")
+            .withHeader(AUTHORIZATION.toString(), "Bearer super-secret-jwt-value");
+
+        String summary = OidcAuthenticationHandler.requestSummary(req);
+
+        assertThat(summary, is("PUT /mockserver/oidc"));
+        org.junit.Assert.assertFalse(summary.contains("super-secret-jwt-value"));
+    }
 }

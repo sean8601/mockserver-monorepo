@@ -201,15 +201,36 @@ public abstract class LifeCycle implements Stoppable {
                         configuration.driftAlertSeverityThreshold());
                 return;
             }
-            long cooldownMs = configuration.driftAlertCooldownMs();
-            org.mockserver.mock.drift.DriftAlertNotifier.getInstance().configure(true, url, threshold, cooldownMs);
+            long cooldownMillis = configuration.driftAlertCooldownMillis();
+            org.mockserver.mock.drift.DriftAlertNotifier.getInstance().configure(true, url, threshold, cooldownMillis);
+            // INFO logs only scheme+host: the configured webhook URL often embeds a secret token
+            // (e.g. a Slack incoming-webhook path), so the full URL must never be written at INFO.
             org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
-                .info("drift alert webhook enabled (url: {}, severity>={}, cooldown: {} ms)", url, threshold, cooldownMs);
+                .info("drift alert webhook enabled (endpoint: {}, severity>={}, cooldown: {} ms)", redactWebhookUrl(url), threshold, cooldownMillis);
+            org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
+                .debug("drift alert webhook full url: {}", url);
         } catch (Exception e) {
             // fail-soft — drift alert webhook stays off
             org.slf4j.LoggerFactory.getLogger(LifeCycle.class)
                 .warn("failed to enable drift alert webhook ({}); continuing without it", e.getMessage());
         }
+    }
+
+    /**
+     * Reduces a webhook URL to a token-free {@code scheme://host[:port]} form for INFO logging. The
+     * path/query are dropped because they commonly carry a secret (e.g. a Slack incoming-webhook
+     * token). Falls back to {@code <redacted url>} if the URL cannot be parsed.
+     */
+    private static String redactWebhookUrl(String url) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            if (uri.getScheme() != null && uri.getHost() != null) {
+                return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() == -1 ? "" : ":" + uri.getPort());
+            }
+        } catch (Exception ignore) {
+            // fall through to a fully-redacted placeholder
+        }
+        return "<redacted url>";
     }
 
     /**

@@ -49,6 +49,18 @@ public class OidcAuthorizationStore {
     /** Polling interval (seconds) advertised in the device-authorization response (RFC 8628 §3.2). */
     static final int DEVICE_CODE_INTERVAL_SECONDS = 5;
 
+    /**
+     * Absolute ceiling on the number of outstanding entries held in any one of the code / device-code /
+     * opaque-token maps. These maps are data-plane reachable (a flood of {@code /authorize},
+     * {@code /device_authorization} or opaque-token-minting requests could otherwise grow them
+     * without bound faster than the TTL sweep reclaims them), so a hard cap is kept as
+     * defence-in-depth on top of the per-write TTL eviction. Mirrors the 10,000 bound used by
+     * {@code RecoveryAttemptRegistry} / {@code DnsIntentRegistry}. When the cap is reached, surviving
+     * (un-expired) entries are dropped to make room for the new write — a flooded attacker's codes
+     * are unredeemable anyway, so dropping some is safe; it simply bounds heap use.
+     */
+    static final int MAX_OUTSTANDING = 10_000;
+
     private static final OidcAuthorizationStore INSTANCE = new OidcAuthorizationStore();
 
     private final List<Provider> providers = new CopyOnWriteArrayList<>();
@@ -141,7 +153,30 @@ public class OidcAuthorizationStore {
         // Opportunistically evict codes that expired before this write so the map cannot grow
         // unbounded with authorization codes that are never redeemed.
         codes.values().removeIf(existing -> isExpired(existing, now));
+        // Hard cap (defence-in-depth): bound the map even under a flood of fresh, never-expiring-yet
+        // codes that the TTL sweep cannot reclaim.
+        trimToCap(codes);
         codes.put(code, authorizationCode);
+    }
+
+    /**
+     * Drops entries from a data-plane-reachable map until it is below {@link #MAX_OUTSTANDING} so the
+     * immediately-following {@code put} lands at — and never above — the cap. Iterator order on a
+     * {@link ConcurrentHashMap} is unspecified, so this does not guarantee oldest-first eviction — it
+     * is a last-resort heap bound on top of the per-write TTL sweep; flooded entries are unredeemable,
+     * so dropping any of them is safe. The compound sweep+trim+put is not atomic, so a concurrent
+     * flood may transiently overshoot the cap by a bounded amount before the next write trims it back;
+     * that is acceptable for a defence-in-depth bound.
+     */
+    private static void trimToCap(Map<String, ?> map) {
+        if (map.size() < MAX_OUTSTANDING) {
+            return;
+        }
+        java.util.Iterator<String> it = map.keySet().iterator();
+        while (map.size() >= MAX_OUTSTANDING && it.hasNext()) {
+            it.next();
+            it.remove();
+        }
     }
 
     /**
@@ -180,6 +215,7 @@ public class OidcAuthorizationStore {
         long now = currentTimeMillis();
         value.issuedAtMillis = now;
         deviceCodes.values().removeIf(existing -> isDeviceCodeExpired(existing, now));
+        trimToCap(deviceCodes);
         deviceCodes.put(deviceCode, value);
     }
 
@@ -237,6 +273,7 @@ public class OidcAuthorizationStore {
     public void putOpaqueToken(String token, OpaqueToken value) {
         long now = currentTimeMillis();
         opaqueTokens.values().removeIf(existing -> existing.isExpired(now));
+        trimToCap(opaqueTokens);
         opaqueTokens.put(token, value);
     }
 

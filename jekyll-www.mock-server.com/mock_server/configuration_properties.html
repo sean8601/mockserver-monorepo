@@ -1492,13 +1492,13 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p><strong>Drift alert cooldown</strong> &mdash; de-duplication window in milliseconds. The same drift (same expectation, drift type, and field) fires the webhook at most once per window, so a drift that recurs on every request does not flood the endpoint. Default 60000 (60 seconds).</p>
     <p>Type: <span class="keyword">long</span> Default: <span class="this_value">60000</span></p>
     <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftAlertCooldownMs(long cooldownMs)</code></pre>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.driftAlertCooldownMillis(long cooldownMillis)</code></pre>
     <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMs=...</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMillis=...</code></pre>
     <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_ALERT_COOLDOWN_MS=...</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DRIFT_ALERT_COOLDOWN_MILLIS=...</code></pre>
     <p>Example:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMs="30000"</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.driftAlertCooldownMillis="30000"</code></pre>
 </div>
 
 <button id="button_configuration_control_plane_audit" class="accordion title"><strong>Control-Plane Audit Log</strong></button>
@@ -1534,6 +1534,97 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_AUDIT_READS=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuditReads="true"</code></pre>
+</div>
+
+<button id="button_configuration_control_plane_oidc" class="accordion title"><strong>Control-Plane OIDC Authentication</strong></button>
+<div class="panel title">
+    <p>Require control-plane (admin) requests &mdash; such as registering, retrieving, or clearing expectations &mdash; to carry a valid OIDC Bearer JWT, verified against an external identity provider's published keys. This protects a shared MockServer so that only callers holding a token from your identity provider can change or read mock state. It is off by default, and applies only to the control-plane API, never to the mocked traffic MockServer serves on behalf of your application.</p>
+    <p>When enabled, each control-plane request must include an <code>Authorization: Bearer &lt;jwt&gt;</code> header. MockServer verifies the token's signature against the provider's JWKS, checks the issuer and/or audience, and (optionally) checks for required scopes. The verified subject (<code>sub</code>) is recorded as the principal in the <a href="#button_configuration_control_plane_audit">control-plane audit log</a>. At least one of issuer or audience must be configured.</p>
+    <p><strong>Authentication required</strong> &mdash; when <code>true</code>, control-plane requests must carry a valid OIDC Bearer JWT verified against the provider's JWKS. When <code>false</code> (the default) no token is required and control-plane behaviour is unchanged.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcAuthenticationRequired(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcAuthenticationRequired=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_OIDC_AUTHENTICATION_REQUIRED=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcAuthenticationRequired="true"</code></pre>
+    <p><strong>Issuer</strong> &mdash; the expected token issuer (the <code>iss</code> claim). It is used to assert the issuer on incoming tokens and, if no JWKS URI is set, to discover the JWKS from the issuer's <code>/.well-known/openid-configuration</code> document.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcIssuer(String issuer)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcIssuer=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_OIDC_ISSUER=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcIssuer="https://login.example.com/"</code></pre>
+    <p><strong>JWKS URI</strong> &mdash; the JWKS endpoint used to fetch the public keys that verify control-plane token signatures. If left blank it is discovered from the issuer's OpenID configuration. For a remote host this must be an <code>https</code> URL.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcJwksUri(String jwksUri)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcJwksUri=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_OIDC_JWKS_URI=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcJwksUri="https://login.example.com/.well-known/jwks.json"</code></pre>
+    <p><strong>Audience</strong> &mdash; the expected token audience (the <code>aud</code> claim). At least one of issuer or audience must be configured for OIDC authentication to be valid.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcAudience(String audience)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcAudience=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_OIDC_AUDIENCE=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcAudience="mockserver-control-plane"</code></pre>
+    <p><strong>Required scopes</strong> &mdash; a comma- or space-separated list of scopes the token must contain to be accepted. When empty (the default) any validly-signed, in-audience token is accepted.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcRequiredScopes(String requiredScopes)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcRequiredScopes=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_OIDC_REQUIRED_SCOPES=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcRequiredScopes="mockserver.write,mockserver.read"</code></pre>
+    <p><strong>Scope claim</strong> &mdash; the JWT claim that carries the token's scopes (for example <code>scope</code> or <code>roles</code>), used when checking required scopes.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">scope</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcScopeClaim(String scopeClaim)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcScopeClaim=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_OIDC_SCOPE_CLAIM=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcScopeClaim="roles"</code></pre>
+</div>
+
+<button id="button_configuration_control_plane_authorization" class="accordion title"><strong>Control-Plane Authorization</strong></button>
+<div class="panel title">
+    <p>Authorize control-plane operations against a scope-to-operation mapping, so fine-grained token scopes can gate individual admin actions (for example, allowing some callers to read mock state but not change it). This builds on <a href="#button_configuration_control_plane_oidc">Control-Plane OIDC Authentication</a> &mdash; a verified principal is required &mdash; and is off by default.</p>
+    <p><strong>Authorization enabled</strong> &mdash; when <code>true</code>, control-plane operations are authorized against the scope-to-operation mapping below. When <code>false</code> (the default) no per-operation authorization is applied.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneAuthorizationEnabled(boolean enabled)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuthorizationEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneAuthorizationEnabled="true"</code></pre>
+    <p><strong>Scope mapping</strong> &mdash; maps required scopes (or groups) to control-plane operations such as read and write, letting fine-grained scopes gate which admin actions a caller may perform. Has effect only when control-plane authorization is enabled.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneScopeMapping(String scopeMapping)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneScopeMapping=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneScopeMapping="platform-admins=admin,qa-team=mutate,viewers=read"</code></pre>
 </div>
 
 <button id="button_configuration_breakpoints" class="accordion title"><strong>Interactive Breakpoints</strong></button>

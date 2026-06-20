@@ -149,9 +149,8 @@ public class OidcAuthenticationHandler implements AuthenticationHandler {
             mockServerLogger.logEvent(
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
-                    .setHttpRequest(request)
                     .setMessageFormat("OIDC control plane request failed authentication because OIDC validator is not initialised:{}")
-                    .setArguments(request)
+                    .setArguments(requestSummary(request))
                     .setThrowable(initialisationException)
             );
             throw new AuthenticationException("OIDC validator is not initialised", false);
@@ -208,11 +207,26 @@ public class OidcAuthenticationHandler implements AuthenticationHandler {
         mockServerLogger.logEvent(
             new LogEntry()
                 .setLogLevel(Level.ERROR)
-                .setHttpRequest(request)
                 .setMessageFormat("OIDC control plane request failed:{}for request:{}")
-                .setArguments(failureReason, request)
+                .setArguments(failureReason, requestSummary(request))
         );
         throw new AuthenticationException(failureReason, false);
+    }
+
+    /**
+     * A token-free, single-line summary of the rejected request for the ERROR log: method, path and
+     * remote address only. The full {@link HttpRequest} is deliberately NOT logged here because it
+     * carries the {@code Authorization: Bearer <jwt>} header — logging the whole request would write
+     * the rejected control-plane token to the server log in cleartext regardless of any opt-in
+     * redaction switch.
+     */
+    static String requestSummary(HttpRequest request) {
+        if (request == null) {
+            return "<no request>";
+        }
+        String remoteAddress = request.getRemoteAddress();
+        return request.getMethod("") + " " + request.getPath().getValue()
+            + (isBlank(remoteAddress) ? "" : " from " + remoteAddress);
     }
 
 }
