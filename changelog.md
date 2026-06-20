@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   histograms and the SLO sample store, so a load run can be asserted with `verifySLO`. Off by default
   (`loadGenerationEnabled`) and bounded by hard caps on virtual users, in-flight requests, request rate,
   duration, and steps to prevent a scenario overloading the instance serving mocks.
+- **Richer WASM matcher ABI, authoring SDK, and a `wasm/test` endpoint** (`mockserver-core`). WASM custom-rule
+  modules can now read the request **method, path and headers** in addition to the body. A module that exports
+  `match_request(ptr, len)` receives a UTF-8 JSON envelope
+  (`{"method","path","headers":{name:[values]},"body"}`) instead of just the body; MockServer prefers
+  `match_request` when present and falls back to the legacy body-only `match(ptr, len)` export, so existing
+  body-only modules keep working unchanged. A new dependency-free Rust authoring crate
+  `mockserver-wasm-sdk` (`examples/wasm/sdk-rust/`) gives module authors typed accessors
+  (`Request::method/path/header/body`) and an `export_match_request!` macro, with a sample rule in
+  `examples/wasm/rust-request/` that matches on method + path + header. A new
+  **`POST /mockserver/wasm/test`** control-plane endpoint runs a module (supplied inline as base64 `module`, or
+  by `moduleName` for an already-uploaded module) against a sample `request` and returns `{ "matched": true|false }`,
+  so IDEs/users can validate a module without creating a live expectation. The endpoint requires `wasmEnabled=true`
+  (otherwise 403) and is fail-closed (invalid modules report `matched: false`).
 - **Opt-in strict structured-output enforcement for LLM completions** (`mockserver-core`). A mocked LLM
   completion that declares an `outputSchema` can now opt in to strict enforcement via a new
   `enforceOutputSchema` flag (`Completion.withEnforceOutputSchema(true)` / `Completion.enforceOutputSchema()`,

@@ -2818,6 +2818,16 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("POST", PATH_PREFIX + "/wasm/test", "/wasm/test")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    if (!configuration.wasmEnabled()) {
+                        responseWriter.writeResponse(request, FORBIDDEN, "WASM support is disabled; set wasmEnabled=true to enable", MediaType.create("text", "plain").toString());
+                    } else {
+                        responseWriter.writeResponse(request, withDashboardCORS(request, handleWasmTest(request)), true);
+                    }
+                }
+                return true;
+            }
             return false;
 
         } else {
@@ -2826,6 +2836,87 @@ public class HttpState {
 
         }
 
+    }
+
+    /**
+     * Test a WASM module against a sample request without a live expectation.
+     * <p>
+     * Accepts {@code { "module": "<base64>", "request": { method, path, headers, body } }}
+     * and returns {@code { "matched": true|false }}, so IDEs/users can validate a module
+     * against a sample request. Fails closed: invalid modules report {@code matched=false}.
+     */
+    private HttpResponse handleWasmTest(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody(objectMapper.createObjectNode().put("error", "request body is required with a 'module' field").toString(), MediaType.JSON_UTF_8);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+            String moduleField = node.has("module") && !node.get("module").isNull() ? node.get("module").asText() : null;
+            byte[] wasmBytes;
+            if (isNotBlank(moduleField)) {
+                try {
+                    wasmBytes = java.util.Base64.getDecoder().decode(moduleField);
+                } catch (IllegalArgumentException e) {
+                    return response()
+                        .withStatusCode(BAD_REQUEST.code())
+                        .withBody(objectMapper.createObjectNode().put("error", "'module' must be base64-encoded WASM bytes").toString(), MediaType.JSON_UTF_8);
+                }
+            } else if (node.has("moduleName") && !node.get("moduleName").isNull()) {
+                String moduleName = node.get("moduleName").asText();
+                wasmBytes = org.mockserver.wasm.WasmStore.getInstance().get(moduleName);
+                if (wasmBytes == null) {
+                    return response()
+                        .withStatusCode(NOT_FOUND.code())
+                        .withBody(objectMapper.createObjectNode().put("error", "WASM module '" + moduleName + "' not found").toString(), MediaType.JSON_UTF_8);
+                }
+            } else {
+                return response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody(objectMapper.createObjectNode().put("error", "either 'module' (base64) or 'moduleName' (loaded module) is required").toString(), MediaType.JSON_UTF_8);
+            }
+
+            com.fasterxml.jackson.databind.JsonNode requestNode = node.get("request");
+            String method = "";
+            String path = "";
+            String sampleBody = null;
+            org.mockserver.wasm.WasmRequest wasmRequest;
+            if (requestNode != null && requestNode.isObject()) {
+                method = requestNode.has("method") && !requestNode.get("method").isNull() ? requestNode.get("method").asText() : "";
+                path = requestNode.has("path") && !requestNode.get("path").isNull() ? requestNode.get("path").asText() : "";
+                sampleBody = requestNode.has("body") && !requestNode.get("body").isNull() ? requestNode.get("body").asText() : null;
+                wasmRequest = new org.mockserver.wasm.WasmRequest(method, path, null, sampleBody);
+                com.fasterxml.jackson.databind.JsonNode headersNode = requestNode.get("headers");
+                if (headersNode != null && headersNode.isObject()) {
+                    java.util.Iterator<String> names = headersNode.fieldNames();
+                    while (names.hasNext()) {
+                        String name = names.next();
+                        com.fasterxml.jackson.databind.JsonNode valuesNode = headersNode.get(name);
+                        if (valuesNode != null && valuesNode.isArray()) {
+                            for (com.fasterxml.jackson.databind.JsonNode v : valuesNode) {
+                                wasmRequest.withHeader(name, v.isNull() ? null : v.asText());
+                            }
+                        } else if (valuesNode != null) {
+                            wasmRequest.withHeader(name, valuesNode.isNull() ? null : valuesNode.asText());
+                        }
+                    }
+                }
+            } else {
+                wasmRequest = org.mockserver.wasm.WasmRequest.ofBody(sampleBody);
+            }
+
+            boolean matched = new org.mockserver.wasm.WasmRuntime(wasmBytes).callMatch(wasmRequest);
+            return response()
+                .withStatusCode(OK.code())
+                .withBody(objectMapper.createObjectNode().put("matched", matched).toString(), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return response()
+                .withStatusCode(BAD_REQUEST.code())
+                .withBody(objectMapper.createObjectNode().put("error", "failed to test WASM module: " + e.getMessage()).toString(), MediaType.JSON_UTF_8);
+        }
     }
 
     private HttpResponse handleClockPut(HttpRequest request) {

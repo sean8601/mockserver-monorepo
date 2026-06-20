@@ -3355,6 +3355,157 @@ public class HttpStateTest {
         assertThat(responseWriter.response.getBodyAsString(), is("{\"name\":\"test.txt\",\"size\":11}"));
     }
 
+    // --- WASM test endpoint (POST /mockserver/wasm/test) ---
+
+    private static String matchRequestModuleBase64() throws java.io.IOException {
+        try (java.io.InputStream in = HttpStateTest.class.getResourceAsStream("/org/mockserver/wasm/match-request.wasm")) {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            return java.util.Base64.getEncoder().encodeToString(out.toByteArray());
+        }
+    }
+
+    @Test
+    public void shouldTestWasmModuleAndReturnMatchedTrue() throws java.io.IOException {
+        // given
+        boolean original = configuration.wasmEnabled();
+        try {
+            configuration.wasmEnabled(true);
+            String body = "{\"module\":\"" + matchRequestModuleBase64() + "\","
+                + "\"request\":{\"method\":\"POST\",\"path\":\"/orders\",\"headers\":{\"X-Tenant\":[\"acme\"]},\"body\":\"{}\"}}";
+            HttpRequest testRequest = request("/mockserver/wasm/test").withMethod("POST").withBody(body);
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+            // when
+            boolean handle = httpState.handle(testRequest, responseWriter, false);
+
+            // then
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(200));
+            assertThat(responseWriter.response.getBodyAsString(), is("{\"matched\":true}"));
+        } finally {
+            configuration.wasmEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldTestWasmModuleAndReturnMatchedFalse() throws java.io.IOException {
+        // given
+        boolean original = configuration.wasmEnabled();
+        try {
+            configuration.wasmEnabled(true);
+            String body = "{\"module\":\"" + matchRequestModuleBase64() + "\","
+                + "\"request\":{\"method\":\"GET\",\"path\":\"/orders\",\"headers\":{\"X-Tenant\":[\"acme\"]},\"body\":\"{}\"}}";
+            HttpRequest testRequest = request("/mockserver/wasm/test").withMethod("POST").withBody(body);
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+            // when
+            boolean handle = httpState.handle(testRequest, responseWriter, false);
+
+            // then
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(200));
+            assertThat(responseWriter.response.getBodyAsString(), is("{\"matched\":false}"));
+        } finally {
+            configuration.wasmEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldReturnMatchedFalseForInvalidWasmModule() {
+        // given
+        boolean original = configuration.wasmEnabled();
+        try {
+            configuration.wasmEnabled(true);
+            String junk = java.util.Base64.getEncoder().encodeToString(new byte[]{0x00, 0x01, 0x02, 0x03});
+            String body = "{\"module\":\"" + junk + "\",\"request\":{\"method\":\"POST\",\"path\":\"/orders\"}}";
+            HttpRequest testRequest = request("/mockserver/wasm/test").withMethod("POST").withBody(body);
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+            // when
+            boolean handle = httpState.handle(testRequest, responseWriter, false);
+
+            // then — fails closed, no error
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(200));
+            assertThat(responseWriter.response.getBodyAsString(), is("{\"matched\":false}"));
+        } finally {
+            configuration.wasmEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldRejectWasmTestWhenWasmDisabled() throws java.io.IOException {
+        // given
+        boolean original = configuration.wasmEnabled();
+        try {
+            configuration.wasmEnabled(false);
+            String body = "{\"module\":\"" + matchRequestModuleBase64() + "\"}";
+            HttpRequest testRequest = request("/mockserver/wasm/test").withMethod("POST").withBody(body);
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+            // when
+            boolean handle = httpState.handle(testRequest, responseWriter, false);
+
+            // then
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(403));
+        } finally {
+            configuration.wasmEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldRejectWasmTestWithoutModule() {
+        // given
+        boolean original = configuration.wasmEnabled();
+        try {
+            configuration.wasmEnabled(true);
+            HttpRequest testRequest = request("/mockserver/wasm/test").withMethod("POST")
+                .withBody("{\"request\":{\"method\":\"POST\"}}");
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+            // when
+            boolean handle = httpState.handle(testRequest, responseWriter, false);
+
+            // then
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(400));
+        } finally {
+            configuration.wasmEnabled(original);
+        }
+    }
+
+    @Test
+    public void shouldTestLoadedWasmModuleByName() throws java.io.IOException {
+        // given
+        boolean original = configuration.wasmEnabled();
+        try {
+            configuration.wasmEnabled(true);
+            byte[] moduleBytes = java.util.Base64.getDecoder().decode(matchRequestModuleBase64());
+            org.mockserver.wasm.WasmStore.getInstance().put("ordersByName", moduleBytes);
+            String body = "{\"moduleName\":\"ordersByName\","
+                + "\"request\":{\"method\":\"POST\",\"path\":\"/orders\",\"headers\":{\"X-Tenant\":[\"acme\"]}}}";
+            HttpRequest testRequest = request("/mockserver/wasm/test").withMethod("POST").withBody(body);
+            FakeResponseWriter responseWriter = new FakeResponseWriter();
+
+            // when
+            boolean handle = httpState.handle(testRequest, responseWriter, false);
+
+            // then
+            assertThat(handle, is(true));
+            assertThat(responseWriter.response.getStatusCode(), is(200));
+            assertThat(responseWriter.response.getBodyAsString(), is("{\"matched\":true}"));
+        } finally {
+            org.mockserver.wasm.WasmStore.getInstance().reset();
+            configuration.wasmEnabled(original);
+        }
+    }
+
     @Test
     public void shouldHandleFileStoreBase64() {
         // given
