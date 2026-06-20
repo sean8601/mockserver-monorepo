@@ -1635,15 +1635,16 @@ public class ConfigurationProperties {
     }
 
     public static boolean forwardConnectionPoolEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + false));
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + true));
     }
 
     /**
-     * If false (the default) every forwarded or proxied request opens a fresh upstream TCP (and TLS)
-     * connection that is closed once the response is received, matching the historical behaviour.
-     * If true idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host, port and
-     * scheme) and reused for subsequent requests to the same upstream, eliminating repeated
-     * connection and TLS handshakes for proxy-heavy workloads.
+     * If true (the default) idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host,
+     * port and scheme) and reused for subsequent requests to the same upstream, eliminating repeated
+     * connection and TLS handshakes for proxy-heavy workloads and avoiding ephemeral-port exhaustion
+     * under sustained forward load. If false every forwarded or proxied request opens a fresh upstream
+     * TCP (and TLS) connection that is closed once the response is received, restoring the historical
+     * behaviour of a fresh upstream connection per request.
      * <p>
      * Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2 and HTTP/3 (which multiplex
      * differently), binary forwarding, streaming responses, proxy-tunnelled connections, and any

@@ -1405,6 +1405,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutated mid-match (e.g. query-parameter splitting), so matching behaviour is unchanged. This reduces
   per-request allocations and CPU when matching against large expectation sets.
 
+#### Forwarding & proxying
+- **Upstream forward connection pooling is now on by default** (`forwardConnectionPoolEnabled` defaults
+  to `true`, was `false`). MockServer now pools and reuses idle HTTP/1.1 keep-alive upstream connections
+  (keyed by host, port and scheme) for forwarded and proxied requests instead of opening a fresh upstream
+  connection per request. This is a **behaviour change**, not an API change. It was made because the
+  per-request-connection default exhausted the operating system's ephemeral local ports under sustained
+  forward load — a k6 baseline measured 21% request errors at 750 rps and 68% at 1500 rps (212k
+  `BindException`s from local port exhaustion), which enabling pooling drove to ~0% errors with no latency
+  regression in a controlled A/B. Only plain HTTP/1.1 keep-alive upstreams are pooled — HTTP/2, HTTP/3,
+  binary forwarding, streaming (SSE) responses, proxy-tunnelled connections, and any upstream that closed
+  the connection or returned `Connection: close` still use a fresh connection. Set
+  `mockserver.forwardConnectionPoolEnabled=false` (env `MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED=false`)
+  to restore the historical behaviour of a fresh upstream connection per request.
+
 
 ### Fixed
 

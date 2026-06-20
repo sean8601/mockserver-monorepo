@@ -89,7 +89,8 @@ public class NettyHttpClientConnectionPoolTest {
     }
 
     private NettyHttpClient unpooledClient() {
-        return new NettyHttpClient(configuration(), mockServerLogger, clientEventLoopGroup, null, false);
+        Configuration configuration = configuration().forwardConnectionPoolEnabled(false);
+        return new NettyHttpClient(configuration, mockServerLogger, clientEventLoopGroup, null, false);
     }
 
     @Test
