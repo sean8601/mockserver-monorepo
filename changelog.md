@@ -63,6 +63,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Documentation & example coverage for recently-shipped features -->
+- **Documentation and example coverage for recently-added features** (`jekyll-www.mock-server.com`, `examples`,
+  OpenAPI spec). Closed the gap between shipped features and the consumer docs/examples. New consumer pages
+  `load_injection.html` (API-driven load generation / Load Scenarios) and `graphql_mocking.html` (GraphQL spec
+  import + schema-driven response synthesis); new sections on `chaos_testing.html` for SLO resilience verdicts
+  (`verifySLO`), connection-lifecycle faults, preemption simulation and the saved chaos-profile library; new
+  documentation for control-plane authorization (`controlPlaneAuthorizationEnabled` / `controlPlaneScopeMapping`),
+  A2A streaming/push notifications, the MCP server's `prompts/*` and `sampling/createMessage` methods, cached/
+  reasoning token usage fields, provider-correct LLM chaos error bodies, and the `FuzzyBody`,
+  `conditionalRequestDefinition`, `accept:` content-negotiation, and `WEIGHTED` response-selection matchers.
+  The OpenAPI spec (`mockserver-openapi.yaml`) now declares the previously-undocumented control-plane endpoints
+  `/mockserver/loadScenario`, `/mockserver/verifySLO`, `/mockserver/preemption`,
+  `/mockserver/chaosExperiment/profiles` (+ `/apply/{name}`) and `/mockserver/contractTest`, so the generated
+  Bruno and Postman example collections now cover them.
+
 <!-- Verified OIDC control-plane authentication (Tier 1.5-A) -->
 - **Verified OIDC bearer authentication for the control plane** (`mockserver-core`, `mockserver-netty`). Setting
   `controlPlaneOidcAuthenticationRequired=true` makes MockServer verify control-plane requests against an external

@@ -618,6 +618,7 @@ curl -X PUT http://localhost:1080/mockserver/scenario/DeployFlow/trigger \
 <ul>
     <li><strong>SEQUENTIAL</strong> (default) - responses are returned in order, cycling back to the first after the last</li>
     <li><strong>RANDOM</strong> - a random response is selected from the list for each request</li>
+    <li><strong>WEIGHTED</strong> - a response is selected probabilistically according to relative weights in the <span class="inline_code">responseWeights</span> list (index-aligned with <span class="inline_code">httpResponses</span>)</li>
     <li><strong>SWITCH</strong> - serve the first response for the first <span class="inline_code">switchAfter</span> requests, then switch to the next response (and so on), staying on the last response thereafter - lets a single expectation respond differently after the Nth call without a full scenario</li>
 </ul>
 
@@ -662,6 +663,20 @@ curl -X PUT http://localhost:1080/mockserver/scenario/DeployFlow/trigger \
     "switchAfter": 3
 }</code></pre>
 <p>The first three requests return 200, then every subsequent request returns 503. With more than two responses, each block of <span class="inline_code">switchAfter</span> requests advances to the next response, staying on the last response once it is reached. When <span class="inline_code">switchAfter</span> is omitted it defaults to 1 (advance on every request).</p>
+
+<p><strong>Example - Weighted Responses:</strong> Simulate a degraded service where 80% of requests succeed and 20% fail. The <span class="inline_code">responseWeights</span> list is index-aligned with <span class="inline_code">httpResponses</span> and contains relative integer weights (not percentages — the weights are normalised internally).</p>
+<pre class="prettyprint lang-java code"><code class="code">{
+    "httpRequest": {
+        "path": "/api/payments"
+    },
+    "httpResponses": [
+        { "statusCode": 200, "body": "{\"status\": \"ok\"}" },
+        { "statusCode": 503, "body": "{\"status\": \"unavailable\"}" }
+    ],
+    "responseMode": "WEIGHTED",
+    "responseWeights": [80, 20]
+}</code></pre>
+<p>The relative weights do not need to sum to 100. A weight of <span class="inline_code">[4, 1]</span> would also produce an 80% / 20% split. The selection is probabilistic, not deterministic.</p>
 
 <p><strong>Example - Java Client:</strong></p>
 <pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.HttpRequest.request;
@@ -860,6 +875,7 @@ new MockServerClient("localhost", 1080)
     <li><strong><a href="#button_match_request_by_multipart_body">multipart/form-data</a></strong> &mdash; match file uploads and mixed field/file requests by field value, filename, or part content-type</li>
     <li><strong><a href="#button_match_request_by_binary_body">binary</a></strong></li>
     <li><strong><a href="#graphql_body_matching">GraphQL</a></strong> - whitespace-insensitive matching of GraphQL queries, mutations, and subscriptions</li>
+    <li><strong><a href="#fuzzy_body_matching">fuzzy / similarity</a></strong> - deterministic Jaro-Winkler similarity match at or above a configurable threshold</li>
     <li><strong><a href="#button_match_request_by_not_matching_body_with_xpath">negated matcher</a></strong></li>
 </ul>
 
@@ -1074,6 +1090,120 @@ new MockServerClient("localhost", 1080)
 // {"id": "1", "type": "complete"}</code></pre>
 
 <p><strong>Note:</strong> The legacy <span class="inline_code">graphql-ws</span> subprotocol (used by the older <a target="_blank" href="https://github.com/apollographql/subscriptions-transport-ws" rel="noopener noreferrer">subscriptions-transport-ws</a> library) is also accepted. Both use the same message format in MockServer's implementation.</p>
+
+<a id="fuzzy_body_matching" class="anchor" href="#fuzzy_body_matching">&nbsp;</a>
+
+<h4>Fuzzy / Similarity Body Matching</h4>
+
+<p>The <strong>FUZZY</strong> body matcher matches when the request body is similar enough to an expected string, using a deterministic normalised Jaro-Winkler similarity ratio with a configurable threshold. Unlike LLM-based semantic matching, it is fully deterministic — the same inputs always produce the same result and it requires no external service.</p>
+
+<p>JSON format:</p>
+<pre class="prettyprint code"><code class="code">{
+    "httpRequest": {
+        "method": "POST",
+        "path": "/api/search",
+        "body": {
+            "type": "FUZZY",
+            "fuzzy": "find orders for user",
+            "threshold": 0.8,
+            "ignoreCase": false
+        }
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "body": "{\"results\": []}"
+    }
+}</code></pre>
+
+<p>Fields:</p>
+<ul>
+    <li><strong>fuzzy</strong> — the expected string to compare against</li>
+    <li><strong>threshold</strong> (optional, default <code>0.8</code>) — required similarity ratio between <code>0.0</code> and <code>1.0</code>. A value of <code>1.0</code> requires an exact match; <code>0.0</code> matches anything.</li>
+    <li><strong>ignoreCase</strong> (optional, default <code>false</code>) — when <code>true</code>, both strings are trimmed and lower-cased before comparison</li>
+</ul>
+
+<p>Java DSL:</p>
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.FuzzyBody.fuzzy;
+
+new MockServerClient("localhost", 1080)
+    .when(
+        request()
+            .withMethod("POST")
+            .withPath("/api/search")
+            .withBody(fuzzy("find orders for user", 0.8, false))
+    )
+    .respond(
+        response().withStatusCode(200).withBody("{\"results\": []}")
+    );</code></pre>
+
+<a id="conditional_request_matcher" class="anchor" href="#conditional_request_matcher">&nbsp;</a>
+
+<h4>Conditional (if/then/else) Request Matcher</h4>
+
+<p>A <strong>conditionalRequestDefinition</strong> lets you combine request matchers with if/then/else logic. If the <code>if</code> guard matches the incoming request, the <code>then</code> branch must also match; otherwise the <code>else</code> branch must match (when absent, the expectation matches whenever the guard is false). Each branch can be any request definition — an <code>httpRequest</code>, an OpenAPI definition, or even a nested <code>conditionalRequestDefinition</code>.</p>
+
+<pre class="prettyprint code"><code class="code">{
+    "conditionalRequestDefinition": {
+        "if": {
+            "method": "POST",
+            "headers": { "content-type": ["application/json"] }
+        },
+        "then": {
+            "body": {
+                "type": "JSON_SCHEMA",
+                "jsonSchema": "{\"type\": \"object\", \"required\": [\"orderId\"]}"
+            }
+        },
+        "else": {
+            "method": "GET"
+        }
+    },
+    "httpResponse": {
+        "statusCode": 200
+    }
+}</code></pre>
+
+<p>This expectation matches either a JSON POST whose body contains an <code>orderId</code> field, or a GET request. Existing AND-only expectations are unchanged — this construct is entirely opt-in.</p>
+
+<p>Java DSL:</p>
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.ConditionalRequestDefinition.requestIf;
+
+new MockServerClient("localhost", 1080)
+    .when(
+        requestIf(
+            request().withMethod("POST").withHeader("content-type", "application/json"),
+            request().withBody(json("{\"orderId\": \"${json-unit.any-string}\"}")),
+            request().withMethod("GET")
+        )
+    )
+    .respond(response().withStatusCode(200));</code></pre>
+
+<a id="accept_header_matching" class="anchor" href="#accept_header_matching">&nbsp;</a>
+
+<h4>Accept-Header Content-Negotiation Matching</h4>
+
+<p>A header matcher value may use an opt-in <code>accept:&lt;media-type&gt;</code> directive to match when the request's <code>Accept</code> header finds the media type acceptable per <a target="_blank" href="https://datatracker.ietf.org/doc/html/rfc7231#section-5.3.2" rel="noopener noreferrer">RFC 7231 §5.3.2</a>. This honours q-weights (<code>q=0</code> excludes a type), <code>type/*</code> and <code>*/*</code> wildcards, and specificity/preference ordering.</p>
+
+<p>Use this form as a header <em>value</em> matcher in the <code>Accept</code> header entry:</p>
+
+<pre class="prettyprint code"><code class="code">{
+    "httpRequest": {
+        "method": "GET",
+        "path": "/api/resource",
+        "headers": {
+            "Accept": ["accept:application/json"]
+        }
+    },
+    "httpResponse": {
+        "statusCode": 200,
+        "headers": { "Content-Type": ["application/json"] },
+        "body": "{\"result\": \"json response\"}"
+    }
+}</code></pre>
+
+<p>This expectation matches requests whose <code>Accept</code> header finds <code>application/json</code> acceptable — for example <code>Accept: application/json</code>, <code>Accept: */*</code>, or <code>Accept: application/json;q=0.9, text/html;q=0.5</code>. A request sending <code>Accept: text/html</code> or <code>Accept: application/json;q=0</code> would not match.</p>
+
+<p>Existing exact/regex header matching is unchanged when the <code>accept:</code> prefix is absent.</p>
 
 <button id="button_request" class="accordion title"><strong>Request Properties Matcher Code Examples</strong></button>
 <div class="panel title">

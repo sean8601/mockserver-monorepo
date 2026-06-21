@@ -88,6 +88,8 @@ schema_faq:
 				<ul>
 					<li><a href="#grpc_fault_injection">gRPC fault injection</a></li>
 					<li><a href="#tcp_layer_chaos">TCP-layer chaos</a></li>
+					<li><a href="#connection_lifecycle_faults">Connection-lifecycle faults</a></li>
+					<li><a href="#preemption_simulation">Preemption simulation</a></li>
 					<li><a href="#llm_chaos">LLM chaos</a></li>
 					<li><a href="#fleet_chaos">Fleet-wide (clustered)</a></li>
 				</ul>
@@ -95,8 +97,9 @@ schema_faq:
 			<td style="vertical-align: top;">
 				<ul>
 					<li><a href="#chaos_experiments">Scheduled experiments</a></li>
-						<li><a href="#chaos_profile_library">Saved profile library</a></li>
+					<li><a href="#chaos_profile_library">Saved profile library</a></li>
 					<li><a href="#chaos_auto_halt">Auto-halt circuit-breaker</a></li>
+					<li><a href="#slo_resilience_verdicts">SLO resilience verdicts</a></li>
 					<li><a href="#chaos_observability">Observability</a></li>
 					<li><a href="#dashboard_ui">Dashboard UI</a></li>
 					<li><a href="#interaction_notes">Interaction with other features</a></li>
@@ -734,6 +737,183 @@ sum(mock_server_active_service_chaos) &gt; 0
 # Active service-scoped chaos injecting connection drops
 mock_server_active_service_chaos{fault_type="drop"}</code></pre>
 
+<a id="slo_resilience_verdicts" class="anchor" href="#slo_resilience_verdicts">&nbsp;</a>
+
+<h2>SLO Resilience Verdicts</h2>
+
+<p>After injecting faults and driving load, you can ask MockServer synchronously: <strong>"did the traffic just handled meet a service-level objective?"</strong> The SLO verdict endpoint evaluates latency percentiles and error rates over a configurable time window and returns a PASS / FAIL verdict, with the HTTP status code encoding the result so a CI step or chaos gate can assert on it without parsing the body.</p>
+
+<p><strong>Enable tracking first.</strong> SLO tracking is off by default — set <code class="inline code">sloTrackingEnabled=true</code> so MockServer records a latency + error sample for every forwarded upstream round-trip. The endpoint returns <code class="inline code">400</code> with an error message if tracking is disabled.</p>
+
+<pre class="code"><code class="code">docker run -e MOCKSERVER_SLO_TRACKING_ENABLED=true mockserver/mockserver</code></pre>
+
+<h3>How it works</h3>
+
+<p>Each proxied upstream round-trip is recorded into a bounded sample window. <code class="inline code">PUT /mockserver/verifySLO</code> evaluates a named set of objectives over that window and returns a verdict. The HTTP status encodes the outcome:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Result</th>
+            <th>HTTP status</th>
+            <th>Meaning</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">PASS</code></td>
+            <td><code class="inline code">200</code></td>
+            <td>All objectives met over the window</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">INCONCLUSIVE</code></td>
+            <td><code class="inline code">200</code></td>
+            <td>Fewer than <code class="inline code">minimumSampleCount</code> samples in the window, or an objective could not be computed (empty window)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">FAIL</code></td>
+            <td><code class="inline code">406</code></td>
+            <td>At least one objective did not hold</td>
+        </tr>
+        <tr>
+            <td>Error</td>
+            <td><code class="inline code">400</code></td>
+            <td>Malformed request body, or <code class="inline code">sloTrackingEnabled=false</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Request and response</h3>
+
+<pre class="prettyprint code"><code class="code">curl -s -w "\n%{http_code}" -X PUT http://localhost:1080/mockserver/verifySLO \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "checkout-slo",
+    "window": { "type": "LOOKBACK", "lookbackMillis": 60000 },
+    "minimumSampleCount": 20,
+    "upstreamHosts": ["payments.svc"],
+    "objectives": [
+      { "sli": "LATENCY_P95", "comparator": "LESS_THAN", "threshold": 250.0 },
+      { "sli": "ERROR_RATE",  "comparator": "LESS_THAN_OR_EQUAL", "threshold": 0.01 }
+    ]
+  }'</code></pre>
+
+<p>A passing response body looks like:</p>
+
+<pre class="code"><code class="code">{
+  "name": "checkout-slo",
+  "result": "PASS",
+  "windowFromEpochMillis": 1700000000000,
+  "windowToEpochMillis":   1700000060000,
+  "sampleCount": 137,
+  "objectiveResults": [
+    { "sli": "LATENCY_P95", "comparator": "LESS_THAN", "threshold": 250.0, "observedValue": 210.0, "result": "PASS" },
+    { "sli": "ERROR_RATE",  "comparator": "LESS_THAN_OR_EQUAL", "threshold": 0.01, "observedValue": 0.0, "result": "PASS" }
+  ]
+}</code></pre>
+
+<h3>SloCriteria fields</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">name</code></td>
+            <td>Display name echoed in the response (useful for CI logs).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">window.type</code></td>
+            <td><code class="inline code">LOOKBACK</code> — <code class="inline code">[now - lookbackMillis, now]</code> evaluated with MockServer's controllable clock; <code class="inline code">EXPLICIT</code> — use <code class="inline code">fromEpochMillis</code> / <code class="inline code">toEpochMillis</code> verbatim.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">minimumSampleCount</code></td>
+            <td>If the window holds fewer than this many samples, the verdict is <code class="inline code">INCONCLUSIVE</code> rather than <code class="inline code">PASS</code>. Prevents a misleadingly clean result over an empty window.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">upstreamHosts</code></td>
+            <td>Optional list of target hostnames to restrict evaluation to samples from those hosts. Omit to evaluate across all recorded traffic.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">objectives</code></td>
+            <td>One or more SLI objectives. <strong>All</strong> must hold for a PASS verdict.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Supported SLIs</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>SLI</th>
+            <th>Comparators</th>
+            <th>Threshold</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">LATENCY_P50</code></td>
+            <td><code class="inline code">LESS_THAN</code>, <code class="inline code">LESS_THAN_OR_EQUAL</code></td>
+            <td>Milliseconds. P50 latency over the window's samples.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">LATENCY_P95</code></td>
+            <td><code class="inline code">LESS_THAN</code>, <code class="inline code">LESS_THAN_OR_EQUAL</code></td>
+            <td>Milliseconds. P95 latency over the window's samples.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">LATENCY_P99</code></td>
+            <td><code class="inline code">LESS_THAN</code>, <code class="inline code">LESS_THAN_OR_EQUAL</code></td>
+            <td>Milliseconds. P99 latency over the window's samples.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">ERROR_RATE</code></td>
+            <td><code class="inline code">LESS_THAN</code>, <code class="inline code">LESS_THAN_OR_EQUAL</code></td>
+            <td>Fraction 0.0 &ndash; 1.0. Errors are responses with status <code class="inline code">&ge; 500</code> or no status.</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Configuration</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Property</th>
+            <th>Environment variable</th>
+            <th>Default</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mockserver.sloTrackingEnabled</code></td>
+            <td><code class="inline code">MOCKSERVER_SLO_TRACKING_ENABLED</code></td>
+            <td><code class="inline code">false</code></td>
+            <td>Enable the forward-path recording funnel. Must be <code class="inline code">true</code> for <code class="inline code">verifySLO</code> to evaluate over real traffic.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.sloWindowRetentionMillis</code></td>
+            <td><code class="inline code">MOCKSERVER_SLO_WINDOW_RETENTION_MILLIS</code></td>
+            <td><code class="inline code">600000</code> (10 min)</td>
+            <td>Maximum sample age relative to the newest sample. Older samples are evicted automatically.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.sloWindowMaxSamples</code></td>
+            <td><code class="inline code">MOCKSERVER_SLO_WINDOW_MAX_SAMPLES</code></td>
+            <td><code class="inline code">50000</code></td>
+            <td>Maximum number of samples retained. Oldest samples are evicted when the cap is reached.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>SLO samples are cleared on server reset. Both load-scenario traffic and real proxied traffic are recorded under the same <code class="inline code">FORWARD</code> scope, keyed by host — use <code class="inline code">upstreamHosts</code> or a narrow <code class="inline code">EXPLICIT</code> window to scope a verdict to a specific run. See also <a href="/mock_server/load_injection.html">Load Injection</a> for driving synthetic traffic that feeds the SLO sample store.</p>
+
 <a id="dashboard_ui" class="anchor" href="#dashboard_ui">&nbsp;</a>
 
 <h2>Dashboard UI</h2>
@@ -1038,6 +1218,141 @@ PATCH /mockserver/tcpChaos
 <p>The API follows the same patterns as <a href="#service_scoped_chaos">service-scoped HTTP chaos</a>: host matching is case-insensitive and ignores port suffixes, registrations support optional TTL-based auto-expiry, and all registrations are cleared on server reset.</p>
 
 <p><strong>Difference from HTTP chaos:</strong> TCP chaos operates at the raw byte level before HTTP decoding. This means it can simulate faults that are impossible to reproduce with HTTP-level chaos, such as TCP RST, connection timeouts (never sending FIN), bandwidth throttling, and data fragmentation. HTTP chaos operates on decoded HTTP requests/responses and can inject application-level faults like error status codes, body corruption, and rate limiting.</p>
+
+<a id="connection_lifecycle_faults" class="anchor" href="#connection_lifecycle_faults">&nbsp;</a>
+
+<h2>Connection-Lifecycle Faults</h2>
+
+<p>Connection-lifecycle faults simulate the patterns that appear when a server crashes <em>mid-response</em>, closes connections slowly, or signals graceful shutdown to HTTP/2 clients. These faults fire at response time — the client sees them while or after the response head is written — and are registered via the same <code class="inline code">PUT /mockserver/tcpChaos</code> endpoint as connect-time TCP faults, keyed by upstream host.</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Fault</th>
+            <th>Field on <code class="inline code">TcpChaosProfile</code></th>
+            <th>Behaviour</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Mid-response RST</strong></td>
+            <td><code class="inline code">resetMidResponse</code> (boolean)</td>
+            <td>After the response head is flushed, forces a TCP RST (SO_LINGER 0 + immediate close) instead of a clean FIN. The client sees "connection reset" mid-stream — simulates a server that crashed while replying.</td>
+        </tr>
+        <tr>
+            <td><strong>Slow close</strong></td>
+            <td><code class="inline code">slowCloseDelay</code> (Delay object)</td>
+            <td>Delays the socket FIN on the response path by the configured amount (with optional jitter). Simulates a connection that lingers on teardown without requiring a per-expectation <code class="inline code">ConnectionOptions.closeSocketDelay</code>.</td>
+        </tr>
+        <tr>
+            <td><strong>HTTP/2 GOAWAY</strong></td>
+            <td><code class="inline code">http2GoAway</code> (boolean)</td>
+            <td>On HTTP/2 connections, emits a GOAWAY frame on the response path before the response head, signalling the client to stop opening new streams. Configurable with <code class="inline code">http2GoAwayErrorCode</code> (default 0 = NO_ERROR) and <code class="inline code">http2GoAwayLastStreamId</code>. HTTP/1.1 connections have no GOAWAY — MockServer degrades to <code class="inline code">Connection: close</code> + 503.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p><strong>Register via <code class="inline code">PUT /mockserver/tcpChaos</code></strong> (same endpoint as connect-time TCP faults):</p>
+
+<pre class="code"><code class="code">// Mid-response RST — simulate server crash while replying
+PUT /mockserver/tcpChaos
+{ "host": "payments.svc", "chaos": { "resetMidResponse": true } }
+
+// Slow close — connection lingers for 2 seconds after the response
+PUT /mockserver/tcpChaos
+{ "host": "payments.svc", "chaos": { "slowCloseDelay": { "timeUnit": "SECONDS", "value": 2 } } }
+
+// HTTP/2 GOAWAY — client stops opening new streams on that connection
+PUT /mockserver/tcpChaos
+{ "host": "payments.svc", "chaos": { "http2GoAway": true, "http2GoAwayErrorCode": 0 } }</code></pre>
+
+<p><strong>Auto-halt integration.</strong> A mid-response RST is counted as a <code class="inline code">drop</code> fault and contributes to the <a href="#chaos_auto_halt">auto-halt circuit-breaker</a> window (controlled by <code class="inline code">connectionLifecycleAutoHaltCountsRst</code>, default <code class="inline code">true</code>). A GOAWAY and the preemption 503 are graceful signals and are not counted.</p>
+
+<p><strong>Streaming carve-out.</strong> The response-path faults (<code class="inline code">resetMidResponse</code>, <code class="inline code">slowCloseDelay</code>, <code class="inline code">http2GoAway</code>) apply to the non-streaming response path only. Streaming responses (SSE, chunked streaming) are not affected in the current version.</p>
+
+<a id="preemption_simulation" class="anchor" href="#preemption_simulation">&nbsp;</a>
+
+<h2>Preemption Simulation</h2>
+
+<p>The preemption endpoint simulates a Kubernetes node drain, EC2 Spot reclamation, or pre-SIGTERM sequence: MockServer <strong>cordons</strong> itself (turning away new data-plane exchanges), allows in-flight requests to drain for a bounded window, and signals HTTP/2 clients to drain via GOAWAY. It is a pure simulation — it never stops the JVM or event loops. The control plane (<code class="inline code">/mockserver/...</code> paths) is always exempt so you can observe and uncordon at any time.</p>
+
+<h3>Behaviour by protocol and mode</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Mode</th>
+            <th>HTTP/1.1 new requests</th>
+            <th>HTTP/2 new requests</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">reject503</code></td>
+            <td>503 + <code class="inline code">Retry-After</code> + <code class="inline code">Connection: close</code></td>
+            <td>503 + <code class="inline code">Retry-After</code> (no GOAWAY)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">goaway</code></td>
+            <td>Served normally (no GOAWAY in HTTP/1.1)</td>
+            <td>Connection-level GOAWAY; in-flight request still completes normally</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">both</code> (default)</td>
+            <td>503 + <code class="inline code">Retry-After</code> + <code class="inline code">Connection: close</code></td>
+            <td>GOAWAY <strong>and</strong> 503 + <code class="inline code">Retry-After</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Control-plane endpoints</h3>
+
+<pre class="code"><code class="code">// Start a preemption simulation (default mode = "both", drain = stop drain config value)
+PUT /mockserver/preemption
+{ "mode": "both", "drainMillis": 30000, "ttlMillis": 60000 }
+
+// Check current state (state: "inactive" | "draining" | "drained")
+GET /mockserver/preemption
+// -> { "state": "draining", "inFlight": 3, "drainRemainingMillis": 25000, "mode": "both" }
+
+// Uncordon immediately
+DELETE /mockserver/preemption</code></pre>
+
+<h3>Request fields</h3>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Default</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mode</code></td>
+            <td><code class="inline code">both</code></td>
+            <td>Rejection + GOAWAY strategy. See table above.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">drainMillis</code></td>
+            <td><code class="inline code">stopDrainMillis</code> config value</td>
+            <td>Duration of the drain window in milliseconds. Clamped to <code class="inline code">preemptionSimulationMaxDrainMillis</code> (default 24 h).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">ttlMillis</code></td>
+            <td><code class="inline code">0</code> (no auto-uncordon)</td>
+            <td>Dead-man's switch: auto-clears the cordon after this many ms. Prevents a forgotten simulation from permanently blocking traffic.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">lastStreamId</code></td>
+            <td><code class="inline code">null</code></td>
+            <td>The <code class="inline code">Last-Stream-ID</code> value in the GOAWAY frame (HTTP/2 modes only). Defaults to the current connection's last stream.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p>Preemption state is cleared on server reset. Combine with <a href="#slo_resilience_verdicts">SLO verdicts</a> to assert that your load balancer correctly routes around a cordoned instance with no error budget impact.</p>
 
 <a id="llm_chaos" class="anchor" href="#llm_chaos">&nbsp;</a>
 

@@ -1,0 +1,491 @@
+---
+title: Load Injection (Load Scenarios)
+shortTitle: Load Injection
+description: Drive API traffic from MockServer using declarative load scenarios — ramp virtual users, vary data across iterations with templates, and assert SLO verdicts over the generated traffic.
+layout: page
+pageOrder: 3
+section: 'Chaos Testing'
+subsection: true
+sitemap:
+  priority: 0.8
+  changefreq: 'monthly'
+  lastmod: 2026-06-21T00:00:00+00:00
+---
+
+<p>MockServer can drive outbound API traffic on demand using <strong>Load Scenarios</strong> — a declarative, bounded load generator built into the server. A load scenario is an ordered list of templated request <em>steps</em> fired at a target concurrency described by a <em>load profile</em>, with per-iteration variable data. Results feed both the metrics histograms and the SLO sample store so a load run can be asserted with <a href="/mock_server/chaos_testing.html#slo_resilience_verdicts"><code class="inline code">PUT /mockserver/verifySLO</code></a>.</p>
+
+<p>This makes MockServer useful for <strong>resilience verification</strong>: inject a chaos fault (see <a href="/mock_server/chaos_testing.html">Chaos Testing</a>), apply load, then assert that your SLOs held — all from a single control plane, with no external load tool required.</p>
+
+<p><strong>Off by default.</strong> The endpoint returns <code class="inline code">403 Forbidden</code> until <code class="inline code">loadGenerationEnabled=true</code> is set. Hard caps on virtual users, in-flight requests, RPS, duration, and step count prevent the feature from self-DoS-ing the server.</p>
+
+<a id="quickstart" class="anchor" href="#quickstart">&nbsp;</a>
+
+<h2>Quickstart</h2>
+
+<p>Enable load generation, then start a 10-VU constant load scenario against a target for 30 seconds:</p>
+
+<pre class="prettyprint code"><code class="code"># 1. Enable load generation (set once at startup or via the config endpoint)
+docker run -e MOCKSERVER_LOAD_GENERATION_ENABLED=true mockserver/mockserver
+
+# 2. Start a scenario
+curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "checkout-load",
+    "templateType": "VELOCITY",
+    "profile": {
+      "type": "CONSTANT",
+      "vus": 10,
+      "durationMillis": 30000
+    },
+    "steps": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/orders/$iteration.index",
+          "headers": { "Host": ["orders.svc:8080"] },
+          "socketAddress": { "host": "orders.svc", "port": 8080, "scheme": "HTTP" }
+        }
+      }
+    ]
+  }'
+
+# 3. Poll progress
+curl -s http://localhost:1080/mockserver/loadScenario
+
+# 4. Stop early if needed
+curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
+
+<a id="control_plane_api" class="anchor" href="#control_plane_api">&nbsp;</a>
+
+<h2>Control-Plane API</h2>
+
+<p>All three verbs are control-plane endpoints — they respect <a href="/mock_server/control_plane_authorisation.html">control-plane authentication</a> (mTLS / JWT) when configured.</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Verb</th>
+            <th>Path</th>
+            <th>Behaviour</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">PUT</code></td>
+            <td><code class="inline code">/mockserver/loadScenario</code></td>
+            <td>Start a new scenario. Returns <code class="inline code">403</code> when <code class="inline code">loadGenerationEnabled=false</code>; <code class="inline code">400</code> with a JSON error when the scenario fails validation or a cap is exceeded; <code class="inline code">200 {status:"started", ...}</code> otherwise. Starting a new scenario while one is running replaces the previous one.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">GET</code></td>
+            <td><code class="inline code">/mockserver/loadScenario</code></td>
+            <td>Return current scenario status. Fields: <code class="inline code">state</code> (<code class="inline code">running</code> / <code class="inline code">completed</code> / <code class="inline code">stopped</code> / <code class="inline code">none</code>), <code class="inline code">elapsedMillis</code>, <code class="inline code">currentVus</code>, <code class="inline code">requestsSent</code>, <code class="inline code">succeeded</code>, <code class="inline code">failed</code>, <code class="inline code">p50Millis</code>, <code class="inline code">p95Millis</code>, <code class="inline code">p99Millis</code>, <code class="inline code">runId</code>, <code class="inline code">startedAt</code>, <code class="inline code">endedAt</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">DELETE</code></td>
+            <td><code class="inline code">/mockserver/loadScenario</code></td>
+            <td>Stop the running scenario. Idempotent — no-op when nothing is running.</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="load_scenario_model" class="anchor" href="#load_scenario_model">&nbsp;</a>
+
+<h2>Load Scenario Model</h2>
+
+<p>A load scenario is a JSON object with the following top-level fields:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Required</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">name</code></td>
+            <td>string</td>
+            <td>Yes</td>
+            <td>Display name for the scenario (appears in status and logs).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">steps</code></td>
+            <td>array</td>
+            <td>Yes</td>
+            <td>Ordered list of request steps (see <a href="#steps">Steps</a> below). Maximum 50 steps.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">profile</code></td>
+            <td>object</td>
+            <td>Yes</td>
+            <td>The ramp profile controlling virtual users and duration (see <a href="#load_profile">Load Profile</a> below).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">templateType</code></td>
+            <td>string</td>
+            <td>No</td>
+            <td>Template engine for rendering step fields: <code class="inline code">VELOCITY</code> (default) or <code class="inline code">MUSTACHE</code>. <code class="inline code">JAVASCRIPT</code> is <strong>not</strong> supported for load steps and is rejected with a <code class="inline code">400</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">maxRequests</code></td>
+            <td>integer</td>
+            <td>No</td>
+            <td>Stop the scenario once this many requests have been dispatched, even if the duration has not elapsed. Useful for budget-bounded runs.</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="steps" class="anchor" href="#steps">&nbsp;</a>
+
+<h3>Steps</h3>
+
+<p>Each step defines a request to fire and an optional pause after it:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">request</code></td>
+            <td>HttpRequest</td>
+            <td>The request to fire. Reuses the same <code class="inline code">HttpRequest</code> model as expectations. Template expressions live in the <code class="inline code">path</code> and <code class="inline code">body</code> fields. Set <code class="inline code">socketAddress</code> to point at the target service.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">thinkTime</code></td>
+            <td>Delay</td>
+            <td>Optional pause between this step and the next (a <code class="inline code">{ "timeUnit": "MILLISECONDS", "value": 100 }</code> object). Implemented with a non-blocking scheduler — no thread is blocked during think time.</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="load_profile" class="anchor" href="#load_profile">&nbsp;</a>
+
+<h3>Load Profile</h3>
+
+<p>The profile controls how many virtual users (VUs) are active over time:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">type</code></td>
+            <td>string</td>
+            <td><code class="inline code">CONSTANT</code> — a fixed number of VUs for the whole duration. <code class="inline code">LINEAR</code> — ramp VUs linearly from <code class="inline code">startVus</code> to <code class="inline code">endVus</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">durationMillis</code></td>
+            <td>integer</td>
+            <td>How long to run (milliseconds). Maximum 3 600 000 ms (1 hour).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">vus</code></td>
+            <td>integer</td>
+            <td><code class="inline code">CONSTANT</code> only — number of concurrent virtual users. Maximum 50.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">startVus</code></td>
+            <td>integer</td>
+            <td><code class="inline code">LINEAR</code> only — virtual users at the start of the ramp.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">endVus</code></td>
+            <td>integer</td>
+            <td><code class="inline code">LINEAR</code> only — virtual users at the end of the ramp. Maximum 50.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">iterationPacingMillis</code></td>
+            <td>integer</td>
+            <td>Optional minimum time between the start of successive iterations for a given VU. Limits the iteration rate per VU independently of step think times.</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="iteration_variables" class="anchor" href="#iteration_variables">&nbsp;</a>
+
+<h2>Per-Iteration Template Variables</h2>
+
+<p>Each iteration gets a fresh <code class="inline code">iteration</code> context injected alongside the standard <code class="inline code">request</code> variable. Use it to vary data across iterations and virtual users without external data files:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Variable</th>
+            <th>Meaning</th>
+            <th>Velocity</th>
+            <th>Mustache</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">index</code></td>
+            <td>Global iteration index across all VUs (0-based)</td>
+            <td><code class="inline code">$iteration.index</code></td>
+            <td><code class="inline code">{{iteration.index}}</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">vuId</code></td>
+            <td>ID of the virtual user running this iteration (0-based)</td>
+            <td><code class="inline code">$iteration.vuId</code></td>
+            <td><code class="inline code">{{iteration.vuId}}</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">vuIteration</code></td>
+            <td>Iteration count within this specific VU (0-based)</td>
+            <td><code class="inline code">$iteration.vuIteration</code></td>
+            <td><code class="inline code">{{iteration.vuIteration}}</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">elapsedMillis</code></td>
+            <td>Milliseconds since the scenario started</td>
+            <td><code class="inline code">$iteration.elapsedMillis</code></td>
+            <td><code class="inline code">{{iteration.elapsedMillis}}</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">count</code></td>
+            <td>Total requests dispatched so far (across all VUs)</td>
+            <td><code class="inline code">$iteration.count</code></td>
+            <td><code class="inline code">{{iteration.count}}</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<p><strong>What fields are rendered.</strong> In v1, only the request <code class="inline code">path</code> and <code class="inline code">body</code> fields are rendered through the template engine. These are the most commonly templated fields — use them to vary the URL path or the request payload across iterations.</p>
+
+<a id="examples" class="anchor" href="#examples">&nbsp;</a>
+
+<h2>Examples</h2>
+
+<h3>CONSTANT profile — templated path</h3>
+
+<p>Ten VUs, 30 seconds, each iteration fetches a different order ID derived from the global iteration index:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "checkout-load",
+    "templateType": "VELOCITY",
+    "maxRequests": 5000,
+    "profile": {
+      "type": "CONSTANT",
+      "vus": 10,
+      "durationMillis": 30000,
+      "iterationPacingMillis": 50
+    },
+    "steps": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/orders/$iteration.index",
+          "headers": { "Host": ["orders.svc:8080"] },
+          "socketAddress": { "host": "orders.svc", "port": 8080, "scheme": "HTTP" }
+        },
+        "thinkTime": { "timeUnit": "MILLISECONDS", "value": 20 }
+      }
+    ]
+  }'</code></pre>
+
+<h3>LINEAR ramp</h3>
+
+<p>Ramp from 1 to 25 VUs over 60 seconds — useful for finding the concurrency at which a service starts to degrade:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ramp-to-25",
+    "profile": {
+      "type": "LINEAR",
+      "startVus": 1,
+      "endVus": 25,
+      "durationMillis": 60000
+    },
+    "steps": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/health",
+          "socketAddress": { "host": "target.svc", "port": 8080, "scheme": "HTTP" }
+        }
+      }
+    ]
+  }'</code></pre>
+
+<h3>Multi-step scenario with per-VU data variation</h3>
+
+<p>A two-step user journey: create a basket, then add an item. The basket ID is derived from the VU, and the product ID from the iteration within that VU:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "basket-journey",
+    "templateType": "VELOCITY",
+    "profile": {
+      "type": "CONSTANT",
+      "vus": 5,
+      "durationMillis": 60000
+    },
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/baskets",
+          "body": { "type": "STRING", "string": "{\"customerId\": $iteration.vuId}" },
+          "socketAddress": { "host": "shop.svc", "port": 8080, "scheme": "HTTP" }
+        },
+        "thinkTime": { "timeUnit": "MILLISECONDS", "value": 50 }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/baskets/$iteration.vuId/items",
+          "body": { "type": "STRING", "string": "{\"productId\": $iteration.vuIteration}" },
+          "socketAddress": { "host": "shop.svc", "port": 8080, "scheme": "HTTP" }
+        }
+      }
+    ]
+  }'</code></pre>
+
+<a id="safety_caps" class="anchor" href="#safety_caps">&nbsp;</a>
+
+<h2>Safety Caps</h2>
+
+<p>Load generation is bounded by hard caps to prevent the feature from self-DoS-ing the server. Requests that exceed a cap are rejected with <code class="inline code">400 Bad Request</code> and a JSON error message.</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Control</th>
+            <th>Default cap</th>
+            <th>Enforced at</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Feature flag (<code class="inline code">loadGenerationEnabled</code>)</td>
+            <td><code class="inline code">false</code> (disabled)</td>
+            <td>PUT returns <code class="inline code">403</code> when off</td>
+        </tr>
+        <tr>
+            <td>Maximum virtual users</td>
+            <td>50</td>
+            <td>Scenario validation (rejected at PUT)</td>
+        </tr>
+        <tr>
+            <td>Maximum in-flight requests</td>
+            <td>200</td>
+            <td>Live in-flight semaphore at dispatch</td>
+        </tr>
+        <tr>
+            <td>Maximum requests per second</td>
+            <td>500</td>
+            <td>Live token bucket at dispatch</td>
+        </tr>
+        <tr>
+            <td>Maximum duration</td>
+            <td>3 600 000 ms (1 hour)</td>
+            <td>Scenario validation (rejected at PUT)</td>
+        </tr>
+        <tr>
+            <td>Maximum steps per scenario</td>
+            <td>50</td>
+            <td>Scenario validation (rejected at PUT)</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="slo_integration" class="anchor" href="#slo_integration">&nbsp;</a>
+
+<h2>Asserting SLOs over Load Results</h2>
+
+<p>Every completed load-scenario request is recorded into MockServer's SLO sample store (when <code class="inline code">sloTrackingEnabled=true</code>), so you can drive load and then assert that latency and error-rate objectives held — all from the MockServer control plane.</p>
+
+<pre class="prettyprint code"><code class="code"># 1. Enable both features
+docker run \
+  -e MOCKSERVER_LOAD_GENERATION_ENABLED=true \
+  -e MOCKSERVER_SLO_TRACKING_ENABLED=true \
+  mockserver/mockserver
+
+# 2. Run a load scenario (e.g. CONSTANT 10 VUs for 30 s)
+curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "slo-validation-run",
+    "profile": { "type": "CONSTANT", "vus": 10, "durationMillis": 30000 },
+    "steps": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/health",
+          "socketAddress": { "host": "target.svc", "port": 8080, "scheme": "HTTP" }
+        }
+      }
+    ]
+  }'
+
+# 3. Wait for the scenario to complete (poll GET until state = "completed")
+
+# 4. Assert SLOs held during the run
+# Returns 200 (PASS) or 406 (FAIL)
+curl -s -w "\n%{http_code}" -X PUT http://localhost:1080/mockserver/verifySLO \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "checkout-slo",
+    "window": { "type": "LOOKBACK", "lookbackMillis": 60000 },
+    "minimumSampleCount": 50,
+    "upstreamHosts": ["target.svc"],
+    "objectives": [
+      { "sli": "LATENCY_P95", "comparator": "LESS_THAN", "threshold": 200.0 },
+      { "sli": "ERROR_RATE",  "comparator": "LESS_THAN_OR_EQUAL", "threshold": 0.01 }
+    ]
+  }'</code></pre>
+
+<p>See <a href="/mock_server/chaos_testing.html#slo_resilience_verdicts">SLO Resilience Verdicts</a> for the full <code class="inline code">verifySLO</code> reference, including window types, all SLI options, and the response body schema.</p>
+
+<p><strong>Scope note:</strong> the SLO sample store records load-scenario traffic and real proxied traffic under the same <code class="inline code">FORWARD</code> scope, keyed by target host. When asserting SLOs over a load run, use a narrow <code class="inline code">window</code> that covers only the load period to avoid mixing in unrelated traffic.</p>
+
+<a id="configuration" class="anchor" href="#configuration">&nbsp;</a>
+
+<h2>Configuration</h2>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Property</th>
+            <th>Environment variable</th>
+            <th>Default</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationEnabled</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_ENABLED</code></td>
+            <td><code class="inline code">false</code></td>
+            <td>Master switch. Must be <code class="inline code">true</code> for <code class="inline code">PUT /mockserver/loadScenario</code> to succeed. Set at startup to avoid a restart.</td>
+        </tr>
+    </tbody>
+</table>
+
+<a id="related" class="anchor" href="#related">&nbsp;</a>
+
+<h2>Related Pages</h2>
+
+<ul>
+    <li><a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> &mdash; inject faults alongside load to verify resilience under stress</li>
+    <li><a href="/mock_server/chaos_testing.html#slo_resilience_verdicts">SLO Resilience Verdicts</a> &mdash; assert that latency and error-rate objectives held during the load run</li>
+    <li><a href="/mock_server/response_templates.html">Response Templates</a> &mdash; the Velocity / Mustache template engines used for <code class="inline code">path</code> and <code class="inline code">body</code> rendering in steps</li>
+    <li><a href="/mock_server/observability.html">Observability</a> &mdash; Prometheus metrics for latency histograms and request counters fed by load scenario traffic</li>
+</ul>

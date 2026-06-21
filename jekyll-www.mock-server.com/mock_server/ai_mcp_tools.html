@@ -1670,6 +1670,95 @@ sitemap:
   }
 }</code></pre>
 
+<a id="mcp_server_capabilities" class="anchor" href="#mcp_server_capabilities">&nbsp;</a>
+
+<h2>MockServer MCP Server Capabilities</h2>
+
+<p>In addition to the tools above, MockServer's own MCP server (<code>/mockserver/mcp</code>) also implements the <strong>prompts</strong> and <strong>sampling</strong> capabilities from the MCP specification. These are available alongside the tools described in this page.</p>
+
+<a id="mcp_prompts" class="anchor" href="#mcp_prompts">&nbsp;</a>
+
+<h3>Prompts (<code>prompts/list</code> and <code>prompts/get</code>)</h3>
+
+<p>MockServer's MCP server advertises a built-in prompt set. An AI assistant can discover and retrieve these prompts using standard MCP JSON-RPC methods:</p>
+
+<table>
+    <thead>
+        <tr><th>Method</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>prompts/list</code></td><td>Returns the configured prompt set — each prompt's <code>name</code>, <code>description</code>, and <code>arguments</code> list (each argument has a <code>name</code>, optional <code>description</code>, and <code>required</code> flag)</td></tr>
+        <tr><td><code>prompts/get</code></td><td>Returns a prompt's message(s) with <code>{{argument}}</code> placeholders substituted from the supplied <code>arguments</code> map. An unknown prompt name returns JSON-RPC error code <code>INVALID_PARAMS</code> (<code>-32602</code>).</td></tr>
+    </tbody>
+</table>
+
+<p><strong>Example &mdash; list available prompts:</strong></p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 100,
+  "method": "prompts/list",
+  "params": {}
+}</code></pre>
+
+<p><strong>Example &mdash; get a prompt with arguments:</strong></p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 101,
+  "method": "prompts/get",
+  "params": {
+    "name": "create_expectation_prompt",
+    "arguments": {
+      "method": "GET",
+      "path": "/api/users"
+    }
+  }
+}</code></pre>
+
+<a id="mcp_sampling" class="anchor" href="#mcp_sampling">&nbsp;</a>
+
+<h3>Sampling (<code>sampling/createMessage</code>)</h3>
+
+<p>MockServer's MCP server implements <code>sampling/createMessage</code>, which returns a deterministic mocked completion in the MCP sampling result shape. This lets you test MCP clients that use server-side sampling without connecting to a real LLM.</p>
+
+<p>The response includes <code>role</code>, <code>content</code> (a text content part), <code>model</code>, and <code>stopReason</code>. The model is echoed from the request's <code>modelPreferences.hints</code> when supplied; otherwise a default model name is reported. Supply a <code>mockResponse</code> field in the request params to override the default response text.</p>
+
+<p><strong>Example request:</strong></p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 102,
+  "method": "sampling/createMessage",
+  "params": {
+    "messages": [
+      { "role": "user", "content": { "type": "text", "text": "What is MockServer?" } }
+    ],
+    "modelPreferences": {
+      "hints": [{ "name": "claude-sonnet-4" }]
+    },
+    "mockResponse": "MockServer is an open-source HTTP mock and proxy server."
+  }
+}</code></pre>
+
+<p><strong>Example response:</strong></p>
+
+<pre class="prettyprint code"><code class="code">{
+  "jsonrpc": "2.0",
+  "id": 102,
+  "result": {
+    "role": "assistant",
+    "content": {
+      "type": "text",
+      "text": "MockServer is an open-source HTTP mock and proxy server."
+    },
+    "model": "claude-sonnet-4",
+    "stopReason": "end_turn"
+  }
+}</code></pre>
+
+<p>When <code>mockResponse</code> is omitted, MockServer returns a fixed default completion text. The response is always deterministic and does not call any external LLM.</p>
+
 <a id="resources" class="anchor" href="#resources">&nbsp;</a>
 
 <h2>MCP Resources</h2>

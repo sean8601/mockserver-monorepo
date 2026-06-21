@@ -1,0 +1,59 @@
+meta {
+  name: start a load scenario
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{baseUrl}}/mockserver/loadScenario
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "checkout-load",
+    "templateType": "VELOCITY",
+    "maxRequests": 5000,
+    "profile": {
+      "type": "CONSTANT",
+      "vus": 10,
+      "durationMillis": 30000,
+      "iterationPacingMillis": 50
+    },
+    "steps": [
+      {
+        "request": {
+          "method": "GET",
+          "path": "/api/item/$iteration.index",
+          "headers": {
+            "Host": [
+              "target.svc:8080"
+            ]
+          },
+          "socketAddress": {
+            "host": "target.svc",
+            "port": 8080,
+            "scheme": "HTTP"
+          }
+        },
+        "thinkTime": {
+          "timeUnit": "MILLISECONDS",
+          "value": 20
+        }
+      }
+    ]
+  }
+}
+
+docs {
+  Starts an API load scenario — an ordered list of templated request steps fired at a target concurrency described by a ramp profile, with per-iteration data variation. It is a pure SLI producer: each completed request records a latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no verdict logic of its own. Off by default — returns 403 until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 50 steps, max 1h duration, plus a live in-flight semaphore (200) and an RPS token bucket (500).
+  
+  the load scenario to start
+  
+  Full API reference: https://www.mock-server.com/mock_server/mockserver_clients.html
+}

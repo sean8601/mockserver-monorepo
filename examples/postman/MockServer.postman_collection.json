@@ -1403,6 +1403,187 @@
             },
             "description": "Stops the current experiment and clears all chaos from the service registry. Idempotent \u2014 no-op if no experiment is running.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
           }
+        },
+        {
+          "name": "cordon and drain the server (preemption simulation)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/preemption",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "preemption"
+              ]
+            },
+            "description": "Simulates a connection-lifecycle preemption (e.g. a Kubernetes node drain or spot reclamation). While cordoned, new exchanges are signalled to back off \u2014 by a 503 + Connection: close, an HTTP/2 GOAWAY frame, or both \u2014 while in-flight requests are allowed to drain. The simulation is server-scoped and does not stop the JVM. An empty body uses defaults (mode \"both\", drainMillis from stopDrainMillis, no TTL). drainMillis and ttlMillis are clamped to preemptionSimulationMaxDrainMillis.\n\npreemption simulation parameters (all fields optional)\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"both\",\n  \"drainMillis\": 10000,\n  \"ttlMillis\": 60000,\n  \"lastStreamId\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "retrieve the current preemption status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/preemption",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "preemption"
+              ]
+            },
+            "description": "Returns the current cordon/drain status: state (inactive / draining / drained), the number of in-flight requests, the remaining drain window in milliseconds and the active signalling mode.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "uncordon the server (clear preemption)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/preemption",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "preemption"
+              ]
+            },
+            "description": "Explicitly clears any active preemption simulation, returning the server to normal operation. Idempotent \u2014 returns 200 whether or not a simulation was active.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "list saved chaos profile names",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/chaosExperiment/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "chaosExperiment",
+                "profiles"
+              ]
+            },
+            "description": "returns the names of all saved chaos experiment profiles, sorted ascending\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "save a chaos experiment profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/chaosExperiment/profiles/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "chaosExperiment",
+                "profiles",
+                "checkout"
+              ]
+            },
+            "description": "Saves a chaos experiment definition (the same body shape as PUT /mockserver/chaosExperiment) under the given name so it can be applied later with POST /mockserver/chaosExperiment/apply/{name}. The name in the path is authoritative; any name field in the body is ignored. The name must be 1-128 characters of letters, digits, space, dot, underscore or hyphen with no leading/trailing space.\n\nchaos experiment definition to save\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stages\": [\n    {\n      \"durationMillis\": 30000,\n      \"profiles\": {\n        \"payments.svc\": {\n          \"errorStatus\": 503,\n          \"errorProbability\": 0.5\n        }\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "retrieve a saved chaos profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/chaosExperiment/profiles/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "chaosExperiment",
+                "profiles",
+                "checkout"
+              ]
+            },
+            "description": "returns the full saved chaos experiment definition stored under the given name\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "delete a saved chaos profile",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/chaosExperiment/profiles/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "chaosExperiment",
+                "profiles",
+                "checkout"
+              ]
+            },
+            "description": "Removes the saved chaos profile with the given name. Idempotent \u2014 returns 200 with status \"deleted\" when the profile existed, or \"absent\" when it did not.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "apply a saved chaos profile",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/chaosExperiment/apply/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "chaosExperiment",
+                "apply",
+                "checkout"
+              ]
+            },
+            "description": "Starts the chaos experiment previously saved under the given name (as if its definition had been sent to PUT /mockserver/chaosExperiment). The request body is ignored.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
         }
       ]
     },
@@ -2099,6 +2280,153 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"consumer\": {\n    \"name\": \"web-app\"\n  },\n  \"provider\": {\n    \"name\": \"api-service\"\n  },\n  \"interactions\": [\n    {\n      \"description\": \"a health check request\",\n      \"request\": {\n        \"method\": \"GET\",\n        \"path\": \"/api/health\"\n      },\n      \"response\": {\n        \"status\": 200,\n        \"headers\": {\n          \"content-type\": \"application/json\"\n        },\n        \"body\": {\n          \"status\": \"ok\"\n        }\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "loadgen",
+      "item": [
+        {
+          "name": "start a load scenario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario"
+              ]
+            },
+            "description": "Starts an API load scenario \u2014 an ordered list of templated request steps fired at a target concurrency described by a ramp profile, with per-iteration data variation. It is a pure SLI producer: each completed request records a latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no verdict logic of its own. Off by default \u2014 returns 403 until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 50 steps, max 1h duration, plus a live in-flight semaphore (200) and an RPS token bucket (500).\n\nthe load scenario to start\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"checkout-load\",\n  \"templateType\": \"VELOCITY\",\n  \"maxRequests\": 5000,\n  \"profile\": {\n    \"type\": \"CONSTANT\",\n    \"vus\": 10,\n    \"durationMillis\": 30000,\n    \"iterationPacingMillis\": 50\n  },\n  \"steps\": [\n    {\n      \"request\": {\n        \"method\": \"GET\",\n        \"path\": \"/api/item/$iteration.index\",\n        \"headers\": {\n          \"Host\": [\n            \"target.svc:8080\"\n          ]\n        },\n        \"socketAddress\": {\n          \"host\": \"target.svc\",\n          \"port\": 8080,\n          \"scheme\": \"HTTP\"\n        }\n      },\n      \"thinkTime\": {\n        \"timeUnit\": \"MILLISECONDS\",\n        \"value\": 20\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "retrieve the current load scenario status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario"
+              ]
+            },
+            "description": "Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time, current virtual users, request counts and latency percentiles. When no scenario has ever run the state is \"none\".\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "stop the current load scenario",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario"
+              ]
+            },
+            "description": "Stops the current load scenario. Idempotent \u2014 returns 200 whether or not a scenario was running.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        }
+      ]
+    },
+    {
+      "name": "slo",
+      "item": [
+        {
+          "name": "verify a service-level objective over a window",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/verifySLO",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "verifySLO"
+              ]
+            },
+            "description": "Evaluates a named set of objectives (latency percentiles, error rate) over a time window against the recorded forward-path SLI samples and returns a PASS / FAIL / INCONCLUSIVE verdict. The HTTP status encodes the verdict so a CI or chaos gate can assert on the status code alone: 200 when the verdict is PASS or INCONCLUSIVE, 406 when it is FAIL. A criteria PASSes only when all objectives hold (logical AND); it is INCONCLUSIVE when an indicator cannot be computed or the window holds fewer than minimumSampleCount samples. Off by default \u2014 returns 400 until sloTrackingEnabled=true.\n\nthe service-level objective criteria to evaluate\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"checkout-slo\",\n  \"window\": {\n    \"type\": \"LOOKBACK\",\n    \"lookbackMillis\": 60000\n  },\n  \"minimumSampleCount\": 20,\n  \"upstreamHosts\": [\n    \"payments.svc\"\n  ],\n  \"objectives\": [\n    {\n      \"sli\": \"LATENCY_P95\",\n      \"comparator\": \"LESS_THAN\",\n      \"threshold\": 250.0,\n      \"scope\": \"FORWARD\"\n    },\n    {\n      \"sli\": \"ERROR_RATE\",\n      \"comparator\": \"LESS_THAN_OR_EQUAL\",\n      \"threshold\": 0.01\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "contract",
+      "item": [
+        {
+          "name": "run an OpenAPI spec as a contract test against a live service",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/contractTest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "contractTest"
+              ]
+            },
+            "description": "Runs each operation of an OpenAPI specification against a live service and validates that the actual responses conform to the spec. Supply the spec as a URL, file path or inline JSON/YAML (\"spec\", or its alias \"specUrlOrPayload\"), the base URL of the service under test (\"baseUrl\"), and optionally a single \"operationId\" to restrict the run. The target host is subject to the SSRF policy (forwardProxyBlockPrivateNetworks). Returns a per-operation pass/fail report.\n\nthe OpenAPI spec and live-service base URL to contract-test\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spec\": \"https://petstore.swagger.io/v2/swagger.json\",\n  \"baseUrl\": \"http://localhost:8080\",\n  \"operationId\": \"listPets\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

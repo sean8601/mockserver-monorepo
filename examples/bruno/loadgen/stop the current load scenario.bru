@@ -1,0 +1,17 @@
+meta {
+  name: stop the current load scenario
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/mockserver/loadScenario
+  body: none
+  auth: inherit
+}
+
+docs {
+  Stops the current load scenario. Idempotent — returns 200 whether or not a scenario was running.
+  
+  Full API reference: https://www.mock-server.com/mock_server/mockserver_clients.html
+}

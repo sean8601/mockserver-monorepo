@@ -56,6 +56,12 @@ tags:
     description: Diagnose why requests did not match expectations (only supported by MockServer)
   - name: pact
     description: Export and verify Pact consumer-driven contracts (only supported by MockServer)
+  - name: loadgen
+    description: Drive API load against a target with a ramp profile and templated steps (SLI producer); off by default, enable with loadGenerationEnabled (only supported by MockServer)
+  - name: slo
+    description: Evaluate service-level objectives (latency percentiles, error rate) over a window and return a PASS / FAIL / INCONCLUSIVE verdict; off by default, enable with sloTrackingEnabled (only supported by MockServer)
+  - name: contract
+    description: Run an OpenAPI specification as a contract test against a live service (only supported by MockServer)
 
 paths:
   /mockserver/expectation:
@@ -2657,6 +2663,542 @@ paths:
       responses:
         '200':
           description: MockServer process is stopping
+  /mockserver/loadScenario:
+    put:
+      tags:
+        - loadgen
+      summary: start a load scenario
+      description: >-
+        Starts an API load scenario — an ordered list of templated request steps fired at a target
+        concurrency described by a ramp profile, with per-iteration data variation. It is a pure SLI
+        producer: each completed request records a latency/error sample into the metrics histograms and
+        the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no
+        verdict logic of its own. Off by default — returns 403 until loadGenerationEnabled=true. Hard caps
+        protect the server: max 50 virtual users, max 50 steps, max 1h duration, plus a live in-flight
+        semaphore (200) and an RPS token bucket (500).
+      responses:
+        '200':
+          description: load scenario started
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [started]
+                  name:
+                    type: string
+                  steps:
+                    type: integer
+        '400':
+          description: invalid scenario definition or a configured cap exceeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: load generation not enabled (set loadGenerationEnabled=true)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoadScenario"
+            example:
+              name: checkout-load
+              templateType: VELOCITY
+              maxRequests: 5000
+              profile:
+                type: CONSTANT
+                vus: 10
+                durationMillis: 30000
+                iterationPacingMillis: 50
+              steps:
+                - request:
+                    method: GET
+                    path: /api/item/$iteration.index
+                    headers:
+                      Host:
+                        - target.svc:8080
+                    socketAddress:
+                      host: target.svc
+                      port: 8080
+                      scheme: HTTP
+                  thinkTime:
+                    timeUnit: MILLISECONDS
+                    value: 20
+        description: the load scenario to start
+        required: true
+    get:
+      tags:
+        - loadgen
+      summary: retrieve the current load scenario status
+      description: >-
+        Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time,
+        current virtual users, request counts and latency percentiles. When no scenario has ever run the
+        state is "none".
+      responses:
+        '200':
+          description: load scenario status returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  name:
+                    type: string
+                  state:
+                    type: string
+                    enum: [none, running, completed, stopped]
+                  elapsedMillis:
+                    type: integer
+                    format: int64
+                  currentVus:
+                    type: integer
+                  requestsSent:
+                    type: integer
+                    format: int64
+                  succeeded:
+                    type: integer
+                    format: int64
+                  failed:
+                    type: integer
+                    format: int64
+                  p50Millis:
+                    type: number
+                  p95Millis:
+                    type: number
+                  p99Millis:
+                    type: number
+                  runId:
+                    type: string
+                  startedAt:
+                    type: integer
+                    format: int64
+                  endedAt:
+                    type: integer
+                    format: int64
+        '400':
+          description: failed to get load scenario status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    delete:
+      tags:
+        - loadgen
+      summary: stop the current load scenario
+      description: Stops the current load scenario. Idempotent — returns 200 whether or not a scenario was running.
+      responses:
+        '200':
+          description: load scenario stopped (or none was running)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [stopped]
+        '400':
+          description: failed to stop load scenario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /mockserver/verifySLO:
+    put:
+      tags:
+        - slo
+      summary: verify a service-level objective over a window
+      description: >-
+        Evaluates a named set of objectives (latency percentiles, error rate) over a time window against
+        the recorded forward-path SLI samples and returns a PASS / FAIL / INCONCLUSIVE verdict. The HTTP
+        status encodes the verdict so a CI or chaos gate can assert on the status code alone: 200 when the
+        verdict is PASS or INCONCLUSIVE, 406 when it is FAIL. A criteria PASSes only when all objectives
+        hold (logical AND); it is INCONCLUSIVE when an indicator cannot be computed or the window holds
+        fewer than minimumSampleCount samples. Off by default — returns 400 until sloTrackingEnabled=true.
+      responses:
+        '200':
+          description: verdict is PASS or INCONCLUSIVE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SloVerdict"
+        '406':
+          description: verdict is FAIL (one or more objectives did not hold)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SloVerdict"
+        '400':
+          description: malformed criteria, or SLO tracking is disabled (sloTrackingEnabled=false)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SloCriteria"
+            example:
+              name: checkout-slo
+              window:
+                type: LOOKBACK
+                lookbackMillis: 60000
+              minimumSampleCount: 20
+              upstreamHosts:
+                - payments.svc
+              objectives:
+                - sli: LATENCY_P95
+                  comparator: LESS_THAN
+                  threshold: 250.0
+                  scope: FORWARD
+                - sli: ERROR_RATE
+                  comparator: LESS_THAN_OR_EQUAL
+                  threshold: 0.01
+        description: the service-level objective criteria to evaluate
+        required: true
+  /mockserver/preemption:
+    put:
+      tags:
+        - chaos
+      summary: cordon and drain the server (preemption simulation)
+      description: >-
+        Simulates a connection-lifecycle preemption (e.g. a Kubernetes node drain or spot reclamation).
+        While cordoned, new exchanges are signalled to back off — by a 503 + Connection: close, an HTTP/2
+        GOAWAY frame, or both — while in-flight requests are allowed to drain. The simulation is server-scoped
+        and does not stop the JVM. An empty body uses defaults (mode "both", drainMillis from stopDrainMillis,
+        no TTL). drainMillis and ttlMillis are clamped to preemptionSimulationMaxDrainMillis.
+      responses:
+        '200':
+          description: preemption simulation started or replaced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreemptionStatus"
+        '400':
+          description: invalid preemption request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreemptionRequest"
+            example:
+              mode: both
+              drainMillis: 10000
+              ttlMillis: 60000
+              lastStreamId: 3
+        description: preemption simulation parameters (all fields optional)
+        required: false
+    get:
+      tags:
+        - chaos
+      summary: retrieve the current preemption status
+      description: >-
+        Returns the current cordon/drain status: state (inactive / draining / drained), the number of
+        in-flight requests, the remaining drain window in milliseconds and the active signalling mode.
+      responses:
+        '200':
+          description: preemption status returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreemptionStatus"
+    delete:
+      tags:
+        - chaos
+      summary: uncordon the server (clear preemption)
+      description: >-
+        Explicitly clears any active preemption simulation, returning the server to normal operation.
+        Idempotent — returns 200 whether or not a simulation was active.
+      responses:
+        '200':
+          description: preemption cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  state:
+                    type: string
+                    enum: [inactive]
+  /mockserver/chaosExperiment/profiles:
+    get:
+      tags:
+        - chaos
+      summary: list saved chaos profile names
+      description: returns the names of all saved chaos experiment profiles, sorted ascending
+      responses:
+        '200':
+          description: saved profile names returned
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          description: failed to list saved profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  '/mockserver/chaosExperiment/profiles/{name}':
+    put:
+      tags:
+        - chaos
+      summary: save a chaos experiment profile
+      description: >-
+        Saves a chaos experiment definition (the same body shape as PUT /mockserver/chaosExperiment) under
+        the given name so it can be applied later with POST /mockserver/chaosExperiment/apply/{name}. The
+        name in the path is authoritative; any name field in the body is ignored. The name must be 1-128
+        characters of letters, digits, space, dot, underscore or hyphen with no leading/trailing space.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the profile name to save under
+      responses:
+        '200':
+          description: profile saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [saved]
+                  name:
+                    type: string
+        '400':
+          description: missing body, invalid name, or invalid experiment definition
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChaosExperiment"
+            example:
+              stages:
+                - durationMillis: 30000
+                  profiles:
+                    payments.svc:
+                      errorStatus: 503
+                      errorProbability: 0.5
+        description: chaos experiment definition to save
+        required: true
+    get:
+      tags:
+        - chaos
+      summary: retrieve a saved chaos profile
+      description: returns the full saved chaos experiment definition stored under the given name
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the profile name
+      responses:
+        '200':
+          description: saved profile returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChaosExperiment"
+        '404':
+          description: no chaos profile with the given name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    delete:
+      tags:
+        - chaos
+      summary: delete a saved chaos profile
+      description: >-
+        Removes the saved chaos profile with the given name. Idempotent — returns 200 with status "deleted"
+        when the profile existed, or "absent" when it did not.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the profile name to delete
+      responses:
+        '200':
+          description: deletion processed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [deleted, absent]
+                  name:
+                    type: string
+  '/mockserver/chaosExperiment/apply/{name}':
+    post:
+      tags:
+        - chaos
+      summary: apply a saved chaos profile
+      description: >-
+        Starts the chaos experiment previously saved under the given name (as if its definition had been
+        sent to PUT /mockserver/chaosExperiment). The request body is ignored.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+          description: the saved profile name to apply
+      responses:
+        '200':
+          description: saved profile applied (experiment started)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [started]
+                  name:
+                    type: string
+                  stages:
+                    type: integer
+                  loop:
+                    type: boolean
+        '400':
+          description: failed to apply the saved profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: no chaos profile with the given name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /mockserver/contractTest:
+    put:
+      tags:
+        - contract
+      summary: run an OpenAPI spec as a contract test against a live service
+      description: >-
+        Runs each operation of an OpenAPI specification against a live service and validates that the
+        actual responses conform to the spec. Supply the spec as a URL, file path or inline JSON/YAML
+        ("spec", or its alias "specUrlOrPayload"), the base URL of the service under test ("baseUrl"),
+        and optionally a single "operationId" to restrict the run. The target host is subject to the SSRF
+        policy (forwardProxyBlockPrivateNetworks). Returns a per-operation pass/fail report.
+      responses:
+        '200':
+          description: contract test completed (inspect allPassed and per-operation results)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractTestReport"
+        '400':
+          description: missing/blank spec or baseUrl, invalid baseUrl, or an error running the contract test
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: contract test blocked by SSRF policy (target is a private/loopback/metadata address)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '501':
+          description: contract testing not available (no HTTP client wired)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractTestRequest"
+            example:
+              spec: https://petstore.swagger.io/v2/swagger.json
+              baseUrl: http://localhost:8080
+              operationId: listPets
+        description: the OpenAPI spec and live-service base URL to contract-test
+        required: true
 components:
   schemas:
     ScenarioError:
@@ -3822,3 +4364,313 @@ components:
           type: string
           maxLength: 100
           description: "Literal Retry-After header value; when omitted it is computed from the window/bucket reset time"
+    LoadProfile:
+      description: "ramp profile describing the target concurrency over time"
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [CONSTANT, LINEAR]
+          default: CONSTANT
+          description: "ramp shape: CONSTANT holds vus for the whole duration; LINEAR ramps from startVus to endVus"
+        durationMillis:
+          type: integer
+          format: int64
+          description: "how long the scenario runs in milliseconds (max 3600000 = 1h)"
+        vus:
+          type: integer
+          description: "CONSTANT: number of virtual users to hold (max 50)"
+        startVus:
+          type: integer
+          description: "LINEAR: virtual users at the start of the ramp"
+        endVus:
+          type: integer
+          description: "LINEAR: virtual users at the end of the ramp (max 50)"
+        iterationPacingMillis:
+          type: integer
+          format: int64
+          description: "optional minimum delay in milliseconds between successive iterations of a virtual user"
+    LoadStep:
+      description: "a single templated request step in a load scenario"
+      type: object
+      additionalProperties: false
+      required:
+        - request
+      properties:
+        request:
+          $ref: "#/components/schemas/HttpRequest"
+        thinkTime:
+          type: object
+          description: "optional inter-step pause (a Delay)"
+          properties:
+            timeUnit:
+              type: string
+            value:
+              type: integer
+    LoadScenario:
+      description: "an API-driven load scenario: ordered templated steps driven at a target concurrency"
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - profile
+        - steps
+      properties:
+        name:
+          type: string
+          description: "human-readable scenario name"
+        templateType:
+          type: string
+          enum: [VELOCITY, MUSTACHE]
+          default: VELOCITY
+          description: "template engine used to render the per-iteration request path and body; only VELOCITY and MUSTACHE are supported for load steps (JAVASCRIPT is rejected)"
+        maxRequests:
+          type: integer
+          description: "optional hard cap on the total number of requests dispatched"
+        profile:
+          $ref: "#/components/schemas/LoadProfile"
+        steps:
+          type: array
+          description: "ordered list of request steps fired in sequence each iteration (max 50)"
+          items:
+            $ref: "#/components/schemas/LoadStep"
+    SloObjective:
+      description: "a single service-level objective over the recorded SLI samples"
+      type: object
+      additionalProperties: false
+      required:
+        - sli
+        - comparator
+        - threshold
+      properties:
+        sli:
+          type: string
+          enum: [LATENCY_P50, LATENCY_P95, LATENCY_P99, ERROR_RATE]
+          description: "the service-level indicator to evaluate"
+        comparator:
+          type: string
+          enum: [LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL]
+          description: "how the observed value is compared to the threshold"
+        threshold:
+          type: number
+          description: "the objective threshold (milliseconds for latency SLIs, a 0.0-1.0 fraction for ERROR_RATE)"
+        scope:
+          type: string
+          enum: [FORWARD, INBOUND]
+          default: FORWARD
+          description: "which recorded traffic to evaluate; v1 records only FORWARD (proxied/forwarded upstream) samples"
+    SloCriteria:
+      description: "a named set of service-level objectives over a time window"
+      type: object
+      additionalProperties: false
+      required:
+        - objectives
+      properties:
+        name:
+          type: string
+          description: "human-readable criteria name, echoed back in the verdict"
+        window:
+          type: object
+          additionalProperties: false
+          description: "the time window to evaluate over"
+          properties:
+            type:
+              type: string
+              enum: [LOOKBACK, EXPLICIT]
+              default: LOOKBACK
+            lookbackMillis:
+              type: integer
+              format: int64
+              description: "LOOKBACK: window length ending now (uses the controllable clock)"
+            fromEpochMillis:
+              type: integer
+              format: int64
+              description: "EXPLICIT: window start in epoch milliseconds"
+            toEpochMillis:
+              type: integer
+              format: int64
+              description: "EXPLICIT: window end in epoch milliseconds"
+        minimumSampleCount:
+          type: integer
+          description: "minimum samples required in the window; below this the verdict is INCONCLUSIVE"
+        upstreamHosts:
+          type: array
+          items:
+            type: string
+          description: "optional list of upstream hosts to restrict the evaluation to"
+        objectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/SloObjective"
+    SloObjectiveResult:
+      description: "the evaluated result of a single objective"
+      type: object
+      additionalProperties: false
+      properties:
+        sli:
+          type: string
+        comparator:
+          type: string
+        threshold:
+          type: number
+        observedValue:
+          type: number
+          nullable: true
+        result:
+          type: string
+          enum: [PASS, FAIL, INCONCLUSIVE]
+        detail:
+          type: string
+          nullable: true
+          description: "human-readable explanation of the objective result (e.g. sample count, observed vs threshold)"
+    SloVerdict:
+      description: "the overall verdict of an SLO evaluation (the AND of all objective results)"
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        result:
+          type: string
+          enum: [PASS, FAIL, INCONCLUSIVE]
+        windowFromEpochMillis:
+          type: integer
+          format: int64
+        windowToEpochMillis:
+          type: integer
+          format: int64
+        sampleCount:
+          type: integer
+        objectiveResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/SloObjectiveResult"
+    PreemptionRequest:
+      description: "preemption simulation parameters (all fields optional)"
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [reject503, goaway, both]
+          default: both
+          description: "how draining is signalled: reject503 = 503 + Connection: close; goaway = HTTP/2 GOAWAY frame; both = both"
+        drainMillis:
+          type: integer
+          format: int64
+          description: "how long in-flight requests are allowed to drain; defaults to the stopDrainMillis property, clamped to preemptionSimulationMaxDrainMillis"
+        ttlMillis:
+          type: integer
+          format: int64
+          description: "auto-uncordon after this many milliseconds (dead-man's switch); 0 (default) means no auto-uncordon"
+        lastStreamId:
+          type: integer
+          format: int64
+          description: "HTTP/2 GOAWAY last_stream_id to advertise; -1 (default) lets the server choose"
+    PreemptionStatus:
+      description: "current cordon/drain status of the server"
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [inactive, draining, drained]
+        inFlight:
+          type: integer
+          description: "number of requests currently in flight"
+        drainRemainingMillis:
+          type: integer
+          format: int64
+          description: "milliseconds left in the drain window"
+        mode:
+          type: string
+          enum: [reject503, goaway, both]
+          description: "active signalling mode (omitted when inactive)"
+    ChaosExperiment:
+      description: "a scheduled multi-stage chaos experiment definition (the body of PUT /mockserver/chaosExperiment)"
+      type: object
+      additionalProperties: false
+      required:
+        - stages
+      properties:
+        name:
+          type: string
+          description: "human-readable experiment name (ignored when saved under a path {name})"
+        loop:
+          type: boolean
+          description: "whether to loop back to stage 0 after the last stage completes (default false)"
+        stages:
+          type: array
+          description: "ordered sequence of stages"
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - durationMillis
+              - profiles
+            properties:
+              durationMillis:
+                type: integer
+                format: int64
+                description: "how long this stage runs before advancing (max 86400000 = 24h)"
+              profiles:
+                type: object
+                description: "map of host -> chaos profile to apply during this stage"
+                additionalProperties:
+                  $ref: "#/components/schemas/HttpChaosProfile"
+    ContractTestRequest:
+      description: "request to run an OpenAPI spec as a contract test against a live service"
+      type: object
+      additionalProperties: false
+      required:
+        - spec
+        - baseUrl
+      properties:
+        spec:
+          type: string
+          description: "the OpenAPI spec as a URL, file path, or inline JSON/YAML (alias: specUrlOrPayload)"
+        specUrlOrPayload:
+          type: string
+          description: "alias for spec"
+        baseUrl:
+          type: string
+          description: "base URL of the live service under test; any path prefix is prepended to each operation path"
+        operationId:
+          type: string
+          description: "optional — restrict the run to a single operation; when absent all operations are tested"
+    ContractTestReport:
+      description: "the result of a contract test run"
+      type: object
+      additionalProperties: false
+      properties:
+        baseUrl:
+          type: string
+        totalOperations:
+          type: integer
+        passed:
+          type: integer
+        failed:
+          type: integer
+        allPassed:
+          type: boolean
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              operationId:
+                type: string
+              method:
+                type: string
+              path:
+                type: string
+              statusCodeReceived:
+                type: integer
+              passed:
+                type: boolean
+              validationErrors:
+                type: array
+                items:
+                  type: string

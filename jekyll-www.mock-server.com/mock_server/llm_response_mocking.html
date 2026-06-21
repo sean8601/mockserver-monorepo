@@ -831,6 +831,117 @@ curl -v -X PUT "http://localhost:1080/mockserver/expectation" -d '{
 
 <p>See <a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> for more about chaos profiles.</p>
 
+<a id="provider_correct_chaos_error_bodies" class="anchor" href="#provider_correct_chaos_error_bodies">&nbsp;</a>
+<h3>Provider-Correct Error Bodies</h3>
+
+<p>
+    LLM chaos error injection emits the body shape the real provider returns &mdash; not a generic error body.
+    This lets your client SDK's retry and backoff logic be tested against realistic error responses:
+</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Provider</th><th>HTTP Status (OVERLOAD)</th><th>Body shape</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Anthropic</td><td>529</td><td><code>{"type":"error","error":{"type":"overloaded_error","message":"..."}}</code></td></tr>
+        <tr><td>OpenAI</td><td>503</td><td><code>{"error":{"message":"...","type":"server_error","code":"server_error"}}</code></td></tr>
+        <tr><td>Gemini</td><td>503</td><td>Google API status envelope</td></tr>
+        <tr><td>Ollama</td><td>503</td><td>Plain <code>{"error":"..."}</code> message</td></tr>
+    </tbody>
+</table>
+
+<p>
+    An optional <code>errorKind</code> field (<code>OVERLOAD</code>, <code>RATE_LIMIT</code>, or <code>SERVER_ERROR</code>) on the LLM chaos profile lets you declare the error intent. MockServer emits the active provider's natural HTTP status <em>and</em> its provider-correct body without you having to pick the status manually. An explicit <code>errorStatus</code> still overrides the code while keeping the provider-correct body. A missing or unrecognised <code>errorKind</code> falls back to the generic body.
+</p>
+
+<a id="cached_reasoning_tokens" class="anchor" href="#cached_reasoning_tokens">&nbsp;</a>
+<h2>Cached and Reasoning Token Usage</h2>
+
+<p>
+    <code>org.mockserver.model.Usage</code> has three optional fields in addition to the baseline
+    <code>inputTokens</code> / <code>outputTokens</code> pair. These are <strong>back-compatible and optional</strong>:
+    omitting them leaves behaviour unchanged.
+</p>
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr><th>Field (Java / JSON)</th><th>Description</th><th>Provider mapping</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>cachedInputTokens</code></td>
+            <td>Input tokens served from a prompt cache at a reduced rate. A <strong>subset</strong> of <code>inputTokens</code> (not additive).</td>
+            <td>OpenAI: <code>usage.prompt_tokens_details.cached_tokens</code><br/>Anthropic: <code>usage.cache_read_input_tokens</code><br/>Gemini: <code>usageMetadata.cachedContentTokenCount</code></td>
+        </tr>
+        <tr>
+            <td><code>cacheCreationTokens</code></td>
+            <td>Input tokens written to a prompt cache at a premium rate.</td>
+            <td>Anthropic: <code>usage.cache_creation_input_tokens</code></td>
+        </tr>
+        <tr>
+            <td><code>reasoningTokens</code></td>
+            <td>Reasoning/thinking tokens billed as output but not part of the visible completion. A <strong>subset</strong> of <code>outputTokens</code> (not additive).</td>
+            <td>OpenAI: <code>usage.completion_tokens_details.reasoning_tokens</code><br/>Gemini: <code>usageMetadata.thoughtsTokenCount</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    Set these fields on the <code>usage</code> object in your expectation JSON to simulate provider responses
+    from models that use prompt caching or chain-of-thought reasoning:
+</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/expectation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "httpRequest":  { "method": "POST", "path": "/v1/messages" },
+    "httpLlmResponse": {
+      "provider": "ANTHROPIC",
+      "model": "claude-sonnet-4-20250514",
+      "completion": {
+        "text": "Paris is the capital of France.",
+        "stopReason": "end_turn",
+        "usage": {
+          "inputTokens": 150,
+          "outputTokens": 10,
+          "cachedInputTokens": 120,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 0
+        }
+      }
+    }
+  }'</code></pre>
+
+<p><strong>Java client example:</strong></p>
+
+<pre class="prettyprint lang-java code"><code class="code">import static org.mockserver.model.Usage.usage;
+
+llmMock("/v1/messages")
+    .withProvider(ANTHROPIC)
+    .withModel("claude-sonnet-4-20250514")
+    .respondingWith(
+        completion()
+            .withText("Paris is the capital of France.")
+            .withStopReason("end_turn")
+            .withUsage(
+                usage()
+                    .withInputTokens(150)
+                    .withOutputTokens(10)
+                    .withCachedInputTokens(120)  // subset of inputTokens
+                    .withCacheCreationTokens(0)
+                    .withReasoningTokens(0)
+            )
+    )
+    .applyTo(mockServerClient);</code></pre>
+
+<p>
+    When MockServer proxies traffic to a real LLM provider, these fields are decoded from the provider's
+    usage shape and stored. The GenAI telemetry spans report them as
+    <code>mockserver.gen_ai.usage.cached_input_tokens</code>, <code>mockserver.gen_ai.usage.cache_creation_tokens</code>,
+    and <code>mockserver.gen_ai.usage.reasoning_tokens</code>.
+</p>
+
 <a id="java_client" class="anchor" href="#java_client">&nbsp;</a>
 <h2>Streaming &mdash; Client Examples</h2>
 
