@@ -105,6 +105,15 @@ public class HttpActionHandler {
     private HttpRequestToCurlSerializer httpRequestToCurlSerializer;
     private final org.mockserver.metrics.Metrics metrics;
 
+    /**
+     * @return the shared {@link Scheduler}. Exposed to the (same-package) local object-callback handlers
+     * so they can dispatch a potentially-blocking LOCAL callback off the server worker event loop via
+     * {@link Scheduler#scheduleLocalCallback} (the root fix for the pool-on-by-default self-deadlock).
+     */
+    Scheduler getScheduler() {
+        return scheduler;
+    }
+
     public HttpActionHandler(Configuration configuration, EventLoopGroup eventLoopGroup, HttpState httpStateHandler, List<ProxyConfiguration> proxyConfigurations, NettySslContextFactory nettySslContextFactory) {
         this.configuration = configuration;
         this.httpStateHandler = httpStateHandler;
@@ -427,7 +436,12 @@ public class HttpActionHandler {
             case RESPONSE_TEMPLATE -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpResponseTemplateActionHandler().handle((HttpTemplate) action, req)), expectationPostProcessor), synchronous, actionDelay);
-            case RESPONSE_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
+            // RESPONSE_CLASS_CALLBACK is always a LOCAL (in-JVM, reflection-invoked) callback whose user
+            // code may make a BLOCKING loopback call back to this server. Dispatch via scheduleLocalCallback
+            // so it runs off the server worker event loop (on the dedicated unbounded local-callback pool)
+            // in asynchronous mode, and inline in synchronous mode — the root fix for the pool-on-by-default
+            // self-deadlock. The breakpoint/chaos/rate-limit wrapping and the action delay are unchanged.
+            case RESPONSE_CLASS_CALLBACK -> scheduler.scheduleLocalCallback(() -> handleAnyException(request, responseWriter, synchronous, action, () ->
                 dispatchMockResponseWithBreakpoint(request, action, synchronous, responseWriter, expectation.getHttpRequest(), expectationPostProcessor, effectiveChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpResponseClassCallbackActionHandler().handle((HttpClassCallback) action, req)), expectationPostProcessor), synchronous, actionDelay);
             case RESPONSE_OBJECT_CALLBACK -> scheduler.schedule(() ->
@@ -451,7 +465,11 @@ public class HttpActionHandler {
                 dispatchForwardWithBreakpoint(request, action, synchronous, responseWriter, expectationPostProcessor, forwardChaos, capturedMatchCount, ctx, rateLimit,
                     req -> getHttpForwardTemplateActionHandler().handle((HttpTemplate) action, req));
             }, expectationPostProcessor), synchronous, combineWithGlobalDelay(actionDelay));
-            case FORWARD_CLASS_CALLBACK -> scheduler.schedule(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
+            // FORWARD_CLASS_CALLBACK is always a LOCAL (in-JVM, reflection-invoked) callback whose user code
+            // may make a BLOCKING loopback call back to this server. Dispatch via scheduleLocalCallback so it
+            // runs off the server worker event loop in asynchronous mode (and inline in synchronous mode) —
+            // the root fix for the pool-on-by-default self-deadlock. Wrapping and the action delay are unchanged.
+            case FORWARD_CLASS_CALLBACK -> scheduler.scheduleLocalCallback(() -> handleAnyException(request, responseWriter, synchronous, action, () -> {
                 if (blockIfLlmCostBudgetExceeded(request, action, responseWriter, expectationPostProcessor)) {
                     return;
                 }
