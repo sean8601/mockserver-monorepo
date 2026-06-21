@@ -78,6 +78,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/mockserver/chaosExperiment/profiles` (+ `/apply/{name}`) and `/mockserver/contractTest`, so the generated
   Bruno and Postman example collections now cover them.
 
+<!-- Runnable data-plane example code for recently-shipped features -->
+- **Runnable example code for recently-added data-plane features** (`examples`, `mockserver-core`). Added
+  worked, server-validated examples under `examples/` for features that previously had none: LLM response
+  mocking (`httpLlmResponse` chat completion, embeddings, rerank), MCP server tool mocking, A2A agent mocking,
+  GraphQL (schema import and a `GRAPHQL` body matcher), and the newer matchers/response modes — `FuzzyBody`,
+  `conditionalRequestDefinition`, `accept:` content-negotiation, `WEIGHTED`/`SWITCH` response selection,
+  `generateFromSchema` response synthesis, soft `verifyAll`, and response verification. Covered in the canonical
+  `examples/curl/` and `examples/json/` sets plus idiomatic LLM/MCP client examples for `examples/node/` and
+  `examples/python/`. All new payloads were validated against a running MockServer. As part of this, the
+  published expectation JSON Schema (`org/mockserver/model/schema/body.json`) now accepts the `schema`,
+  `selectionSetMatchType` and `fields` keys on a `GRAPHQL` body — they were already supported by the model,
+  serializer and matcher (and used for schema-driven response synthesis) but were missing from the schema, so an
+  IDE validating `*.mockserver.json` against the bundled schema would wrongly flag them.
+
 <!-- Verified OIDC control-plane authentication (Tier 1.5-A) -->
 - **Verified OIDC bearer authentication for the control plane** (`mockserver-core`, `mockserver-netty`). Setting
   `controlPlaneOidcAuthenticationRequired=true` makes MockServer verify control-plane requests against an external

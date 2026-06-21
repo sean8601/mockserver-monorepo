@@ -70,6 +70,13 @@ These runnable shell scripts were extracted from the original reference markdown
 | `match_by_either_or_optional_header.sh` | Match with either/or optional headers |
 | `match_by_not_matching_header_value.sh` | Match by negated header value |
 | `match_by_not_matching_headers.sh` | Match requests that do NOT have specific headers |
+| `accept_negotiation.sh` | Match by Accept-header content negotiation (`accept:` directive) |
+
+### matchers/conditional/
+
+| File | Description |
+|------|-------------|
+| `conditional_request.sh` | Match using an if/then/else conditional request definition |
 
 ### matchers/cookies/
 
@@ -82,6 +89,7 @@ These runnable shell scripts were extracted from the original reference markdown
 
 | File | Description |
 |------|-------------|
+| `fuzzy_body.sh` | Match body by fuzzy (approximate) string similarity |
 | `match_by_regex_body.sh` | Match by regex body pattern |
 | `match_by_body_utf16.sh` | Match by body with UTF-16 content type |
 | `match_by_form_submission.sh` | Match POST with form-urlencoded body |
@@ -106,6 +114,9 @@ These runnable shell scripts were extracted from the original reference markdown
 | `response_suppress_headers.sh` | Suppress Content-Length and Connection headers |
 | `response_override_headers.sh` | Override Content-Length and keep-alive |
 | `response_close_socket.sh` | Return a response then close the socket |
+| `weighted_response.sh` | Pick one of several responses at random by weight |
+| `switch_hit_count.sh` | Switch responses after a hit-count threshold |
+| `generate_from_schema.sh` | Generate the response body from an inline JSON Schema |
 
 ### error_action/
 
@@ -149,6 +160,8 @@ These runnable shell scripts were extracted from the original reference markdown
 | `verify_at_most.sh` | Verify a request was received at most twice |
 | `verify_sequence.sh` | Verify a sequence of requests in order |
 | `verify_by_openapi.sh` | Verify requests matching an OpenAPI operation |
+| `verify_all.sh` | Soft/collecting verification of several requests |
+| `verify_response.sh` | Verify a recorded response (forwarded or mocked) |
 
 ### retrieve/
 
@@ -230,3 +243,31 @@ These runnable shell scripts were extracted from the original reference markdown
 | `expectations_from_url.sh` | Create expectations from an OpenAPI spec URL |
 | `expectation_for_operation.sh` | Create expectation for a specific OpenAPI operation |
 | `expectation_from_classpath.sh` | Create expectation from a classpath OpenAPI spec |
+
+### llm/
+
+| File | Description |
+|------|-------------|
+| `chat_completion.sh` | Mock an OpenAI-style chat completion via `httpLlmResponse` |
+| `embeddings.sh` | Mock an embeddings response (deterministic from input) |
+| `rerank.sh` | Mock a rerank response returning the top N candidates |
+
+### mcp/
+
+| File | Description |
+|------|-------------|
+| `mcp_tool.sh` | Mock an MCP server tool (`tools/list` and `tools/call`) over JSON-RPC |
+
+### a2a/
+
+| File | Description |
+|------|-------------|
+| `agent_card.sh` | Serve an A2A agent card from `/.well-known/agent.json` |
+| `task_response.sh` | Return a completed A2A task for a `tasks/send` JSON-RPC call |
+
+### graphql/
+
+| File | Description |
+|------|-------------|
+| `import_sdl.sh` | Import a GraphQL SDL via `PUT /mockserver/graphql` |
+| `match_by_graphql_query.sh` | Match a request by a `GRAPHQL` body matcher (query AST) |

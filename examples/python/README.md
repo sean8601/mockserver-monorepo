@@ -31,6 +31,8 @@ Runnable examples demonstrating the MockServer Python client.
 | [retrieve_recorded_requests](retrieve_recorded_requests/) | Retrieve requests that MockServer recorded while proxying. |
 | [reverse_proxy](reverse_proxy/) | Use MockServer as a reverse proxy, forwarding traffic to different backends. |
 | [breakpoint_modify_proxied](breakpoint_modify_proxied/) | Modify a proxied exchange with an interactive breakpoint (RESPONSE phase). |
+| [llm_mock](llm_mock/) | Mock an OpenAI-style chat completion with the LLM mock builder. |
+| [mcp_mock](mcp_mock/) | Mock an MCP server tool with the MCP mock builder. |
 
 Each folder contains a runnable Python script and its own `README.md` with
 instructions.

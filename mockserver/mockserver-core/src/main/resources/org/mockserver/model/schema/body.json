@@ -338,6 +338,22 @@
         },
         "variablesSchema": {
           "type": "string"
+        },
+        "selectionSetMatchType": {
+          "enum": [
+            "NORMALISED_STRING",
+            "AST_EXACT",
+            "AST_SUBSET"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "schema": {
+          "type": "string"
         }
       },
       "required": [

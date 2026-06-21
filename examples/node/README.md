@@ -8,6 +8,8 @@ This folder contains examples for [mockserver-client-node](../../../mockserver-c
 | [client_examples](client_examples/) | Core client usage patterns. |
 | [error_action_examples](error_action_examples/) | Return error responses. |
 | [forward_action_examples](forward_action_examples/) | Forward requests to upstream servers with overrides. |
+| [llm_mock_examples](llm_mock_examples/) | Mock an OpenAI-style chat completion with the LLM mock builder. |
+| [mcp_mock_examples](mcp_mock_examples/) | Mock an MCP server tool with the MCP mock builder. |
 | [openapi_expectations_examples](openapi_expectations_examples/) | Generate expectations from an OpenAPI specification. |
 | [openapi_request_matcher_examples](openapi_request_matcher_examples/) | Match requests using OpenAPI definitions. |
 | [request_properties_matcher_examples](request_properties_matcher_examples/) | Match requests by path, headers, cookies, and body. |
