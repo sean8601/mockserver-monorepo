@@ -7,7 +7,6 @@ import org.mockserver.model.KeyMatchStyle;
 import org.mockserver.model.KeyToMultiValue;
 import org.mockserver.model.KeysToMultiValues;
 
-import static org.mockserver.model.NottableString.string;
 
 /**
  * @author jamesdbloom

@@ -40,7 +40,6 @@ import static org.mockserver.model.NottableString.not;
 import static org.mockserver.model.NottableString.string;
 import static org.mockserver.model.Parameter.param;
 import static org.mockserver.model.Parameter.schemaParam;
-import static org.mockserver.model.StringBody.exact;
 
 /**
  * Transport-agnostic matching/priority/TTL/verify/retrieve semantic tests.

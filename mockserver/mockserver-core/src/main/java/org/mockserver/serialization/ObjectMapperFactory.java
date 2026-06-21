@@ -38,7 +38,6 @@ import org.mockserver.serialization.serializers.string.NottableStringSerializer;
 
 import java.util.*;
 
-import static org.mockserver.exception.ExceptionHandling.handleThrowable;
 
 /**
  * @author jamesdbloom

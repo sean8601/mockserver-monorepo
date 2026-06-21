@@ -19,7 +19,6 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.lifecycle.ExpectationsListener;
 import org.mockserver.lifecycle.LifeCycle;
 import org.mockserver.log.model.LogEntry;
-import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.action.http.HttpActionHandler;
 import org.mockserver.netty.dns.DnsRequestHandler;
 import org.mockserver.netty.http3.Http3Server;

@@ -17,7 +17,6 @@ import org.mockserver.model.*;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.uuid.UUIDService;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Future;
 

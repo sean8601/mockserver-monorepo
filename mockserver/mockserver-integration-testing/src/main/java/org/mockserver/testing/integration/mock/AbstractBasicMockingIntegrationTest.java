@@ -18,7 +18,6 @@ import org.mockserver.verify.VerificationTimes;
 import org.slf4j.event.Level;
 
 import java.util.Arrays;
-import java.util.UUID;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -29,7 +28,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.StringStartsWith.startsWith;
-import static org.junit.Assert.assertThrows;
 import static org.mockserver.character.Character.NEW_LINE;
 import static org.mockserver.matchers.Times.*;
 import static org.mockserver.mock.Expectation.when;
@@ -54,7 +52,6 @@ import static org.mockserver.model.Parameter.schemaParam;
 import static org.mockserver.model.RegexBody.regex;
 import static org.mockserver.model.StringBody.exact;
 import static org.mockserver.model.XmlBody.xml;
-import static org.mockserver.validator.jsonschema.JsonSchemaValidator.OPEN_API_SPECIFICATION_URL;
 
 /**
  * @author jamesdbloom

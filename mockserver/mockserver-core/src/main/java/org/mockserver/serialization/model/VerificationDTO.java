@@ -2,13 +2,11 @@ package org.mockserver.serialization.model;
 
 import org.mockserver.model.ExpectationId;
 import org.mockserver.model.HttpRequest;
-import org.mockserver.model.HttpResponse;
 import org.mockserver.model.ObjectWithJsonToString;
 import org.mockserver.model.OpenAPIDefinition;
 import org.mockserver.verify.Disposition;
 import org.mockserver.verify.Verification;
 
-import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.verify.Verification.verification;
 import static org.mockserver.verify.VerificationTimes.once;
 

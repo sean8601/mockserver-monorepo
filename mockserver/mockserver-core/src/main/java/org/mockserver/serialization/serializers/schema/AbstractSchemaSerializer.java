@@ -12,7 +12,6 @@ import io.swagger.v3.oas.models.media.Schema;
 import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 

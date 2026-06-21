@@ -10,7 +10,6 @@ import org.mockserver.model.HttpResponseModifierCondition;
 import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
 import org.mockserver.serialization.Base64Converter;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 

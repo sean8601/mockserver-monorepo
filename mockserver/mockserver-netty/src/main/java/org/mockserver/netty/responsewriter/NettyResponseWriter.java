@@ -26,7 +26,6 @@ import org.mockserver.netty.unification.Http2GoAwayEmitter;
 import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 

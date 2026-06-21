@@ -20,7 +20,6 @@ import org.mockserver.serialization.ObjectMapperFactory;
 import java.util.*;
 import java.util.function.Function;
 
-import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.openapi.OpenAPIParser.buildOpenAPI;

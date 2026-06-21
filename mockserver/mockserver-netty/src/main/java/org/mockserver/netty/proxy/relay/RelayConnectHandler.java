@@ -22,7 +22,6 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.LoggingHandler;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.Protocol;
-import org.mockserver.netty.unification.PortUnificationHandler;
 import org.slf4j.event.Level;
 
 import java.net.InetSocketAddress;

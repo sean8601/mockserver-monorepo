@@ -5,7 +5,6 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.ObjectWithJsonToString;
 import org.mockserver.model.RequestDefinition;
 
-import static org.mockserver.model.HttpRequest.request;
 
 /**
  * @author jamesdbloom

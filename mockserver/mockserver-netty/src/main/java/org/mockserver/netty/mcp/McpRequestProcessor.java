@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.lifecycle.LifeCycle;
-import org.mockserver.logging.MockServerLogger;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.mock.HttpState;
 import org.mockserver.serialization.ObjectMapperFactory;

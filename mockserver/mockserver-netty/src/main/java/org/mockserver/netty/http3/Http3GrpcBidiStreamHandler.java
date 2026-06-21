@@ -27,7 +27,6 @@ import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.GrpcBidiRule;
 import org.mockserver.model.GrpcStreamMessage;
 import org.mockserver.model.Header;
-import org.mockserver.model.Headers;
 import org.mockserver.model.NottableString;
 import org.slf4j.event.Level;
 

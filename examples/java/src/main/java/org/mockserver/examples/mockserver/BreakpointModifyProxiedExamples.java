@@ -1,7 +1,5 @@
 package org.mockserver.examples.mockserver;
 
-import org.mockserver.client.BreakpointRequestHandler;
-import org.mockserver.client.BreakpointResponseHandler;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.mock.breakpoint.BreakpointPhase;
 

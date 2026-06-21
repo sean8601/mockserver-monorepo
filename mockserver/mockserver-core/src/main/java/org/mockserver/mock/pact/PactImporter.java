@@ -9,7 +9,6 @@ import org.mockserver.mock.Expectation;
 import org.mockserver.model.Header;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
-import org.mockserver.model.Parameter;
 import org.mockserver.serialization.ObjectMapperFactory;
 import org.slf4j.event.Level;
 

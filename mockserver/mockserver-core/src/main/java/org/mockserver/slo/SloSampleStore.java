@@ -1,7 +1,6 @@
 package org.mockserver.slo;
 
 import org.mockserver.configuration.ConfigurationProperties;
-import org.mockserver.time.TimeService;
 
 import java.util.ArrayDeque;
 import java.util.Arrays;

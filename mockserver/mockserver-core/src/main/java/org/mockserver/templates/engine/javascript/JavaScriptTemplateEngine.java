@@ -1,6 +1,5 @@
 package org.mockserver.templates.engine.javascript;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Splitter;
 import org.mockserver.configuration.Configuration;
@@ -11,9 +10,6 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.serialization.ObjectMapperFactory;
 import org.mockserver.serialization.model.DTO;
 import org.mockserver.templates.engine.TemplateEngine;
-import org.mockserver.templates.engine.TemplateFunctions;
-import org.mockserver.templates.engine.model.HttpRequestTemplateObject;
-import org.mockserver.templates.engine.model.HttpResponseTemplateObject;
 import org.mockserver.templates.engine.serializer.HttpTemplateOutputDeserializer;
 import org.slf4j.event.Level;
 

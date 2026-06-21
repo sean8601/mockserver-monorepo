@@ -15,7 +15,6 @@ import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.Expectation;
 import org.mockserver.mock.HttpState;
-import org.mockserver.model.Action;
 import org.mockserver.model.GrpcBidiResponse;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.netty.HttpRequestHandler;

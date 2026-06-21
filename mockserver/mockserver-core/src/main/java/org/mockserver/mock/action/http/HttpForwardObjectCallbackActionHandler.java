@@ -6,7 +6,6 @@ import org.mockserver.closurecallback.websocketregistry.LocalCallbackRegistry;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.closurecallback.websocketregistry.WebSocketRequestCallback;
 import org.mockserver.log.model.LogEntry;
-import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.HttpState;
 import org.mockserver.mock.action.ExpectationForwardAndResponseCallback;
 import org.mockserver.mock.action.ExpectationForwardCallback;
@@ -19,7 +18,6 @@ import org.mockserver.uuid.UUIDService;
 
 import java.util.concurrent.CompletableFuture;
 
-import static org.apache.commons.lang3.BooleanUtils.isFalse;
 import static org.apache.commons.lang3.BooleanUtils.isTrue;
 import static org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry.WEB_SOCKET_CORRELATION_ID_HEADER_NAME;
 import static org.mockserver.model.HttpResponse.badGatewayResponse;

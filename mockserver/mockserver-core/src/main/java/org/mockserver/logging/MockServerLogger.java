@@ -66,8 +66,8 @@ public class MockServerLogger {
             // ConfigurationProperties (disableLogging, logLevel), which would re-introduce the
             // MockServerLogger <-> ConfigurationProperties class-init dependency this method exists to
             // avoid (the cause of the reverted parallel-Surefire deadlock). System.err is the only
-            // safe sink at this point.
-            throwable.printStackTrace();
+            // safe sink at this point (explicit stream form to make the stderr target deliberate).
+            throwable.printStackTrace(System.err);
         }
     }
 

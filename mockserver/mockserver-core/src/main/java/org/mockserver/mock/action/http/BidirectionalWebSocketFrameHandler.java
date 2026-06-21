@@ -8,14 +8,12 @@ import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.mock.breakpoint.PausedStreamFrame;
 import org.mockserver.mock.breakpoint.StreamFrameBreakpointRegistry;
-import org.mockserver.mock.breakpoint.StreamFrameDecision;
 import org.mockserver.model.WebSocketFrameType;
 import org.mockserver.model.WebSocketMessage;
 import org.mockserver.model.WebSocketMessageMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.regex.PatternSyntaxException;
 

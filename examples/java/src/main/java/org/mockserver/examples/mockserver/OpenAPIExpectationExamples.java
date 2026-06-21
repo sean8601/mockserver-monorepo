@@ -2,15 +2,11 @@ package org.mockserver.examples.mockserver;
 
 import org.mockserver.client.MockServerClient;
 import org.mockserver.file.FileReader;
-import org.mockserver.integration.ClientAndServer;
-import org.mockserver.model.ClearType;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.mockserver.mock.OpenAPIExpectation.openAPIExpectation;
-import static org.mockserver.model.HttpRequest.request;
 
 /**
  * @author jamesdbloom

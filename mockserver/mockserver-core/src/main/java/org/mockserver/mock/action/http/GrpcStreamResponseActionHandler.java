@@ -16,7 +16,6 @@ import org.mockserver.mock.breakpoint.StreamFrameDecision;
 import org.mockserver.model.Delay;
 import org.mockserver.model.GrpcStreamMessage;
 import org.mockserver.model.GrpcStreamResponse;
-import org.mockserver.model.HttpResponse;
 import org.mockserver.scheduler.Scheduler;
 import org.slf4j.event.Level;
 

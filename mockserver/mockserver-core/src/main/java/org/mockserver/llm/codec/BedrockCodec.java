@@ -6,14 +6,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.llm.ParsedConversation;
 import org.mockserver.llm.ProviderCodec;
 import org.mockserver.llm.StreamingFormat;
-import org.mockserver.llm.StreamingPhysicsExpander;
 import org.mockserver.model.*;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.mockserver.model.HttpResponse.response;
-import static org.mockserver.model.SseEvent.sseEvent;
 
 /**
  * Codec for AWS Bedrock (Anthropic-on-Bedrock) invokeModel API (version bedrock-2023-05-31).

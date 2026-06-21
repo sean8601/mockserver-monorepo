@@ -1,8 +1,6 @@
 package org.mockserver.serialization.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import org.mockserver.model.HttpResponse;
-import org.mockserver.model.HttpResponseModifier;
 import org.mockserver.model.HttpTemplate;
 import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
 
