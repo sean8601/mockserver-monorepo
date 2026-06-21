@@ -63,6 +63,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Load scenario registry: named load/trigger, concurrent runs, start delay, preload -->
+- **Load scenario registry — load by name, trigger one or many to run concurrently, with start delays and
+  startup preloading** (`mockserver-core`). Load scenarios are now a registry of NAMED scenarios you *load*
+  (register) separately from *running* them (breaking change to the unreleased control plane):
+  - `PUT /mockserver/loadScenario` **loads/registers** a scenario by its `name` (does not run it; allowed even
+    when load generation is disabled). The registry is persisted in the `StateBackend`, so it survives a reset
+    and replicates across a cluster.
+  - `PUT /mockserver/loadScenario/start` with `{"names":[...]}` (or `{"name":"..."}`) **triggers** one or many
+    registered scenarios to run **concurrently**; each honours its own new `startDelayMillis`, so a single
+    trigger can start several scenarios where some begin firing immediately and others wait — enabling realistic
+    combined workloads. Requires load generation enabled (else `403`).
+  - `GET /mockserver/loadScenario` lists all registered scenarios with their lifecycle state
+    (`LOADED`/`PENDING`/`RUNNING`/`COMPLETED`/`STOPPED`) and live status; `GET`/`DELETE /mockserver/loadScenario/{name}`
+    operate on one; `PUT /mockserver/loadScenario/stop` stops by name (or all).
+  - **Preload at startup**: `mockserver.loadScenarioInitializationJsonPath` loads a JSON array of scenarios into
+    the registry as `LOADED` on boot, so MockServer can start with scenarios staged and be triggered later by the
+    UI, a client, or curl.
+  - New cap `mockserver.loadGenerationMaxConcurrentScenarios` (default 10). The `mock_server_load_*` metrics keep
+    one series per `(scenario, run_id)`, so concurrent runs stay distinguishable; per-run series are evicted on
+    re-trigger/removal.
+
 <!-- Load Profile v2: stages, arrival-rate (iterations/sec), ramp curves -->
 - **Load scenarios: multi-stage profiles, open-model arrival rate, and ramp curves** (`mockserver-core`). A load
   scenario's `profile` is now an ordered list of **stages** run in sequence, replacing the single CONSTANT/LINEAR

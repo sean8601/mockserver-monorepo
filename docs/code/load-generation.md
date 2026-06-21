@@ -1,21 +1,45 @@
 # Load Generation
 
-> **TL;DR** — MockServer can drive API traffic at a target on demand. A **load scenario**
-> (`PUT /mockserver/loadScenario`) is an ordered list of templated request *steps* driven through a
-> sequence of *stages* (a **load profile**), with per-iteration data variation. Each stage either holds
-> or ramps the number of concurrent **virtual users** (`VU`, closed model), holds or ramps an **arrival
-> rate** in iterations/second (`RATE`, open model), or **pauses**. It is a pure **SLI producer**: it
-> records latency/error samples into the metrics histograms and the SLO sample store (so
-> [SLO verdicts](slo-verdicts.md) can read load-driven SLIs) but contains no verdict logic of its own.
-> **Off by default** — the endpoint returns `403` until `loadGenerationEnabled=true`, and hard caps + a
-> live in-flight semaphore and RPS token bucket prevent it self-DoSing the server.
+> **TL;DR** — MockServer can drive API traffic at a target on demand, organised as a **registry of
+> named load scenarios**. You **load** (register) a scenario by name with `PUT /mockserver/loadScenario`
+> (this does *not* run it — it is staged in the `LOADED` state), then **trigger** one or many by name
+> with `PUT /mockserver/loadScenario/start` to run them **concurrently**, each with its own optional
+> **start delay**. A scenario is an ordered list of templated request *steps* driven through a sequence
+> of *stages* (a **load profile**): each stage holds/ramps **virtual users** (`VU`, closed model),
+> holds/ramps an **arrival rate** in iterations/second (`RATE`, open model), or **pauses**. It is a pure
+> **SLI producer**: it records latency/error samples into the metrics histograms and the SLO sample
+> store (so [SLO verdicts](slo-verdicts.md) can read load-driven SLIs) but contains no verdict logic of
+> its own. **Loading is always allowed; triggering a run is off by default** — `start` returns `403`
+> until `loadGenerationEnabled=true`, and hard caps + a live in-flight semaphore and RPS token bucket
+> prevent it self-DoSing the server. Scenarios can be **preloaded at startup** from a JSON file
+> (`loadScenarioInitializationJsonPath`).
+
+## Registry & lifecycle
+
+Scenarios live in a **registry** persisted in the `StateBackend` CRUD-entity store (namespace
+`load-scenarios`, mirroring the saved chaos-profile library): they survive a `reset`, replicate across a
+cluster, and can be preloaded. The unique key is the scenario **`name`** — loading the same name
+replaces the prior definition. Each scenario has a per-run lifecycle state:
+
+```mermaid
+flowchart LR
+    LOADED["LOADED\n(registered, idle)"] -->|"trigger (startDelay>0)"| PENDING["PENDING\n(waiting out startDelayMillis)"]
+    LOADED -->|"trigger (startDelay=0)"| RUNNING["RUNNING\n(stage clock running)"]
+    PENDING -->|"delay elapsed"| RUNNING
+    RUNNING -->|"all stages / maxRequests"| COMPLETED["COMPLETED"]
+    RUNNING -->|"stop"| STOPPED["STOPPED"]
+    COMPLETED -->|"re-trigger"| RUNNING
+    STOPPED -->|"re-trigger"| RUNNING
+```
 
 ## High-level flow
 
 ```mermaid
 flowchart TD
-    PUT["PUT /mockserver/loadScenario\n(control plane, off by default)"] --> ORCH["LoadScenarioOrchestrator\n(singleton + load-scenario-scheduler daemon)"]
-    ORCH -->|"control tick (~100ms)"| STAGE["locate active stage\nby elapsed time"]
+    PUT["PUT /mockserver/loadScenario\n(load = register, always allowed)"] --> REG["LoadScenarioRegistry\n(StateBackend CRUD store, keyed by name)"]
+    START["PUT /mockserver/loadScenario/start\n(trigger one/many, off by default)"] --> ORCH["LoadScenarioOrchestrator\n(singleton + one load-scenario-scheduler daemon)"]
+    REG --> START
+    ORCH -->|"shared control tick (~100ms) ticks EVERY active run"| STAGE["per run: pending startDelay?\nelse locate active stage by elapsed time"]
     STAGE -->|"VU stage"| VUD["targetVusAt(elapsedInStage)\ngrow / retire looping VUs"]
     STAGE -->|"RATE stage"| RATED["targetRateAt(elapsedInStage)\nstart one-shot iterations (deficit accounting)\nauto-scale VU pool up to maxVus"]
     STAGE -->|"PAUSE stage"| PAUSE["target 0 VUs\n(pool drains)"]
@@ -23,9 +47,38 @@ flowchart TD
     RATED --> VU
     VU -->|"sender.apply(request)"| SENDER["injected sender\n(NettyHttpClient at runtime)"]
     SENDER --> TARGET["target service"]
-    VU -->|"on complete"| REC["record latency + error\ninto Metrics + SloSampleStore"]
+    VU -->|"on complete"| REC["record latency + error\ninto Metrics + SloSampleStore\n(labelled by scenario + run_id)"]
     REC --> SLO["SLO verdicts feature\n(verifySLO consumes the samples)"]
 ```
+
+### Multiple concurrent runs
+
+The orchestrator holds a `Map<name, RunningScenario>` of **active runs**. A **single** shared
+`load-scenario-scheduler` daemon thread ticks **every** active run each control tick (~100ms) — there is
+one scheduler regardless of how many scenarios run. Each trigger gets a fresh `run_id` UUID, so the
+`mock_server_load_*` metrics (which carry both `scenario` and `run_id` labels) keep concurrent runs
+fully distinguishable; the `active_vus`/`inflight` gauge readers emit one series per `(scenario, run_id)`.
+Re-triggering an already-active name **replaces** that run (and evicts its prior metric series, keeping
+per-run series accumulation bounded). `recordResult` only writes durable series while the run is still
+the registry's active run for its name, so a draining/replaced run cannot resurrect evicted series.
+
+The `loadGenerationMaxConcurrentScenarios` cap (default 10) bounds how many scenarios may be active
+(`PENDING` + `RUNNING`) at once; a trigger that would exceed it is rejected. The existing per-scenario
+caps (max VUs/rate/stages/duration/steps) still apply to each scenario.
+
+### Start delay
+
+A triggered scenario with `startDelayMillis > 0` enters `PENDING` and fires no requests; the shared tick
+checks the elapsed time against the orchestrator clock (the same injectable clock the engine uses, so
+tests can drive it deterministically), and once the delay elapses it transitions to `RUNNING` and its
+stage clock starts from that moment. `startDelayMillis == 0` runs immediately on trigger.
+
+### Preloading at startup
+
+Setting `loadScenarioInitializationJsonPath` to a JSON file containing an array of `LoadScenario`
+definitions loads them into the registry in the `LOADED` state at startup (mirroring the
+`initializationJsonPath` expectation mechanism). MockServer boots with scenarios staged and ready to be
+triggered by name. Preloading is fail-soft: an invalid definition logs a WARN and is skipped.
 
 ## Model
 
@@ -118,13 +171,43 @@ soak, then a constant-rate hold — up to `loadGenerationMaxStages` stages.
 
 ## REST API
 
-All three verbs are control-plane endpoints (subject to `controlPlaneRequestAuthenticated`).
+All endpoints are control-plane endpoints (subject to `controlPlaneRequestAuthenticated`). The model is
+**load (register) → trigger (run) by name**.
 
 | Verb | Path | Behaviour |
 |------|------|-----------|
-| `PUT` | `/mockserver/loadScenario` | Start. `403` when `loadGenerationEnabled=false`; `400 {error}` when invalid or a cap is exceeded; `200 {status:started,...}` otherwise. |
-| `GET` | `/mockserver/loadScenario` | Status: `state` (running/completed/stopped/none), `elapsedMillis`, `currentVus` (live active VUs), `stageIndex`, `stageType` (`VU`/`RATE`/`PAUSE`), `currentTarget` (target VUs or target rate for the running stage), `requestsSent`, `succeeded`, `failed`, `p50/p95/p99Millis`, `runId`, `startedAt`/`endedAt`, `definition`. |
-| `DELETE` | `/mockserver/loadScenario` | Stop (idempotent). |
+| `PUT` | `/mockserver/loadScenario` | **Load/register** a scenario by `name` (does NOT run). Allowed even when `loadGenerationEnabled=false`. `400 {error}` when invalid or a cap is exceeded; `200 {status:loaded, name, state:LOADED}` otherwise. Loading the same name replaces. |
+| `GET` | `/mockserver/loadScenario` | List ALL registered scenarios: `{ scenarios:[ { name, state, startDelayMillis, definition, ...live status fields when active/run } ] }`. State ∈ `LOADED/PENDING/RUNNING/COMPLETED/STOPPED`. |
+| `GET` | `/mockserver/loadScenario/{name}` | One scenario (definition + state + status); `404` if not registered. |
+| `DELETE` | `/mockserver/loadScenario/{name}` | Remove from the registry (stops it first if running). |
+| `DELETE` | `/mockserver/loadScenario` | Clear the whole registry (stops all running). |
+| `PUT` | `/mockserver/loadScenario/start` | **Trigger** registered scenario(s) to run. Body `{names:[...]}` or `{name:"a"}`. Requires `loadGenerationEnabled` (else `403`); `404` if a name isn't registered; `400` if it would exceed `loadGenerationMaxConcurrentScenarios`. Returns the triggered names + resulting states (`PENDING`/`RUNNING`). |
+| `PUT` | `/mockserver/loadScenario/stop` | Stop running scenario(s). Body `{names:[...]}`, `{all:true}`, or empty (stop all). Stopped scenarios stay registered (`STOPPED`) and can be re-triggered. |
+
+### Example — load then start (one scenario)
+
+```bash
+# 1) load (register) — does not run
+curl -X PUT http://localhost:1080/mockserver/loadScenario -d '{ "name": "checkout-load", ... }'
+#    -> { "status": "loaded", "name": "checkout-load", "state": "LOADED" }
+
+# 2) trigger it to run (requires loadGenerationEnabled=true)
+curl -X PUT http://localhost:1080/mockserver/loadScenario/start -d '{ "name": "checkout-load" }'
+#    -> { "status": "started", "started": [ { "name": "checkout-load", "state": "RUNNING" } ] }
+
+# 3) watch it
+curl http://localhost:1080/mockserver/loadScenario/checkout-load
+
+# 4) stop it (stays registered, STOPPED)
+curl -X PUT http://localhost:1080/mockserver/loadScenario/stop -d '{ "name": "checkout-load" }'
+```
+
+Trigger several at once — each honours its own `startDelayMillis`:
+
+```bash
+curl -X PUT http://localhost:1080/mockserver/loadScenario/start \
+  -d '{ "names": ["checkout-load", "background-poller"] }'
+```
 
 ### Example — VU ramp then hold (closed model)
 
@@ -243,7 +326,7 @@ scenario, run_id, step, route, method, status_class
 | Label | Value |
 |-------|-------|
 | `scenario` | The `name` field from `LoadScenario` |
-| `run_id` | A UUID generated at scenario start (stable for the lifetime of one run; resets on each `PUT`) |
+| `run_id` | A UUID generated each time the scenario is **triggered** (stable for the lifetime of one run; a fresh UUID on every re-trigger, so concurrent runs of different scenarios are fully distinguishable) |
 | `step` | Step index (0-based) or the step's `name` field when set |
 | `route` | Auto-templatized path (see below) or the step's `name` field when set |
 | `method` | HTTP method (`GET`, `POST`, …) |
@@ -262,13 +345,20 @@ A step with an explicit `name` field bypasses templatizing entirely — the name
 
 ### `run_id` correlation
 
-Each `PUT /mockserver/loadScenario` generates a fresh UUID `run_id`. It appears in:
+Each **trigger** (`PUT /mockserver/loadScenario/start`) generates a fresh UUID `run_id`. It appears in:
 - All `mock_server_load_*` metric labels (so all series for a run share one label value)
-- The `GET /mockserver/loadScenario` status DTO (`runId` field)
+- The `GET /mockserver/loadScenario` / `GET .../{name}` status fields (`runId`)
 
-Use `run_id` to filter or group metrics in PromQL/OTEL exactly to one scenario execution, even when multiple runs of the same scenario follow each other.
+Because every run carries both `scenario` and `run_id`, **concurrent** runs are fully distinguishable in
+PromQL/OTEL. The `active_vus`/`inflight` gauge readers emit one series per `(scenario, run_id)` — one per
+active run.
 
-**Retention / eviction (bounded).** A completed run's `mock_server_load_*` series stay scrapeable until the next run starts, then are evicted (`Metrics.evictLoadRun(previousRunId)`), so at most one completed run's series are ever retained — the per-run UUID `run_id` labels do not accumulate unbounded in the Prometheus registry. The OTLP-exported per-run attribute sets are managed by the OTEL SDK's own aggregation/cardinality handling (the load counters are direct `LongCounter.add`, not callbacks), so they are not manually evicted.
+**Retention / eviction (bounded, per name).** A completed/stopped run's `mock_server_load_*` series stay
+scrapeable until that scenario is **re-triggered** with a new `run_id` (or removed from the registry),
+then the prior run's series are evicted (`Metrics.evictLoadRun(...)`), so at most one prior run per
+scenario name is ever retained. `recordResult` only writes durable series while the run is still the
+registry's active run for its name, so a draining/replaced run cannot resurrect evicted series. The
+OTLP-exported per-run attribute sets are managed by the OTEL SDK's own aggregation/cardinality handling.
 
 ### Custom labels
 
@@ -312,19 +402,30 @@ histogram_quantile(0.99,
 
 | Property | Default | Description |
 |----------|---------|-------------|
+| `mockserver.loadGenerationEnabled` | `false` | Gate on **triggering** runs (`PUT /loadScenario/start`). Loading/registering is always allowed. |
+| `mockserver.loadGenerationMaxConcurrentScenarios` | `10` | Hard cap on concurrently active (PENDING+RUNNING) scenarios. A trigger exceeding it is rejected. |
+| `mockserver.loadScenarioInitializationJsonPath` | `""` (empty) | Path to a JSON file (array of `LoadScenario` definitions) preloaded into the registry in the LOADED state at startup. |
+| `mockserver.loadGenerationMaxVirtualUsers` | `50` | Per-scenario hard cap on concurrent virtual users. |
+| `mockserver.loadGenerationMaxRate` | `5000` | Per-scenario hard cap on `RATE`-stage arrival rate (iterations/second). |
+| `mockserver.loadGenerationMaxStages` | `20` | Per-scenario hard cap on profile stages. |
+| `mockserver.loadGenerationMaxSteps` | `50` | Per-scenario hard cap on steps. |
+| `mockserver.loadGenerationMaxDurationMillis` | `3600000` | Per-scenario hard cap on total duration (1 h). |
+| `mockserver.loadGenerationMaxInFlightRequests` | `200` | Per-run live in-flight dispatch semaphore. |
+| `mockserver.loadGenerationMaxRequestsPerSecond` | `500` | Per-run RPS token bucket. |
 | `mockserver.loadGenerationMetricLabels` | `""` (empty) | Comma-separated allowlist of custom label keys to expose in Prometheus. OTEL always receives all custom labels. |
 
 ## Dashboard UI
 
 The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the dashboard control surface for load scenarios. See [Dashboard UI — Performance View](dashboard-ui.md#performance-view) for the component-level architecture. Key points:
 
-- Stage builder submits `PUT /mockserver/loadScenario` with the assembled `LoadProfile.stages` array.
-- Live status polls `GET /mockserver/loadScenario` every 1 s and surfaces `stageIndex`, `stageType`, `currentTarget`, `currentVus`, percentile latencies, and run counters.
+- Stage builder submits `PUT /mockserver/loadScenario` (load/register) then `PUT /mockserver/loadScenario/start` (trigger) with the assembled `LoadProfile.stages` array. (Dashboard wiring for the registry/start/stop surface is a later UI wave.)
+- Live status polls `GET /mockserver/loadScenario` every 1 s and surfaces, per registered scenario, its `state`, `stageIndex`, `stageType`, `currentTarget`, `currentVus`, percentile latencies, and run counters.
 - Metrics graph shares the `@mui/x-charts` bundle with `MetricsView` (lazy-loaded); scrapes `GET /mockserver/metrics` every 3 s and plots throughput and p95 latency for the `mock_server_load_*` family.
 
 ## Deferred
 
 - Distributed / multi-node load.
 - In-run thresholds (pass/fail decided during the run, as opposed to post-run `verifySLO`).
-- Seeding scenarios from recorded traffic or an OpenAPI spec.
+- Seeding scenario *definitions* from recorded traffic or an OpenAPI spec (preloading from a JSON file is supported via `loadScenarioInitializationJsonPath`).
 - Programmatic cross-step capture (v1 uses template-side `$scenario.set/get`).
+- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first).

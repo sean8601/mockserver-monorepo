@@ -503,12 +503,12 @@ public class LoadMetricsTest {
         // Drive a tick so the maxRequests-reached completion transition runs and the run terminates.
         long deadline = System.currentTimeMillis() + 5_000L;
         orchestrator.tickNow();
-        while (!"completed".equals(orchestrator.getStatus().state) && System.currentTimeMillis() < deadline) {
+        while (org.mockserver.load.LoadScenarioState.COMPLETED != orchestrator.getStatus().state && System.currentTimeMillis() < deadline) {
             orchestrator.tickNow();
             Thread.sleep(5);
         }
         String runIdA = orchestrator.getStatus().runId;
-        assertThat(orchestrator.getStatus().state, is("completed"));
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.COMPLETED));
 
         // A's durable series remain scrapeable after completion (so the final totals survive a scrape).
         assertThat("run A series present after completion",

@@ -2294,7 +2294,7 @@
       "name": "loadgen",
       "item": [
         {
-          "name": "start a load scenario",
+          "name": "load (register) a load scenario into the registry",
           "request": {
             "method": "PUT",
             "header": [
@@ -2313,10 +2313,10 @@
                 "loadScenario"
               ]
             },
-            "description": "Starts an API load scenario \u2014 an ordered list of templated request steps driven through a sequence of stages (a load profile), with per-iteration data variation. A stage either holds/ramps the number of concurrent virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second (RATE, open model), or pauses. It is a pure SLI producer: each completed request records a latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no verdict logic of its own. Off by default \u2014 returns 403 until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 5000 iterations/second, max 20 stages, max 50 steps, max 1h total duration, plus a live in-flight semaphore (200) and an RPS token bucket (500).\n\nthe load scenario to start\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
+            "description": "Loads (registers) an API load scenario into the named registry under its \"name\" (the unique registry key). Loading does NOT run the scenario \u2014 it is staged in the LOADED state, ready to be triggered by PUT /mockserver/loadScenario/start. Loading the same name replaces the prior definition. A scenario is an ordered list of templated request steps driven through a sequence of stages (a load profile): a stage holds/ramps virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second (RATE, open model), or pauses; an optional startDelayMillis defers the start after a trigger. Loading is allowed even when loadGenerationEnabled is false (no traffic is generated). Hard caps validated at load time: max 50 virtual users, max 5000 iterations/second, max 20 stages, max 50 steps, max 1h total duration.\n\nthe load scenario to load (register)\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"checkout-load\",\n  \"templateType\": \"VELOCITY\",\n  \"maxRequests\": 5000,\n  \"profile\": {\n    \"stages\": [\n      {\n        \"type\": \"VU\",\n        \"startVus\": 1,\n        \"endVus\": 10,\n        \"durationMillis\": 30000,\n        \"curve\": \"LINEAR\"\n      },\n      {\n        \"type\": \"VU\",\n        \"vus\": 10,\n        \"durationMillis\": 60000\n      }\n    ]\n  },\n  \"steps\": [\n    {\n      \"request\": {\n        \"method\": \"GET\",\n        \"path\": \"/api/item/$iteration.index\",\n        \"headers\": {\n          \"Host\": [\n            \"target.svc:8080\"\n          ]\n        },\n        \"socketAddress\": {\n          \"host\": \"target.svc\",\n          \"port\": 8080,\n          \"scheme\": \"HTTP\"\n        }\n      },\n      \"thinkTime\": {\n        \"timeUnit\": \"MILLISECONDS\",\n        \"value\": 20\n      }\n    }\n  ]\n}",
+              "raw": "{\n  \"name\": \"checkout-load\",\n  \"templateType\": \"VELOCITY\",\n  \"maxRequests\": 5000,\n  \"startDelayMillis\": 0,\n  \"profile\": {\n    \"stages\": [\n      {\n        \"type\": \"VU\",\n        \"startVus\": 1,\n        \"endVus\": 10,\n        \"durationMillis\": 30000,\n        \"curve\": \"LINEAR\"\n      },\n      {\n        \"type\": \"VU\",\n        \"vus\": 10,\n        \"durationMillis\": 60000\n      }\n    ]\n  },\n  \"steps\": [\n    {\n      \"request\": {\n        \"method\": \"GET\",\n        \"path\": \"/api/item/$iteration.index\",\n        \"headers\": {\n          \"Host\": [\n            \"target.svc:8080\"\n          ]\n        },\n        \"socketAddress\": {\n          \"host\": \"target.svc\",\n          \"port\": 8080,\n          \"scheme\": \"HTTP\"\n        }\n      },\n      \"thinkTime\": {\n        \"timeUnit\": \"MILLISECONDS\",\n        \"value\": 20\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2326,7 +2326,7 @@
           }
         },
         {
-          "name": "retrieve the current load scenario status",
+          "name": "list all registered load scenarios",
           "request": {
             "method": "GET",
             "header": [],
@@ -2340,11 +2340,11 @@
                 "loadScenario"
               ]
             },
-            "description": "Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time, current virtual users, request counts and latency percentiles. When a scenario exists the response also echoes its full \"definition\" (the LoadScenario it was started with), so any client or dashboard \u2014 not just the one that started the run \u2014 can load it back and re-submit it as a PUT body. When no scenario has ever run the state is \"none\".\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+            "description": "Lists every registered load scenario with its lifecycle state (LOADED / PENDING / RUNNING / COMPLETED / STOPPED), startDelayMillis, full definition, and \u2014 when active or recently run \u2014 the live status fields (stage, virtual users, request counts, latency percentiles, run id, timestamps).\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
           }
         },
         {
-          "name": "stop the current load scenario",
+          "name": "clear the load scenario registry",
           "request": {
             "method": "DELETE",
             "header": [],
@@ -2358,7 +2358,93 @@
                 "loadScenario"
               ]
             },
-            "description": "Stops the current load scenario. Idempotent \u2014 returns 200 whether or not a scenario was running.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+            "description": "Removes ALL registered load scenarios, stopping any that are running. Idempotent.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "retrieve one registered load scenario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario",
+                "checkout"
+              ]
+            },
+            "description": "Returns a single registered load scenario (definition + state + live/terminal status). 404 if not registered.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "remove one registered load scenario",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario",
+                "checkout"
+              ]
+            },
+            "description": "Removes a single load scenario from the registry, stopping it first if it is running.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "trigger registered load scenario(s) to run",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario",
+                "start"
+              ]
+            },
+            "description": "Triggers one or more registered load scenarios to start running concurrently. Each gets a fresh run id and honours its own startDelayMillis (a positive delay \u2192 the scenario is PENDING until the delay elapses, then RUNNING). Requires loadGenerationEnabled=true (else 403). 404 if a name is not registered. Rejected with 400 if it would exceed loadGenerationMaxConcurrentScenarios (default 10). Re-triggering an already-active name replaces that run.\n\nthe registered scenario name(s) to trigger\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+          }
+        },
+        {
+          "name": "stop running load scenario(s)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mockserver/loadScenario/stop",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mockserver",
+                "loadScenario",
+                "stop"
+              ]
+            },
+            "description": "Stops one or more running load scenarios. Body is {\"names\":[...]}, {\"all\":true}, or an empty body (stop all running). Stopped scenarios stay registered (state STOPPED) and can be re-triggered.\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
           }
         }
       ]

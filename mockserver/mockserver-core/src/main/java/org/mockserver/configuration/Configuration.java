@@ -61,7 +61,9 @@ public class Configuration {
     private Integer loadGenerationMaxSteps;
     private Double loadGenerationMaxRate;
     private Integer loadGenerationMaxStages;
+    private Integer loadGenerationMaxConcurrentScenarios;
     private java.util.List<String> loadGenerationMetricLabels;
+    private String loadScenarioInitializationJsonPath;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
@@ -970,6 +972,43 @@ public class Configuration {
      */
     public Configuration loadGenerationMaxStages(Integer loadGenerationMaxStages) {
         this.loadGenerationMaxStages = loadGenerationMaxStages;
+        return this;
+    }
+
+    public Integer loadGenerationMaxConcurrentScenarios() {
+        if (loadGenerationMaxConcurrentScenarios == null) {
+            return ConfigurationProperties.loadGenerationMaxConcurrentScenarios();
+        }
+        return loadGenerationMaxConcurrentScenarios;
+    }
+
+    /**
+     * Hard cap on the number of concurrently active (PENDING or RUNNING) load scenarios. A start
+     * trigger that would exceed this is rejected. Default is 10.
+     *
+     * @param loadGenerationMaxConcurrentScenarios maximum concurrently active load scenarios
+     */
+    public Configuration loadGenerationMaxConcurrentScenarios(Integer loadGenerationMaxConcurrentScenarios) {
+        this.loadGenerationMaxConcurrentScenarios = loadGenerationMaxConcurrentScenarios;
+        return this;
+    }
+
+    public String loadScenarioInitializationJsonPath() {
+        if (loadScenarioInitializationJsonPath == null) {
+            return ConfigurationProperties.loadScenarioInitializationJsonPath();
+        }
+        return loadScenarioInitializationJsonPath;
+    }
+
+    /**
+     * Path to a JSON file containing an array of load scenario definitions to load (register) into the
+     * registry in the {@code LOADED} state at startup. See
+     * {@link ConfigurationProperties#loadScenarioInitializationJsonPath(String)}.
+     *
+     * @param loadScenarioInitializationJsonPath path to the load scenario definitions JSON file
+     */
+    public Configuration loadScenarioInitializationJsonPath(String loadScenarioInitializationJsonPath) {
+        this.loadScenarioInitializationJsonPath = loadScenarioInitializationJsonPath;
         return this;
     }
 

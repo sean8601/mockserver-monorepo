@@ -2667,20 +2667,20 @@ paths:
     put:
       tags:
         - loadgen
-      summary: start a load scenario
+      summary: load (register) a load scenario into the registry
       description: >-
-        Starts an API load scenario — an ordered list of templated request steps driven through a sequence
-        of stages (a load profile), with per-iteration data variation. A stage either holds/ramps the number
-        of concurrent virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second
-        (RATE, open model), or pauses. It is a pure SLI producer: each completed request records a
-        latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO
-        can read load-driven SLIs), but it contains no verdict logic of its own. Off by default — returns 403
-        until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 5000
-        iterations/second, max 20 stages, max 50 steps, max 1h total duration, plus a live in-flight
-        semaphore (200) and an RPS token bucket (500).
+        Loads (registers) an API load scenario into the named registry under its "name" (the unique
+        registry key). Loading does NOT run the scenario — it is staged in the LOADED state, ready to be
+        triggered by PUT /mockserver/loadScenario/start. Loading the same name replaces the prior
+        definition. A scenario is an ordered list of templated request steps driven through a sequence of
+        stages (a load profile): a stage holds/ramps virtual users (VU, closed model), holds/ramps an
+        arrival rate in iterations/second (RATE, open model), or pauses; an optional startDelayMillis
+        defers the start after a trigger. Loading is allowed even when loadGenerationEnabled is false
+        (no traffic is generated). Hard caps validated at load time: max 50 virtual users, max 5000
+        iterations/second, max 20 stages, max 50 steps, max 1h total duration.
       responses:
         '200':
-          description: load scenario started
+          description: load scenario loaded (registered)
           content:
             application/json:
               schema:
@@ -2689,22 +2689,14 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [started]
+                    enum: [loaded]
                   name:
                     type: string
-                  steps:
-                    type: integer
+                  state:
+                    type: string
+                    enum: [LOADED, PENDING, RUNNING, COMPLETED, STOPPED]
         '400':
           description: invalid scenario definition or a configured cap exceeded
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '403':
-          description: load generation not enabled (set loadGenerationEnabled=true)
           content:
             application/json:
               schema:
@@ -2721,6 +2713,7 @@ paths:
               name: checkout-load
               templateType: VELOCITY
               maxRequests: 5000
+              startDelayMillis: 0
               profile:
                 stages:
                   - type: VU
@@ -2745,79 +2738,31 @@ paths:
                   thinkTime:
                     timeUnit: MILLISECONDS
                     value: 20
-        description: the load scenario to start
+        description: the load scenario to load (register)
         required: true
     get:
       tags:
         - loadgen
-      summary: retrieve the current load scenario status
+      summary: list all registered load scenarios
       description: >-
-        Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time,
-        current virtual users, request counts and latency percentiles. When a scenario exists the response
-        also echoes its full "definition" (the LoadScenario it was started with), so any client or dashboard
-        — not just the one that started the run — can load it back and re-submit it as a PUT body. When no
-        scenario has ever run the state is "none".
+        Lists every registered load scenario with its lifecycle state (LOADED / PENDING / RUNNING /
+        COMPLETED / STOPPED), startDelayMillis, full definition, and — when active or recently run — the
+        live status fields (stage, virtual users, request counts, latency percentiles, run id, timestamps).
       responses:
         '200':
-          description: load scenario status returned
+          description: registered load scenarios listed
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
                 properties:
-                  name:
-                    type: string
-                  state:
-                    type: string
-                    enum: [none, running, completed, stopped]
-                  elapsedMillis:
-                    type: integer
-                    format: int64
-                  currentVus:
-                    type: integer
-                    description: "live count of active virtual users"
-                  stageIndex:
-                    type: integer
-                    description: "0-based index of the currently-running stage (omitted when not running)"
-                  stageType:
-                    type: string
-                    enum: [VU, RATE, PAUSE]
-                    description: "type of the currently-running stage (omitted when not running)"
-                  currentTarget:
-                    type: number
-                    description: "current setpoint for the running stage: target virtual users (VU), target arrival rate in iterations/second (RATE), or 0 (PAUSE)"
-                  requestsSent:
-                    type: integer
-                    format: int64
-                  succeeded:
-                    type: integer
-                    format: int64
-                  failed:
-                    type: integer
-                    format: int64
-                  p50Millis:
-                    type: number
-                  p95Millis:
-                    type: number
-                  p99Millis:
-                    type: number
-                  runId:
-                    type: string
-                  startedAt:
-                    type: integer
-                    format: int64
-                  endedAt:
-                    type: integer
-                    format: int64
-                  definition:
-                    description: >-
-                      The full scenario definition this run was started with — present whenever a run
-                      exists (omitted only when state is "none"). It is itself a valid LoadScenario body
-                      that can be re-submitted to PUT /mockserver/loadScenario.
-                    $ref: "#/components/schemas/LoadScenario"
+                  scenarios:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LoadScenarioListEntry"
         '400':
-          description: failed to get load scenario status
+          description: failed to list load scenarios
           content:
             application/json:
               schema:
@@ -2828,11 +2773,178 @@ paths:
     delete:
       tags:
         - loadgen
-      summary: stop the current load scenario
-      description: Stops the current load scenario. Idempotent — returns 200 whether or not a scenario was running.
+      summary: clear the load scenario registry
+      description: Removes ALL registered load scenarios, stopping any that are running. Idempotent.
       responses:
         '200':
-          description: load scenario stopped (or none was running)
+          description: load scenario registry cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [cleared]
+        '400':
+          description: failed to clear load scenarios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /mockserver/loadScenario/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: the registered load scenario name
+        schema:
+          type: string
+    get:
+      tags:
+        - loadgen
+      summary: retrieve one registered load scenario
+      description: Returns a single registered load scenario (definition + state + live/terminal status). 404 if not registered.
+      responses:
+        '200':
+          description: load scenario returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoadScenarioListEntry"
+        '404':
+          description: no load scenario registered under that name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    delete:
+      tags:
+        - loadgen
+      summary: remove one registered load scenario
+      description: Removes a single load scenario from the registry, stopping it first if it is running.
+      responses:
+        '200':
+          description: load scenario removed (or absent)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [deleted, absent]
+                  name:
+                    type: string
+        '400':
+          description: failed to delete load scenario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /mockserver/loadScenario/start:
+    put:
+      tags:
+        - loadgen
+      summary: trigger registered load scenario(s) to run
+      description: >-
+        Triggers one or more registered load scenarios to start running concurrently. Each gets a fresh
+        run id and honours its own startDelayMillis (a positive delay → the scenario is PENDING until the
+        delay elapses, then RUNNING). Requires loadGenerationEnabled=true (else 403). 404 if a name is not
+        registered. Rejected with 400 if it would exceed loadGenerationMaxConcurrentScenarios (default 10).
+        Re-triggering an already-active name replaces that run.
+      responses:
+        '200':
+          description: load scenario(s) triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [started]
+                  started:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        state:
+                          type: string
+                          enum: [PENDING, RUNNING]
+        '400':
+          description: bad request (no names given, or the concurrent-scenario cap would be exceeded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: load generation not enabled (set loadGenerationEnabled=true)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: one of the named scenarios is not registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                names:
+                  type: array
+                  items:
+                    type: string
+                name:
+                  type: string
+            examples:
+              multiple:
+                value:
+                  names: [checkout-load, background-poller]
+              single:
+                value:
+                  name: checkout-load
+        description: the registered scenario name(s) to trigger
+        required: true
+  /mockserver/loadScenario/stop:
+    put:
+      tags:
+        - loadgen
+      summary: stop running load scenario(s)
+      description: >-
+        Stops one or more running load scenarios. Body is {"names":[...]}, {"all":true}, or an empty body
+        (stop all running). Stopped scenarios stay registered (state STOPPED) and can be re-triggered.
+      responses:
+        '200':
+          description: load scenario(s) stopped
           content:
             application/json:
               schema:
@@ -2842,8 +2954,18 @@ paths:
                   status:
                     type: string
                     enum: [stopped]
+                  stopped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        state:
+                          type: string
+                          enum: [STOPPED]
         '400':
-          description: failed to stop load scenario
+          description: failed to stop load scenario(s)
           content:
             application/json:
               schema:
@@ -2851,6 +2973,26 @@ paths:
                 properties:
                   error:
                     type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                names:
+                  type: array
+                  items:
+                    type: string
+                all:
+                  type: boolean
+            examples:
+              byName:
+                value:
+                  names: [checkout-load]
+              all:
+                value:
+                  all: true
   /mockserver/verifySLO:
     put:
       tags:
@@ -4473,7 +4615,7 @@ components:
             type: string
           description: "optional step-level custom annotation labels, merged over the scenario labels (step keys win); exported as OpenTelemetry attributes on every load measurement and as allowlisted Prometheus labels"
     LoadScenario:
-      description: "an API-driven load scenario: ordered templated steps driven at a target concurrency"
+      description: "an API-driven load scenario: ordered templated steps driven at a target concurrency. The name is the unique registry key — PUT loads (registers) it; PUT /loadScenario/start triggers it to run."
       type: object
       additionalProperties: false
       required:
@@ -4483,7 +4625,7 @@ components:
       properties:
         name:
           type: string
-          description: "human-readable scenario name"
+          description: "scenario name — the unique registry key. Loading the same name replaces the prior definition."
         templateType:
           type: string
           enum: [VELOCITY, MUSTACHE]
@@ -4492,6 +4634,11 @@ components:
         maxRequests:
           type: integer
           description: "optional hard cap on the total number of requests dispatched"
+        startDelayMillis:
+          type: integer
+          format: int64
+          default: 0
+          description: "delay in milliseconds, applied after this scenario is triggered to start, before its iterations begin. A positive value means the scenario is PENDING until the delay elapses, then RUNNING; 0 (default) starts immediately on trigger. Lets several triggered scenarios begin at staggered offsets."
         labels:
           type: object
           additionalProperties:
@@ -4504,6 +4651,58 @@ components:
           description: "ordered list of request steps fired in sequence each iteration (max 50)"
           items:
             $ref: "#/components/schemas/LoadStep"
+    LoadScenarioListEntry:
+      description: "a registered load scenario with its lifecycle state, start delay, definition, and live/terminal status fields"
+      type: object
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+          enum: [LOADED, PENDING, RUNNING, COMPLETED, STOPPED]
+        startDelayMillis:
+          type: integer
+          format: int64
+        definition:
+          $ref: "#/components/schemas/LoadScenario"
+        elapsedMillis:
+          type: integer
+          format: int64
+        currentVus:
+          type: integer
+          description: "live count of active virtual users (present when running)"
+        stageIndex:
+          type: integer
+          description: "0-based index of the currently-running stage (present when running)"
+        stageType:
+          type: string
+          enum: [VU, RATE, PAUSE]
+        currentTarget:
+          type: number
+          description: "current setpoint for the running stage: target virtual users (VU), arrival rate in iterations/second (RATE), or 0 (PAUSE)"
+        requestsSent:
+          type: integer
+          format: int64
+        succeeded:
+          type: integer
+          format: int64
+        failed:
+          type: integer
+          format: int64
+        p50Millis:
+          type: number
+        p95Millis:
+          type: number
+        p99Millis:
+          type: number
+        runId:
+          type: string
+        startedAt:
+          type: integer
+          format: int64
+        endedAt:
+          type: integer
+          format: int64
     SloObjective:
       description: "a single service-level objective over the recorded SLI samples"
       type: object

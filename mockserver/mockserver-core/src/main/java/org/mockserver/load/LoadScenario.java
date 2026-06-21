@@ -31,6 +31,14 @@ public class LoadScenario extends ObjectWithJsonToString {
     private HttpTemplate.TemplateType templateType = HttpTemplate.TemplateType.VELOCITY;
     private Integer maxRequests;
     /**
+     * Delay in milliseconds, applied after this scenario is <em>triggered</em> to start, before its
+     * iterations begin. A scenario with {@code startDelayMillis > 0} sits in the {@code PENDING}
+     * lifecycle state until the delay elapses (measured against the orchestrator's clock), then
+     * transitions to {@code RUNNING}. {@code 0} (the default) means start immediately on trigger.
+     * Lets several preloaded scenarios be triggered together yet begin at staggered offsets.
+     */
+    private long startDelayMillis;
+    /**
      * Scenario-level custom annotation labels. Attached as OpenTelemetry attributes on every
      * load measurement (arbitrary keys — this is the flexible, k6-beating annotation surface) and
      * surfaced in the status DTO. For the Prometheus side, only the keys named in the
@@ -95,6 +103,19 @@ public class LoadScenario extends ObjectWithJsonToString {
 
     public LoadScenario withMaxRequests(Integer maxRequests) {
         this.maxRequests = maxRequests;
+        return this;
+    }
+
+    /**
+     * The start delay in milliseconds applied after a start trigger before this scenario's
+     * iterations begin (default {@code 0}). See {@link #startDelayMillis}.
+     */
+    public long getStartDelayMillis() {
+        return startDelayMillis;
+    }
+
+    public LoadScenario withStartDelayMillis(long startDelayMillis) {
+        this.startDelayMillis = startDelayMillis;
         return this;
     }
 

@@ -16,23 +16,24 @@ sitemap:
 
 <p>This makes MockServer useful for <strong>resilience verification</strong>: inject a chaos fault (see <a href="/mock_server/chaos_testing.html">Chaos Testing</a>), apply load, then assert that your SLOs held — all from a single control plane, with no external load tool required.</p>
 
-<p><strong>Off by default.</strong> The endpoint returns <code class="inline code">403 Forbidden</code> until <code class="inline code">loadGenerationEnabled=true</code> is set. Hard caps on virtual users, in-flight requests, RPS, duration, and step count prevent the feature from self-DoS-ing the server.</p>
+<p><strong>Registry model: load, then trigger.</strong> Scenarios are organised as a <strong>registry of named scenarios</strong>. You first <strong>load</strong> (register) a scenario by name with <code class="inline code">PUT /mockserver/loadScenario</code> — this does <em>not</em> run it — then <strong>trigger</strong> one or many by name with <code class="inline code">PUT /mockserver/loadScenario/start</code> to run them <strong>concurrently</strong>, each with its own optional <strong>start delay</strong>. Loading is always allowed; <strong>triggering a run is off by default</strong>: <code class="inline code">start</code> returns <code class="inline code">403 Forbidden</code> until <code class="inline code">loadGenerationEnabled=true</code>. Hard caps on concurrent scenarios, virtual users, in-flight requests, RPS, duration, and step count prevent the feature from self-DoS-ing the server. Scenarios can be <strong>preloaded at startup</strong> from a JSON file via <code class="inline code">mockserver.loadScenarioInitializationJsonPath</code>.</p>
 
 <a id="quickstart" class="anchor" href="#quickstart">&nbsp;</a>
 
 <h2>Quickstart</h2>
 
-<p>Enable load generation, then start a 10-VU constant load scenario against a target for 30 seconds:</p>
+<p>Enable load generation, <strong>load</strong> a 10-VU ramp-then-hold scenario, then <strong>trigger</strong> it:</p>
 
 <pre class="prettyprint code"><code class="code"># 1. Enable load generation (set once at startup or via the config endpoint)
 docker run -e MOCKSERVER_LOAD_GENERATION_ENABLED=true mockserver/mockserver
 
-# 2. Start a scenario
+# 2. LOAD (register) a scenario — this does NOT run it
 curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -H "Content-Type: application/json" \
   -d '{
     "name": "checkout-load",
     "templateType": "VELOCITY",
+    "startDelayMillis": 0,
     "profile": {
       "stages": [
         { "type": "VU", "startVus": 1, "endVus": 10, "durationMillis": 30000, "curve": "LINEAR" },
@@ -51,17 +52,24 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
     ]
   }'
 
-# 3. Poll progress
+# 3. TRIGGER it to run (one or many names at once)
+curl -s -X PUT http://localhost:1080/mockserver/loadScenario/start \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "checkout-load" }'
+
+# 4. Poll progress (one scenario, or list all)
+curl -s http://localhost:1080/mockserver/loadScenario/checkout-load
 curl -s http://localhost:1080/mockserver/loadScenario
 
-# 4. Stop early if needed
-curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
+# 5. Stop it (stays registered, STOPPED — can be re-triggered)
+curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
+  -d '{ "name": "checkout-load" }'</code></pre>
 
 <a id="control_plane_api" class="anchor" href="#control_plane_api">&nbsp;</a>
 
 <h2>Control-Plane API</h2>
 
-<p>All three verbs are control-plane endpoints — they respect <a href="/mock_server/control_plane_authorisation.html">control-plane authentication</a> (mTLS / JWT) when configured.</p>
+<p>All endpoints are control-plane endpoints — they respect <a href="/mock_server/control_plane_authorisation.html">control-plane authentication</a> (mTLS / JWT) when configured. The flow is <strong>load (register) → trigger (run) by name</strong>.</p>
 
 <table class="table-standard">
     <thead>
@@ -75,20 +83,45 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
         <tr>
             <td><code class="inline code">PUT</code></td>
             <td><code class="inline code">/mockserver/loadScenario</code></td>
-            <td>Start a new scenario. Returns <code class="inline code">403</code> when <code class="inline code">loadGenerationEnabled=false</code>; <code class="inline code">400</code> with a JSON error when the scenario fails validation or a cap is exceeded; <code class="inline code">200 {status:"started", ...}</code> otherwise. Starting a new scenario while one is running replaces the previous one.</td>
+            <td><strong>Load (register)</strong> a scenario by <code class="inline code">name</code> — it is staged in the <code class="inline code">LOADED</code> state but does <em>not</em> run. Allowed even when <code class="inline code">loadGenerationEnabled=false</code> (no traffic). <code class="inline code">400</code> with a JSON error when invalid or a cap is exceeded; <code class="inline code">200 {status:"loaded", name, state:"LOADED"}</code> otherwise. Loading the same name replaces the prior definition.</td>
         </tr>
         <tr>
             <td><code class="inline code">GET</code></td>
             <td><code class="inline code">/mockserver/loadScenario</code></td>
-            <td>Return current scenario status. Fields: <code class="inline code">state</code> (<code class="inline code">running</code> / <code class="inline code">completed</code> / <code class="inline code">stopped</code> / <code class="inline code">none</code>), <code class="inline code">elapsedMillis</code>, <code class="inline code">currentVus</code> (live active VUs), <code class="inline code">stageIndex</code>, <code class="inline code">stageType</code> (<code class="inline code">VU</code> / <code class="inline code">RATE</code> / <code class="inline code">PAUSE</code>), <code class="inline code">currentTarget</code> (target VUs or target rate for the running stage), <code class="inline code">requestsSent</code>, <code class="inline code">succeeded</code>, <code class="inline code">failed</code>, <code class="inline code">p50Millis</code>, <code class="inline code">p95Millis</code>, <code class="inline code">p99Millis</code>, <code class="inline code">runId</code>, <code class="inline code">startedAt</code>, <code class="inline code">endedAt</code>, and the full <code class="inline code">definition</code>.</td>
+            <td>List <strong>all</strong> registered scenarios: <code class="inline code">{ scenarios: [ { name, state, startDelayMillis, definition, &hellip;live status fields } ] }</code>. <code class="inline code">state</code> ∈ <code class="inline code">LOADED</code> / <code class="inline code">PENDING</code> / <code class="inline code">RUNNING</code> / <code class="inline code">COMPLETED</code> / <code class="inline code">STOPPED</code>. Live fields (when active/run): <code class="inline code">stageIndex</code>, <code class="inline code">stageType</code>, <code class="inline code">currentTarget</code>, <code class="inline code">currentVus</code>, <code class="inline code">requestsSent</code>, <code class="inline code">succeeded</code>, <code class="inline code">failed</code>, <code class="inline code">p50/p95/p99Millis</code>, <code class="inline code">runId</code>, <code class="inline code">startedAt</code>, <code class="inline code">endedAt</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">GET</code></td>
+            <td><code class="inline code">/mockserver/loadScenario/{name}</code></td>
+            <td>Return one registered scenario (definition + state + status). <code class="inline code">404</code> if not registered.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">PUT</code></td>
+            <td><code class="inline code">/mockserver/loadScenario/start</code></td>
+            <td><strong>Trigger</strong> one or more registered scenarios to run concurrently. Body <code class="inline code">{"names":["a","b"]}</code> or <code class="inline code">{"name":"a"}</code>. Each honours its own <code class="inline code">startDelayMillis</code>. Requires <code class="inline code">loadGenerationEnabled=true</code> (else <code class="inline code">403</code>); <code class="inline code">404</code> if a name isn't registered; <code class="inline code">400</code> if it would exceed <code class="inline code">loadGenerationMaxConcurrentScenarios</code>. Returns the triggered names and resulting states (<code class="inline code">PENDING</code> / <code class="inline code">RUNNING</code>).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">PUT</code></td>
+            <td><code class="inline code">/mockserver/loadScenario/stop</code></td>
+            <td>Stop running scenario(s). Body <code class="inline code">{"names":[&hellip;]}</code>, <code class="inline code">{"all":true}</code>, or empty (stop all). Stopped scenarios stay registered (<code class="inline code">STOPPED</code>) and can be re-triggered.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">DELETE</code></td>
+            <td><code class="inline code">/mockserver/loadScenario/{name}</code></td>
+            <td>Remove one scenario from the registry (stops it first if running).</td>
         </tr>
         <tr>
             <td><code class="inline code">DELETE</code></td>
             <td><code class="inline code">/mockserver/loadScenario</code></td>
-            <td>Stop the running scenario. Idempotent — no-op when nothing is running.</td>
+            <td>Clear the whole registry (stops all running). Idempotent.</td>
         </tr>
     </tbody>
 </table>
+
+<p>Trigger several at once — each begins at its own offset via <code class="inline code">startDelayMillis</code>:</p>
+
+<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario/start \
+  -d '{ "names": ["checkout-load", "background-poller"] }'</code></pre>
 
 <a id="load_scenario_model" class="anchor" href="#load_scenario_model">&nbsp;</a>
 
@@ -110,7 +143,13 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
             <td><code class="inline code">name</code></td>
             <td>string</td>
             <td>Yes</td>
-            <td>Display name for the scenario (appears in status and logs).</td>
+            <td>The scenario name — the <strong>unique registry key</strong>. Loading the same name replaces the prior definition. Appears in status, metric labels, and logs.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">startDelayMillis</code></td>
+            <td>integer</td>
+            <td>No</td>
+            <td>Delay in milliseconds, applied after the scenario is <strong>triggered</strong>, before its iterations begin (default <code class="inline code">0</code>). A positive value means the scenario is <code class="inline code">PENDING</code> until the delay elapses, then <code class="inline code">RUNNING</code>. Lets several triggered scenarios begin at staggered offsets.</td>
         </tr>
         <tr>
             <td><code class="inline code">steps</code></td>
@@ -418,10 +457,16 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
     </thead>
     <tbody>
         <tr>
-            <td>Feature flag</td>
+            <td>Feature flag (triggering runs)</td>
             <td><code class="inline code">mockserver.loadGenerationEnabled</code></td>
             <td><code class="inline code">false</code></td>
-            <td>PUT returns <code class="inline code">403</code> when off</td>
+            <td><code class="inline code">PUT /loadScenario/start</code> returns <code class="inline code">403</code> when off (loading is always allowed)</td>
+        </tr>
+        <tr>
+            <td>Maximum concurrent scenarios</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxConcurrentScenarios</code></td>
+            <td>10</td>
+            <td>Trigger validation — rejected at <code class="inline code">PUT /loadScenario/start</code> when it would exceed the number of active (PENDING+RUNNING) scenarios</td>
         </tr>
         <tr>
             <td>Maximum virtual users</td>
@@ -480,7 +525,7 @@ docker run \
   -e MOCKSERVER_SLO_TRACKING_ENABLED=true \
   mockserver/mockserver
 
-# 2. Run a load scenario (e.g. 10 VUs for 30 s)
+# 2. Load (register) then trigger a load scenario (e.g. 10 VUs for 30 s)
 curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -H "Content-Type: application/json" \
   -d '{
@@ -496,8 +541,10 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
       }
     ]
   }'
+curl -s -X PUT http://localhost:1080/mockserver/loadScenario/start \
+  -d '{ "name": "slo-validation-run" }'
 
-# 3. Wait for the scenario to complete (poll GET until state = "completed")
+# 3. Wait for the scenario to complete (poll GET /loadScenario/slo-validation-run until state = "COMPLETED")
 
 # 4. Assert SLOs held during the run
 # Returns 200 (PASS) or 406 (FAIL)

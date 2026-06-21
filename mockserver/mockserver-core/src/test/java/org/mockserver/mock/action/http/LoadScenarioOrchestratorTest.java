@@ -46,6 +46,7 @@ public class LoadScenarioOrchestratorTest {
     private int originalMaxVus;
     private long originalMaxDuration;
     private int originalMaxSteps;
+    private int originalMaxConcurrent;
     private boolean originalSloTracking;
 
     @Before
@@ -64,6 +65,7 @@ public class LoadScenarioOrchestratorTest {
         originalMaxVus = ConfigurationProperties.loadGenerationMaxVirtualUsers();
         originalMaxDuration = ConfigurationProperties.loadGenerationMaxDurationMillis();
         originalMaxSteps = ConfigurationProperties.loadGenerationMaxSteps();
+        originalMaxConcurrent = ConfigurationProperties.loadGenerationMaxConcurrentScenarios();
         originalSloTracking = ConfigurationProperties.sloTrackingEnabled();
     }
 
@@ -77,6 +79,7 @@ public class LoadScenarioOrchestratorTest {
         ConfigurationProperties.loadGenerationMaxVirtualUsers(originalMaxVus);
         ConfigurationProperties.loadGenerationMaxDurationMillis(originalMaxDuration);
         ConfigurationProperties.loadGenerationMaxSteps(originalMaxSteps);
+        ConfigurationProperties.loadGenerationMaxConcurrentScenarios(originalMaxConcurrent);
         ConfigurationProperties.sloTrackingEnabled(originalSloTracking);
     }
 
@@ -130,7 +133,7 @@ public class LoadScenarioOrchestratorTest {
         // The cap is enforced at dispatch time, so the count overshoots only by roughly the number
         // of in-flight VUs (3), not by a full control interval of firing — it must not run forever.
         long deadline = System.currentTimeMillis() + 500L;
-        while (orchestrator.getStatus() != null && "running".equals(orchestrator.getStatus().state)
+        while (orchestrator.getStatus() != null && org.mockserver.load.LoadScenarioState.RUNNING == orchestrator.getStatus().state
             && System.currentTimeMillis() < deadline) {
             orchestrator.tickNow();
             Thread.sleep(5);
@@ -205,12 +208,12 @@ public class LoadScenarioOrchestratorTest {
         clock.set(10_000L + 1_200L);
         orchestrator.tickNow();
         long deadline = System.currentTimeMillis() + 2_000L;
-        while (orchestrator.getStatus() != null && "running".equals(orchestrator.getStatus().state)
+        while (orchestrator.getStatus() != null && org.mockserver.load.LoadScenarioState.RUNNING == orchestrator.getStatus().state
             && System.currentTimeMillis() < deadline) {
             orchestrator.tickNow();
             Thread.sleep(5);
         }
-        assertThat(orchestrator.getStatus().state, is("completed"));
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.COMPLETED));
     }
 
     @Test
@@ -569,12 +572,12 @@ public class LoadScenarioOrchestratorTest {
 
         // Drive ticks so completion is observed, then the in-flight VU loops drain their slots.
         long deadline = System.currentTimeMillis() + 2_000L;
-        while (orchestrator.getStatus() != null && "running".equals(orchestrator.getStatus().state)
+        while (orchestrator.getStatus() != null && org.mockserver.load.LoadScenarioState.RUNNING == orchestrator.getStatus().state
             && System.currentTimeMillis() < deadline) {
             orchestrator.tickNow();
             Thread.sleep(5);
         }
-        assertThat(orchestrator.getStatus().state, is("completed"));
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.COMPLETED));
         assertThat("active VU count should drain to zero after completion",
             awaitLastRunActiveVus(0, 5_000L), is(true));
         assertThat(orchestrator.lastRunActiveVuCount(), is(0));
@@ -616,6 +619,101 @@ public class LoadScenarioOrchestratorTest {
         assertThat(orchestrator.start(scenario, sender), is(nullValue()));
         orchestrator.stop();
         assertThat(orchestrator.getStatus(), is(notNullValue()));
-        assertThat(orchestrator.getStatus().state, is("stopped"));
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.STOPPED));
+    }
+
+    @Test
+    public void startDelayKeepsScenarioPendingUntilDelayElapses() throws Exception {
+        // A scenario with startDelayMillis>0 must sit PENDING and fire NO requests until the delay
+        // elapses (advance the test clock), then RUN.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("delayed")
+            .withStartDelayMillis(500L)
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // Immediately after trigger: PENDING, no traffic.
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.PENDING));
+
+        // Tick while still inside the delay window (t=300ms < 500ms delay): still PENDING, no requests.
+        clock.set(10_000L + 300L);
+        orchestrator.tickNow();
+        Thread.sleep(50);
+        assertThat("no requests fire during the start delay", sender.sent.size(), is(0));
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.PENDING));
+
+        // Advance past the delay: transitions to RUNNING and begins firing.
+        clock.set(10_000L + 600L);
+        orchestrator.tickNow();
+        assertThat("scenario runs after the delay elapses", awaitAtLeast(sender, 2, 5_000L), is(true));
+        assertThat(orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.RUNNING));
+    }
+
+    @Test
+    public void triggeringMultipleScenariosRunsThemConcurrently() throws Exception {
+        // Two scenarios triggered at once both run; each records its own metrics under its own run_id.
+        org.mockserver.configuration.Configuration config =
+            org.mockserver.configuration.Configuration.configuration().metricsEnabled(true);
+        new Metrics(config);
+        orchestrator.setConfiguration(config);
+
+        RecordingSender senderA = new RecordingSender();
+        RecordingSender senderB = new RecordingSender();
+        // No maxRequests so each runs the full 60s stage and stays active during the assertions; a
+        // 5ms per-step think time paces the loops so the instant sender does not flood unbounded.
+        LoadScenario a = new LoadScenario().withName("concurrent-a")
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/a").withHeader("Host", "target"))
+                .withThinkTime(org.mockserver.model.Delay.milliseconds(5)));
+        LoadScenario b = new LoadScenario().withName("concurrent-b")
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/b").withHeader("Host", "target"))
+                .withThinkTime(org.mockserver.model.Delay.milliseconds(5)));
+
+        try {
+            assertThat(orchestrator.start(a, senderA), is(nullValue()));
+            String runIdA = orchestrator.statusFor("concurrent-a").runId;
+            assertThat(orchestrator.start(b, senderB), is(nullValue()));
+            String runIdB = orchestrator.statusFor("concurrent-b").runId;
+
+            assertThat("both runs are active concurrently", orchestrator.getStatuses().size(), is(2));
+            assertThat(runIdA, is(not(runIdB)));
+
+            assertThat(awaitAtLeast(senderA, 10, 5_000L), is(true));
+            assertThat(awaitAtLeast(senderB, 10, 5_000L), is(true));
+            Thread.sleep(100);
+
+            // Each run records under its own scenario/run_id — no cross-contamination.
+            long countA = Metrics.getLoadRequestCount("concurrent-a", runIdA, "0", "/a", "unknown", "2xx");
+            long countB = Metrics.getLoadRequestCount("concurrent-b", runIdB, "0", "/b", "unknown", "2xx");
+            assertThat(countA, greaterThanOrEqualTo(10L));
+            assertThat(countB, greaterThanOrEqualTo(10L));
+            // Run A's series carries only A's path; B's run_id never appears under A's name.
+            assertThat(Metrics.getLoadRequestCount("concurrent-a", runIdB, "0", "/a", "unknown", "2xx"), is(0L));
+        } finally {
+            orchestrator.stop("concurrent-a");
+            orchestrator.stop("concurrent-b");
+        }
+    }
+
+    @Test
+    public void rejectsTriggerExceedingMaxConcurrentScenarios() {
+        ConfigurationProperties.loadGenerationMaxConcurrentScenarios(1);
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        RecordingSender sender = new RecordingSender();
+        LoadScenario a = new LoadScenario().withName("cap-a")
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/a").withHeader("Host", "target")));
+        LoadScenario b = new LoadScenario().withName("cap-b")
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/b").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(a, sender), is(nullValue()));
+        String error = orchestrator.start(b, sender);
+        assertThat(error, containsString("maximum of 1"));
+        // Re-triggering an already-active name is exempt from the cap (it replaces, no net increase).
+        assertThat(orchestrator.start(a, sender), is(nullValue()));
     }
 }

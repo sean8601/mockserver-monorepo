@@ -26,13 +26,23 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 /**
- * End-to-end routing tests for {@code PUT/GET/DELETE /mockserver/loadScenario} exercised through
- * {@link HttpState#handle}: authentication is required, the PUT returns 403 when the feature is
- * disabled, 200 when enabled, GET reports status, DELETE stops, and a malformed body is 400.
+ * End-to-end routing tests for the load-scenario REGISTRY control plane exercised through
+ * {@link HttpState#handle}:
+ * <ul>
+ *   <li>{@code PUT /mockserver/loadScenario} loads (registers) a scenario — it does NOT run, and is
+ *       allowed even when load generation is disabled.</li>
+ *   <li>{@code GET /mockserver/loadScenario} lists all registered scenarios; {@code GET .../{name}}
+ *       returns one (404 if absent).</li>
+ *   <li>{@code PUT /mockserver/loadScenario/start} triggers registered scenarios to run (403 when
+ *       disabled, 404 for an unknown name).</li>
+ *   <li>{@code PUT /mockserver/loadScenario/stop} stops running scenarios.</li>
+ *   <li>{@code DELETE .../{name}} and {@code DELETE} remove from the registry.</li>
+ * </ul>
  *
- * <p>State-mutating: flips the static {@code loadGenerationEnabled} property and drives the
- * process-wide {@link LoadScenarioOrchestrator} singleton, so it must run in the sequential
- * Surefire phase. A synchronous fake sender is installed so no real network traffic is generated.
+ * <p>State-mutating: flips the static {@code loadGenerationEnabled} property, drives the process-wide
+ * {@link LoadScenarioOrchestrator} singleton, and writes to the registry, so it must run in the
+ * sequential Surefire phase. A synchronous fake sender is installed so no real network traffic is
+ * generated.
  */
 public class HttpStateLoadScenarioEndpointTest {
 
@@ -61,10 +71,13 @@ public class HttpStateLoadScenarioEndpointTest {
         // Install a synchronous fake sender so the orchestrator can start without a Netty runtime.
         LoadScenarioOrchestrator.getInstance().setSender(req -> CompletableFuture.completedFuture(response().withStatusCode(200)));
         rebuildHttpState(true);
+        // start from an empty registry each test
+        delete();
     }
 
     @After
     public void tearDown() {
+        delete();
         LoadScenarioOrchestrator.getInstance().reset();
         LoadScenarioOrchestrator.getInstance().setSender(null);
         ConfigurationProperties.loadGenerationEnabled(originalEnabled);
@@ -88,9 +101,41 @@ public class HttpStateLoadScenarioEndpointTest {
         return rw.response;
     }
 
+    private HttpResponse start(String body) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        HttpRequest req = request("/mockserver/loadScenario/start").withMethod("PUT");
+        if (body != null) {
+            req.withBody(body);
+        }
+        assertThat("route handled", httpState.handle(req, rw, false), is(true));
+        return rw.response;
+    }
+
+    private HttpResponse stop(String body) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        HttpRequest req = request("/mockserver/loadScenario/stop").withMethod("PUT");
+        if (body != null) {
+            req.withBody(body);
+        }
+        assertThat("route handled", httpState.handle(req, rw, false), is(true));
+        return rw.response;
+    }
+
     private HttpResponse get() {
         FakeResponseWriter rw = new FakeResponseWriter();
         assertThat("route handled", httpState.handle(request("/mockserver/loadScenario").withMethod("GET"), rw, false), is(true));
+        return rw.response;
+    }
+
+    private HttpResponse getOne(String name) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        assertThat("route handled", httpState.handle(request("/mockserver/loadScenario/" + name).withMethod("GET"), rw, false), is(true));
+        return rw.response;
+    }
+
+    private HttpResponse deleteOne(String name) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        assertThat("route handled", httpState.handle(request("/mockserver/loadScenario/" + name).withMethod("DELETE"), rw, false), is(true));
         return rw.response;
     }
 
@@ -100,109 +145,208 @@ public class HttpStateLoadScenarioEndpointTest {
         return rw.response;
     }
 
-    private static String scenarioJson() {
-        return "{ \"name\": \"smoke\", " +
+    private static String scenarioJson(String name) {
+        return "{ \"name\": \"" + name + "\", " +
             "\"profile\": { \"stages\": [ { \"type\": \"VU\", \"vus\": 1, \"durationMillis\": 60000 } ] }, " +
             "\"steps\": [ { \"request\": { \"path\": \"/health\", \"headers\": { \"Host\": [\"target\"] } } } ] }";
     }
 
+    private JsonNode body(HttpResponse response) throws Exception {
+        return objectMapper.readTree(response.getBodyAsString());
+    }
+
+    // --- LOAD / register ---
+
     @Test
-    public void putReturns403WhenDisabled() throws Exception {
+    public void putLoadsScenarioWithoutRunningIt() throws Exception {
+        HttpResponse response = put(scenarioJson("smoke"));
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode b = body(response);
+        assertThat(b.get("status").asText(), is("loaded"));
+        assertThat(b.get("name").asText(), is("smoke"));
+        assertThat(b.get("state").asText(), is("LOADED"));
+        // loading does not start a run
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("smoke"), is(false));
+    }
+
+    @Test
+    public void loadingIsAllowedWhenGenerationDisabled() throws Exception {
         rebuildHttpState(false);
-        HttpResponse response = put(scenarioJson());
+        HttpResponse response = put(scenarioJson("disabled-load"));
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(response).get("status").asText(), is("loaded"));
+    }
+
+    @Test
+    public void loadingSameNameReplaces() throws Exception {
+        put(scenarioJson("dup"));
+        put(scenarioJson("dup"));
+        JsonNode list = body(get()).get("scenarios");
+        long count = 0;
+        for (JsonNode s : list) {
+            if ("dup".equals(s.get("name").asText())) {
+                count++;
+            }
+        }
+        assertThat("loading the same name replaces, not appends", count, is(1L));
+    }
+
+    @Test
+    public void getListsAllRegisteredScenariosAsLoaded() throws Exception {
+        put(scenarioJson("one"));
+        put(scenarioJson("two"));
+        JsonNode list = body(get()).get("scenarios");
+        assertThat(list.isArray(), is(true));
+        assertThat(list.size(), is(2));
+        boolean foundOne = false;
+        for (JsonNode s : list) {
+            if ("one".equals(s.get("name").asText())) {
+                foundOne = true;
+                assertThat(s.get("state").asText(), is("LOADED"));
+                assertThat(s.get("definition").get("name").asText(), is("one"));
+            }
+        }
+        assertThat(foundOne, is(true));
+    }
+
+    @Test
+    public void getOneReturnsScenario() throws Exception {
+        put(scenarioJson("single"));
+        HttpResponse response = getOne("single");
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode b = body(response);
+        assertThat(b.get("name").asText(), is("single"));
+        assertThat(b.get("state").asText(), is("LOADED"));
+        assertThat(b.get("definition").get("steps").get(0).get("request").get("path").asText(), is("/health"));
+    }
+
+    @Test
+    public void getOneReturns404WhenUnknown() throws Exception {
+        HttpResponse response = getOne("missing");
+        assertThat(response.getStatusCode(), is(404));
+        assertThat(body(response).get("error").asText(), containsString("missing"));
+    }
+
+    @Test
+    public void deleteOneRemovesFromRegistry() throws Exception {
+        put(scenarioJson("removable"));
+        HttpResponse response = deleteOne("removable");
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(response).get("status").asText(), is("deleted"));
+        assertThat(getOne("removable").getStatusCode(), is(404));
+    }
+
+    @Test
+    public void deleteAllClearsRegistry() throws Exception {
+        put(scenarioJson("a"));
+        put(scenarioJson("b"));
+        HttpResponse response = delete();
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(get()).get("scenarios").size(), is(0));
+    }
+
+    // --- TRIGGER (start) ---
+
+    @Test
+    public void startTriggersOneScenarioByName() throws Exception {
+        put(scenarioJson("runnable"));
+        HttpResponse response = start("{ \"name\": \"runnable\" }");
+        try {
+            assertThat(response.getStatusCode(), is(200));
+            JsonNode b = body(response);
+            assertThat(b.get("status").asText(), is("started"));
+            JsonNode started = b.get("started");
+            assertThat(started.get(0).get("name").asText(), is("runnable"));
+            assertThat(started.get(0).get("state").asText(), is("RUNNING"));
+            assertThat(LoadScenarioOrchestrator.getInstance().isActive("runnable"), is(true));
+        } finally {
+            stop(null);
+        }
+    }
+
+    @Test
+    public void startTriggersMultipleScenariosByName() throws Exception {
+        put(scenarioJson("multi-a"));
+        put(scenarioJson("multi-b"));
+        HttpResponse response = start("{ \"names\": [ \"multi-a\", \"multi-b\" ] }");
+        try {
+            assertThat(response.getStatusCode(), is(200));
+            assertThat(body(response).get("started").size(), is(2));
+            assertThat(LoadScenarioOrchestrator.getInstance().isActive("multi-a"), is(true));
+            assertThat(LoadScenarioOrchestrator.getInstance().isActive("multi-b"), is(true));
+        } finally {
+            stop(null);
+        }
+    }
+
+    @Test
+    public void startReturns403WhenGenerationDisabled() throws Exception {
+        rebuildHttpState(false);
+        put(scenarioJson("disabled-start"));
+        HttpResponse response = start("{ \"name\": \"disabled-start\" }");
         assertThat(response.getStatusCode(), is(403));
-        JsonNode body = objectMapper.readTree(response.getBodyAsString());
-        assertThat(body.get("error").asText(), containsString("load generation not enabled"));
+        assertThat(body(response).get("error").asText(), containsString("load generation not enabled"));
     }
 
     @Test
-    public void putReturns200AndStartsWhenEnabled() throws Exception {
-        HttpResponse response = put(scenarioJson());
-        assertThat(response.getStatusCode(), is(200));
-        JsonNode body = objectMapper.readTree(response.getBodyAsString());
-        assertThat(body.get("status").asText(), is("started"));
-        assertThat(body.get("name").asText(), is("smoke"));
-        // immediately stop so the singleton scheduler does not keep driving traffic
-        delete();
+    public void startReturns404ForUnknownName() throws Exception {
+        HttpResponse response = start("{ \"name\": \"never-loaded\" }");
+        assertThat(response.getStatusCode(), is(404));
+        assertThat(body(response).get("error").asText(), containsString("never-loaded"));
     }
 
     @Test
-    public void getReportsRunningStatusThenStopped() throws Exception {
-        put(scenarioJson());
-        HttpResponse running = get();
-        assertThat(running.getStatusCode(), is(200));
-        JsonNode runningBody = objectMapper.readTree(running.getBodyAsString());
-        assertThat(runningBody.get("state").asText(), is("running"));
-        assertThat(runningBody.get("name").asText(), is("smoke"));
-
-        HttpResponse stopResponse = delete();
-        assertThat(stopResponse.getStatusCode(), is(200));
-        assertThat(objectMapper.readTree(stopResponse.getBodyAsString()).get("status").asText(), is("stopped"));
-
-        JsonNode stoppedBody = objectMapper.readTree(get().getBodyAsString());
-        assertThat(stoppedBody.get("state").asText(), is("stopped"));
-    }
-
-    @Test
-    public void getReportsNoneWhenNothingStarted() throws Exception {
-        HttpResponse response = get();
-        assertThat(response.getStatusCode(), is(200));
-        JsonNode body = objectMapper.readTree(response.getBodyAsString());
-        assertThat(body.get("state").asText(), is("none"));
-        // no run exists, so the scenario definition must be omitted entirely
-        assertThat(body.has("definition"), is(false));
-    }
-
-    @Test
-    public void getEchoesRunningScenarioDefinition() throws Exception {
-        put(scenarioJson());
+    public void startRejectsWhenExceedingConcurrentCap() throws Exception {
+        int original = ConfigurationProperties.loadGenerationMaxConcurrentScenarios();
+        ConfigurationProperties.loadGenerationMaxConcurrentScenarios(1);
         try {
-            JsonNode runningBody = objectMapper.readTree(get().getBodyAsString());
-            assertThat(runningBody.get("state").asText(), is("running"));
-
-            // the GET response must carry the full scenario definition, matching what was PUT, so a
-            // client/dashboard that did not start the run can still load it into an author form
-            JsonNode definition = runningBody.get("definition");
-            assertThat("definition is present", definition != null && definition.isObject(), is(true));
-            assertThat(definition.get("name").asText(), is("smoke"));
-            assertThat(definition.get("profile").get("stages").get(0).get("vus").asInt(), is(1));
-            assertThat(definition.get("profile").get("stages").get(0).get("durationMillis").asLong(), is(60000L));
-            assertThat(definition.get("steps").get(0).get("request").get("path").asText(), is("/health"));
+            rebuildHttpState(true);
+            put(scenarioJson("cap-1"));
+            put(scenarioJson("cap-2"));
+            assertThat(start("{ \"name\": \"cap-1\" }").getStatusCode(), is(200));
+            HttpResponse response = start("{ \"name\": \"cap-2\" }");
+            assertThat(response.getStatusCode(), is(400));
+            assertThat(body(response).get("error").asText(), containsString("maximum of 1"));
         } finally {
-            delete();
+            stop(null);
+            ConfigurationProperties.loadGenerationMaxConcurrentScenarios(original);
         }
     }
 
-    @Test
-    public void getDefinitionRoundTripsAsAValidPutBody() throws Exception {
-        put(scenarioJson());
-        try {
-            // the echoed definition is itself a valid LoadScenario body — re-submitting it as a PUT
-            // (re-starting the same scenario) must succeed and start a run with the same name
-            JsonNode definition = objectMapper.readTree(get().getBodyAsString()).get("definition");
-            assertThat("definition is present", definition != null && definition.isObject(), is(true));
+    // --- STOP ---
 
-            HttpResponse rePut = put(objectMapper.writeValueAsString(definition));
-            assertThat(rePut.getStatusCode(), is(200));
-            JsonNode rePutBody = objectMapper.readTree(rePut.getBodyAsString());
-            assertThat(rePutBody.get("status").asText(), is("started"));
-            assertThat(rePutBody.get("name").asText(), is("smoke"));
+    @Test
+    public void stopAllStopsRunningScenarios() throws Exception {
+        put(scenarioJson("stoppable"));
+        start("{ \"name\": \"stoppable\" }");
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("stoppable"), is(true));
+
+        HttpResponse response = stop(null);
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(response).get("status").asText(), is("stopped"));
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("stoppable"), is(false));
+        // remains registered (STOPPED) and re-startable
+        assertThat(getOne("stoppable").getStatusCode(), is(200));
+        assertThat(body(getOne("stoppable")).get("state").asText(), is("STOPPED"));
+    }
+
+    @Test
+    public void stoppedScenarioCanBeReStarted() throws Exception {
+        put(scenarioJson("restart"));
+        start("{ \"name\": \"restart\" }");
+        stop("{ \"names\": [ \"restart\" ] }");
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("restart"), is(false));
+
+        HttpResponse reStart = start("{ \"name\": \"restart\" }");
+        try {
+            assertThat(reStart.getStatusCode(), is(200));
+            assertThat(LoadScenarioOrchestrator.getInstance().isActive("restart"), is(true));
         } finally {
-            delete();
+            stop(null);
         }
     }
 
-    @Test
-    public void getEchoesDefinitionForTerminatedRun() throws Exception {
-        put(scenarioJson());
-        delete();
-        // even after the run is stopped, the most-recent definition is still echoed so it can be edited
-        JsonNode stoppedBody = objectMapper.readTree(get().getBodyAsString());
-        assertThat(stoppedBody.get("state").asText(), is("stopped"));
-        JsonNode definition = stoppedBody.get("definition");
-        assertThat("definition is present", definition != null && definition.isObject(), is(true));
-        assertThat(definition.get("name").asText(), is("smoke"));
-    }
+    // --- validation / auth ---
 
     @Test
     public void putReturns400ForMalformedBody() {
@@ -222,10 +366,10 @@ public class HttpStateLoadScenarioEndpointTest {
         ConfigurationProperties.loadGenerationMaxVirtualUsers(2);
         try {
             rebuildHttpState(true);
-            String body = "{ \"name\": \"big\", " +
+            String b = "{ \"name\": \"big\", " +
                 "\"profile\": { \"stages\": [ { \"type\": \"VU\", \"vus\": 100, \"durationMillis\": 1000 } ] }, " +
                 "\"steps\": [ { \"request\": { \"path\": \"/x\" } } ] }";
-            HttpResponse response = put(body);
+            HttpResponse response = put(b);
             assertThat(response.getStatusCode(), is(400));
             assertThat(response.getBodyAsString(), containsString("exceeding the maximum of 2"));
         } finally {
@@ -238,8 +382,19 @@ public class HttpStateLoadScenarioEndpointTest {
         AuthenticationHandler rejectingHandler = req -> false;
         httpState.setControlPlaneAuthenticationHandler(rejectingHandler);
 
-        HttpResponse response = put(scenarioJson());
+        HttpResponse response = put(scenarioJson("auth"));
         assertThat(response.getStatusCode(), is(401));
         assertThat(response.getBodyAsString(), containsString("Unauthorized for control plane"));
+    }
+
+    @Test
+    public void startDelayIsEchoedInListing() throws Exception {
+        String b = "{ \"name\": \"delayed\", \"startDelayMillis\": 2000, " +
+            "\"profile\": { \"stages\": [ { \"type\": \"VU\", \"vus\": 1, \"durationMillis\": 60000 } ] }, " +
+            "\"steps\": [ { \"request\": { \"path\": \"/health\", \"headers\": { \"Host\": [\"target\"] } } } ] }";
+        put(b);
+        JsonNode one = body(getOne("delayed"));
+        assertThat(one.get("startDelayMillis").asLong(), is(2000L));
+        assertThat(one.get("definition").get("startDelayMillis").asLong(), is(2000L));
     }
 }

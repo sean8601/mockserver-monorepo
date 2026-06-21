@@ -1,5 +1,5 @@
 meta {
-  name: start a load scenario
+  name: load (register) a load scenario into the registry
   type: http
   seq: 1
 }
@@ -19,6 +19,7 @@ body:json {
     "name": "checkout-load",
     "templateType": "VELOCITY",
     "maxRequests": 5000,
+    "startDelayMillis": 0,
     "profile": {
       "stages": [
         {
@@ -61,9 +62,9 @@ body:json {
 }
 
 docs {
-  Starts an API load scenario — an ordered list of templated request steps driven through a sequence of stages (a load profile), with per-iteration data variation. A stage either holds/ramps the number of concurrent virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second (RATE, open model), or pauses. It is a pure SLI producer: each completed request records a latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no verdict logic of its own. Off by default — returns 403 until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 5000 iterations/second, max 20 stages, max 50 steps, max 1h total duration, plus a live in-flight semaphore (200) and an RPS token bucket (500).
+  Loads (registers) an API load scenario into the named registry under its "name" (the unique registry key). Loading does NOT run the scenario — it is staged in the LOADED state, ready to be triggered by PUT /mockserver/loadScenario/start. Loading the same name replaces the prior definition. A scenario is an ordered list of templated request steps driven through a sequence of stages (a load profile): a stage holds/ramps virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second (RATE, open model), or pauses; an optional startDelayMillis defers the start after a trigger. Loading is allowed even when loadGenerationEnabled is false (no traffic is generated). Hard caps validated at load time: max 50 virtual users, max 5000 iterations/second, max 20 stages, max 50 steps, max 1h total duration.
   
-  the load scenario to start
+  the load scenario to load (register)
   
   Full API reference: https://www.mock-server.com/mock_server/mockserver_clients.html
 }

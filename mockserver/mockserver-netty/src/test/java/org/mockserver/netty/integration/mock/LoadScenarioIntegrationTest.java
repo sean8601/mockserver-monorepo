@@ -29,11 +29,12 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 /**
- * End-to-end coverage for API-driven load generation: a "driver" MockServer (with
- * {@code loadGenerationEnabled=true}) is told via {@code PUT /mockserver/loadScenario} to drive a
- * CONSTANT 5-VU/3s scenario whose single step forwards to a separate "target" MockServer. We poll
- * {@code GET /mockserver/loadScenario}, then assert that a meaningful number of requests landed on
- * the target and that the driver's status counters were populated.
+ * End-to-end coverage for the load-scenario registry control plane: a "driver" MockServer (with
+ * {@code loadGenerationEnabled=true}) is told via {@code PUT /mockserver/loadScenario} to LOAD
+ * (register) a CONSTANT 5-VU/3s scenario whose single step forwards to a separate "target"
+ * MockServer, then to TRIGGER it via {@code PUT /mockserver/loadScenario/start}. We poll
+ * {@code GET /mockserver/loadScenario/{name}}, then assert that a meaningful number of requests
+ * landed on the target and that the driver's status counters were populated.
  */
 public class LoadScenarioIntegrationTest {
 
@@ -82,15 +83,16 @@ public class LoadScenarioIntegrationTest {
 
     @After
     public void stopScenario() throws Exception {
-        controlPlane("DELETE", null);
+        send("PUT", "/mockserver/loadScenario/stop", "{ \"all\": true }");
+        send("DELETE", "/mockserver/loadScenario", null);
     }
 
-    private HttpResponse<String> controlPlane(String method, String body) throws Exception {
+    private HttpResponse<String> send(String method, String path, String body) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
-            .uri(URI.create("http://localhost:" + DRIVER_PORT + "/mockserver/loadScenario"))
+            .uri(URI.create("http://localhost:" + DRIVER_PORT + path))
             .timeout(Duration.ofSeconds(10));
         if ("PUT".equals(method)) {
-            builder.PUT(HttpRequest.BodyPublishers.ofString(body));
+            builder.PUT(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
         } else if ("GET".equals(method)) {
             builder.GET();
         } else {
@@ -100,7 +102,7 @@ public class LoadScenarioIntegrationTest {
     }
 
     @Test
-    public void drivesConstantLoadAtTargetAndPopulatesStatus() throws Exception {
+    public void loadsThenTriggersConstantLoadAtTargetAndPopulatesStatus() throws Exception {
         // given a CONSTANT 5-VU / 3s scenario whose step forwards to the target MockServer
         LoadScenario scenario = new LoadScenario()
             .withName("integration-constant")
@@ -113,21 +115,25 @@ public class LoadScenarioIntegrationTest {
                     .withHeader("Host", "localhost:" + TARGET_PORT)));
         String json = new LoadScenarioSerializer(new MockServerLogger()).serialize(scenario);
 
-        // when
-        HttpResponse<String> putResponse = controlPlane("PUT", json);
+        // when LOADED (registered, not run)
+        HttpResponse<String> putResponse = send("PUT", "/mockserver/loadScenario", json);
         assertThat(putResponse.statusCode(), is(200));
-        assertThat(OBJECT_MAPPER.readTree(putResponse.body()).get("status").asText(), is("started"));
+        assertThat(OBJECT_MAPPER.readTree(putResponse.body()).get("status").asText(), is("loaded"));
+        assertThat(OBJECT_MAPPER.readTree(putResponse.body()).get("state").asText(), is("LOADED"));
 
-        // poll GET until requests have landed (bounded wait, no fixed sleep loop beyond the cap)
+        // and then TRIGGERED to start
+        HttpResponse<String> startResponse = send("PUT", "/mockserver/loadScenario/start", "{ \"name\": \"integration-constant\" }");
+        assertThat(startResponse.statusCode(), is(200));
+        assertThat(OBJECT_MAPPER.readTree(startResponse.body()).get("status").asText(), is("started"));
+
+        // poll GET {name} until requests have landed (bounded wait)
         long deadline = System.currentTimeMillis() + 8_000L;
         long requestsSent = 0;
-        String state = "running";
         while (System.currentTimeMillis() < deadline) {
-            HttpResponse<String> getResponse = controlPlane("GET", null);
+            HttpResponse<String> getResponse = send("GET", "/mockserver/loadScenario/integration-constant", null);
             assertThat(getResponse.statusCode(), is(200));
             JsonNode status = OBJECT_MAPPER.readTree(getResponse.body());
-            state = status.get("state").asText();
-            requestsSent = status.get("requestsSent").asLong();
+            requestsSent = status.has("requestsSent") ? status.get("requestsSent").asLong() : 0;
             if (requestsSent >= 20) {
                 break;
             }
@@ -141,16 +147,16 @@ public class LoadScenarioIntegrationTest {
         targetClient.verify(request().withPath("/load/.*"),
             org.mockserver.verify.VerificationTimes.atLeast(15));
 
-        // and the status reports running/completed with succeeded counters populated
-        HttpResponse<String> finalStatus = controlPlane("GET", null);
+        // and the status reports RUNNING/COMPLETED with succeeded counters populated
+        HttpResponse<String> finalStatus = send("GET", "/mockserver/loadScenario/integration-constant", null);
         JsonNode finalStatusNode = OBJECT_MAPPER.readTree(finalStatus.body());
-        assertThat(finalStatusNode.get("state").asText(), anyOf(is("running"), is("completed")));
+        assertThat(finalStatusNode.get("state").asText(), anyOf(is("RUNNING"), is("COMPLETED")));
         assertThat(finalStatusNode.get("succeeded").asLong(), greaterThan(0L));
         assertThat(finalStatusNode.has("p50Millis"), is(true));
     }
 
     @Test
-    public void returns403WhenDisabled() throws Exception {
+    public void loadAllowedButStartReturns403WhenDisabled() throws Exception {
         ConfigurationProperties.loadGenerationEnabled(false);
         try {
             LoadScenario scenario = new LoadScenario()
@@ -159,8 +165,12 @@ public class LoadScenarioIntegrationTest {
                 .withSteps(new LoadStep().withRequest(request().withPath("/x")
                     .withSocketAddress("localhost", TARGET_PORT, org.mockserver.model.SocketAddress.Scheme.HTTP)));
             String json = new LoadScenarioSerializer(new MockServerLogger()).serialize(scenario);
-            HttpResponse<String> putResponse = controlPlane("PUT", json);
-            assertThat(putResponse.statusCode(), is(403));
+            // loading is allowed even when generation is disabled
+            HttpResponse<String> putResponse = send("PUT", "/mockserver/loadScenario", json);
+            assertThat(putResponse.statusCode(), is(200));
+            // but triggering a start is forbidden
+            HttpResponse<String> startResponse = send("PUT", "/mockserver/loadScenario/start", "{ \"name\": \"disabled\" }");
+            assertThat(startResponse.statusCode(), is(403));
         } finally {
             ConfigurationProperties.loadGenerationEnabled(true);
         }

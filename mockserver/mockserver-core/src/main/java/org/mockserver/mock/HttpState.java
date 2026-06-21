@@ -96,6 +96,7 @@ public class HttpState {
     private final StateBackend stateBackend;
     // ADV3: persisted, named library of reusable chaos experiment profiles
     private final org.mockserver.mock.action.http.ChaosProfileLibrary chaosProfileLibrary;
+    private final org.mockserver.mock.action.http.LoadScenarioRegistry loadScenarioRegistry;
     private final Configuration configuration;
     // Adds CORS headers to dashboard-facing control-plane responses (e.g. service
     // chaos) so the dashboard works when served from another origin (a dev server),
@@ -211,6 +212,10 @@ public class HttpState {
         // ADV3: persisted, named chaos-profile library backed by the state backend's
         // CRUD-entity store (survives reset; replicates across the fleet when clustered).
         this.chaosProfileLibrary = new org.mockserver.mock.action.http.ChaosProfileLibrary(stateBackend);
+        // Load Scenario Registry: persisted, named registry of load scenario definitions backed by the
+        // state backend's CRUD-entity store (survives reset; replicates across the fleet when clustered;
+        // preloadable at startup). Mirrors the saved chaos-profile library.
+        this.loadScenarioRegistry = new org.mockserver.mock.action.http.LoadScenarioRegistry(stateBackend);
         // G10 phase 1: obtain the expectation store via the pluggable factory (default = standard
         // in-memory RequestMatchers; an optional clustered backend can register an alternative).
         this.requestMatchers = ExpectationStoreFactory.create(configuration, mockServerLogger, scheduler, webSocketClientRegistry);
@@ -289,6 +294,9 @@ public class HttpState {
             });
         }
         CrossProtocolEventBus.getInstance().setScenarioManager(requestMatchers.getScenarioManager());
+        // Preload load scenario definitions from a JSON file into the registry (LOADED state, staged but
+        // not running). Mirrors the expectation initialization-from-file mechanism.
+        preloadLoadScenarios();
         this.memoryMonitoring = new MemoryMonitoring(configuration, this.mockServerLog, this.requestMatchers);
         if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(TRACE)) {
             mockServerLogger.logEvent(
@@ -2236,6 +2244,20 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario/start", "/loadScenario/start")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioStart(request)), true);
+                }
+                canHandle.complete(true);
+
+            } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario/stop", "/loadScenario/stop")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioStop(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -2718,6 +2740,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (loadScenarioName(request, "GET") != null) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioGetOne(loadScenarioName(request, "GET"))), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/serviceChaos", "/serviceChaos")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleServiceChaosGet()), true);
@@ -2876,7 +2904,13 @@ public class HttpState {
             }
             if (request.matches("DELETE", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
-                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioDelete()), true);
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioDeleteAll()), true);
+                }
+                return true;
+            }
+            if (loadScenarioName(request, "DELETE") != null) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioDeleteOne(loadScenarioName(request, "DELETE"))), true);
                 }
                 return true;
             }
@@ -3424,19 +3458,16 @@ public class HttpState {
 
     /**
      * Handle {@code PUT /mockserver/loadScenario}: deserialize the body into a
-     * {@link org.mockserver.load.LoadScenario} and start it. Returns 403 when
-     * {@code loadGenerationEnabled} is false (so MockServer never self-loads unless opted in),
-     * 200 with {@code {status:started,...}} on success, or 400 with {@code {error}} when the
+     * {@link org.mockserver.load.LoadScenario} and <em>load</em> (register) it into the registry under
+     * its {@code name}. Loading does NOT run the scenario — it is staged in the {@code LOADED} state,
+     * ready to be triggered by {@code PUT /mockserver/loadScenario/start}. Loading is allowed even when
+     * {@code loadGenerationEnabled} is false (no traffic is generated). Returns 200 with
+     * {@code {status:"loaded", name, state:"LOADED"}} on success, or 400 with {@code {error}} when the
      * scenario is invalid or exceeds a configured cap.
      */
     private HttpResponse handleLoadScenarioPut(HttpRequest request) {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
         try {
-            if (!configuration.loadGenerationEnabled()) {
-                return response().withStatusCode(FORBIDDEN.code())
-                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
-                        objectMapper.createObjectNode().put("error", "load generation not enabled (set loadGenerationEnabled=true)")), MediaType.JSON_UTF_8);
-            }
             String body = request.getBodyAsJsonOrXmlString();
             if (isBlank(body)) {
                 return loadScenarioError(objectMapper, "request body is required with a load scenario definition");
@@ -3445,24 +3476,31 @@ public class HttpState {
             org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
                 org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
             orchestrator.setConfiguration(configuration);
-            String error = orchestrator.start(scenario, null);
+            // Validate the definition (name, steps, profile, caps) before registering so a bad scenario
+            // fails at load time, not at trigger time.
+            String error = orchestrator.validate(scenario);
             if (error != null) {
                 return loadScenarioError(objectMapper, error);
             }
+            // Store the normalised definition (re-serialised so the registry round-trips the exact
+            // author shape, including startDelayMillis) keyed by name; loading the same name replaces.
+            com.fasterxml.jackson.databind.JsonNode definition =
+                objectMapper.readTree(getLoadScenarioSerializer().serialize(scenario));
+            loadScenarioRegistry.load(scenario.getName(), definition);
             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
                         .setLogLevel(Level.INFO)
                         .setHttpRequest(request)
-                        .setMessageFormat("started load scenario:{}")
+                        .setMessageFormat("loaded load scenario:{}")
                         .setArguments(scenario.getName())
                 );
             }
             com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
-            result.put("status", "started");
+            result.put("status", "loaded");
             result.put("name", scenario.getName());
-            result.put("steps", scenario.getSteps().size());
+            result.put("state", loadScenarioStateFor(scenario.getName()).name());
             return response().withStatusCode(OK.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
         } catch (IllegalArgumentException e) {
@@ -3472,77 +3510,372 @@ public class HttpState {
         }
     }
 
+    /**
+     * Handle {@code GET /mockserver/loadScenario}: list ALL registered scenarios, each with its
+     * lifecycle {@code state}, {@code startDelayMillis}, full {@code definition} and — when active or
+     * recently run — the live status fields.
+     */
     private HttpResponse handleLoadScenarioGet() {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
         try {
-            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
-                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
-            org.mockserver.mock.action.http.LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.getStatus();
             com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
-            if (status == null) {
-                result.put("state", "none");
-            } else {
-                result.put("name", status.name);
-                result.put("state", status.state);
-                result.put("elapsedMillis", status.elapsedMillis);
-                result.put("currentVus", status.currentVus);
-                if (status.stageIndex >= 0) {
-                    result.put("stageIndex", status.stageIndex);
-                }
-                if (status.stageType != null) {
-                    result.put("stageType", status.stageType);
-                    result.put("currentTarget", status.currentTarget);
-                }
-                result.put("requestsSent", status.requestsSent);
-                result.put("succeeded", status.succeeded);
-                result.put("failed", status.failed);
-                result.put("p50Millis", status.p50Millis);
-                result.put("p95Millis", status.p95Millis);
-                result.put("p99Millis", status.p99Millis);
-                result.put("runId", status.runId);
-                result.put("startedAt", status.startedAtEpochMillis);
-                if (status.endedAtEpochMillis != null) {
-                    result.put("endedAt", status.endedAtEpochMillis);
-                }
-                if (status.labels != null && !status.labels.isEmpty()) {
-                    com.fasterxml.jackson.databind.node.ObjectNode labelsNode = result.putObject("labels");
-                    status.labels.forEach(labelsNode::put);
-                }
-                if (status.scenario != null) {
-                    // Echo the full scenario definition so any client/dashboard can load it back into an
-                    // author form. Serialized via LoadScenarioSerializer and re-parsed as a JSON object so
-                    // the embedded `definition` is itself a valid LoadScenario PUT body (round-trips exactly).
-                    result.set("definition",
-                        objectMapper.readTree(getLoadScenarioSerializer().serialize(status.scenario)));
-                }
+            com.fasterxml.jackson.databind.node.ArrayNode scenarios = result.putArray("scenarios");
+            for (String name : loadScenarioRegistry.list()) {
+                scenarios.add(loadScenarioNode(objectMapper, name));
             }
             return response().withStatusCode(OK.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
         } catch (Exception e) {
             return response().withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"failed to get load scenario status\"}", MediaType.JSON_UTF_8);
+                .withBody("{\"error\":\"failed to list load scenarios\"}", MediaType.JSON_UTF_8);
         }
     }
 
-    private HttpResponse handleLoadScenarioDelete() {
+    /** Handle {@code GET /mockserver/loadScenario/{name}}: one scenario (definition + state + status), 404 if absent. */
+    private HttpResponse handleLoadScenarioGetOne(String name) {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
         try {
-            org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().stop();
+            if (!loadScenarioRegistry.contains(name)) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        objectMapper.createObjectNode().put("error", "no load scenario named '" + name + "'")), MediaType.JSON_UTF_8);
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                    loadScenarioNode(objectMapper, name)), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to get load scenario: " + e.getMessage());
+        }
+    }
+
+    /** Handle {@code DELETE /mockserver/loadScenario/{name}}: remove from the registry (stop it if running). */
+    private HttpResponse handleLoadScenarioDeleteOne(String name) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.stop(name);
+            orchestrator.evictTerminalSeries(name);
+            boolean removed = loadScenarioRegistry.delete(name);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", removed ? "deleted" : "absent");
+            result.put("name", name);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to delete load scenario: " + e.getMessage());
+        }
+    }
+
+    /** Handle {@code DELETE /mockserver/loadScenario}: clear the whole registry (stop all running). */
+    private HttpResponse handleLoadScenarioDeleteAll() {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.stopAll();
+            for (String name : loadScenarioRegistry.list()) {
+                orchestrator.evictTerminalSeries(name);
+            }
+            loadScenarioRegistry.clear();
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "cleared");
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to clear load scenarios: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle {@code PUT /mockserver/loadScenario/start}: trigger one or more registered scenarios to
+     * run. Body is {@code {"names":["a","b"]}} or {@code {"name":"a"}}. Requires
+     * {@code loadGenerationEnabled} (else 403); 404 if a name is not registered; 400 if it would exceed
+     * the concurrent-scenario cap. Each scenario honours its own {@code startDelayMillis}.
+     */
+    private HttpResponse handleLoadScenarioStart(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            if (!configuration.loadGenerationEnabled()) {
+                return response().withStatusCode(FORBIDDEN.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        objectMapper.createObjectNode().put("error", "load generation not enabled (set loadGenerationEnabled=true)")), MediaType.JSON_UTF_8);
+            }
+            java.util.List<String> names = parseLoadScenarioNames(objectMapper, request.getBodyAsJsonOrXmlString(), false);
+            if (names.isEmpty()) {
+                return loadScenarioError(objectMapper, "request body must specify 'name' or 'names' of registered scenario(s) to start");
+            }
+            // Validate all names are registered before starting any (all-or-nothing on the unknown-name
+            // check, so a typo does not partially start a batch).
+            for (String name : names) {
+                if (!loadScenarioRegistry.contains(name)) {
+                    return response().withStatusCode(NOT_FOUND.code())
+                        .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                            objectMapper.createObjectNode().put("error", "no load scenario named '" + name + "'")), MediaType.JSON_UTF_8);
+                }
+            }
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.setConfiguration(configuration);
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode started = result.putArray("started");
+            for (String name : names) {
+                org.mockserver.load.LoadScenario scenario =
+                    getLoadScenarioSerializer().deserialize(loadScenarioRegistry.get(name).get().toString());
+                String error = orchestrator.start(scenario, null);
+                if (error != null) {
+                    return loadScenarioError(objectMapper, error);
+                }
+                com.fasterxml.jackson.databind.node.ObjectNode entry = started.addObject();
+                entry.put("name", name);
+                entry.put("state", loadScenarioStateFor(name).name());
+            }
             if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
                 mockServerLogger.logEvent(
                     new LogEntry()
                         .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
                         .setLogLevel(Level.INFO)
-                        .setMessageFormat("stopped load scenario")
+                        .setHttpRequest(request)
+                        .setMessageFormat("started load scenario(s):{}")
+                        .setArguments(names)
                 );
             }
+            result.put("status", "started");
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return loadScenarioError(objectMapper, "invalid load scenario start request: " + e.getMessage());
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to start load scenario(s): " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle {@code PUT /mockserver/loadScenario/stop}: stop one or more running scenarios. Body is
+     * {@code {"names":[...]}}, {@code {"all":true}}, or an empty body (stop all running). Stopped
+     * scenarios stay registered (state {@code STOPPED}) and can be re-started.
+     */
+    private HttpResponse handleLoadScenarioStop(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            String body = request.getBodyAsJsonOrXmlString();
+            java.util.List<String> names = parseLoadScenarioNames(objectMapper, body, true);
             com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode stopped = result.putArray("stopped");
+            if (names == null) {
+                // 'all' or empty body: stop every running scenario.
+                for (String name : loadScenarioRegistry.list()) {
+                    if (orchestrator.isActive(name)) {
+                        orchestrator.stop(name);
+                        com.fasterxml.jackson.databind.node.ObjectNode entry = stopped.addObject();
+                        entry.put("name", name);
+                        entry.put("state", loadScenarioStateFor(name).name());
+                    }
+                }
+            } else {
+                for (String name : names) {
+                    orchestrator.stop(name);
+                    com.fasterxml.jackson.databind.node.ObjectNode entry = stopped.addObject();
+                    entry.put("name", name);
+                    entry.put("state", loadScenarioStateFor(name).name());
+                }
+            }
             result.put("status", "stopped");
             return response().withStatusCode(OK.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return loadScenarioError(objectMapper, "invalid load scenario stop request: " + e.getMessage());
         } catch (Exception e) {
-            return response().withStatusCode(BAD_REQUEST.code())
-                .withBody("{\"error\":\"failed to stop load scenario\"}", MediaType.JSON_UTF_8);
+            return loadScenarioError(objectMapper, "failed to stop load scenario(s): " + e.getMessage());
+        }
+    }
+
+    /**
+     * Parse the {@code names}/{@code name}/{@code all} body of a start/stop request. When
+     * {@code allowAll} and the body is empty or {@code {"all":true}}, returns {@code null} to signal
+     * "all". Otherwise returns the list of names (possibly empty).
+     */
+    private java.util.List<String> parseLoadScenarioNames(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String body, boolean allowAll) throws Exception {
+        if (isBlank(body)) {
+            return allowAll ? null : new java.util.ArrayList<>();
+        }
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(body);
+        if (allowAll && node.has("all") && node.get("all").asBoolean(false)) {
+            return null;
+        }
+        java.util.List<String> names = new java.util.ArrayList<>();
+        if (node.has("names") && node.get("names").isArray()) {
+            node.get("names").forEach(n -> {
+                if (n != null && n.isTextual() && !n.asText().isBlank()) {
+                    names.add(n.asText());
+                }
+            });
+        } else if (node.has("name") && node.get("name").isTextual()) {
+            names.add(node.get("name").asText());
+        }
+        if (allowAll && names.isEmpty()) {
+            return null;
+        }
+        return names;
+    }
+
+    /**
+     * Build the JSON node for a single registered scenario: name, lifecycle state, startDelayMillis,
+     * the full definition, and the live/terminal status fields when present.
+     */
+    private com.fasterxml.jackson.databind.node.ObjectNode loadScenarioNode(com.fasterxml.jackson.databind.ObjectMapper objectMapper, String name) throws Exception {
+        com.fasterxml.jackson.databind.node.ObjectNode node = objectMapper.createObjectNode();
+        node.put("name", name);
+        node.put("state", loadScenarioStateFor(name).name());
+        com.fasterxml.jackson.databind.JsonNode definition = loadScenarioRegistry.get(name)
+            .<com.fasterxml.jackson.databind.JsonNode>map(d -> d).orElse(null);
+        long startDelayMillis = definition != null && definition.has("startDelayMillis")
+            ? definition.get("startDelayMillis").asLong(0) : 0;
+        node.put("startDelayMillis", startDelayMillis);
+        if (definition != null) {
+            node.set("definition", definition);
+        }
+        org.mockserver.mock.action.http.LoadScenarioOrchestrator.LoadScenarioStatus status =
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().statusFor(name);
+        if (status != null) {
+            node.put("elapsedMillis", status.elapsedMillis);
+            node.put("currentVus", status.currentVus);
+            if (status.stageIndex >= 0) {
+                node.put("stageIndex", status.stageIndex);
+            }
+            if (status.stageType != null) {
+                node.put("stageType", status.stageType);
+                node.put("currentTarget", status.currentTarget);
+            }
+            node.put("requestsSent", status.requestsSent);
+            node.put("succeeded", status.succeeded);
+            node.put("failed", status.failed);
+            node.put("p50Millis", status.p50Millis);
+            node.put("p95Millis", status.p95Millis);
+            node.put("p99Millis", status.p99Millis);
+            node.put("runId", status.runId);
+            node.put("startedAt", status.startedAtEpochMillis);
+            if (status.endedAtEpochMillis != null) {
+                node.put("endedAt", status.endedAtEpochMillis);
+            }
+            if (status.labels != null && !status.labels.isEmpty()) {
+                com.fasterxml.jackson.databind.node.ObjectNode labelsNode = node.putObject("labels");
+                status.labels.forEach(labelsNode::put);
+            }
+        }
+        return node;
+    }
+
+    /**
+     * Resolve the lifecycle state of a registered scenario: the live run's state when active or its
+     * retained terminal state when recently run, else {@code LOADED} (registered, idle).
+     */
+    private org.mockserver.load.LoadScenarioState loadScenarioStateFor(String name) {
+        org.mockserver.mock.action.http.LoadScenarioOrchestrator.LoadScenarioStatus status =
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().statusFor(name);
+        return status != null ? status.state : org.mockserver.load.LoadScenarioState.LOADED;
+    }
+
+    /**
+     * If {@code request} is the given {@code method} on a path {@code /mockserver/loadScenario/{name}}
+     * (with or without the prefix) where {name} is a single non-reserved segment, returns the decoded
+     * {name}; otherwise {@code null}. {@code start} and {@code stop} are reserved sub-paths and never
+     * matched as a name.
+     */
+    private String loadScenarioName(HttpRequest request, String method) {
+        if (!request.getMethod().getValue().equals(method)) {
+            return null;
+        }
+        String prefix = "/loadScenario/";
+        String path = request.getPath().getValue();
+        String rest = null;
+        if (path.startsWith(PATH_PREFIX + prefix)) {
+            rest = path.substring((PATH_PREFIX + prefix).length());
+        } else if (path.startsWith(prefix)) {
+            rest = path.substring(prefix.length());
+        }
+        if (rest == null || rest.isEmpty() || rest.contains("/")) {
+            return null;
+        }
+        String decoded;
+        try {
+            decoded = java.net.URLDecoder.decode(rest, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            decoded = rest;
+        }
+        if ("start".equals(decoded) || "stop".equals(decoded)) {
+            return null;
+        }
+        return decoded;
+    }
+
+    /**
+     * Preload load scenario definitions from {@code loadScenarioInitializationJsonPath} into the
+     * registry (LOADED state) at startup. Mirrors the expectation initialization-from-file mechanism.
+     * Fail-soft: a malformed file logs a WARN and is skipped rather than aborting startup.
+     */
+    private void preloadLoadScenarios() {
+        String path = configuration.loadScenarioInitializationJsonPath();
+        if (isBlank(path)) {
+            return;
+        }
+        try {
+            String json = org.mockserver.file.FileReader.readFileFromClassPathOrPath(path);
+            if (isBlank(json)) {
+                return;
+            }
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(json);
+            java.util.List<com.fasterxml.jackson.databind.JsonNode> definitions = new java.util.ArrayList<>();
+            if (root.isArray()) {
+                root.forEach(definitions::add);
+            } else if (root.isObject()) {
+                definitions.add(root);
+            }
+            org.mockserver.serialization.LoadScenarioSerializer serializer = getLoadScenarioSerializer();
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.setConfiguration(configuration);
+            int loaded = 0;
+            for (com.fasterxml.jackson.databind.JsonNode def : definitions) {
+                try {
+                    org.mockserver.load.LoadScenario scenario = serializer.deserialize(def.toString());
+                    String error = orchestrator.validate(scenario);
+                    if (error != null) {
+                        if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                            mockServerLogger.logEvent(new LogEntry()
+                                .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION).setLogLevel(Level.WARN)
+                                .setMessageFormat("skipping invalid preloaded load scenario '" + scenario.getName() + "': " + error));
+                        }
+                        continue;
+                    }
+                    com.fasterxml.jackson.databind.JsonNode normalised = objectMapper.readTree(serializer.serialize(scenario));
+                    loadScenarioRegistry.load(scenario.getName(), normalised);
+                    loaded++;
+                } catch (Exception inner) {
+                    if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                        mockServerLogger.logEvent(new LogEntry()
+                            .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION).setLogLevel(Level.WARN)
+                            .setMessageFormat("exception while preloading a load scenario, skipping it")
+                            .setThrowable(inner));
+                    }
+                }
+            }
+            if (loaded > 0 && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(new LogEntry()
+                    .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION).setLogLevel(Level.INFO)
+                    .setMessageFormat("preloaded " + loaded + " load scenario(s) from:{}")
+                    .setArguments(path));
+            }
+        } catch (Throwable throwable) {
+            if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                mockServerLogger.logEvent(new LogEntry()
+                    .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION).setLogLevel(Level.WARN)
+                    .setMessageFormat("exception while preloading load scenarios, ignoring file:{}")
+                    .setArguments(path).setThrowable(throwable));
+            }
         }
     }
 

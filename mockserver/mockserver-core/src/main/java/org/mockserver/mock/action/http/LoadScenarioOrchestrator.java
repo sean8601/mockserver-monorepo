@@ -5,6 +5,7 @@ import org.mockserver.load.IterationContext;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
 import org.mockserver.load.LoadStage;
+import org.mockserver.load.LoadScenarioState;
 import org.mockserver.load.LoadStageType;
 import org.mockserver.load.LoadStep;
 import org.mockserver.metrics.MetricLabels;
@@ -23,12 +24,14 @@ import org.mockserver.time.TimeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -37,7 +40,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 
@@ -97,16 +99,28 @@ public class LoadScenarioOrchestrator {
 
     private final LongSupplier clock;
     private final ScheduledExecutorService scheduler;
-    private final AtomicReference<RunningScenario> current = new AtomicReference<>(null);
+    /**
+     * Active runs keyed by scenario name. A run is "active" while it is PENDING (waiting out its
+     * start delay) or RUNNING. The single scheduler thread ticks every active run each control tick.
+     * Re-triggering a name replaces that name's run (and evicts the prior run's metric series).
+     */
+    private final Map<String, RunningScenario> runs = new ConcurrentHashMap<>();
+    /**
+     * The terminal (stopped/completed) status of the most recent run for each scenario name, retained
+     * for status queries after the run leaves {@link #runs}. Cleared on {@link #reset()} and when the
+     * scenario is removed from the registry.
+     */
+    private final Map<String, LoadScenarioStatus> terminalStatuses = new ConcurrentHashMap<>();
+    /** Name of the most-recently-triggered run, backing the single-run convenience accessors. */
+    private volatile String lastRunName;
     /** Most recently started run, retained for test assertions on slot accounting after termination. */
     private volatile RunningScenario lastRun;
     /**
-     * The {@code run_id} of the previous (now-completed or replaced) run, whose durable
-     * {@code mock_server_load_*} series are retained until the next run starts and then evicted. Bounds
-     * the accumulation of per-run series to at most one completed run (see {@link Metrics#evictLoadRun}).
+     * The single shared scheduled control tick that drives ALL active runs. Created lazily on the
+     * first trigger and cancelled when the last run terminates so an idle orchestrator schedules no
+     * work (the single-run model previously scheduled one tick per run).
      */
-    private volatile String previousRunId;
-    private volatile LoadScenarioStatus lastTerminatedStatus;
+    private volatile ScheduledFuture<?> sharedTick;
     /** Sender installed by the runtime; null in unit tests until start() supplies one. */
     private volatile Function<HttpRequest, CompletableFuture<HttpResponse>> installedSender;
     /** Configuration used to read caps and to build the template engines for rendering. */
@@ -138,9 +152,12 @@ public class LoadScenarioOrchestrator {
     }
 
     /**
-     * Start a scenario. Returns a validation error message if the definition is invalid or the
-     * caps are exceeded, or {@code null} on success. Only one scenario may run at a time; starting
-     * a new one stops the previous one. When {@code sender} is null the installed runtime sender is
+     * Trigger a scenario to start (run it). Returns a validation error message if the definition is
+     * invalid, the caps are exceeded, or the concurrent-scenario cap would be exceeded; or
+     * {@code null} on success. Each trigger gets a fresh {@code run_id}. Re-triggering a name that is
+     * already active replaces that run (and evicts its prior metric series). A scenario with
+     * {@code startDelayMillis > 0} enters {@code PENDING} and begins after the delay; otherwise it
+     * begins {@code RUNNING} immediately. When {@code sender} is null the installed runtime sender is
      * used; unit tests pass a deterministic synchronous sender here.
      */
     public String start(LoadScenario scenario, Function<HttpRequest, CompletableFuture<HttpResponse>> sender) {
@@ -152,91 +169,212 @@ public class LoadScenarioOrchestrator {
         if (effectiveSender == null) {
             return "no load sender installed (server runtime not wired)";
         }
-
-        stopInternal("stopped");
-
-        long startedAt = clock.getAsLong();
-        RunningScenario running = new RunningScenario(scenario, effectiveSender, startedAt);
-        lastRun = running;
-        current.set(running);
-
-        // Bound durable-metric accumulation: evict the PREVIOUS run's mock_server_load_* series now
-        // that a new run is starting. The just-completed (or replaced) run's final totals stayed
-        // scrapeable until this point; from here only the new run's series accumulate, so at most one
-        // completed run's series are ever retained. Roll previous forward to the new run.
-        if (previousRunId != null && !previousRunId.equals(running.runId)) {
-            Metrics.evictLoadRun(previousRunId);
+        // Concurrency cap: count active (PENDING+RUNNING) runs. Re-triggering an already-active name
+        // replaces it (no net increase), so it is exempt from the cap check.
+        int maxConcurrent = Math.max(1, configuration.loadGenerationMaxConcurrentScenarios());
+        if (!runs.containsKey(scenario.getName()) && runs.size() >= maxConcurrent) {
+            return "starting '" + scenario.getName() + "' would exceed the maximum of " + maxConcurrent
+                + " concurrently active load scenarios";
         }
-        previousRunId = running.runId;
 
-        // Install live readers for the active-VU and in-flight load gauges (scrape-time, mirrors the
-        // chaos GaugeWithCallback). A run that has ended reports nothing because current is cleared.
-        Metrics.setLoadGaugeReaders(
-            () -> {
-                RunningScenario run = current.get();
-                if (run == null) {
-                    return Collections.emptyMap();
-                }
-                return Collections.singletonMap(run.gaugeKey, Math.max(0, run.activeVUs.get()));
-            },
-            () -> {
-                RunningScenario run = current.get();
-                if (run == null) {
-                    return Collections.emptyMap();
-                }
-                return Collections.singletonMap(run.gaugeKey, Math.max(0, run.inFlightCount.get()));
-            });
+        long now = clock.getAsLong();
+        RunningScenario running = new RunningScenario(scenario, effectiveSender, now);
+        lastRun = running;
+        lastRunName = scenario.getName();
 
-        // Schedule the periodic control tick on the scheduler thread (no I/O on that thread).
-        ScheduledFuture<?> tick = scheduler.scheduleAtFixedRate(
-            () -> tick(running), CONTROL_TICK_MILLIS, CONTROL_TICK_MILLIS, TimeUnit.MILLISECONDS);
-        running.controlTick = tick;
+        // Replace any existing active run for this name: stop it and evict its series so series
+        // accumulation stays bounded to one run per (scenario,run_id).
+        RunningScenario previous = runs.put(scenario.getName(), running);
+        if (previous != null) {
+            previous.stopped.set(true);
+            Metrics.evictLoadRun(previous.runId);
+            terminalStatuses.remove(scenario.getName());
+        } else {
+            // No active run for this name, but a prior run may have completed/stopped and its series
+            // retained; evict it now that a new run for the same name starts (bounds to <=1 prior run).
+            LoadScenarioStatus prior = terminalStatuses.remove(scenario.getName());
+            if (prior != null && prior.runId != null && !prior.runId.equals(running.runId)) {
+                Metrics.evictLoadRun(prior.runId);
+            }
+        }
 
-        LOG.info("load scenario '{}' started with {} step(s), {} stage(s)",
-            scenario.getName(), scenario.getSteps().size(), scenario.getProfile().getStages().size());
+        installGaugeReaders();
+        ensureSharedTick();
 
-        // Run an immediate first tick so the first stage starts without waiting a full control interval.
+        if (scenario.getStartDelayMillis() > 0) {
+            running.state = LoadScenarioState.PENDING;
+            LOG.info("load scenario '{}' pending start delay of {}ms ({} step(s), {} stage(s))",
+                scenario.getName(), scenario.getStartDelayMillis(), scenario.getSteps().size(),
+                scenario.getProfile().getStages().size());
+        } else {
+            running.beginRunning(now);
+            LOG.info("load scenario '{}' started with {} step(s), {} stage(s)",
+                scenario.getName(), scenario.getSteps().size(), scenario.getProfile().getStages().size());
+        }
+
+        // Run an immediate first tick so the first stage starts (or the pending-delay is evaluated)
+        // without waiting a full control interval.
         tick(running);
         return null;
     }
 
-    /** Stop the current scenario. Idempotent. */
+    /**
+     * Stop the most-recently-triggered run (single-run convenience). Idempotent. For multi-run use
+     * {@link #stop(String)} or {@link #stopAll()}.
+     */
     public void stop() {
-        stopInternal("stopped");
+        if (lastRunName != null) {
+            stop(lastRunName);
+        }
     }
 
-    /** Reset: stop any running scenario and clear terminal status. Called on server reset. */
+    /** Stop a specific scenario's active run by name. Idempotent; no-op if not active. */
+    public void stop(String name) {
+        RunningScenario run = runs.remove(name);
+        if (run != null) {
+            terminate(run, LoadScenarioState.STOPPED);
+        }
+    }
+
+    /** Stop every active run. */
+    public void stopAll() {
+        for (String name : new ArrayList<>(runs.keySet())) {
+            stop(name);
+        }
+    }
+
+    /** Reset: stop all active runs and clear all terminal status. Called on server reset. */
     public void reset() {
-        stopInternal("stopped");
-        lastTerminatedStatus = null;
+        stopAll();
+        terminalStatuses.clear();
+        lastRunName = null;
         lastRun = null;
-        previousRunId = null;
     }
 
     /**
-     * Status of the current scenario, or the last terminated one, or null if none has ever run.
+     * Status of the most-recently-triggered run (active or its retained terminal status), or null if
+     * none has ever run. Single-run convenience; see {@link #getStatuses()} for all runs.
      */
     public LoadScenarioStatus getStatus() {
-        RunningScenario run = current.get();
-        if (run == null) {
-            return lastTerminatedStatus;
+        if (lastRunName == null) {
+            return null;
         }
-        return run.snapshot("running", clock.getAsLong());
+        return statusFor(lastRunName);
+    }
+
+    /** Status for a specific scenario name (active run snapshot or retained terminal status), or null. */
+    public LoadScenarioStatus statusFor(String name) {
+        RunningScenario run = runs.get(name);
+        if (run != null) {
+            return run.snapshot(run.state, clock.getAsLong());
+        }
+        return terminalStatuses.get(name);
+    }
+
+    /** True if the named scenario currently has an active (PENDING or RUNNING) run. */
+    public boolean isActive(String name) {
+        return runs.containsKey(name);
+    }
+
+    /**
+     * Snapshots of every currently-active run (PENDING/RUNNING), keyed by scenario name. The registry
+     * (not the orchestrator) is the source of truth for the full scenario list; this only reports the
+     * live ones. Includes the retained terminal status for names with no active run is the caller's
+     * job via {@link #statusFor(String)}.
+     */
+    public Map<String, LoadScenarioStatus> getStatuses() {
+        Map<String, LoadScenarioStatus> result = new LinkedHashMap<>();
+        long now = clock.getAsLong();
+        runs.forEach((name, run) -> result.put(name, run.snapshot(run.state, now)));
+        return result;
     }
 
     // -- Internal --
 
-    private void stopInternal(String terminalState) {
-        RunningScenario run = current.getAndSet(null);
-        if (run != null) {
-            run.stopped.set(true);
-            ScheduledFuture<?> tick = run.controlTick;
-            if (tick != null) {
-                tick.cancel(false);
-            }
-            lastTerminatedStatus = run.snapshot(terminalState, clock.getAsLong());
+    /**
+     * Install the active-VU and in-flight gauge readers. Each reader returns one entry per active run
+     * (PENDING runs report zero), so the gauges emit one series per (scenario, run_id). Installed once
+     * the first run starts; cleared when the last run terminates.
+     */
+    private void installGaugeReaders() {
+        Metrics.setLoadGaugeReaders(
+            () -> {
+                if (runs.isEmpty()) {
+                    return Collections.emptyMap();
+                }
+                Map<Metrics.LoadGaugeKey, Integer> out = new LinkedHashMap<>();
+                runs.forEach((name, run) -> out.put(run.gaugeKey, Math.max(0, run.activeVUs.get())));
+                return out;
+            },
+            () -> {
+                if (runs.isEmpty()) {
+                    return Collections.emptyMap();
+                }
+                Map<Metrics.LoadGaugeKey, Integer> out = new LinkedHashMap<>();
+                runs.forEach((name, run) -> out.put(run.gaugeKey, Math.max(0, run.inFlightCount.get())));
+                return out;
+            });
+    }
+
+    /** Lazily start the single shared control tick that drives all active runs. */
+    private synchronized void ensureSharedTick() {
+        if (sharedTick == null) {
+            sharedTick = scheduler.scheduleAtFixedRate(
+                this::tickAll, CONTROL_TICK_MILLIS, CONTROL_TICK_MILLIS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /** Cancel the shared tick once no runs remain active. */
+    private synchronized void stopSharedTickIfIdle() {
+        if (runs.isEmpty() && sharedTick != null) {
+            sharedTick.cancel(false);
+            sharedTick = null;
+        }
+    }
+
+    /** The shared control tick: advance every active run. Runs on the single scheduler thread. */
+    private void tickAll() {
+        for (RunningScenario run : new ArrayList<>(runs.values())) {
+            tick(run);
+        }
+    }
+
+    /**
+     * True while {@code run} is still the registry's active run for its scenario name. A run that was
+     * stopped, completed, or replaced by a re-trigger is no longer current, so late-draining callbacks
+     * and ticks must not act on it (this is the multi-run replacement for the old single-run guard).
+     */
+    private boolean isCurrent(RunningScenario run) {
+        return runs.get(run.scenario.getName()) == run;
+    }
+
+    /**
+     * Terminate a run (already removed from {@link #runs}): mark it stopped, capture its terminal
+     * status, clear gauge readers if it was the last run. The run's durable metric series are RETAINED
+     * (scrapeable) until the scenario is next triggered or removed from the registry.
+     */
+    private void terminate(RunningScenario run, LoadScenarioState terminalState) {
+        run.stopped.set(true);
+        LoadScenarioStatus status = run.snapshot(terminalState, clock.getAsLong());
+        terminalStatuses.put(run.scenario.getName(), status);
+        if (runs.isEmpty()) {
             Metrics.setLoadGaugeReaders(null, null);
-            LOG.info("load scenario '{}' {} ({} requests sent)", run.scenario.getName(), terminalState, run.requestsSent.get());
+        } else {
+            installGaugeReaders();
+        }
+        stopSharedTickIfIdle();
+        LOG.info("load scenario '{}' {} ({} requests sent)",
+            run.scenario.getName(), terminalState.name().toLowerCase(), run.requestsSent.get());
+    }
+
+    /**
+     * Evict the retained metric series for a scenario removed from the registry (its run is no longer
+     * referenceable). Called by HttpState when a DELETE removes a registered scenario.
+     */
+    public void evictTerminalSeries(String name) {
+        LoadScenarioStatus status = terminalStatuses.remove(name);
+        if (status != null && status.runId != null) {
+            Metrics.evictLoadRun(status.runId);
         }
     }
 
@@ -246,14 +384,26 @@ public class LoadScenarioOrchestrator {
      * reached). Runs on the scheduler thread.
      */
     private void tick(RunningScenario run) {
-        if (run.stopped.get() || current.get() != run) {
+        if (run.stopped.get() || !isCurrent(run)) {
             return;
+        }
+        long now = clock.getAsLong();
+        // PENDING: wait out the start delay (measured against the orchestrator clock so the injected
+        // test clock works). Fire NO load until the delay elapses, then transition to RUNNING and start
+        // the stage clock from that moment.
+        if (run.state == LoadScenarioState.PENDING) {
+            if (now - run.triggeredAt < run.scenario.getStartDelayMillis()) {
+                return;
+            }
+            run.beginRunning(now);
+            LOG.info("load scenario '{}' start delay elapsed, now running ({} step(s), {} stage(s))",
+                run.scenario.getName(), run.scenario.getSteps().size(),
+                run.scenario.getProfile().getStages().size());
         }
         if (run.maxRequestsReached()) {
             completeInternal(run);
             return;
         }
-        long now = clock.getAsLong();
         long elapsed = now - run.startedAt;
 
         // Locate the active stage for the elapsed time. The run ends once elapsed passes the sum of all
@@ -387,15 +537,10 @@ public class LoadScenarioOrchestrator {
     }
 
     private void completeInternal(RunningScenario run) {
-        if (current.compareAndSet(run, null)) {
-            run.stopped.set(true);
-            ScheduledFuture<?> tick = run.controlTick;
-            if (tick != null) {
-                tick.cancel(false);
-            }
-            lastTerminatedStatus = run.snapshot("completed", clock.getAsLong());
-            Metrics.setLoadGaugeReaders(null, null);
-            LOG.info("load scenario '{}' completed ({} requests sent)", run.scenario.getName(), run.requestsSent.get());
+        // Atomically de-register this run iff it is still the current run for its name (a concurrent
+        // re-trigger may have already replaced it). Only the winner records the terminal status.
+        if (runs.remove(run.scenario.getName(), run)) {
+            terminate(run, LoadScenarioState.COMPLETED);
         }
     }
 
@@ -406,7 +551,7 @@ public class LoadScenarioOrchestrator {
      * dedicated thread per VU; no blocking.
      */
     private void launchIteration(RunningScenario run, int vuId, long vuIteration, boolean looping) {
-        if (run.stopped.get() || current.get() != run) {
+        if (run.stopped.get() || !isCurrent(run)) {
             endVu(run);
             return;
         }
@@ -447,7 +592,7 @@ public class LoadScenarioOrchestrator {
     }
 
     private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping) {
-        if (run.stopped.get() || current.get() != run) {
+        if (run.stopped.get() || !isCurrent(run)) {
             endVu(run);
             return;
         }
@@ -570,7 +715,7 @@ public class LoadScenarioOrchestrator {
     }
 
     private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping) {
-        if (run.stopped.get() || current.get() != run) {
+        if (run.stopped.get() || !isCurrent(run)) {
             // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
             // genuine loop-exit point, so release the slot exactly once.
             endVu(run);
@@ -597,7 +742,7 @@ public class LoadScenarioOrchestrator {
         // New first-class load family: scenario/run/step/route/method/status-class dimensioned. Only
         // emit while this run is still the current run: a run replaced by a new PUT has already had its
         // load series evicted, so a late-draining in-flight request must NOT resurrect them.
-        if (current.get() == run) {
+        if (isCurrent(run)) {
             Metrics.observeLoadRequest(run.scenario.getName(), run.runId, stepLabel, route, method, statusCode,
                 latencySeconds, requestBytes, responseBytes, traceId, customLabels);
             if (error && errorKind != null) {
@@ -653,14 +798,11 @@ public class LoadScenarioOrchestrator {
     }
 
     /**
-     * Force one control tick immediately (test hook), bypassing the scheduler interval, so progression
-     * can be asserted deterministically. No-op when no scenario is running.
+     * Force one control tick immediately on every active run (test hook), bypassing the scheduler
+     * interval, so progression can be asserted deterministically. No-op when no scenario is active.
      */
     void tickNow() {
-        RunningScenario run = current.get();
-        if (run != null) {
-            tick(run);
-        }
+        tickAll();
     }
 
     /**
@@ -676,7 +818,7 @@ public class LoadScenarioOrchestrator {
      * running.
      */
     int activeVuCount() {
-        RunningScenario run = current.get();
+        RunningScenario run = lastRunName != null ? runs.get(lastRunName) : null;
         if (run != null) {
             return run.activeVUs.get();
         }
@@ -692,7 +834,7 @@ public class LoadScenarioOrchestrator {
         return run != null ? run.activeVUs.get() : 0;
     }
 
-    String validate(LoadScenario scenario) {
+    public String validate(LoadScenario scenario) {
         if (scenario == null) {
             return "'loadScenario' is required";
         }
@@ -800,8 +942,17 @@ public class LoadScenarioOrchestrator {
     private final class RunningScenario {
         final LoadScenario scenario;
         final Function<HttpRequest, CompletableFuture<HttpResponse>> sender;
-        final long startedAt;
-        final long startedAtEpoch = TimeService.currentTimeMillis();
+        /** Orchestrator-clock time this run was triggered (used to time out a PENDING start delay). */
+        final long triggeredAt;
+        /**
+         * Orchestrator-clock time the stage clock started (the moment the run entered RUNNING). Equal to
+         * {@code triggeredAt} when there is no start delay; later for a delayed scenario. Mutable because
+         * a PENDING run's stage clock starts only once the delay elapses.
+         */
+        volatile long startedAt;
+        /** Lifecycle state of this run: PENDING (waiting out the start delay) or RUNNING. */
+        volatile LoadScenarioState state = LoadScenarioState.LOADED;
+        long startedAtEpoch = TimeService.currentTimeMillis();
         /** Stable per-run id (UUID) used as the {@code run_id} metric label and exposed in the status DTO. */
         final String runId = UUID.randomUUID().toString();
         final Metrics.LoadGaugeKey gaugeKey;
@@ -825,7 +976,6 @@ public class LoadScenarioOrchestrator {
         final AtomicLong failed = new AtomicLong(0);
         final Semaphore inFlight;
         final int maxRps;
-        volatile ScheduledFuture<?> controlTick;
 
         // Arrival-rate (RATE stage) deficit accounting; only touched on the single scheduler thread.
         double rateDeficit;
@@ -845,14 +995,27 @@ public class LoadScenarioOrchestrator {
         private volatile TemplateEngine velocity;
         private volatile TemplateEngine mustache;
 
-        RunningScenario(LoadScenario scenario, Function<HttpRequest, CompletableFuture<HttpResponse>> sender, long startedAt) {
+        RunningScenario(LoadScenario scenario, Function<HttpRequest, CompletableFuture<HttpResponse>> sender, long triggeredAt) {
             this.scenario = scenario;
             this.sender = sender;
-            this.startedAt = startedAt;
+            this.triggeredAt = triggeredAt;
+            this.startedAt = triggeredAt;
             this.gaugeKey = new Metrics.LoadGaugeKey(scenario.getName(), runId);
             this.inFlight = new Semaphore(Math.max(1, configuration.loadGenerationMaxInFlightRequests()));
             this.maxRps = Math.max(1, configuration.loadGenerationMaxRequestsPerSecond());
-            this.rpsWindowStart = startedAt;
+            this.rpsWindowStart = triggeredAt;
+        }
+
+        /**
+         * Transition this run to RUNNING and (re)anchor its stage clock and RPS window to {@code now}.
+         * Called immediately on trigger when there is no start delay, or by the control tick once a
+         * PENDING run's start delay elapses, so the stage progression always measures from t=0.
+         */
+        void beginRunning(long now) {
+            this.startedAt = now;
+            this.rpsWindowStart = now;
+            this.startedAtEpoch = TimeService.currentTimeMillis();
+            this.state = LoadScenarioState.RUNNING;
         }
 
         boolean maxRequestsReached() {
@@ -949,9 +1112,11 @@ public class LoadScenarioOrchestrator {
             return velocity;
         }
 
-        LoadScenarioStatus snapshot(String state, long now) {
-            long elapsed = now - startedAt;
-            boolean running = "running".equals(state);
+        LoadScenarioStatus snapshot(LoadScenarioState state, long now) {
+            boolean running = state == LoadScenarioState.RUNNING;
+            boolean terminal = state == LoadScenarioState.COMPLETED || state == LoadScenarioState.STOPPED;
+            // PENDING reports the trigger time as the reference; RUNNING/terminal report the stage clock.
+            long elapsed = running || terminal ? now - startedAt : 0;
             int currentVus = running ? activeVUs.get() : 0;
             int idx = stageIndex.get();
             List<LoadStage> stages = scenario.getProfile().getStages();
@@ -973,14 +1138,15 @@ public class LoadScenarioOrchestrator {
                 Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 99),
                 runId,
                 startedAtEpoch,
-                running ? null : now,
+                terminal ? now : null,
                 scenario.getLabels() != null && !scenario.getLabels().isEmpty()
                     ? Collections.unmodifiableMap(new LinkedHashMap<>(scenario.getLabels()))
                     : null,
                 scenario,
                 running ? idx : -1,
                 running && stageType != null ? stageType.name() : null,
-                currentTarget
+                currentTarget,
+                scenario.getStartDelayMillis()
             );
         }
     }
@@ -988,7 +1154,8 @@ public class LoadScenarioOrchestrator {
     /** Immutable snapshot of a load scenario's progress, serialized by the GET endpoint. */
     public static final class LoadScenarioStatus {
         public final String name;
-        public final String state;
+        /** Lifecycle state of this run (PENDING/RUNNING/COMPLETED/STOPPED). */
+        public final LoadScenarioState state;
         public final long elapsedMillis;
         public final int currentVus;
         public final long requestsSent;
@@ -1017,13 +1184,16 @@ public class LoadScenarioOrchestrator {
          * (iterations/second) for a RATE stage, {@code 0} for PAUSE or when not running.
          */
         public final double currentTarget;
+        /** The configured start delay in milliseconds (0 when none). */
+        public final long startDelayMillis;
 
-        public LoadScenarioStatus(String name, String state, long elapsedMillis, int currentVus,
+        public LoadScenarioStatus(String name, LoadScenarioState state, long elapsedMillis, int currentVus,
                                   long requestsSent, long succeeded, long failed,
                                   long p50Millis, long p95Millis, long p99Millis,
                                   String runId, long startedAtEpochMillis, Long endedAtEpochMillis,
                                   Map<String, String> labels, LoadScenario scenario,
-                                  int stageIndex, String stageType, double currentTarget) {
+                                  int stageIndex, String stageType, double currentTarget,
+                                  long startDelayMillis) {
             this.name = name;
             this.state = state;
             this.elapsedMillis = elapsedMillis;
@@ -1042,6 +1212,7 @@ public class LoadScenarioOrchestrator {
             this.stageIndex = stageIndex;
             this.stageType = stageType;
             this.currentTarget = currentTarget;
+            this.startDelayMillis = startDelayMillis;
         }
     }
 }

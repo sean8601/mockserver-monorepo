@@ -20,6 +20,7 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private LoadProfileDTO profile;
     private HttpTemplate.TemplateType templateType;
     private Integer maxRequests;
+    private Long startDelayMillis;
     private Map<String, String> labels;
 
     public LoadScenarioDTO(LoadScenario scenario) {
@@ -35,6 +36,9 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             }
             templateType = scenario.getTemplateType();
             maxRequests = scenario.getMaxRequests();
+            if (scenario.getStartDelayMillis() > 0) {
+                startDelayMillis = scenario.getStartDelayMillis();
+            }
             if (scenario.getLabels() != null && !scenario.getLabels().isEmpty()) {
                 labels = new LinkedHashMap<>(scenario.getLabels());
             }
@@ -56,7 +60,8 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withSteps(builtSteps)
             .withProfile(profile != null ? profile.buildObject() : null)
             .withTemplateType(templateType != null ? templateType : HttpTemplate.TemplateType.VELOCITY)
-            .withMaxRequests(maxRequests);
+            .withMaxRequests(maxRequests)
+            .withStartDelayMillis(startDelayMillis != null ? startDelayMillis : 0L);
         if (labels != null && !labels.isEmpty()) {
             scenario.withLabels(labels);
         }
@@ -105,6 +110,15 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public LoadScenarioDTO setMaxRequests(Integer maxRequests) {
         this.maxRequests = maxRequests;
+        return this;
+    }
+
+    public Long getStartDelayMillis() {
+        return startDelayMillis;
+    }
+
+    public LoadScenarioDTO setStartDelayMillis(Long startDelayMillis) {
+        this.startDelayMillis = startDelayMillis;
         return this;
     }
 

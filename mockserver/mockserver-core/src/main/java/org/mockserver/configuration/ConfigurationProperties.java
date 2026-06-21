@@ -78,7 +78,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_STEPS = "mockserver.loadGenerationMaxSteps";
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_RATE = "mockserver.loadGenerationMaxRate";
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_STAGES = "mockserver.loadGenerationMaxStages";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_CONCURRENT_SCENARIOS = "mockserver.loadGenerationMaxConcurrentScenarios";
     private static final String MOCKSERVER_LOAD_GENERATION_METRIC_LABELS = "mockserver.loadGenerationMetricLabels";
+    private static final String MOCKSERVER_LOAD_SCENARIO_INITIALIZATION_JSON_PATH = "mockserver.loadScenarioInitializationJsonPath";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
@@ -932,6 +934,37 @@ public class ConfigurationProperties {
      */
     public static void loadGenerationMaxStages(int maxStages) {
         setProperty(MOCKSERVER_LOAD_GENERATION_MAX_STAGES, "" + maxStages);
+    }
+
+    public static int loadGenerationMaxConcurrentScenarios() {
+        return readIntegerProperty(MOCKSERVER_LOAD_GENERATION_MAX_CONCURRENT_SCENARIOS, "MOCKSERVER_LOAD_GENERATION_MAX_CONCURRENT_SCENARIOS", 10);
+    }
+
+    /**
+     * Hard cap on the number of load scenarios that may be concurrently <em>active</em> (PENDING or
+     * RUNNING) at once. A start trigger that would exceed this is rejected. Loading (registering)
+     * scenarios is not limited — only how many may run together. Default is 10.
+     *
+     * @param maxConcurrentScenarios maximum concurrently active load scenarios
+     */
+    public static void loadGenerationMaxConcurrentScenarios(int maxConcurrentScenarios) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_CONCURRENT_SCENARIOS, "" + maxConcurrentScenarios);
+    }
+
+    public static String loadScenarioInitializationJsonPath() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_LOAD_SCENARIO_INITIALIZATION_JSON_PATH, "MOCKSERVER_LOAD_SCENARIO_INITIALIZATION_JSON_PATH", "");
+    }
+
+    /**
+     * Path to a JSON file containing an array of load scenario definitions. At startup each is loaded
+     * (registered) into the load-scenario registry in the {@code LOADED} state — staged and ready to be
+     * triggered by name, but not running. Empty by default (no preloading). Mirrors
+     * {@code initializationJsonPath} for expectations.
+     *
+     * @param loadScenarioInitializationJsonPath path to the load scenario definitions JSON file
+     */
+    public static void loadScenarioInitializationJsonPath(String loadScenarioInitializationJsonPath) {
+        setProperty(MOCKSERVER_LOAD_SCENARIO_INITIALIZATION_JSON_PATH, loadScenarioInitializationJsonPath == null ? "" : loadScenarioInitializationJsonPath);
     }
 
     public static java.util.List<String> loadGenerationMetricLabels() {

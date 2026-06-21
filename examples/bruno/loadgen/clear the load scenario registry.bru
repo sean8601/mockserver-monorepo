@@ -1,5 +1,5 @@
 meta {
-  name: stop the current load scenario
+  name: clear the load scenario registry
   type: http
   seq: 3
 }
@@ -11,7 +11,7 @@ delete {
 }
 
 docs {
-  Stops the current load scenario. Idempotent — returns 200 whether or not a scenario was running.
+  Removes ALL registered load scenarios, stopping any that are running. Idempotent.
   
   Full API reference: https://www.mock-server.com/mock_server/mockserver_clients.html
 }

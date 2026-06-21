@@ -1776,10 +1776,11 @@ async function loadInjectionExamples() {
     });
   }
 
-  // b) PUT a long-running CONSTANT load scenario that self-targets THIS server. A
-  //    1-hour duration + a high maxRequests keeps it running while the user explores
-  //    the UI; 5 VUs with per-step think-time keeps the self-load gentle. The path
-  //    uses $iteration.index (Velocity) so the order id varies each iteration.
+  // b) LOAD (register) a long-running CONSTANT load scenario that self-targets THIS server, then
+  //    TRIGGER it to start. Loading no longer runs the scenario — PUT /loadScenario registers it
+  //    (LOADED), and PUT /loadScenario/start triggers it (RUNNING). A 1-hour duration + a high
+  //    maxRequests keeps it running while the user explores the UI; 5 VUs with per-step think-time
+  //    keeps the self-load gentle. The path uses $iteration.index (Velocity) so the order id varies.
   const scenario = {
     name: 'demo checkout journey',
     templateType: 'VELOCITY',
@@ -1827,20 +1828,59 @@ async function loadInjectionExamples() {
     ],
   };
 
-  const res = await api('PUT', '/mockserver/loadScenario', scenario);
-  if (res.status === 403) {
+  // A SECOND scenario, registered with a startDelayMillis so it begins ~20s AFTER it is triggered —
+  // showcasing staggered concurrent runs. It hits only the health endpoint at a steady 2 VUs.
+  const delayedScenario = {
+    name: 'demo background poller',
+    templateType: 'VELOCITY',
+    maxRequests: 2000000,
+    labels: { team: 'demo', env: 'local' },
+    // Begin 20s after the start trigger so the dashboard shows it PENDING then RUNNING alongside
+    // the checkout journey (two concurrent runs, staggered).
+    startDelayMillis: 20000,
+    profile: {
+      stages: [
+        { type: 'VU', vus: 2, durationMillis: 3580000 },
+      ],
+    },
+    steps: [
+      {
+        name: 'poll-health',
+        request: {
+          method: 'GET',
+          path: '/demo-target/health',
+          socketAddress: { host: SELF_HOST, port: SELF_PORT, scheme: SELF_SCHEME },
+        },
+        thinkTime: { timeUnit: 'MILLISECONDS', value: 250 },
+      },
+    ],
+  };
+
+  // LOAD (register) both scenarios. Loading is allowed even when load generation is disabled.
+  const loadRes = await api('PUT', '/mockserver/loadScenario', scenario);
+  if (!loadRes.ok) throw new Error(`Failed to load load scenario "${scenario.name}": HTTP ${loadRes.status}`);
+  const loadRes2 = await api('PUT', '/mockserver/loadScenario', delayedScenario);
+  if (!loadRes2.ok) throw new Error(`Failed to load load scenario "${delayedScenario.name}": HTTP ${loadRes2.status}`);
+
+  // TRIGGER both to start in one call (each honours its own startDelayMillis).
+  const startRes = await api('PUT', '/mockserver/loadScenario/start', {
+    names: [scenario.name, delayedScenario.name],
+  });
+  if (startRes.status === 403) {
     // Shouldn't happen via the launcher (it sets loadGenerationEnabled=true), but be helpful.
-    log('   ! load scenario NOT started — server returned 403 (load generation disabled).');
+    log('   ! load scenarios LOADED but NOT started — server returned 403 (load generation disabled).');
     log('     Start MockServer with -Dmockserver.loadGenerationEnabled=true (the launcher\'s');
     log('     --with-load-injection flag does this) and re-run, or use: npm run demo -- --with-load-injection');
+    counts.loadScenario = 2;
     return;
   }
-  if (!res.ok) throw new Error(`Failed to start load scenario "${scenario.name}": HTTP ${res.status}`);
-  counts.loadScenario = 1;
+  if (!startRes.ok) throw new Error(`Failed to start load scenarios: HTTP ${startRes.status}`);
+  counts.loadScenario = 2;
   log(`   ⚡ load scenario  "${scenario.name}"  (VU ramp 1→5 then hold, ${scenario.steps.length} steps: health / checkout / order)`);
-  log('   ↳ a load scenario is now RUNNING against the delayed self-target endpoints —');
-  log('     open the dashboard Performance tab to watch live throughput + latency and to edit it,');
-  log(`     or curl ${BASE}/mockserver/loadScenario for the live JSON status.`);
+  log(`   ⚡ load scenario  "${delayedScenario.name}"  (startDelayMillis 20000 → PENDING then RUNNING, 2 VUs)`);
+  log('   ↳ two load scenarios are now triggered against the delayed self-target endpoints —');
+  log('     open the dashboard Performance tab to watch live throughput + latency and to edit them,');
+  log(`     or curl ${BASE}/mockserver/loadScenario for the live JSON list.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1918,7 +1958,7 @@ async function main() {
   log(` AsyncAPI channels    : ${counts.asyncChannels}${process.env.DEMO_MQTT_BROKER_URL ? ' (live MQTT broker — Recorded Messages ticking up)' : ' (broker-less; Recorded Messages need --with-broker)'}`);
   log(` MCP tool calls       : ${counts.mcpCalls} (read-only tools; Metrics · "MCP tool calls" chart + Tools · MCP panel)`);
   if (counts.loadScenario) {
-    log(` Load scenario        : ${counts.loadScenario} running (VU ramp 1→5 then hold vs delayed self-target endpoints; live in the Performance tab)`);
+    log(` Load scenarios       : ${counts.loadScenario} loaded+triggered (checkout journey now + a 20s-delayed background poller; concurrent runs live in the Performance tab)`);
   }
   log('');
 
@@ -1944,7 +1984,7 @@ async function main() {
   log('   Metrics            — request activity, throughput, MCP tool calls (6 tools), chaos faults' + (process.env.DEMO_MQTT_BROKER_URL ? ', async messages' : ''));
   log('   Breakpoints        — register a matcher (Matchers tab), then trigger the loopback below to pause Live Exchanges / Live Streams');
   if (counts.loadScenario) {
-    log('   Performance        — a load scenario is RUNNING (5 VUs) against delayed self-target endpoints; watch live throughput + latency, and edit/restart it');
+    log('   Performance        — two load scenarios triggered (checkout journey RUNNING + a 20s-delayed background poller) against delayed self-target endpoints; watch live throughput + latency, and edit/restart them');
   }
   log('');
 
