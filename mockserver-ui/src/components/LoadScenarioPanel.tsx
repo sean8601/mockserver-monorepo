@@ -59,6 +59,17 @@ const responsiveWidth = (px: number) => ({ width: { xs: '100%', sm: px } });
 // line up across rows instead of each row stretching its own items independently.
 const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 1, alignItems: 'start' } as const;
 
+/**
+ * Sensible starting height (in rows) for the templated body field: the default of 2 when
+ * empty/small, growing to fit a loaded multi-line body up to a 20-row cap. The field stays
+ * `multiline` with no `maxRows`, so MUI continues to auto-grow beyond this as the user types;
+ * this only ensures an existing large body opens expanded instead of clipped.
+ */
+function bodyMinRows(body: string): number {
+  const lines = body ? body.split('\n').length : 0;
+  return Math.min(20, Math.max(2, lines));
+}
+
 /** Parse a trimmed numeric field, or undefined when blank/NaN. */
 function num(raw: string): number | undefined {
   const trimmed = raw.trim();
@@ -855,7 +866,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           <Button size="small" startIcon={<AddIcon />} onClick={addLabel}>Add label</Button>
         </Box>
         {form.labels.map((label, i) => (
-          <Box key={label.id} sx={{ display: 'flex', gap: 1, mb: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Box key={label.id} sx={{ display: 'flex', gap: 1, mt: 0.5, mb: 1.25, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField label="Key" size="small" value={label.key} onChange={setLabelField(i, 'key')} sx={responsiveWidth(160)} />
             <TextField label="Value" size="small" value={label.value} onChange={setLabelField(i, 'value')} sx={responsiveWidth(160)} />
             <IconButton size="small" onClick={() => removeLabel(i)} aria-label={`Remove label ${i + 1}`}><DeleteIcon fontSize="small" /></IconButton>
@@ -876,9 +887,10 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
-            {/* All step fields flow into ONE uniform grid so columns line up
-                instead of two independently-stretched sub-rows. */}
-            <Box sx={FIELD_GRID}>
+            {/* Step fields on TWO rows so Path gets ample width. Row 1: name, method,
+                Path (widest column). Row 2: the remaining four fields in the uniform
+                auto-fit FIELD_GRID. */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(110px, 0.6fr) minmax(260px, 2.5fr)', gap: 1, alignItems: 'start', mb: 1 }}>
               <TextField label="Step name (optional)" size="small" value={step.name} onChange={setStepField(i, 'name')} fullWidth />
               <TextField select label="Method" size="small" value={step.method}
                 onChange={(e) => setForm((p) => ({ ...p, steps: p.steps.map((s, j) => (j === i ? { ...s, method: e.target.value } : s)) }))}
@@ -886,6 +898,8 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
                 {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
               </TextField>
               <TextField label="Path" size="small" value={step.path} onChange={setStepField(i, 'path')} fullWidth />
+            </Box>
+            <Box sx={FIELD_GRID}>
               <TextField label="Target host" size="small" value={step.host} onChange={setStepField(i, 'host')} fullWidth />
               <TextField label="Target port" size="small" value={step.port} onChange={setStepField(i, 'port')} fullWidth />
               <TextField select label="Scheme" size="small" value={step.scheme}
@@ -901,7 +915,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
               <Button size="small" startIcon={<AddIcon />} onClick={() => addStepHeader(i)}>Add header</Button>
             </Box>
             {step.headers.map((header, h) => (
-              <Box key={header.id} sx={{ display: 'flex', gap: 1, mb: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Box key={header.id} sx={{ display: 'flex', gap: 1, mt: 0.5, mb: 1.25, alignItems: 'center', flexWrap: 'wrap' }}>
                 <TextField label="Header name" size="small" value={header.key} onChange={setStepHeaderField(i, h, 'key')} sx={responsiveWidth(180)} />
                 <TextField label="Header value" size="small" value={header.value} onChange={setStepHeaderField(i, h, 'value')} sx={responsiveWidth(200)} />
                 <IconButton size="small" onClick={() => removeStepHeader(i, h)} aria-label={`Remove header ${h + 1} of step ${i + 1}`}>
@@ -912,7 +926,8 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
             <TextField
               label="Body (optional, templated)" size="small" value={step.body}
               onChange={setStepField(i, 'body')}
-              fullWidth multiline minRows={2} sx={{ mt: 1 }}
+              fullWidth multiline minRows={bodyMinRows(step.body)} sx={{ mt: 1 }}
+              slotProps={{ htmlInput: { style: { resize: 'vertical', overflow: 'auto' } } }}
             />
           </Box>
         ))}
