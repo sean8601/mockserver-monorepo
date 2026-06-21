@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **SCIM bearer-token enforcement now fails closed** (`mockserver-core`). When SCIM bearer-token
+  enforcement is enabled but no expected token is configured, requests are now rejected instead of
+  accepting any presented token, and the token comparison is constant-time.
+- **JWT control-plane validation no longer accepts HMAC algorithms** (`mockserver-core`). `JWTValidator`
+  verifies tokens against a public-key JWK set, so it now accepts only asymmetric signature algorithms
+  (`RS*`, `ES*`, `PS*`, `EdDSA`) and rejects HMAC (`HS256/384/512`), closing an algorithm-confusion
+  forgery vector and matching the OIDC validator. If you were intentionally validating HMAC-signed
+  tokens through `JWTValidator`, switch to an asymmetric key.
 - **Coarse role-based authorization of the control plane** (`mockserver-core`). New configuration
   properties `mockserver.controlPlaneAuthorizationEnabled` (env `MOCKSERVER_CONTROL_PLANE_AUTHORIZATION_ENABLED`,
   default `false`) and `mockserver.controlPlaneScopeMapping` (env `MOCKSERVER_CONTROL_PLANE_SCOPE_MAPPING`,

@@ -277,11 +277,13 @@ The MCP endpoint (`/mockserver/mcp`) enforces the same control-plane **authentic
 
 ### Supported JWS Algorithms
 
-`JWTValidator` supports 14 JWS algorithms:
+`JWTValidator` supports 11 JWS algorithms — **asymmetric families only**. HMAC (`HS256/384/512`)
+is rejected: the validator verifies against a public-key JWK set loaded from a URL or file, and
+accepting HMAC there is the classic algorithm-confusion forgery vector (an attacker signs an HMAC
+token using the public key bytes as the shared secret). This matches `OidcJWTValidator`.
 
 | Family | Algorithms |
 |--------|-----------|
-| HMAC | `HS256`, `HS384`, `HS512` |
 | RSA PKCS#1 | `RS256`, `RS384`, `RS512` |
 | ECDSA | `ES256`, `ES256K`, `ES384`, `ES512` |
 | RSA-PSS | `PS256`, `PS384`, `PS512` |

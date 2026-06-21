@@ -7,6 +7,9 @@ import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.serialization.ObjectMapperFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+
 import static org.mockserver.model.HttpResponse.response;
 
 /**
@@ -30,6 +33,10 @@ final class ScimCallbackSupport {
      * Enforces the bearer-token gate when the provider requires it. Discovery endpoints are exempt
      * and pass {@code null}-checked callers should treat a null return as "allowed".
      *
+     * <p>Fails closed: when enforcement is enabled but no expected token is configured (null/blank),
+     * every request is rejected — enforcement must never accept when there is nothing to check
+     * against. The token comparison is constant-time to avoid timing side-channels.
+     *
      * @return a 401 SCIM error response when the token is missing/invalid, otherwise {@code null}
      */
     static HttpResponse bearerGate(HttpRequest request, ScimResourceStore.Provider provider) {
@@ -41,13 +48,20 @@ final class ScimCallbackSupport {
         if (authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
             token = authorization.substring(7).trim();
         }
+        String expected = provider.getExpectedBearerToken();
         boolean valid;
         if (token == null || token.isEmpty()) {
+            // no presented token => reject
             valid = false;
-        } else if (provider.getExpectedBearerToken() != null && !provider.getExpectedBearerToken().isEmpty()) {
-            valid = provider.getExpectedBearerToken().equals(token);
+        } else if (expected == null || expected.isEmpty()) {
+            // FAIL CLOSED: enforcement is on but no expected token is configured. With nothing to
+            // compare against, accepting any token would let enforcement accept all tokens. Reject.
+            valid = false;
         } else {
-            valid = true;
+            // constant-time comparison to avoid leaking the token via timing side-channels
+            valid = MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8));
         }
         if (valid) {
             return null;
