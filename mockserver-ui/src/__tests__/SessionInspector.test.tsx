@@ -134,8 +134,8 @@ describe('SessionInspector', () => {
 
     renderInspector();
 
-    // Should show "Active sessions: 2"
-    expect(screen.getByText('Active sessions: 2')).toBeInTheDocument();
+    // Should show "Active traces: 2"
+    expect(screen.getByText('Active traces: 2')).toBeInTheDocument();
 
     // Session lanes should be visible
     expect(screen.getByText(/chat \/ agent-A/)).toBeInTheDocument();
@@ -185,7 +185,7 @@ describe('SessionInspector', () => {
     expect(screen.getByText(/chat \/ agent-B/)).toBeInTheDocument();
 
     // Type in the search box
-    const searchInput = screen.getByPlaceholderText('Filter sessions...');
+    const searchInput = screen.getByPlaceholderText('Filter traces...');
     await user.type(searchInput, 'agent-A');
 
     // Only agent-A session should remain
@@ -198,7 +198,7 @@ describe('SessionInspector', () => {
     renderInspector();
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs[0]).toHaveTextContent('Sessions');
+    expect(tabs[0]).toHaveTextContent('Traces');
     expect(tabs[1]).toHaveTextContent('Scenarios');
     expect(tabs[2]).toHaveTextContent('Compare');
 

@@ -8,7 +8,8 @@ import Link from '@mui/material/Link';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import PauseCircleIcon from '@mui/icons-material/PauseCircle';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import SavingsIcon from '@mui/icons-material/Savings';
 import BoltIcon from '@mui/icons-material/Bolt';
 import { useState } from 'react';
 import OpenApiImportDialog from './OpenApiImportDialog';
@@ -46,18 +47,18 @@ function ActionCard({ icon, title, description, actionLabel, onAction }: ActionC
         },
       })}
     >
-      <CardContent sx={{ flex: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+      <CardContent sx={{ flex: 1, p: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75 }}>
           {icon}
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
             {title}
           </Typography>
         </Box>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="caption" component="p" color="text.secondary" sx={{ lineHeight: 1.45 }}>
           {description}
         </Typography>
       </CardContent>
-      <CardActions sx={{ px: 2, pb: 2 }}>
+      <CardActions sx={{ px: 1.5, pb: 1.5, pt: 0 }}>
         <Button size="small" variant="contained" onClick={onAction}>
           {actionLabel}
         </Button>
@@ -81,11 +82,11 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
 
   const go = (view: ViewMode) => () => setView(view);
 
-  // The five key features, rendered as tiles on wide screens and as a compact
+  // The six key features, rendered as tiles on wide screens and as a compact
   // bulleted list on narrow ones (mobile / the IDE-embedded dashboard).
   // Ordered to lead with the most common first task (Mocking) and otherwise
-  // follow the AppBar tab order (Traffic, Breakpoints, Chaos, Sessions) so the
-  // onboarding and the navigation tell a consistent story.
+  // follow the AppBar tab order (Traffic, Breakpoints, Chaos, Performance,
+  // LLM Optimise) so the onboarding and the navigation tell a consistent story.
   const primaryActions: ActionCardProps[] = [
     {
       icon: <UploadFileIcon color="primary" />,
@@ -120,12 +121,20 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
       onAction: go('chaos'),
     },
     {
-      icon: <SmartToyIcon color="primary" />,
-      title: 'LLM / AI Debugging',
+      icon: <TrendingUpIcon color="primary" />,
+      title: 'Performance Testing',
       description:
-        'Mock LLM providers like OpenAI and Anthropic, and inspect agent runs — conversations, tool calls, tokens, and cost — grouped by session.',
-      actionLabel: 'Open Sessions',
-      onAction: go('sessions'),
+        'Inject load against any target — drive traffic at a chosen arrival rate, ramp it up and down, and watch live throughput and latency.',
+      actionLabel: 'Open Performance',
+      onAction: go('performance'),
+    },
+    {
+      icon: <SavingsIcon color="primary" />,
+      title: 'LLM Optimise',
+      description:
+        'Capture LLM traffic through the proxy, then analyse it to optimise prompts, inference cost, safety, and speed.',
+      actionLabel: 'Open LLM Optimise',
+      onAction: go('optimise'),
     },
   ];
 
@@ -169,11 +178,11 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
             display: 'flex',
             '@container (max-width: 899.98px)': { display: 'none' },
             flexWrap: 'nowrap',
-            gap: 2,
+            gap: 1.5,
             alignItems: 'stretch',
             justifyContent: 'center',
             width: '100%',
-            maxWidth: 1200,
+            maxWidth: 1320,
           }}
         >
           {primaryActions.map((action) => (
@@ -182,7 +191,7 @@ export default function OnboardingPanel({ connectionParams }: OnboardingPanelPro
         </Box>
 
         {/* Narrow panels (mobile / IDE-embedded): a compact bulleted list, since
-            five tiles side by side become unreadably squished. */}
+            six tiles side by side become unreadably squished. */}
         <Box
           component="ul"
           sx={{

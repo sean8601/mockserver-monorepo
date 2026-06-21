@@ -498,7 +498,7 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
           onChange={(_, v: number) => setTab(v)}
           sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, typography: 'body2' } }}
         >
-          <Tab label="Sessions" />
+          <Tab label="Traces" />
           <Tab label="Scenarios" />
           <Tab label="Compare" />
         </Tabs>
@@ -518,7 +518,7 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
             >
               {hasLlmTraffic && (
                 <Chip
-                  label={`Active sessions: ${sessions.length}`}
+                  label={`Active traces: ${sessions.length}`}
                   size="small"
                   color="primary"
                   variant="outlined"
@@ -527,7 +527,7 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
               )}
               <TextField
                 size="small"
-                placeholder="Filter sessions..."
+                placeholder="Filter traces..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 slotProps={{
@@ -556,12 +556,12 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
                     No LLM traffic captured yet
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    Configure your application to proxy through MockServer to see session groupings.
+                    Configure your application to proxy through MockServer to see traces grouped here.
                   </Typography>
                 </Box>
               ) : filteredSessions.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                  No sessions match the current filter
+                  No traces match the current filter
                 </Typography>
               ) : (
                 filteredSessions.map((session) => (

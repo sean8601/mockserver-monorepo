@@ -1468,6 +1468,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   navigation explaining what the screen is for (for example, LLM Optimise: "Analyse captured LLM
   traffic to optimise prompts, inference cost, safety, and speed").
 
+- **Dashboard navigation**: the **Sessions** tab is renamed **Trace** — clearer language for grouping
+  related requests (including LLM agent runs) to debug multi-step flows — and moved to sit immediately
+  after **Traffic**. The **Get Started** page now leads with the same six key features as the navigation:
+  the old "LLM / AI Debugging" tile is replaced by an **LLM Optimise** tile and a new **Performance
+  Testing** tile is added. The tiles are slightly more compact so all six stay on a single row, still
+  collapsing to a bulleted list when the panel is narrow.
+
 - **Dashboard UI visual refresh**: the dashboard now has a real design system (consistent spacing,
   shadows, typography and a dark-mode-aware log-colour palette). The Metrics view leads with KPI
   "hero" stat cards, its charts have a real time axis and area fill, and panels show skeleton

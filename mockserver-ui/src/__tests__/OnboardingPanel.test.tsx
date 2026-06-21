@@ -51,11 +51,11 @@ describe('OnboardingPanel', () => {
     expect(screen.getByText('Welcome to MockServer')).toBeInTheDocument();
   });
 
-  it('renders the five key features (tile layout + narrow bulleted list)', () => {
+  it('renders the six key features (tile layout + narrow bulleted list)', () => {
     renderPanel();
     // Each feature appears in both the wide-screen tiles and the narrow-screen
     // bulleted list (one is CSS-hidden per viewport), so each is present >= once.
-    for (const title of ['Breakpoints', 'Debugging Proxy', 'LLM / AI Debugging', 'Mocking', 'Chaos Testing']) {
+    for (const title of ['Breakpoints', 'Debugging Proxy', 'Performance Testing', 'LLM Optimise', 'Mocking', 'Chaos Testing']) {
       expect(screen.getAllByText(title).length).toBeGreaterThan(0);
     }
   });
@@ -84,6 +84,12 @@ describe('OnboardingPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /Open Chaos/i }));
     expect(useDashboardStore.getState().view).toBe('chaos');
+
+    await user.click(screen.getByRole('button', { name: /Open Performance/i }));
+    expect(useDashboardStore.getState().view).toBe('performance');
+
+    await user.click(screen.getByRole('button', { name: /Open LLM Optimise/i }));
+    expect(useDashboardStore.getState().view).toBe('optimise');
   });
 
   it('lists the other tabs as in-app navigation links', async () => {
