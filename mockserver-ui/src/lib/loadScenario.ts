@@ -43,14 +43,37 @@ export interface LoadStepDTO {
   labels?: Record<string, string>;
 }
 
-/** Ramp profile describing target concurrency over time. */
-export interface LoadProfileDTO {
-  type: 'CONSTANT' | 'LINEAR';
+/** The kind of a load stage. */
+export type LoadStageType = 'VU' | 'RATE' | 'PAUSE';
+
+/** Interpolation curve used to ramp a value across a ramp stage. */
+export type RampCurve = 'LINEAR' | 'EXPONENTIAL' | 'QUADRATIC';
+
+/**
+ * One stage of a staged load profile (Load Profile v2). Stages run in sequence.
+ *  - VU stage: holds `vus`, or ramps `startVus`→`endVus` along `curve`.
+ *  - RATE stage: holds `rate`, or ramps `startRate`→`endRate` (iterations/second) along `curve`;
+ *    optional `maxVus` caps the auto-scaling VU pool.
+ *  - PAUSE stage: drives no load for `durationMillis`.
+ */
+export interface LoadStageDTO {
+  type: LoadStageType;
   durationMillis: number;
+  curve?: RampCurve;
+  // VU-stage fields.
   vus?: number;
   startVus?: number;
   endVus?: number;
-  iterationPacingMillis?: number;
+  // RATE-stage fields (iterations per second).
+  rate?: number;
+  startRate?: number;
+  endRate?: number;
+  maxVus?: number;
+}
+
+/** Staged load profile: an ordered list of stages run one after another. */
+export interface LoadProfileDTO {
+  stages: LoadStageDTO[];
 }
 
 /** An API-driven load scenario. */
@@ -71,6 +94,12 @@ export interface LoadScenarioStatus {
   state: LoadState;
   elapsedMillis?: number;
   currentVus?: number;
+  /** 0-based index of the currently-running stage (omitted when not running). */
+  stageIndex?: number;
+  /** Type of the currently-running stage (omitted when not running). */
+  stageType?: LoadStageType;
+  /** Current setpoint for the running stage: target VUs (VU), target rate iterations/s (RATE), or 0 (PAUSE). */
+  currentTarget?: number;
   requestsSent?: number;
   succeeded?: number;
   failed?: number;

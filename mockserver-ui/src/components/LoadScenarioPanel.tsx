@@ -17,6 +17,8 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import EditIcon from '@mui/icons-material/Edit';
@@ -32,6 +34,9 @@ import {
   type LoadScenarioDTO,
   type LoadScenarioStatus,
   type LoadStepDTO,
+  type LoadStageDTO,
+  type LoadStageType,
+  type RampCurve,
   type LoadRequestDTO,
   type SocketAddressDTO,
 } from '../lib/loadScenario';
@@ -77,16 +82,32 @@ interface StepFormState {
   thinkTimeMs: string;
 }
 
+/**
+ * One stage card in the profile stage-builder. `mode` is a UI-only toggle distinguishing a
+ * hold (single setpoint) from a ramp (start→end + curve) for VU/RATE stages; PAUSE ignores both.
+ */
+interface StageFormState {
+  id: number;
+  type: LoadStageType;
+  mode: 'HOLD' | 'RAMP';
+  durationMillis: string;
+  curve: RampCurve;
+  // VU fields
+  vus: string;
+  startVus: string;
+  endVus: string;
+  // RATE fields (iterations/sec)
+  rate: string;
+  startRate: string;
+  endRate: string;
+  maxVus: string;
+}
+
 interface FormState {
   name: string;
   templateType: 'VELOCITY' | 'MUSTACHE';
   maxRequests: string;
-  profileType: 'CONSTANT' | 'LINEAR';
-  vus: string;
-  startVus: string;
-  endVus: string;
-  durationMillis: string;
-  iterationPacingMillis: string;
+  stages: StageFormState[];
   labels: KeyValueRow[];
   steps: StepFormState[];
 }
@@ -100,45 +121,94 @@ function emptyStep(): StepFormState {
   };
 }
 
+/** A fresh VU-hold stage card — the sensible default kind when adding a stage. */
+function emptyStage(type: LoadStageType = 'VU', mode: 'HOLD' | 'RAMP' = 'HOLD'): StageFormState {
+  return {
+    id: nextId(), type, mode, durationMillis: '30000', curve: 'LINEAR',
+    vus: '5', startVus: '1', endVus: '10',
+    rate: '50', startRate: '10', endRate: '100', maxVus: '',
+  };
+}
+
 const EMPTY_FORM: FormState = {
   name: '',
   templateType: 'VELOCITY',
   maxRequests: '',
-  profileType: 'CONSTANT',
-  vus: '5',
-  startVus: '1',
-  endVus: '10',
-  durationMillis: '30000',
-  iterationPacingMillis: '',
+  // Sensible default: ramp 1→10 VUs over 30s, then hold 10 VUs for 60s (mirrors the OpenAPI example).
+  stages: [
+    { ...emptyStage('VU', 'RAMP'), startVus: '1', endVus: '10', durationMillis: '30000', curve: 'LINEAR' },
+    { ...emptyStage('VU', 'HOLD'), vus: '10', durationMillis: '60000' },
+  ],
   labels: [],
   steps: [emptyStep()],
 };
+
+/**
+ * Build the staged `profile` from the stage cards, or return a validation message. Each card emits a
+ * {@link LoadStageDTO} carrying only the fields relevant to its type/mode. Validates: ≥1 stage,
+ * ≥1 non-PAUSE (load) stage, every duration > 0, and ramp stages supply both endpoints.
+ */
+function buildProfile(stages: StageFormState[]): { stages: LoadStageDTO[] } | { error: string } {
+  if (stages.length === 0) return { error: 'At least one stage is required' };
+  const out: LoadStageDTO[] = [];
+  let hasLoadStage = false;
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i]!;
+    const label = `Stage ${i + 1}`;
+    const durationMillis = num(s.durationMillis);
+    if (durationMillis == null || durationMillis <= 0) return { error: `${label}: duration (ms) must be greater than 0` };
+
+    const stage: LoadStageDTO = { type: s.type, durationMillis };
+    if (s.type === 'VU') {
+      hasLoadStage = true;
+      if (s.mode === 'HOLD') {
+        const vus = num(s.vus);
+        if (vus == null || vus < 1) return { error: `${label}: virtual users (VUs) must be at least 1` };
+        stage.vus = vus;
+      } else {
+        const startVus = num(s.startVus);
+        const endVus = num(s.endVus);
+        if (startVus == null || startVus < 0) return { error: `${label}: start VUs must be 0 or greater` };
+        if (endVus == null || endVus < 1) return { error: `${label}: end VUs must be at least 1` };
+        stage.startVus = startVus;
+        stage.endVus = endVus;
+        stage.curve = s.curve;
+      }
+    } else if (s.type === 'RATE') {
+      hasLoadStage = true;
+      if (s.mode === 'HOLD') {
+        const rate = num(s.rate);
+        if (rate == null || rate <= 0) return { error: `${label}: rate (iterations/sec) must be greater than 0` };
+        stage.rate = rate;
+      } else {
+        const startRate = num(s.startRate);
+        const endRate = num(s.endRate);
+        if (startRate == null || startRate < 0) return { error: `${label}: start rate must be 0 or greater` };
+        if (endRate == null || endRate <= 0) return { error: `${label}: end rate must be greater than 0` };
+        stage.startRate = startRate;
+        stage.endRate = endRate;
+        stage.curve = s.curve;
+      }
+      const maxVus = num(s.maxVus);
+      if (maxVus != null) {
+        if (maxVus < 1) return { error: `${label}: max VUs must be at least 1 (or leave blank)` };
+        stage.maxVus = maxVus;
+      }
+    }
+    // PAUSE: only durationMillis.
+    out.push(stage);
+  }
+  if (!hasLoadStage) return { error: 'At least one VU or RATE stage is required (a profile of only pauses drives no load)' };
+  return { stages: out };
+}
 
 /** Build a LoadScenarioDTO from the form, or return a validation message. */
 function buildScenario(form: FormState): { scenario: LoadScenarioDTO } | { error: string } {
   if (form.name.trim() === '') return { error: 'Scenario name is required' };
 
-  const durationMillis = num(form.durationMillis);
-  if (durationMillis == null || durationMillis <= 0) return { error: 'Duration (ms) must be greater than 0' };
-
-  const profile: LoadScenarioDTO['profile'] = { type: form.profileType, durationMillis };
-  if (form.profileType === 'CONSTANT') {
-    const vus = num(form.vus);
-    if (vus == null || vus < 1) return { error: 'Virtual users (VUs) must be at least 1' };
-    profile.vus = vus;
-  } else {
-    const startVus = num(form.startVus);
-    const endVus = num(form.endVus);
-    if (startVus == null || startVus < 0) return { error: 'Start VUs must be 0 or greater' };
-    if (endVus == null || endVus < 1) return { error: 'End VUs must be at least 1' };
-    profile.startVus = startVus;
-    profile.endVus = endVus;
-  }
-  const pacing = num(form.iterationPacingMillis);
-  if (pacing != null) {
-    if (pacing < 0) return { error: 'Iteration pacing (ms) must be 0 or greater' };
-    profile.iterationPacingMillis = pacing;
-  }
+  const built = buildProfile(form.stages);
+  if ('error' in built) return { error: built.error };
+  const profile: LoadScenarioDTO['profile'] = { stages: built.stages };
 
   if (form.steps.length === 0) return { error: 'At least one step is required' };
   const steps: LoadStepDTO[] = [];
@@ -235,19 +305,36 @@ function headersToRows(headers: LoadRequestDTO['headers']): KeyValueRow[] {
   return rows;
 }
 
+/** Map one wire LoadStageDTO back into an editor stage card, inferring hold-vs-ramp mode. */
+function stageToForm(stage: LoadStageDTO): StageFormState {
+  const base = emptyStage(stage.type);
+  const isVuRamp = stage.type === 'VU' && stage.startVus != null && stage.endVus != null;
+  const isRateRamp = stage.type === 'RATE' && stage.startRate != null && stage.endRate != null;
+  return {
+    ...base,
+    type: stage.type,
+    mode: isVuRamp || isRateRamp ? 'RAMP' : 'HOLD',
+    durationMillis: String(stage.durationMillis),
+    curve: stage.curve ?? 'LINEAR',
+    vus: stage.vus != null ? String(stage.vus) : base.vus,
+    startVus: stage.startVus != null ? String(stage.startVus) : base.startVus,
+    endVus: stage.endVus != null ? String(stage.endVus) : base.endVus,
+    rate: stage.rate != null ? String(stage.rate) : base.rate,
+    startRate: stage.startRate != null ? String(stage.startRate) : base.startRate,
+    endRate: stage.endRate != null ? String(stage.endRate) : base.endRate,
+    maxVus: stage.maxVus != null ? String(stage.maxVus) : '',
+  };
+}
+
 /** Reverse buildScenario: load a running/most-recent scenario back into the editor. */
 function scenarioToForm(scenario: LoadScenarioDTO): FormState {
   const p = scenario.profile;
+  const stages = (p?.stages && p.stages.length > 0) ? p.stages.map(stageToForm) : [emptyStage('VU', 'HOLD')];
   return {
     name: scenario.name,
     templateType: scenario.templateType ?? 'VELOCITY',
     maxRequests: scenario.maxRequests != null ? String(scenario.maxRequests) : '',
-    profileType: p.type,
-    vus: p.vus != null ? String(p.vus) : '5',
-    startVus: p.startVus != null ? String(p.startVus) : '1',
-    endVus: p.endVus != null ? String(p.endVus) : '10',
-    durationMillis: String(p.durationMillis),
-    iterationPacingMillis: p.iterationPacingMillis != null ? String(p.iterationPacingMillis) : '',
+    stages,
     labels: Object.entries(scenario.labels ?? {}).map(([key, value]) => ({ id: nextId(), key, value })),
     steps: (scenario.steps.length > 0 ? scenario.steps : [{ request: {} }]).map((step) => ({
       id: nextId(),
@@ -460,6 +547,24 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   const addStep = () => setForm((prev) => ({ ...prev, steps: [...prev.steps, emptyStep()] }));
   const removeStep = (index: number) => setForm((prev) => ({ ...prev, steps: prev.steps.filter((_, i) => i !== index) }));
 
+  // --- stage builder handlers ---
+  const setStageField = (index: number, field: keyof StageFormState) =>
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm((prev) => ({ ...prev, stages: prev.stages.map((s, i) => (i === index ? { ...s, [field]: e.target.value } : s)) }));
+  const setStageValue = <K extends keyof StageFormState>(index: number, field: K, value: StageFormState[K]) =>
+    setForm((prev) => ({ ...prev, stages: prev.stages.map((s, i) => (i === index ? { ...s, [field]: value } : s)) }));
+  const addStage = () => setForm((prev) => ({ ...prev, stages: [...prev.stages, emptyStage('VU', 'HOLD')] }));
+  const removeStage = (index: number) => setForm((prev) => ({ ...prev, stages: prev.stages.filter((_, i) => i !== index) }));
+  const moveStage = (index: number, delta: number) =>
+    setForm((prev) => {
+      const target = index + delta;
+      if (target < 0 || target >= prev.stages.length) return prev;
+      const stages = [...prev.stages];
+      const [moved] = stages.splice(index, 1);
+      stages.splice(target, 0, moved!);
+      return { ...prev, stages };
+    });
+
   const updateStepHeaders = (stepIndex: number, fn: (headers: KeyValueRow[]) => KeyValueRow[]) =>
     setForm((prev) => ({ ...prev, steps: prev.steps.map((s, i) => (i === stepIndex ? { ...s, headers: fn(s.headers) } : s)) }));
   const addStepHeader = (stepIndex: number) =>
@@ -545,6 +650,9 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
               Running{status.name ? ` · ${status.name}` : ''}{status.runId ? ` · run ${status.runId}` : ''}
             </Typography>
             <Chip size="small" label={`${formatElapsed(status.elapsedMillis ?? 0)} elapsed`} variant="outlined" />
+            {stageReadout(status) && (
+              <Chip size="small" color="primary" variant="outlined" label={stageReadout(status)} data-testid="load-stage-readout" />
+            )}
             <Box sx={{ flex: 1 }} />
             <Button size="small" variant="outlined" startIcon={<EditIcon />} disabled={busy} onClick={handleEditRunning}>
               Edit running
@@ -664,28 +772,82 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           />
         </Box>
 
-        {/* Profile */}
-        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block', mt: 1.5, mb: 0.5 }}>Profile</Typography>
-        <Box sx={FIELD_GRID}>
-          <TextField
-            select label="Profile type" size="small" value={form.profileType}
-            onChange={(e) => setForm((p) => ({ ...p, profileType: e.target.value as FormState['profileType'] }))}
-            fullWidth
-          >
-            <MenuItem value="CONSTANT">Constant</MenuItem>
-            <MenuItem value="LINEAR">Linear ramp</MenuItem>
-          </TextField>
-          {form.profileType === 'CONSTANT' ? (
-            <TextField label="Virtual users (VUs)" size="small" value={form.vus} onChange={setField('vus')} fullWidth />
-          ) : (
-            <>
-              <TextField label="Start VUs" size="small" value={form.startVus} onChange={setField('startVus')} fullWidth />
-              <TextField label="End VUs" size="small" value={form.endVus} onChange={setField('endVus')} fullWidth />
-            </>
-          )}
-          <TextField label="Duration (ms)" size="small" value={form.durationMillis} onChange={setField('durationMillis')} fullWidth />
-          <TextField label="Iteration pacing (ms)" size="small" value={form.iterationPacingMillis} onChange={setField('iterationPacingMillis')} fullWidth placeholder="none" />
+        {/* Profile — staged builder (Load Profile v2): an ordered list of stages run in sequence. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5, mb: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Profile (stages)</Typography>
+          <Button size="small" startIcon={<AddIcon />} onClick={addStage}>Add stage</Button>
         </Box>
+        {form.stages.map((stage, i) => (
+          <Box key={stage.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1, mb: 1 }} data-testid={`load-stage-${i}`}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">Stage {i + 1}</Typography>
+              <Box sx={{ flex: 1 }} />
+              <IconButton size="small" onClick={() => moveStage(i, -1)} aria-label={`Move stage ${i + 1} up`} disabled={i === 0}>
+                <ArrowUpwardIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={() => moveStage(i, 1)} aria-label={`Move stage ${i + 1} down`} disabled={i === form.stages.length - 1}>
+                <ArrowDownwardIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={() => removeStage(i)} aria-label={`Remove stage ${i + 1}`} disabled={form.stages.length <= 1}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+            <Box sx={FIELD_GRID}>
+              <TextField
+                select label="Stage type" size="small" value={stage.type}
+                onChange={(e) => setStageValue(i, 'type', e.target.value as LoadStageType)}
+                fullWidth
+              >
+                <MenuItem value="VU">VU (virtual users)</MenuItem>
+                <MenuItem value="RATE">Rate (iterations/sec)</MenuItem>
+                <MenuItem value="PAUSE">Pause (no load)</MenuItem>
+              </TextField>
+              {stage.type !== 'PAUSE' && (
+                <TextField
+                  select label="Mode" size="small" value={stage.mode}
+                  onChange={(e) => setStageValue(i, 'mode', e.target.value as StageFormState['mode'])}
+                  fullWidth
+                >
+                  <MenuItem value="HOLD">Hold</MenuItem>
+                  <MenuItem value="RAMP">Ramp</MenuItem>
+                </TextField>
+              )}
+              {stage.type === 'VU' && stage.mode === 'HOLD' && (
+                <TextField label="Virtual users (VUs)" size="small" value={stage.vus} onChange={setStageField(i, 'vus')} fullWidth />
+              )}
+              {stage.type === 'VU' && stage.mode === 'RAMP' && (
+                <>
+                  <TextField label="Start VUs" size="small" value={stage.startVus} onChange={setStageField(i, 'startVus')} fullWidth />
+                  <TextField label="End VUs" size="small" value={stage.endVus} onChange={setStageField(i, 'endVus')} fullWidth />
+                </>
+              )}
+              {stage.type === 'RATE' && stage.mode === 'HOLD' && (
+                <TextField label="Rate (iterations/sec)" size="small" value={stage.rate} onChange={setStageField(i, 'rate')} fullWidth />
+              )}
+              {stage.type === 'RATE' && stage.mode === 'RAMP' && (
+                <>
+                  <TextField label="Start rate (iterations/sec)" size="small" value={stage.startRate} onChange={setStageField(i, 'startRate')} fullWidth />
+                  <TextField label="End rate (iterations/sec)" size="small" value={stage.endRate} onChange={setStageField(i, 'endRate')} fullWidth />
+                </>
+              )}
+              {stage.type === 'RATE' && (
+                <TextField label="Max VUs (optional)" size="small" value={stage.maxVus} onChange={setStageField(i, 'maxVus')} fullWidth placeholder="global cap" />
+              )}
+              {stage.type !== 'PAUSE' && stage.mode === 'RAMP' && (
+                <TextField
+                  select label="Curve" size="small" value={stage.curve}
+                  onChange={(e) => setStageValue(i, 'curve', e.target.value as RampCurve)}
+                  fullWidth
+                >
+                  <MenuItem value="LINEAR">Linear</MenuItem>
+                  <MenuItem value="EXPONENTIAL">Exponential</MenuItem>
+                  <MenuItem value="QUADRATIC">Quadratic</MenuItem>
+                </TextField>
+              )}
+              <TextField label="Duration (ms)" size="small" value={stage.durationMillis} onChange={setStageField(i, 'durationMillis')} fullWidth />
+            </Box>
+          </Box>
+        ))}
 
         {/* Labels */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5, mb: 0.5 }}>
@@ -781,6 +943,28 @@ function Stat({ label, value }: { label: string; value: string }) {
       <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>{value}</Typography>
     </Card>
   );
+}
+
+/**
+ * Compact readout of which staged-profile stage is currently active, e.g. "Stage 2/3 · RATE · target 50/s".
+ * Uses the server's `stageIndex`/`stageType`/`currentTarget`; the total stage count comes from the echoed
+ * definition when available. Returns '' when the server doesn't report a running stage (older servers).
+ */
+function stageReadout(status: LoadScenarioStatus): string {
+  if (status.stageIndex == null && status.stageType == null) return '';
+  const total = status.definition?.profile?.stages?.length;
+  const position = status.stageIndex != null
+    ? `Stage ${status.stageIndex + 1}${total ? `/${total}` : ''}`
+    : 'Stage';
+  const parts = [position];
+  if (status.stageType) parts.push(status.stageType);
+  if (status.currentTarget != null && status.stageType && status.stageType !== 'PAUSE') {
+    const target = status.stageType === 'RATE'
+      ? `target ${Number(status.currentTarget.toFixed(1))}/s`
+      : `target ${Math.round(status.currentTarget)} VUs`;
+    parts.push(target);
+  }
+  return parts.join(' · ');
 }
 
 /** Peak active VUs observed across samples, falling back to the final status. */

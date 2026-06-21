@@ -8,6 +8,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * Pick an option from a MUI (non-native) Select. fireEvent.change can't drive these — the visible
+ * combobox is a div, so open it (mouseDown) and click the option in the portal-rendered listbox.
+ */
+function selectOption(combobox: HTMLElement, optionName: string | RegExp) {
+  fireEvent.mouseDown(combobox);
+  const option = within(screen.getByRole('listbox')).getByRole('option', { name: optionName });
+  fireEvent.click(option);
+}
+
 /** A fetch mock that returns `none` for GET and records PUT/DELETE calls. */
 function stubFetch(getBody: unknown, status = 200) {
   const calls: Array<{ url: string; method: string; body?: unknown }> = [];
@@ -34,14 +44,17 @@ describe('LoadScenarioPanel', () => {
     expect(screen.getByText('Velocity')).toBeInTheDocument();
   });
 
-  it('builds a valid PUT body from the form', async () => {
+  it('builds a valid PUT body with a staged profile from the form', async () => {
     const { calls } = stubFetch({ state: 'none' });
     render(<LoadScenarioPanel connectionParams={params} />);
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'checkout-load' } });
-    fireEvent.change(screen.getByLabelText(/Virtual users/), { target: { value: '8' } });
-    fireEvent.change(screen.getByLabelText(/Duration/), { target: { value: '20000' } });
+
+    // Default seeded profile is a VU ramp (stage 0) then a VU hold (stage 1). Tweak the hold to 8 VUs.
+    const stage1 = screen.getByTestId('load-stage-1');
+    fireEvent.change(within(stage1).getByLabelText('Virtual users (VUs)'), { target: { value: '8' } });
+    fireEvent.change(within(stage1).getByLabelText('Duration (ms)'), { target: { value: '20000' } });
 
     const step0 = screen.getByTestId('load-step-0');
     fireEvent.change(within(step0).getByLabelText('Target host'), { target: { value: 'target.svc' } });
@@ -59,7 +72,12 @@ describe('LoadScenarioPanel', () => {
     expect(put.body).toMatchObject({
       name: 'checkout-load',
       templateType: 'VELOCITY',
-      profile: { type: 'CONSTANT', vus: 8, durationMillis: 20000 },
+      profile: {
+        stages: [
+          { type: 'VU', startVus: 1, endVus: 10, durationMillis: 30000, curve: 'LINEAR' },
+          { type: 'VU', vus: 8, durationMillis: 20000 },
+        ],
+      },
       steps: [
         {
           request: {
@@ -70,9 +88,75 @@ describe('LoadScenarioPanel', () => {
         },
       ],
     });
+    // The hold stage must NOT carry ramp-only fields.
+    const stages = (put.body as { profile: { stages: Array<Record<string, unknown>> } }).profile.stages;
+    expect(stages[1]).not.toHaveProperty('startVus');
+    expect(stages[1]).not.toHaveProperty('curve');
     // No header rows were added — `headers` must be omitted to keep the body minimal.
     const builtStep = (put.body as { steps: Array<{ request: Record<string, unknown> }> }).steps[0]!;
     expect(builtStep.request).not.toHaveProperty('headers');
+  });
+
+  it('builds profile.stages including a RATE stage and a PAUSE stage', async () => {
+    const { calls } = stubFetch({ state: 'none' });
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'rate-load' } });
+
+    // Stage 1 (the seeded hold) → make it a RATE hold of 50/s.
+    const stage1 = screen.getByTestId('load-stage-1');
+    selectOption(within(stage1).getByLabelText('Stage type'), 'Rate (iterations/sec)');
+    fireEvent.change(within(stage1).getByLabelText('Rate (iterations/sec)'), { target: { value: '50' } });
+    fireEvent.change(within(stage1).getByLabelText('Max VUs (optional)'), { target: { value: '20' } });
+    fireEvent.change(within(stage1).getByLabelText('Duration (ms)'), { target: { value: '15000' } });
+
+    // Add a third stage and make it a PAUSE.
+    fireEvent.click(screen.getByRole('button', { name: /Add stage/i }));
+    const stage2 = screen.getByTestId('load-stage-2');
+    selectOption(within(stage2).getByLabelText('Stage type'), 'Pause (no load)');
+    fireEvent.change(within(stage2).getByLabelText('Duration (ms)'), { target: { value: '5000' } });
+
+    const step0 = screen.getByTestId('load-step-0');
+    fireEvent.change(within(step0).getByLabelText('Target host'), { target: { value: 'target.svc' } });
+    fireEvent.change(within(step0).getByLabelText('Target port'), { target: { value: '8080' } });
+    fireEvent.change(within(step0).getByLabelText('Path'), { target: { value: '/api/item' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Start load scenario/i }));
+
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
+    const put = calls.find((c) => c.method === 'PUT')!;
+    const stages = (put.body as { profile: { stages: Array<Record<string, unknown>> } }).profile.stages;
+    expect(stages).toHaveLength(3);
+    expect(stages[0]).toMatchObject({ type: 'VU', startVus: 1, endVus: 10 });
+    expect(stages[1]).toMatchObject({ type: 'RATE', rate: 50, maxVus: 20, durationMillis: 15000 });
+    expect(stages[2]).toMatchObject({ type: 'PAUSE', durationMillis: 5000 });
+    // The PAUSE stage carries only its duration.
+    expect(stages[2]).not.toHaveProperty('vus');
+    expect(stages[2]).not.toHaveProperty('rate');
+  });
+
+  it('reorders and removes stages', async () => {
+    const { calls } = stubFetch({ state: 'none' });
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'reorder-load' } });
+    // Move the hold stage (stage 2) up so it runs first.
+    fireEvent.click(screen.getByRole('button', { name: /Move stage 2 up/i }));
+
+    const step0 = screen.getByTestId('load-step-0');
+    fireEvent.change(within(step0).getByLabelText('Target host'), { target: { value: 'target.svc' } });
+    fireEvent.change(within(step0).getByLabelText('Target port'), { target: { value: '8080' } });
+    fireEvent.change(within(step0).getByLabelText('Path'), { target: { value: '/api/item' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Start load scenario/i }));
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
+    const put = calls.find((c) => c.method === 'PUT')!;
+    const stages = (put.body as { profile: { stages: Array<Record<string, unknown>> } }).profile.stages;
+    // After moving up, the hold (vus: 10) is now first, the ramp second.
+    expect(stages[0]).toMatchObject({ type: 'VU', vus: 10 });
+    expect(stages[1]).toMatchObject({ type: 'VU', startVus: 1, endVus: 10 });
   });
 
   it('emits per-step request headers in MockServer KeyToMultiValue object-map shape', async () => {
@@ -81,8 +165,7 @@ describe('LoadScenarioPanel', () => {
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'auth-load' } });
-    fireEvent.change(screen.getByLabelText(/Virtual users/), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText(/Duration/), { target: { value: '10000' } });
+    // The seeded default profile (a VU ramp then hold) is already valid; no profile edits needed.
 
     const step0 = screen.getByTestId('load-step-0');
     fireEvent.change(within(step0).getByLabelText('Target host'), { target: { value: 'api.svc' } });
@@ -125,7 +208,7 @@ describe('LoadScenarioPanel', () => {
       definition: {
         name: 'header-run',
         templateType: 'VELOCITY',
-        profile: { type: 'CONSTANT', vus: 2, durationMillis: 10000 },
+        profile: { stages: [{ type: 'VU', vus: 2, durationMillis: 10000 }] },
         steps: [
           {
             request: {
@@ -175,6 +258,43 @@ describe('LoadScenarioPanel', () => {
     expect(screen.getByRole('button', { name: /Stop/i })).toBeInTheDocument();
   });
 
+  it('shows the active-stage readout from stageIndex/stageType/currentTarget', async () => {
+    stubFetch({
+      state: 'running',
+      name: 'staged-run',
+      runId: 'rS',
+      currentVus: 12,
+      stageIndex: 1,
+      stageType: 'RATE',
+      currentTarget: 50,
+      requestsSent: 200,
+      succeeded: 200,
+      failed: 0,
+      p50Millis: 5,
+      p95Millis: 9,
+      p99Millis: 12,
+      elapsedMillis: 4000,
+      definition: {
+        name: 'staged-run',
+        templateType: 'VELOCITY',
+        profile: {
+          stages: [
+            { type: 'VU', startVus: 1, endVus: 10, durationMillis: 30000, curve: 'LINEAR' },
+            { type: 'RATE', rate: 50, durationMillis: 30000 },
+            { type: 'PAUSE', durationMillis: 5000 },
+          ],
+        },
+        steps: [{ request: { method: 'GET', path: '/x', socketAddress: { host: 'h', port: 80, scheme: 'HTTP' } } }],
+      },
+    });
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-live-status')).toBeInTheDocument());
+    const readout = screen.getByTestId('load-stage-readout');
+    expect(readout).toHaveTextContent('Stage 2/3');
+    expect(readout).toHaveTextContent('RATE');
+    expect(readout).toHaveTextContent('target 50/s');
+  });
+
   it('toggles a chart series on and off', async () => {
     stubFetch({
       state: 'running', name: 'r', runId: 'r1', currentVus: 2,
@@ -214,7 +334,7 @@ describe('LoadScenarioPanel', () => {
       definition: {
         name: 'foreign-run',
         templateType: 'VELOCITY',
-        profile: { type: 'CONSTANT', vus: 7, durationMillis: 45000 },
+        profile: { stages: [{ type: 'VU', vus: 7, durationMillis: 45000 }] },
         steps: [
           { request: { method: 'GET', path: '/echoed/path', socketAddress: { host: 'echoed.svc', port: 9090, scheme: 'HTTP' } } },
         ],
@@ -229,8 +349,11 @@ describe('LoadScenarioPanel', () => {
     await waitFor(() =>
       expect((screen.getByLabelText(/Scenario name/) as HTMLInputElement).value).toBe('foreign-run'),
     );
-    expect((screen.getByLabelText(/Virtual users/) as HTMLInputElement).value).toBe('7');
-    expect((screen.getByLabelText(/Duration/) as HTMLInputElement).value).toBe('45000');
+    // The single echoed VU-hold stage round-trips into one stage card with vus 7 / duration 45000.
+    const stage0 = screen.getByTestId('load-stage-0');
+    expect((within(stage0).getByLabelText('Virtual users (VUs)') as HTMLInputElement).value).toBe('7');
+    expect((within(stage0).getByLabelText('Duration (ms)') as HTMLInputElement).value).toBe('45000');
+    expect(screen.queryByTestId('load-stage-1')).toBeNull();
     const step0 = screen.getByTestId('load-step-0');
     expect((within(step0).getByLabelText('Path') as HTMLInputElement).value).toBe('/echoed/path');
     expect((within(step0).getByLabelText('Target host') as HTMLInputElement).value).toBe('echoed.svc');
