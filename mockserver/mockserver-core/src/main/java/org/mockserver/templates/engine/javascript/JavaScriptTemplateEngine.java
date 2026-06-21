@@ -74,6 +74,19 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         return POLYGLOT_AVAILABLE;
     }
 
+    /**
+     * Release the per-thread GraalVM {@link org.graalvm.polyglot.Context} this engine's runner holds against
+     * the CURRENT thread (if any). The process-wide shared GraalVM Engine is NOT closed — it lives for the
+     * JVM. Call this when a {@code JavaScriptTemplateEngine} is short-lived (created per call / per test) so a
+     * Context is not leaked into the calling thread for every such instance; long-lived action-handler engines
+     * may simply leave their Context open for their life. No-op when GraalVM is not on the classpath.
+     */
+    public void close() {
+        if (POLYGLOT_AVAILABLE && polyglotRunner != null) {
+            ((PolyglotRunner) polyglotRunner).close();
+        }
+    }
+
     private static boolean isClassAllowed(String className, Configuration configuration) {
         if (isNotBlank(configuration.javascriptDisallowedClasses())) {
             Iterable<String> restrictedClasses = Splitter.on(",").trimResults().split(configuration.javascriptDisallowedClasses());

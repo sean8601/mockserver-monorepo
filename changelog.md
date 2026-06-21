@@ -1570,6 +1570,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Correctness & reliability
+- **GraalVM Engine leak in the JavaScript template engine** (`mockserver-core`). The recent JS-template-engine
+  caching change built a new native GraalVM `Engine` per `JavaScriptTemplateEngine` instance (and a per-instance
+  thread-local `Context`) that was never closed; since the engine is constructed per call/handler/test, native
+  Engines accumulated (each pinning Truffle/compiler threads and native memory), which exhausted the reused test
+  fork and timed out CI. The `Engine` is now a single process-wide instance (shared across all template engines,
+  the standard GraalVM pattern), and `JavaScriptTemplateEngine`/`PolyglotRunner` gain a `close()` that disposes
+  the thread-local `Context` (used by short-lived render paths). Rendering output and the `Java.type(...)`
+  class-lookup security boundary are unchanged (per-instance class filter retained).
+
 #### Documentation site & dashboard
 - **Docs left-nav showed "Examples" twice and re-ordered between pages** (`jekyll-www.mock-server.com`). Removed a
   leftover hardcoded "Examples" nav link that duplicated the auto-listed `examples.html` page, and made every

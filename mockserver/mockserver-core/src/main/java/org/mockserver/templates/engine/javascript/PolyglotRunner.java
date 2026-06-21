@@ -40,8 +40,15 @@ import static org.mockserver.log.model.LogEntryMessages.TEMPLATE_GENERATED_MESSA
  * lock that serialised every JavaScript render across the whole server. This reuses three things instead:
  *
  * <ul>
- *   <li><b>A shared {@link Engine}</b> — thread-safe and able to share parsed/compiled JavaScript across
- *       the {@link Context}s spawned from it (the standard GraalVM scaling pattern). Built once per runner.</li>
+ *   <li><b>A process-wide shared {@link Engine}</b> — thread-safe and able to share parsed/compiled
+ *       JavaScript across the {@link Context}s spawned from it (the standard GraalVM scaling pattern).
+ *       Built once per JVM (a single lazily-initialised static), NOT per runner: a GraalVM {@code Engine}
+ *       is a heavy native resource (it pins Truffle/compiler threads and native memory) and is never
+ *       closed, so building one per {@code JavaScriptTemplateEngine} instance accumulated thousands of
+ *       native Engines across a long-lived process (e.g. one reused Surefire fork rendering across the
+ *       whole test suite), thrashing GC and eventually killing the fork. The {@code Engine} does NOT
+ *       depend on the per-instance {@code classFilter} (only each {@link Context}'s
+ *       {@code allowHostClassLookup(classFilter)} does), so a single shared {@code Engine} is safe.</li>
  *   <li><b>A cached, parsed {@link Source}</b> — the {@code function handle(...){...} function serialise(...)}
  *       script is parsed into a {@link Source} at most once per distinct script string and reused on every
  *       render (mirroring the Mustache engine's compiled-template cache), keyed by the exact evaluated
@@ -71,7 +78,26 @@ final class PolyglotRunner {
     // misbehaving client generates unique scripts per request. 1000 comfortably covers realistic mock configs.
     static final int PARSED_TEMPLATE_CACHE_MAX = 1000;
 
-    private final Engine sharedEngine;
+    // Process-wide GraalVM Engine: ONE per JVM, lazily built on first use. A GraalVM Engine is a heavy
+    // native resource (Truffle/compiler threads + native memory) and is never closed for the JVM's life,
+    // so it MUST be O(1) in the number of JavaScriptTemplateEngine instances, not O(instances). The Engine
+    // is documented thread-safe and is explicitly designed to be shared across Contexts and threads. It does
+    // NOT depend on any per-instance classFilter (the security boundary is each Context's
+    // allowHostClassLookup(classFilter)), so sharing one Engine across all runners is safe. Built via the
+    // initialization-on-demand holder idiom so the native Engine is only created when a JavaScript template
+    // is actually rendered, and never when GraalVM is merely on the classpath.
+    private static final class SharedEngineHolder {
+        static final Engine INSTANCE = Engine.newBuilder()
+            // suppress GraalVM's "falling back to interpreter / experimental options" warnings on stderr,
+            // matching the previous Context-per-render behaviour (which never opted into those warnings).
+            .option("engine.WarnInterpreterOnly", "false")
+            .build();
+    }
+
+    static Engine sharedEngine() {
+        return SharedEngineHolder.INSTANCE;
+    }
+
     private final Predicate<String> classFilter;
     private final Map<String, Source> parsedSources = Collections.synchronizedMap(new LinkedHashMap<String, Source>(256, 0.75f, true) {
         @Override
@@ -81,7 +107,7 @@ final class PolyglotRunner {
     });
 
     // A GraalVM Context is single-threaded; give each request thread its own Context, all spawned from the
-    // shared thread-safe Engine so they share parsed/compiled JavaScript. Built lazily on first use per thread
+    // process-wide shared thread-safe Engine so they share parsed/compiled JavaScript. Built lazily on first use per thread
     // with this runner's classFilter. The classFilter predicate reads configuration.javascriptDisallowedClasses()
     // live on every host-class lookup, so a cached Context still honours runtime changes to the disallowed-class
     // list (the predicate, not its result, is what is captured).
@@ -89,11 +115,6 @@ final class PolyglotRunner {
 
     PolyglotRunner(Predicate<String> classFilter) {
         this.classFilter = classFilter;
-        this.sharedEngine = Engine.newBuilder()
-            // suppress GraalVM's "falling back to interpreter / experimental options" warnings on stderr,
-            // matching the previous Context-per-render behaviour (which never opted into those warnings).
-            .option("engine.WarnInterpreterOnly", "false")
-            .build();
         this.threadLocalContext = ThreadLocal.withInitial(this::newContext);
     }
 
@@ -101,12 +122,40 @@ final class PolyglotRunner {
         // HostAccess.ALL is equivalent to the previous JSR-223 polyglot.js.allowHostAccess=true.
         // The security boundary is allowHostClassLookup(classFilter), which gates which classes
         // templates can resolve via Java.type(...). HostAccess.EXPLICIT/CONSTRAINED would narrow
-        // the attack surface further but require annotating template helper classes.
+        // the attack surface further but require annotating template helper classes. The Context is
+        // spawned from the process-wide shared Engine but carries THIS runner's classFilter, so the
+        // security boundary remains per-instance: a Context built for one runner's configuration is
+        // never reused for a render under a different runner's (potentially stricter) configuration.
         return Context.newBuilder("js")
-            .engine(sharedEngine)
+            .engine(sharedEngine())
             .allowHostAccess(HostAccess.ALL)
             .allowHostClassLookup(classFilter)
             .build();
+    }
+
+    /**
+     * Close this thread's {@link Context} (if any) and drop the {@link ThreadLocal} entry, releasing the
+     * per-thread interpreter state held against this runner. The process-wide shared {@link Engine} is
+     * deliberately NOT closed — it lives for the JVM and is shared by every runner.
+     *
+     * <p>The per-instance {@code ThreadLocal<Context>} means a long-lived thread accumulates one Context per
+     * runner it ever rendered on. For runners that are short-lived (e.g. {@code ResponseTemplateTester}
+     * creating a fresh {@link JavaScriptTemplateEngine} per call, or tests), failing to close would leak a
+     * Context per call into every thread that touched the runner. Long-lived action-handler runners can leave
+     * their Context open for the handler's life. This only closes the CURRENT thread's Context; runners that
+     * outlive a single thread are expected to be few and long-lived.
+     */
+    void close() {
+        Context context = threadLocalContext.get();
+        threadLocalContext.remove();
+        if (context != null) {
+            try {
+                context.close(true);
+            } catch (RuntimeException ignored) {
+                // a Context that is mid-execution or already closed must not surface from a cleanup call;
+                // the ThreadLocal entry is already removed so the Context is unreferenced and collectable.
+            }
+        }
     }
 
     private Source parsedSource(String fullScript) {

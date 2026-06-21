@@ -1318,4 +1318,28 @@ public class JavaScriptTemplateEngineTest {
         ));
     }
 
+    @Test
+    public void shouldShareASingleProcessWideGraalVmEngineAcrossManyEngineInstances() {
+        // given a heavy native GraalVM Engine must be O(1) per JVM, NOT one per JavaScriptTemplateEngine
+        // instance — accumulating one native Engine per instance is what killed the reused Surefire fork.
+        graalJsAvailable();
+        org.graalvm.polyglot.Engine before = PolyglotRunner.sharedEngine();
+        String template = "return { 'statusCode': 200, 'body': 'ok' };";
+        HttpRequest request = request().withPath("/somePath").withMethod("GET");
+
+        // when many engines are built and used to render
+        for (int i = 0; i < 50; i++) {
+            JavaScriptTemplateEngine engine = new JavaScriptTemplateEngine(mockServerLogger, configuration);
+            try {
+                HttpResponse actualHttpResponse = engine.executeTemplate(template, request, HttpResponseDTO.class);
+                assertThat(actualHttpResponse, is(response().withStatusCode(200).withBody("ok")));
+            } finally {
+                engine.close();
+            }
+        }
+
+        // then the exact same Engine instance is reused for every one of them (process-wide singleton)
+        assertThat(PolyglotRunner.sharedEngine(), is(sameInstance(before)));
+    }
+
 }
