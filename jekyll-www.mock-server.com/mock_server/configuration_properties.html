@@ -1815,6 +1815,14 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p>Type: <span class="keyword">int</span> Default: <span class="this_value">50</span></p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxSteps(int maxSteps)</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxSteps=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_STEPS=...</code></pre>
+    <p><strong>Max Rate</strong> &mdash; hard cap on the arrival rate (iterations per second) a <span class="inline_code">RATE</span> stage may request; a faster stage is rejected at validation. Default is <span class="this_value">5000</span>.</p>
+    <p>Type: <span class="keyword">double</span> Default: <span class="this_value">5000</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxRate(double maxRate)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxRate=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_RATE=...</code></pre>
+    <p><strong>Max Stages</strong> &mdash; hard cap on the number of stages a single load profile may define. Default is <span class="this_value">20</span>.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">20</span></p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.loadGenerationMaxStages(int maxStages)</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationMaxStages=... &nbsp; MOCKSERVER_LOAD_GENERATION_MAX_STAGES=...</code></pre>
     <p>Example (enable load generation with a lower concurrency ceiling):</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.loadGenerationEnabled="true" -Dmockserver.loadGenerationMaxVirtualUsers="20" -Dmockserver.loadGenerationMaxRequestsPerSecond="200"</code></pre>
 </div>

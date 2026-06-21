@@ -102,7 +102,7 @@ public class HttpStateLoadScenarioEndpointTest {
 
     private static String scenarioJson() {
         return "{ \"name\": \"smoke\", " +
-            "\"profile\": { \"type\": \"CONSTANT\", \"vus\": 1, \"durationMillis\": 60000 }, " +
+            "\"profile\": { \"stages\": [ { \"type\": \"VU\", \"vus\": 1, \"durationMillis\": 60000 } ] }, " +
             "\"steps\": [ { \"request\": { \"path\": \"/health\", \"headers\": { \"Host\": [\"target\"] } } } ] }";
     }
 
@@ -165,8 +165,8 @@ public class HttpStateLoadScenarioEndpointTest {
             JsonNode definition = runningBody.get("definition");
             assertThat("definition is present", definition != null && definition.isObject(), is(true));
             assertThat(definition.get("name").asText(), is("smoke"));
-            assertThat(definition.get("profile").get("vus").asInt(), is(1));
-            assertThat(definition.get("profile").get("durationMillis").asLong(), is(60000L));
+            assertThat(definition.get("profile").get("stages").get(0).get("vus").asInt(), is(1));
+            assertThat(definition.get("profile").get("stages").get(0).get("durationMillis").asLong(), is(60000L));
             assertThat(definition.get("steps").get(0).get("request").get("path").asText(), is("/health"));
         } finally {
             delete();
@@ -223,7 +223,7 @@ public class HttpStateLoadScenarioEndpointTest {
         try {
             rebuildHttpState(true);
             String body = "{ \"name\": \"big\", " +
-                "\"profile\": { \"type\": \"CONSTANT\", \"vus\": 100, \"durationMillis\": 1000 }, " +
+                "\"profile\": { \"stages\": [ { \"type\": \"VU\", \"vus\": 100, \"durationMillis\": 1000 } ] }, " +
                 "\"steps\": [ { \"request\": { \"path\": \"/x\" } } ] }";
             HttpResponse response = put(body);
             assertThat(response.getStatusCode(), is(400));

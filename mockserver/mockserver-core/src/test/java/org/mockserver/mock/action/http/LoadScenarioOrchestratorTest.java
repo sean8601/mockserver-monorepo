@@ -6,7 +6,9 @@ import org.junit.Test;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
+import org.mockserver.load.LoadStage;
 import org.mockserver.load.LoadStep;
+import org.mockserver.load.RampCurve;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.HttpRequest;
 import org.mockserver.model.HttpResponse;
@@ -138,15 +140,15 @@ public class LoadScenarioOrchestratorTest {
     }
 
     @Test
-    public void linearProfileRampsTargetVusOverTime() {
-        // Pure ramp-shape assertion via the profile (deterministic, no traffic needed).
-        LoadProfile linear = LoadProfile.linear(0, 10, 1000L);
+    public void linearProfileRampsTargetVusOverTime() throws Exception {
+        // Pure ramp-shape assertion via the stage (deterministic, no traffic needed).
+        LoadStage linear = LoadStage.rampVus(0, 10, 1000L, RampCurve.LINEAR);
         assertThat(linear.targetVusAt(0), is(0));
         assertThat(linear.targetVusAt(500), is(5));
         assertThat(linear.targetVusAt(1000), is(10));
         assertThat(linear.targetVusAt(2000), is(10)); // clamped at end
 
-        // And via the orchestrator status currentVus driven by tickNow + the mutable clock.
+        // And via the orchestrator's live active-VU count driven by tickNow + the mutable clock.
         RecordingSender sender = new RecordingSender();
         LoadScenario scenario = new LoadScenario()
             .withName("linear")
@@ -156,13 +158,298 @@ public class LoadScenarioOrchestratorTest {
 
         clock.set(10_000L + 500L);
         orchestrator.tickNow();
-        assertThat(orchestrator.getStatus().currentVus, is(4));
+        assertThat("active VUs ramp up to the t=500 target of 4",
+            awaitLastRunActiveVus(4, 5_000L), is(true));
 
-        // Just before the duration boundary the ramp is essentially at endVus; at exactly the
-        // duration the scenario transitions to completed, which is covered separately.
+        // Just before the duration boundary the ramp is essentially at endVus.
         clock.set(10_000L + 999L);
         orchestrator.tickNow();
-        assertThat(orchestrator.getStatus().currentVus, is(8));
+        assertThat("active VUs ramp up to the near-end target of 8",
+            awaitLastRunActiveVus(8, 5_000L), is(true));
+    }
+
+    @Test
+    public void stagesRunInSequenceVuThenPauseThenRate() throws Exception {
+        // VU(2 VUs, 400ms) -> PAUSE(200ms) -> RATE(20/s, 500ms). Assert the stage index advances in
+        // order, the pause drains VUs, and the run terminates after the last stage.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("sequenced")
+            .withProfile(LoadProfile.of(
+                LoadStage.constantVus(2, 400L),
+                LoadStage.pause(200L),
+                LoadStage.constantRate(20.0, 500L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        // Stage 0 (VU): two VUs spin up.
+        assertThat("VU stage spins up 2 VUs", awaitLastRunActiveVus(2, 5_000L), is(true));
+        assertThat(orchestrator.getStatus().stageIndex, is(0));
+        assertThat(orchestrator.getStatus().stageType, is("VU"));
+
+        // Advance into the PAUSE stage (after 400ms): VUs drain to zero.
+        clock.set(10_000L + 500L);
+        orchestrator.tickNow();
+        assertThat("pause stage drains VUs", awaitLastRunActiveVus(0, 5_000L), is(true));
+        assertThat(orchestrator.getStatus().stageIndex, is(1));
+        assertThat(orchestrator.getStatus().stageType, is("PAUSE"));
+
+        // Advance into the RATE stage (after 600ms): the open-model scheduler reports a RATE stage.
+        clock.set(10_000L + 700L);
+        orchestrator.tickNow();
+        assertThat(orchestrator.getStatus().stageIndex, is(2));
+        assertThat(orchestrator.getStatus().stageType, is("RATE"));
+
+        // Advance past the last stage (total 1100ms): the run terminates.
+        clock.set(10_000L + 1_200L);
+        orchestrator.tickNow();
+        long deadline = System.currentTimeMillis() + 2_000L;
+        while (orchestrator.getStatus() != null && "running".equals(orchestrator.getStatus().state)
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        assertThat(orchestrator.getStatus().state, is("completed"));
+    }
+
+    @Test
+    public void rateStageAchievesTargetArrivalRate() throws Exception {
+        // A constant 50 iterations/sec rate over ~1s should start ~50 iterations (one request per
+        // iteration here), within tolerance. Drive the clock forward in fixed steps and tick so the
+        // deficit accumulator integrates the rate deterministically.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("rate")
+            .withProfile(LoadProfile.constantRate(50.0, 2_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // Step the clock in 100ms increments over 1 second, ticking each time (50/s * 1s = ~50).
+        for (int i = 1; i <= 10; i++) {
+            clock.set(10_000L + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20); // let one-shot iterations dispatch their single step
+        }
+        long sent = sender.sent.size();
+        assertThat("≈50 iterations started over 1s at 50/s", sent, greaterThanOrEqualTo(40L));
+        assertThat(sent, lessThanOrEqualTo(60L));
+    }
+
+    @Test
+    public void rateStageAfterPauseDoesNotBurstOnFirstTick() throws Exception {
+        // RATE 10/s -> PAUSE 5s -> RATE 10/s. The accumulator state is per-run; before the fix the
+        // second RATE stage's first integrating tick computed dt across the ENTIRE pause and added
+        // rate*gap iterations at once (~50+), bursting. After the fix each RATE stage integrates only
+        // its own elapsed time, so the second stage's FIRST tick starts ~rate*tick/1000 (~1 at 10/s,
+        // 100ms tick), and the whole second stage totals ~rate*duration with no surplus.
+        RecordingSender sender = new RecordingSender();
+        long base = 10_000L;
+        LoadScenario scenario = new LoadScenario()
+            .withName("rate-pause-rate")
+            .withProfile(LoadProfile.of(
+                LoadStage.constantRate(10.0, 1_000L),   // stage 0: 0..1000ms
+                LoadStage.pause(5_000L),                // stage 1: 1000..6000ms
+                LoadStage.constantRate(10.0, 1_000L)))  // stage 2: 6000..7000ms
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        // Drive stage 0 (first RATE): 0..1000ms in 100ms ticks. ~10 iterations.
+        for (int i = 1; i <= 10; i++) {
+            clock.set(base + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20);
+        }
+        long afterFirstRate = sender.sent.size();
+        assertThat("first RATE stage achieves ~10 iterations over 1s",
+            afterFirstRate, allOf(greaterThanOrEqualTo(7L), lessThanOrEqualTo(13L)));
+
+        // Drive the PAUSE stage: 1000..6000ms. No load.
+        for (int i = 11; i <= 60; i++) {
+            clock.set(base + i * 100L);
+            orchestrator.tickNow();
+        }
+        Thread.sleep(20);
+        long afterPause = sender.sent.size();
+        assertThat("pause stage drives no load", afterPause - afterFirstRate, is(0L));
+
+        // First tick of stage 2 (second RATE), at elapsed 6100ms. This is the "first integrating tick"
+        // of the second RATE stage: after the reset it re-initialises (no integration) on the boundary
+        // tick at 6000ms and integrates only one 100ms step here, so it must start ~1 iteration, NOT
+        // rate*gap (~50). The boundary tick (6000ms) is the initialising tick.
+        clock.set(base + 6_000L);
+        orchestrator.tickNow();
+        Thread.sleep(20);
+        long atSecondRateBoundary = sender.sent.size();
+        assertThat("the boundary tick of the second RATE stage initialises and does not integrate",
+            atSecondRateBoundary - afterPause, is(0L));
+
+        clock.set(base + 6_100L);
+        orchestrator.tickNow();
+        Thread.sleep(20);
+        long afterFirstIntegratingTick = sender.sent.size();
+        long firstTickIterations = afterFirstIntegratingTick - atSecondRateBoundary;
+        assertThat("second RATE stage's first integrating tick starts ~1 iteration (rate*tick), not a burst",
+            firstTickIterations, allOf(greaterThanOrEqualTo(0L), lessThanOrEqualTo(3L)));
+
+        // Drive the remainder of stage 2: 6200..7000ms. Total over the second RATE stage ~= 10.
+        for (int i = 62; i <= 70; i++) {
+            clock.set(base + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20);
+        }
+        long secondRateTotal = sender.sent.size() - afterPause;
+        assertThat("second RATE stage totals ~rate*duration with no burst surplus",
+            secondRateTotal, allOf(greaterThanOrEqualTo(7L), lessThanOrEqualTo(13L)));
+    }
+
+    @Test
+    public void rateStageAfterVuStageDoesNotBurstOnFirstTick() throws Exception {
+        // RATE 10/s -> VU(2, 3s) -> RATE 10/s. Same no-burst property across a VU stage in between:
+        // before the fix the second RATE stage's first integrating tick spanned the whole VU stage and
+        // bursted; after the fix it integrates only its own elapsed time.
+        //
+        // The step carries a very large think time so the closed-loop VUs fire roughly one request then
+        // park for far longer than the whole test (they never re-loop and flood the recorder). Think time
+        // is inter-step pacing applied AFTER the request is sent, so it does not delay or reduce the RATE
+        // one-shots' single request — only the VU loops are silenced, keeping the stage-2 RATE count a
+        // clean signal instead of being swamped by unbounded zero-think VU looping.
+        RecordingSender sender = new RecordingSender();
+        long base = 10_000L;
+        LoadScenario scenario = new LoadScenario()
+            .withName("rate-vu-rate")
+            .withProfile(LoadProfile.of(
+                LoadStage.constantRate(10.0, 1_000L),   // stage 0: 0..1000ms
+                LoadStage.constantVus(2, 3_000L),       // stage 1: 1000..4000ms
+                LoadStage.constantRate(10.0, 1_000L)))  // stage 2: 4000..5000ms
+            .withSteps(new LoadStep()
+                .withRequest(request().withPath("/api").withHeader("Host", "target"))
+                .withThinkTime(org.mockserver.model.Delay.seconds(60)));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        // Stage 0 (first RATE): 0..1000ms.
+        for (int i = 1; i <= 10; i++) {
+            clock.set(base + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20);
+        }
+        // Move through the VU stage (1100..3900ms). Each VU fires ~one request then parks (60s think).
+        for (int i = 11; i <= 39; i++) {
+            clock.set(base + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+
+        // Boundary tick of stage 2 (4000ms): the RATE accumulator was reset on entry, so this tick
+        // initialises and does not integrate.
+        clock.set(base + 4_000L);
+        orchestrator.tickNow();
+        Thread.sleep(20);
+        long atBoundary = sender.sent.size();
+
+        // First integrating tick of stage 2 (4100ms): integrates only one 100ms step (~1 iteration),
+        // NOT rate * the 3s VU stage (~30). This is the regression: pre-fix dtMillis spanned the whole
+        // intervening VU stage and added rate*3s to the deficit on this one tick.
+        clock.set(base + 4_100L);
+        orchestrator.tickNow();
+        Thread.sleep(20);
+        long firstTickIterations = sender.sent.size() - atBoundary;
+        assertThat("second RATE stage's first integrating tick after a VU stage starts ~1 iteration, not a burst",
+            firstTickIterations, allOf(greaterThanOrEqualTo(0L), lessThanOrEqualTo(3L)));
+
+        // Remainder of stage 2: 4200..5000ms. The RATE stage contribution totals ~rate*duration (~10).
+        for (int i = 42; i <= 50; i++) {
+            clock.set(base + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20);
+        }
+        long secondRateContribution = sender.sent.size() - atBoundary;
+        assertThat("the second RATE stage contributes ~rate*duration with no burst surplus",
+            secondRateContribution, allOf(greaterThanOrEqualTo(7L), lessThanOrEqualTo(14L)));
+    }
+
+    @Test
+    public void rampRateStageIncreasesOverTime() throws Exception {
+        // A 0->100/s linear ramp over 1s: more iterations are started in the second half than the
+        // first half (the rate genuinely rises).
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("ramp-rate")
+            .withProfile(LoadProfile.of(LoadStage.rampRate(0.0, 100.0, 1_000L, RampCurve.LINEAR)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // First half (0..500ms).
+        for (int i = 1; i <= 5; i++) {
+            clock.set(10_000L + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20);
+        }
+        long firstHalf = sender.sent.size();
+        // Second half (500..1000ms).
+        for (int i = 6; i <= 10; i++) {
+            clock.set(10_000L + i * 100L);
+            orchestrator.tickNow();
+            Thread.sleep(20);
+        }
+        long secondHalf = sender.sent.size() - firstHalf;
+        assertThat("the ramping rate starts more iterations in the second half than the first",
+            secondHalf, greaterThan(firstHalf));
+    }
+
+    @Test
+    public void pauseStageProducesNoRequests() throws Exception {
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("pause-only")
+            .withProfile(LoadProfile.of(LoadStage.pause(500L), LoadStage.constantVus(1, 500L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // Tick within the first (PAUSE) stage only: no requests should be produced.
+        clock.set(10_000L + 200L);
+        orchestrator.tickNow();
+        Thread.sleep(100);
+        clock.set(10_000L + 400L);
+        orchestrator.tickNow();
+        Thread.sleep(100);
+        assertThat("pause stage drives no load", sender.sent.size(), is(0));
+    }
+
+    @Test
+    public void rejectsRateStageExceedingMaxRate() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("too-fast")
+            .withProfile(LoadProfile.constantRate(1_000_000.0, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String error = orchestrator.start(scenario, new RecordingSender());
+        assertThat(error, containsString("exceeding the maximum of"));
+    }
+
+    @Test
+    public void rejectsRampStageMissingEndpoints() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("bad-ramp")
+            .withProfile(LoadProfile.of(new LoadStage().withType(org.mockserver.load.LoadStageType.VU)
+                .withDurationMillis(1_000L).withStartVus(1))) // endVus missing -> treated as a hold without vus
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String error = orchestrator.start(scenario, new RecordingSender());
+        assertThat(error, containsString("VU stage requires"));
+    }
+
+    @Test
+    public void rejectsStageWithZeroDuration() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("zero-duration")
+            .withProfile(LoadProfile.of(LoadStage.constantVus(1, 0L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String error = orchestrator.start(scenario, new RecordingSender());
+        assertThat(error, containsString("durationMillis must be > 0"));
     }
 
     @Test

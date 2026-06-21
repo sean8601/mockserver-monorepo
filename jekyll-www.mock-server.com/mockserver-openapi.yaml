@@ -2669,12 +2669,14 @@ paths:
         - loadgen
       summary: start a load scenario
       description: >-
-        Starts an API load scenario — an ordered list of templated request steps fired at a target
-        concurrency described by a ramp profile, with per-iteration data variation. It is a pure SLI
-        producer: each completed request records a latency/error sample into the metrics histograms and
-        the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no
-        verdict logic of its own. Off by default — returns 403 until loadGenerationEnabled=true. Hard caps
-        protect the server: max 50 virtual users, max 50 steps, max 1h duration, plus a live in-flight
+        Starts an API load scenario — an ordered list of templated request steps driven through a sequence
+        of stages (a load profile), with per-iteration data variation. A stage either holds/ramps the number
+        of concurrent virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second
+        (RATE, open model), or pauses. It is a pure SLI producer: each completed request records a
+        latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO
+        can read load-driven SLIs), but it contains no verdict logic of its own. Off by default — returns 403
+        until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 5000
+        iterations/second, max 20 stages, max 50 steps, max 1h total duration, plus a live in-flight
         semaphore (200) and an RPS token bucket (500).
       responses:
         '200':
@@ -2720,10 +2722,15 @@ paths:
               templateType: VELOCITY
               maxRequests: 5000
               profile:
-                type: CONSTANT
-                vus: 10
-                durationMillis: 30000
-                iterationPacingMillis: 50
+                stages:
+                  - type: VU
+                    startVus: 1
+                    endVus: 10
+                    durationMillis: 30000
+                    curve: LINEAR
+                  - type: VU
+                    vus: 10
+                    durationMillis: 60000
               steps:
                 - request:
                     method: GET
@@ -2769,6 +2776,17 @@ paths:
                     format: int64
                   currentVus:
                     type: integer
+                    description: "live count of active virtual users"
+                  stageIndex:
+                    type: integer
+                    description: "0-based index of the currently-running stage (omitted when not running)"
+                  stageType:
+                    type: string
+                    enum: [VU, RATE, PAUSE]
+                    description: "type of the currently-running stage (omitted when not running)"
+                  currentTarget:
+                    type: number
+                    description: "current setpoint for the running stage: target virtual users (VU), target arrival rate in iterations/second (RATE), or 0 (PAUSE)"
                   requestsSent:
                     type: integer
                     format: int64
@@ -4372,33 +4390,63 @@ components:
           type: string
           maxLength: 100
           description: "Literal Retry-After header value; when omitted it is computed from the window/bucket reset time"
-    LoadProfile:
-      description: "ramp profile describing the target concurrency over time"
+    RampCurve:
+      type: string
+      enum: [LINEAR, EXPONENTIAL, QUADRATIC]
+      description: "interpolation curve used to ramp a value across a stage: LINEAR (constant slope), QUADRATIC (ease-in), EXPONENTIAL (steeper ease-in). Only meaningful for ramp stages; ignored for holds and pauses."
+    LoadStageType:
+      type: string
+      enum: [VU, RATE, PAUSE]
+      description: "VU = closed model (hold/ramp concurrent virtual users); RATE = open model (hold/ramp an arrival rate in iterations/second); PAUSE = drive no load."
+    LoadStage:
+      description: "one stage of a load profile, run in sequence: holds or ramps a setpoint for its duration"
       type: object
       additionalProperties: false
+      required:
+        - type
+        - durationMillis
       properties:
         type:
-          type: string
-          enum: [CONSTANT, LINEAR]
-          default: CONSTANT
-          description: "ramp shape: CONSTANT holds vus for the whole duration; LINEAR ramps from startVus to endVus"
+          $ref: "#/components/schemas/LoadStageType"
         durationMillis:
           type: integer
           format: int64
-          description: "how long the scenario runs in milliseconds (max 3600000 = 1h)"
+          description: "how long this stage runs in milliseconds (> 0); the sum across all stages is the total run length (max 3600000 = 1h)"
+        curve:
+          $ref: "#/components/schemas/RampCurve"
         vus:
           type: integer
-          description: "CONSTANT: number of virtual users to hold (max 50)"
+          description: "VU hold: the number of virtual users to hold for the stage (max 50)"
         startVus:
           type: integer
-          description: "LINEAR: virtual users at the start of the ramp"
+          description: "VU ramp: virtual users at the start of the ramp"
         endVus:
           type: integer
-          description: "LINEAR: virtual users at the end of the ramp (max 50)"
-        iterationPacingMillis:
+          description: "VU ramp: virtual users at the end of the ramp (max 50)"
+        rate:
+          type: number
+          description: "RATE hold: arrival rate to hold, in iterations per second (max 5000)"
+        startRate:
+          type: number
+          description: "RATE ramp: arrival rate at the start of the ramp, in iterations per second"
+        endRate:
+          type: number
+          description: "RATE ramp: arrival rate at the end of the ramp, in iterations per second (max 5000)"
+        maxVus:
           type: integer
-          format: int64
-          description: "optional minimum delay in milliseconds between successive iterations of a virtual user"
+          description: "RATE stage only: optional cap on the auto-scaling virtual-user pool that runs the started iterations (defaults to the global virtual-user cap)"
+    LoadProfile:
+      description: "an ordered list of stages run in sequence describing the load over time"
+      type: object
+      additionalProperties: false
+      required:
+        - stages
+      properties:
+        stages:
+          type: array
+          description: "ordered stages run one after another (max 20). Each holds or ramps virtual users (VU, closed model) or an arrival rate (RATE, open model), or pauses (PAUSE)."
+          items:
+            $ref: "#/components/schemas/LoadStage"
     LoadStep:
       description: "a single templated request step in a load scenario"
       type: object

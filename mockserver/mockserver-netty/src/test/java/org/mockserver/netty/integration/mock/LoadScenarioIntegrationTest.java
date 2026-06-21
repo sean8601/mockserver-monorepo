@@ -104,7 +104,7 @@ public class LoadScenarioIntegrationTest {
         // given a CONSTANT 5-VU / 3s scenario whose step forwards to the target MockServer
         LoadScenario scenario = new LoadScenario()
             .withName("integration-constant")
-            .withProfile(LoadProfile.constant(5, 3_000L).withIterationPacingMillis(10L))
+            .withProfile(LoadProfile.constant(5, 3_000L))
             .withSteps(new LoadStep().withRequest(
                 request()
                     .withMethod("GET")

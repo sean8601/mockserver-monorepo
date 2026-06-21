@@ -63,6 +63,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Load Profile v2: stages, arrival-rate (iterations/sec), ramp curves -->
+- **Load scenarios: multi-stage profiles, open-model arrival rate, and ramp curves** (`mockserver-core`). A load
+  scenario's `profile` is now an ordered list of **stages** run in sequence, replacing the single CONSTANT/LINEAR
+  ramp. Each stage is one of: a **VU** stage (closed model — hold `vus`, or ramp `startVus`→`endVus`), a **RATE**
+  stage (open model — hold `rate`, or ramp `startRate`→`endRate`, in **iterations per second**; the engine
+  auto-scales virtual users up to a cap to sustain the arrival rate), or a **PAUSE**. Ramp stages take a `curve`
+  of `LINEAR`, `EXPONENTIAL`, or `QUADRATIC`. This composes step/spike/soak/stress shapes (e.g. ramp → hold →
+  spike → recover) in one scenario. The GET status now reports the current `stageIndex`, `stageType`, and
+  `currentTarget` (target VUs or rate). New caps `mockserver.loadGenerationMaxRate` (default 5000 it/s) and
+  `mockserver.loadGenerationMaxStages` (default 20). The arrival-rate scheduler uses bounded deficit accounting so
+  it hits the target rate independent of tick granularity and never bursts across a stage boundary. (Breaking
+  change to the unreleased load-scenario profile shape.)
+
 <!-- Load scenario + SRE control plane across all client libraries -->
 - **Load-scenario (load injection) support in all client libraries, and SRE control-plane parity for the
   remaining clients.** Every client (Java, Node, Python, Ruby, Go, .NET, Rust, PHP) gains start / status / stop

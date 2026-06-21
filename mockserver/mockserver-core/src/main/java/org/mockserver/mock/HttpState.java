@@ -3486,6 +3486,13 @@ public class HttpState {
                 result.put("state", status.state);
                 result.put("elapsedMillis", status.elapsedMillis);
                 result.put("currentVus", status.currentVus);
+                if (status.stageIndex >= 0) {
+                    result.put("stageIndex", status.stageIndex);
+                }
+                if (status.stageType != null) {
+                    result.put("stageType", status.stageType);
+                    result.put("currentTarget", status.currentTarget);
+                }
                 result.put("requestsSent", status.requestsSent);
                 result.put("succeeded", status.succeeded);
                 result.put("failed", status.failed);

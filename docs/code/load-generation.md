@@ -1,20 +1,26 @@
 # Load Generation
 
 > **TL;DR** — MockServer can drive API traffic at a target on demand. A **load scenario**
-> (`PUT /mockserver/loadScenario`) is an ordered list of templated request *steps* fired at a
-> target concurrency described by a *ramp profile*, with per-iteration data variation. It is a pure
-> **SLI producer**: it records latency/error samples into the metrics histograms and the SLO sample
-> store (so [SLO verdicts](slo-verdicts.md) can read load-driven SLIs) but contains no verdict logic
-> of its own. **Off by default** — the endpoint returns `403` until `loadGenerationEnabled=true`, and
-> hard caps + a live in-flight semaphore and RPS token bucket prevent it self-DoSing the server.
+> (`PUT /mockserver/loadScenario`) is an ordered list of templated request *steps* driven through a
+> sequence of *stages* (a **load profile**), with per-iteration data variation. Each stage either holds
+> or ramps the number of concurrent **virtual users** (`VU`, closed model), holds or ramps an **arrival
+> rate** in iterations/second (`RATE`, open model), or **pauses**. It is a pure **SLI producer**: it
+> records latency/error samples into the metrics histograms and the SLO sample store (so
+> [SLO verdicts](slo-verdicts.md) can read load-driven SLIs) but contains no verdict logic of its own.
+> **Off by default** — the endpoint returns `403` until `loadGenerationEnabled=true`, and hard caps + a
+> live in-flight semaphore and RPS token bucket prevent it self-DoSing the server.
 
 ## High-level flow
 
 ```mermaid
 flowchart TD
     PUT["PUT /mockserver/loadScenario\n(control plane, off by default)"] --> ORCH["LoadScenarioOrchestrator\n(singleton + load-scenario-scheduler daemon)"]
-    ORCH -->|"control tick (~100ms)"| RAMP["targetVusAt(elapsed)\ngrow / retire VUs"]
-    RAMP --> VU["VU loop (no dedicated thread)\nrender + fire each step in order"]
+    ORCH -->|"control tick (~100ms)"| STAGE["locate active stage\nby elapsed time"]
+    STAGE -->|"VU stage"| VUD["targetVusAt(elapsedInStage)\ngrow / retire looping VUs"]
+    STAGE -->|"RATE stage"| RATED["targetRateAt(elapsedInStage)\nstart one-shot iterations (deficit accounting)\nauto-scale VU pool up to maxVus"]
+    STAGE -->|"PAUSE stage"| PAUSE["target 0 VUs\n(pool drains)"]
+    VUD --> VU["VU loop (no dedicated thread)\nrender + fire each step in order"]
+    RATED --> VU
     VU -->|"sender.apply(request)"| SENDER["injected sender\n(NettyHttpClient at runtime)"]
     SENDER --> TARGET["target service"]
     VU -->|"on complete"| REC["record latency + error\ninto Metrics + SloSampleStore"]
@@ -27,7 +33,9 @@ flowchart TD
 |------|---------|
 | `LoadScenario` | `name`, ordered `steps`, `profile`, `templateType` (default `VELOCITY`), optional `maxRequests`, optional `labels` (`Map<String,String>` — scenario-level custom metric labels). |
 | `LoadStep` | a `request` (reuses `HttpRequest`; template strings live in its fields), an optional `thinkTime` (`Delay`) — inter-step pacing only, an optional `name` (used as the `route` metric label when set; otherwise the path is auto-templatized), and optional `labels` (`Map<String,String>` — step-level custom metric labels that override scenario labels for this step). |
-| `LoadProfile` | the ramp. `type` ∈ `{CONSTANT, LINEAR}`, `durationMillis`, and either `vus` (constant) or `startVus`/`endVus` (linear), plus optional `iterationPacingMillis`. |
+| `LoadProfile` | a `List<LoadStage> stages` run in sequence. |
+| `LoadStage` | one slice of the run: a `type` ∈ `{VU, RATE, PAUSE}`, a required `durationMillis` (> 0), an optional `curve` ∈ `{LINEAR, EXPONENTIAL, QUADRATIC}` (ramps only; default `LINEAR`), and the setpoint fields for its type (see below). |
+| `RampCurve` | the interpolation helper. `valueAt(start, end, p)` is the single tested place the curve math lives, for both the VU driver and the rate scheduler. |
 | `IterationContext` | per-iteration template variable exposed under `iteration` (see below). |
 
 ### `iteration.*` template variable
@@ -48,15 +56,65 @@ Only the request `path` and `body` are rendered in v1 (the most commonly templat
 path is a new internal overload (`TemplateEngine.renderTemplate(template, request, iteration)`); the
 existing response/forward template path is untouched (it passes a `null` iteration).
 
-## Ramp profile
+## Stages, arrival-rate and curves
 
-`LoadProfile.targetVusAt(elapsedMillis)` is the single source of truth for the setpoint, read by the
-control tick:
+A `LoadProfile` is an **ordered list of stages run in sequence**. The control tick locates the active
+stage by elapsed time (`elapsed` vs the running sum of stage durations), computes `elapsedInStage`, and
+applies that stage's setpoint. The run ends after the last stage (or when `maxRequests` is hit, or on
+stop). The total run length is the sum of the stage durations.
 
-- **CONSTANT** → `vus` for the whole duration.
-- **LINEAR** → `round(startVus + min(1, elapsed/duration) * (endVus − startVus))`, clamped at `endVus`.
+### Stage types — open vs closed model
 
-`STEP` / `SPIKE` / `SOAK` are a deferred extension point.
+| Stage `type` | Model | Setpoint | What the orchestrator does |
+|------|-------|----------|----------------------------|
+| `VU` | **closed** | virtual users | Maintains a pool of *looping* VUs sized to `targetVusAt(elapsedInStage)`; each VU loops the steps back-to-back. Throughput is whatever the target can sustain. Surplus VUs retire at their iteration boundary. |
+| `RATE` | **open** (arrival rate) | iterations/second | Starts new *one-shot* iterations so the cumulative number started tracks the integral of the rate; auto-scales a VU pool up to `maxVus` to run them. Throughput is the *requested rate*, independent of how fast the target responds. |
+| `PAUSE` | — | none | Drives no load (`target 0 VUs`); any looping VUs drain, then the next stage starts cold. |
+
+The two models answer different questions. A **VU stage** asks "how does the target behave with N
+concurrent clients?" — a slow target self-throttles because each VU waits for its response before
+looping. A **RATE stage** asks "how does the target behave at R requests/second?" — the injector keeps
+opening new iterations on schedule even when the target is slow, exposing queue build-up and tail
+latency the closed model hides (k6's `constant-arrival-rate` / `ramping-arrival-rate` executors).
+
+### Setpoint functions
+
+`LoadStage.targetVusAt(elapsedInStage)` and `LoadStage.targetRateAt(elapsedInStage)` are the pure,
+deterministic setpoints read by the control tick:
+
+- **hold** (`vus` / `rate` set) → the constant value for the whole stage.
+- **ramp** (`startVus`+`endVus` / `startRate`+`endRate` set) → `curve.valueAt(start, end, progress)`
+  where `progress = min(1, elapsedInStage / durationMillis)` (clamped, so the stage stays pinned at the
+  end value after its duration). VU ramps are rounded to the nearest integer.
+
+### Ramp curves
+
+`RampCurve.valueAt(start, end, p)` (with `p` clamped to `[0,1]`) is the single tested place the curve
+math lives. Every curve is exact at the endpoints (`valueAt(s,e,0)==s`, `valueAt(s,e,1)==e`):
+
+| Curve | Formula | Shape |
+|-------|---------|-------|
+| `LINEAR` | `start + (end−start)·p` | constant slope |
+| `QUADRATIC` | `start + (end−start)·p²` | ease-in (slow then fast) |
+| `EXPONENTIAL` | `start + (end−start)·(e^{Kp}−1)/(e^{K}−1)`, `K=4` | steeper ease-in; the normalised form is exact at the endpoints and handles `start=0` correctly |
+
+### Arrival-rate scheduler (deficit accounting)
+
+The RATE scheduler keeps a fractional `rateDeficit` accumulator, only touched on the single scheduler
+thread. Each control tick:
+
+1. adds `targetRate · dtSeconds` owed iterations (where `dt` is the time since the last tick),
+2. starts `floor(rateDeficit)` new one-shot iterations, each occupying one auto-scaled VU slot,
+3. carries the fractional remainder forward — so the *achieved* long-run rate equals the target rate
+   exactly, independent of the 100 ms tick granularity.
+
+If the VU pool is already at the stage's `maxVus` (or the global `loadGenerationMaxVirtualUsers`), the
+owed-but-unstartable iterations are **dropped** (the deficit is clamped so it can't snowball) and each
+shortfall increments `mock_server_load_throttled{reason="rate_limit"}`, so an operator can see the
+injector could not meet the requested rate. Caps are never exceeded.
+
+Sequences and pauses compose freely — e.g. a VU warm-up, then a pause, then a ramping-arrival-rate
+soak, then a constant-rate hold — up to `loadGenerationMaxStages` stages.
 
 ## REST API
 
@@ -65,17 +123,22 @@ All three verbs are control-plane endpoints (subject to `controlPlaneRequestAuth
 | Verb | Path | Behaviour |
 |------|------|-----------|
 | `PUT` | `/mockserver/loadScenario` | Start. `403` when `loadGenerationEnabled=false`; `400 {error}` when invalid or a cap is exceeded; `200 {status:started,...}` otherwise. |
-| `GET` | `/mockserver/loadScenario` | Status: `state` (running/completed/stopped/none), `elapsedMillis`, `currentVus`, `requestsSent`, `succeeded`, `failed`, `p50/p95/p99Millis`, `runId`, `startedAt`/`endedAt`. |
+| `GET` | `/mockserver/loadScenario` | Status: `state` (running/completed/stopped/none), `elapsedMillis`, `currentVus` (live active VUs), `stageIndex`, `stageType` (`VU`/`RATE`/`PAUSE`), `currentTarget` (target VUs or target rate for the running stage), `requestsSent`, `succeeded`, `failed`, `p50/p95/p99Millis`, `runId`, `startedAt`/`endedAt`, `definition`. |
 | `DELETE` | `/mockserver/loadScenario` | Stop (idempotent). |
 
-### Example — CONSTANT with a templated step
+### Example — VU ramp then hold (closed model)
 
 ```json
 {
   "name": "checkout-load",
   "templateType": "VELOCITY",
   "maxRequests": 5000,
-  "profile": { "type": "CONSTANT", "vus": 10, "durationMillis": 30000, "iterationPacingMillis": 50 },
+  "profile": {
+    "stages": [
+      { "type": "VU", "startVus": 1, "endVus": 10, "durationMillis": 30000, "curve": "LINEAR" },
+      { "type": "VU", "vus": 10, "durationMillis": 60000 }
+    ]
+  },
   "steps": [
     {
       "request": {
@@ -90,12 +153,19 @@ All three verbs are control-plane endpoints (subject to `controlPlaneRequestAuth
 }
 ```
 
-### Example — LINEAR ramp
+### Example — arrival-rate ramp + hold, with a pause (open model)
 
 ```json
 {
-  "name": "ramp-to-25",
-  "profile": { "type": "LINEAR", "startVus": 1, "endVus": 25, "durationMillis": 60000 },
+  "name": "rate-soak",
+  "profile": {
+    "stages": [
+      { "type": "VU", "vus": 2, "durationMillis": 10000 },
+      { "type": "PAUSE", "durationMillis": 5000 },
+      { "type": "RATE", "startRate": 10, "endRate": 200, "durationMillis": 30000, "curve": "EXPONENTIAL", "maxVus": 40 },
+      { "type": "RATE", "rate": 200, "durationMillis": 60000 }
+    ]
+  },
   "steps": [ { "request": { "path": "/health", "socketAddress": { "host": "target.svc", "port": 8080 } } } ]
 }
 ```
@@ -123,10 +193,12 @@ All caps are configurable via `ConfigurationProperties` (system properties / env
 | Control | Property | Default |
 |---------|----------|---------|
 | Feature flag | `mockserver.loadGenerationEnabled` → PUT returns `403` when off | `false` |
-| Max virtual users | `mockserver.loadGenerationMaxVirtualUsers` — `validate()` rejects oversized profiles | `50` |
+| Max virtual users | `mockserver.loadGenerationMaxVirtualUsers` — `validate()` rejects oversized stages (VU and RATE `maxVus`) | `50` |
+| Max arrival rate | `mockserver.loadGenerationMaxRate` — `validate()` rejects RATE stages over this iterations/second | `5000` |
+| Max stages | `mockserver.loadGenerationMaxStages` — `validate()` rejects profiles with more stages | `20` |
 | Max in-flight requests | `mockserver.loadGenerationMaxInFlightRequests` — live `Semaphore` at dispatch | `200` |
 | Max requests/second | `mockserver.loadGenerationMaxRequestsPerSecond` — live token bucket at dispatch | `500` |
-| Max duration | `mockserver.loadGenerationMaxDurationMillis` — `validate()` | `3600000` (1 h) |
+| Max duration | `mockserver.loadGenerationMaxDurationMillis` — `validate()` on the total of all stage durations | `3600000` (1 h) |
 | Max steps | `mockserver.loadGenerationMaxSteps` — `validate()` | `50` |
 
 ## Relationship to SLO verdicts
@@ -242,9 +314,8 @@ histogram_quantile(0.99,
 |----------|---------|-------------|
 | `mockserver.loadGenerationMetricLabels` | `""` (empty) | Comma-separated allowlist of custom label keys to expose in Prometheus. OTEL always receives all custom labels. |
 
-## Deferred (not in v1)
+## Deferred
 
-- Advanced ramp shapes (`STEP`, `SPIKE`, `SOAK`, `STRESS`).
 - Distributed / multi-node load.
 - In-run thresholds (pass/fail decided during the run, as opposed to post-run `verifySLO`).
 - Dashboard UI (coming next — `GET /mockserver/loadScenario` status already queryable via the REST API).

@@ -1786,11 +1786,14 @@ async function loadInjectionExamples() {
     // Cap well above what 5 VUs hit in an hour so the run is bounded but never ends early.
     maxRequests: 2000000,
     labels: { team: 'demo', env: 'local' },
+    // A short VU ramp (1->5 over 30s) then hold at 5 VUs for the rest of the hour, so the
+    // dashboard shows a real ramp followed by a steady state. Stages run in sequence; the
+    // total duration is the documented 1-hour max.
     profile: {
-      type: 'CONSTANT',
-      vus: 5,
-      durationMillis: 3600000, // 1 hour (the documented max)
-      iterationPacingMillis: 100,
+      stages: [
+        { type: 'VU', startVus: 1, endVus: 5, durationMillis: 30000, curve: 'LINEAR' },
+        { type: 'VU', vus: 5, durationMillis: 3570000 },
+      ],
     },
     steps: [
       {
@@ -1834,7 +1837,7 @@ async function loadInjectionExamples() {
   }
   if (!res.ok) throw new Error(`Failed to start load scenario "${scenario.name}": HTTP ${res.status}`);
   counts.loadScenario = 1;
-  log(`   ⚡ load scenario  "${scenario.name}"  (CONSTANT 5 VUs, ${scenario.steps.length} steps: health / checkout / order)`);
+  log(`   ⚡ load scenario  "${scenario.name}"  (VU ramp 1→5 then hold, ${scenario.steps.length} steps: health / checkout / order)`);
   log('   ↳ a load scenario is now RUNNING against the delayed self-target endpoints —');
   log('     open the dashboard Performance tab to watch live throughput + latency and to edit it,');
   log(`     or curl ${BASE}/mockserver/loadScenario for the live JSON status.`);
@@ -1915,7 +1918,7 @@ async function main() {
   log(` AsyncAPI channels    : ${counts.asyncChannels}${process.env.DEMO_MQTT_BROKER_URL ? ' (live MQTT broker — Recorded Messages ticking up)' : ' (broker-less; Recorded Messages need --with-broker)'}`);
   log(` MCP tool calls       : ${counts.mcpCalls} (read-only tools; Metrics · "MCP tool calls" chart + Tools · MCP panel)`);
   if (counts.loadScenario) {
-    log(` Load scenario        : ${counts.loadScenario} running (5 VUs vs delayed self-target endpoints; live in the Performance tab)`);
+    log(` Load scenario        : ${counts.loadScenario} running (VU ramp 1→5 then hold vs delayed self-target endpoints; live in the Performance tab)`);
   }
   log('');
 

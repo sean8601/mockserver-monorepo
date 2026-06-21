@@ -1,28 +1,24 @@
 package org.mockserver.serialization.model;
 
 import org.mockserver.load.LoadProfile;
+import org.mockserver.load.LoadStage;
 import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author jamesdbloom
  */
 public class LoadProfileDTO extends ObjectWithReflectiveEqualsHashCodeToString implements DTO<LoadProfile> {
 
-    private LoadProfile.Type type = LoadProfile.Type.CONSTANT;
-    private long durationMillis;
-    private int vus;
-    private int startVus;
-    private int endVus;
-    private Long iterationPacingMillis;
+    private List<LoadStageDTO> stages = new ArrayList<>();
 
     public LoadProfileDTO(LoadProfile profile) {
-        if (profile != null) {
-            type = profile.getType();
-            durationMillis = profile.getDurationMillis();
-            vus = profile.getVus();
-            startVus = profile.getStartVus();
-            endVus = profile.getEndVus();
-            iterationPacingMillis = profile.getIterationPacingMillis();
+        if (profile != null && profile.getStages() != null) {
+            for (LoadStage stage : profile.getStages()) {
+                stages.add(new LoadStageDTO(stage));
+            }
         }
     }
 
@@ -30,66 +26,21 @@ public class LoadProfileDTO extends ObjectWithReflectiveEqualsHashCodeToString i
     }
 
     public LoadProfile buildObject() {
-        return new LoadProfile()
-            .withType(type != null ? type : LoadProfile.Type.CONSTANT)
-            .withDurationMillis(durationMillis)
-            .withVus(vus)
-            .withStartVus(startVus)
-            .withEndVus(endVus)
-            .withIterationPacingMillis(iterationPacingMillis);
+        List<LoadStage> builtStages = new ArrayList<>();
+        if (stages != null) {
+            for (LoadStageDTO stage : stages) {
+                builtStages.add(stage.buildObject());
+            }
+        }
+        return new LoadProfile().withStages(builtStages);
     }
 
-    public LoadProfile.Type getType() {
-        return type;
+    public List<LoadStageDTO> getStages() {
+        return stages;
     }
 
-    public LoadProfileDTO setType(LoadProfile.Type type) {
-        this.type = type;
-        return this;
-    }
-
-    public long getDurationMillis() {
-        return durationMillis;
-    }
-
-    public LoadProfileDTO setDurationMillis(long durationMillis) {
-        this.durationMillis = durationMillis;
-        return this;
-    }
-
-    public int getVus() {
-        return vus;
-    }
-
-    public LoadProfileDTO setVus(int vus) {
-        this.vus = vus;
-        return this;
-    }
-
-    public int getStartVus() {
-        return startVus;
-    }
-
-    public LoadProfileDTO setStartVus(int startVus) {
-        this.startVus = startVus;
-        return this;
-    }
-
-    public int getEndVus() {
-        return endVus;
-    }
-
-    public LoadProfileDTO setEndVus(int endVus) {
-        this.endVus = endVus;
-        return this;
-    }
-
-    public Long getIterationPacingMillis() {
-        return iterationPacingMillis;
-    }
-
-    public LoadProfileDTO setIterationPacingMillis(Long iterationPacingMillis) {
-        this.iterationPacingMillis = iterationPacingMillis;
+    public LoadProfileDTO setStages(List<LoadStageDTO> stages) {
+        this.stages = stages;
         return this;
     }
 }

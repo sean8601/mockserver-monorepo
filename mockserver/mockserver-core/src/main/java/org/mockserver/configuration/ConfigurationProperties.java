@@ -76,6 +76,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND = "mockserver.loadGenerationMaxRequestsPerSecond";
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS = "mockserver.loadGenerationMaxDurationMillis";
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_STEPS = "mockserver.loadGenerationMaxSteps";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_RATE = "mockserver.loadGenerationMaxRate";
+    private static final String MOCKSERVER_LOAD_GENERATION_MAX_STAGES = "mockserver.loadGenerationMaxStages";
     private static final String MOCKSERVER_LOAD_GENERATION_METRIC_LABELS = "mockserver.loadGenerationMetricLabels";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
@@ -901,6 +903,35 @@ public class ConfigurationProperties {
      */
     public static void loadGenerationMaxSteps(int maxSteps) {
         setProperty(MOCKSERVER_LOAD_GENERATION_MAX_STEPS, "" + maxSteps);
+    }
+
+    public static double loadGenerationMaxRate() {
+        return readDoubleProperty(MOCKSERVER_LOAD_GENERATION_MAX_RATE, "MOCKSERVER_LOAD_GENERATION_MAX_RATE", 5000.0);
+    }
+
+    /**
+     * Hard cap on the arrival rate (iterations per second) a {@code RATE} load stage may request.
+     * A stage asking for a higher rate is rejected at validation, so an open-model scenario cannot
+     * be told to start work faster than the server can safely sustain. Default is 5000.
+     *
+     * @param maxRate maximum arrival rate in iterations per second
+     */
+    public static void loadGenerationMaxRate(double maxRate) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_RATE, "" + maxRate);
+    }
+
+    public static int loadGenerationMaxStages() {
+        return readIntegerProperty(MOCKSERVER_LOAD_GENERATION_MAX_STAGES, "MOCKSERVER_LOAD_GENERATION_MAX_STAGES", 20);
+    }
+
+    /**
+     * Hard cap on the number of stages a single load profile may define. A profile with more stages
+     * is rejected at validation. Default is 20.
+     *
+     * @param maxStages maximum number of stages per profile
+     */
+    public static void loadGenerationMaxStages(int maxStages) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_MAX_STAGES, "" + maxStages);
     }
 
     public static java.util.List<String> loadGenerationMetricLabels() {
@@ -4570,6 +4601,20 @@ public class ConfigurationProperties {
     private static Long readLongProperty(String key, String environmentVariableKey, long defaultValue) {
         try {
             return Long.parseLong(readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue));
+        } catch (NumberFormatException nfe) {
+            LoggerHolder.LOGGER.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setMessageFormat("NumberFormatException converting " + key + " with value [" + readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue) + "]")
+                    .setThrowable(nfe)
+            );
+            return defaultValue;
+        }
+    }
+
+    private static double readDoubleProperty(String key, String environmentVariableKey, double defaultValue) {
+        try {
+            return Double.parseDouble(readPropertyHierarchically(PROPERTIES, key, environmentVariableKey, "" + defaultValue));
         } catch (NumberFormatException nfe) {
             LoggerHolder.LOGGER.logEvent(
                 new LogEntry()

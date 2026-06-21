@@ -4,6 +4,8 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.load.IterationContext;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
+import org.mockserver.load.LoadStage;
+import org.mockserver.load.LoadStageType;
 import org.mockserver.load.LoadStep;
 import org.mockserver.metrics.MetricLabels;
 import org.mockserver.metrics.Metrics;
@@ -40,37 +42,48 @@ import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 /**
- * Orchestrates an in-process API-driven load scenario. A scenario drives an ordered list
- * of templated request {@link LoadStep}s at a target concurrency described by a
- * {@link LoadProfile}, producing latency/error samples for the SLO verdict feature.
+ * Orchestrates an in-process API-driven load scenario. A scenario drives an ordered list of templated
+ * request {@link LoadStep}s through a sequence of {@link LoadStage}s described by a {@link LoadProfile},
+ * producing latency/error samples for the SLO verdict feature.
  *
  * <p>Copies the {@link ChaosExperimentOrchestrator} shape: a process-wide singleton with a
  * single-thread daemon {@link ScheduledExecutorService} ("load-scenario-scheduler"). The
- * scheduler thread does <b>no I/O</b> — it computes ramp setpoints on a fixed control tick
- * and hands each request to an injected {@code sender} that returns a
- * {@link CompletableFuture} immediately. Step pacing and iteration pacing are scheduled
- * (never {@link Delay#applyDelay() Thread.sleep}-ed), so a slow target never blocks a worker
- * thread.
+ * scheduler thread does <b>no I/O</b> — it advances stages and computes setpoints on a fixed control
+ * tick and hands each request to an injected {@code sender} that returns a {@link CompletableFuture}
+ * immediately. Step pacing is scheduled (never {@link Delay#applyDelay() Thread.sleep}-ed), so a slow
+ * target never blocks a worker thread.
  *
- * <p><b>Decoupling:</b> core must not depend on the Netty HTTP client, so the actual request
- * sender is injected via {@link #setSender(Function)} (mirrors {@code HttpState.setReplayHandler}).
- * The Netty runtime wires it from {@code HttpActionHandler.getHttpClient()}; unit tests pass a
- * deterministic synchronous fake sender to {@link #start(LoadScenario, Function)}.
+ * <p><b>Two load models, run in sequence:</b>
+ * <ul>
+ *   <li>{@link LoadStageType#VU} — closed model. The tick maintains a pool of looping virtual users
+ *       sized to {@code targetVusAt(elapsedInStage)} (hold or ramp); each VU loops the steps back-to-back.</li>
+ *   <li>{@link LoadStageType#RATE} — open model (arrival rate). The tick computes the target rate
+ *       {@code r(t)} in iterations/second and starts new <em>one-shot</em> iterations so the cumulative
+ *       number started tracks the integral of {@code r(t)} (deficit accounting), auto-scaling a VU pool
+ *       up to the stage {@code maxVus} (or the global cap). When the cap blocks the rate, the shortfall
+ *       is counted as a {@code rate_limit} throttle.</li>
+ *   <li>{@link LoadStageType#PAUSE} — drives no load; VUs drain for the duration.</li>
+ * </ul>
  *
- * <p><b>Self-load guard:</b> off by default ({@code loadGenerationEnabled=false} → the PUT
- * endpoint returns 403). Even when enabled, {@link #validate} enforces hard caps on VUs,
- * duration and step count, and dispatch is bounded live by an in-flight {@link Semaphore} and
- * an RPS token bucket, so a forgotten scenario cannot self-DoS the server.
+ * <p><b>Decoupling:</b> core must not depend on the Netty HTTP client, so the actual request sender is
+ * injected via {@link #setSender(Function)} (mirrors {@code HttpState.setReplayHandler}). The Netty
+ * runtime wires it from {@code HttpActionHandler.getHttpClient()}; unit tests pass a deterministic
+ * synchronous fake sender to {@link #start(LoadScenario, Function)}.
+ *
+ * <p><b>Self-load guard:</b> off by default ({@code loadGenerationEnabled=false} → the PUT endpoint
+ * returns 403). Even when enabled, {@link #validate} enforces hard caps on VUs, rate, stages, duration
+ * and step count, and dispatch is bounded live by an in-flight {@link Semaphore} and an RPS token
+ * bucket, so a forgotten scenario cannot self-DoS the server.
  *
  * <p>Time is read via a pluggable {@link LongSupplier} clock (defaults to
- * {@link TimeService#currentTimeMillis()}) so tests can drive ramp progression deterministically
- * via {@link #tickNow()} / {@link #advanceNow(long)} without wall-clock sleeps.
+ * {@link TimeService#currentTimeMillis()}) so tests can drive progression deterministically via
+ * {@link #tickNow()} / {@link #advanceNow(long)} without wall-clock sleeps.
  */
 public class LoadScenarioOrchestrator {
 
     private static final Logger LOG = LoggerFactory.getLogger(LoadScenarioOrchestrator.class);
 
-    /** Control tick interval in milliseconds (ramp setpoint recomputation). */
+    /** Control tick interval in milliseconds (stage advance + setpoint recomputation). */
     static final long CONTROL_TICK_MILLIS = 100;
 
     private static final LoadScenarioOrchestrator INSTANCE = new LoadScenarioOrchestrator(
@@ -150,8 +163,7 @@ public class LoadScenarioOrchestrator {
         // Bound durable-metric accumulation: evict the PREVIOUS run's mock_server_load_* series now
         // that a new run is starting. The just-completed (or replaced) run's final totals stayed
         // scrapeable until this point; from here only the new run's series accumulate, so at most one
-        // completed run's series are ever retained (the prior run's UUID run_id labels would otherwise
-        // persist in the Prometheus registry forever). Roll previous forward to the new run.
+        // completed run's series are ever retained. Roll previous forward to the new run.
         if (previousRunId != null && !previousRunId.equals(running.runId)) {
             Metrics.evictLoadRun(previousRunId);
         }
@@ -180,10 +192,10 @@ public class LoadScenarioOrchestrator {
             () -> tick(running), CONTROL_TICK_MILLIS, CONTROL_TICK_MILLIS, TimeUnit.MILLISECONDS);
         running.controlTick = tick;
 
-        LOG.info("load scenario '{}' started with {} step(s), profile={}",
-            scenario.getName(), scenario.getSteps().size(), scenario.getProfile().getType());
+        LOG.info("load scenario '{}' started with {} step(s), {} stage(s)",
+            scenario.getName(), scenario.getSteps().size(), scenario.getProfile().getStages().size());
 
-        // Run an immediate first tick so a VU launches without waiting a full control interval.
+        // Run an immediate first tick so the first stage starts without waiting a full control interval.
         tick(running);
         return null;
     }
@@ -229,41 +241,149 @@ public class LoadScenarioOrchestrator {
     }
 
     /**
-     * Control tick: compute the target VU count for the elapsed time and grow/retire VUs to match.
-     * Detects completion (duration elapsed or maxRequests reached). Runs on the scheduler thread.
+     * Control tick: advance through the stages by elapsed time, apply the current stage's setpoint
+     * (VU pool size or arrival rate), and detect completion (all stages elapsed or maxRequests
+     * reached). Runs on the scheduler thread.
      */
     private void tick(RunningScenario run) {
         if (run.stopped.get() || current.get() != run) {
             return;
         }
+        if (run.maxRequestsReached()) {
+            completeInternal(run);
+            return;
+        }
         long now = clock.getAsLong();
         long elapsed = now - run.startedAt;
-        LoadProfile profile = run.scenario.getProfile();
 
-        // Completion conditions.
-        if (elapsed >= profile.getDurationMillis() || run.maxRequestsReached()) {
+        // Locate the active stage for the elapsed time. The run ends once elapsed passes the sum of all
+        // stage durations.
+        List<LoadStage> stages = run.scenario.getProfile().getStages();
+        long boundary = 0;
+        int stageIndex = -1;
+        long elapsedInStage = 0;
+        for (int i = 0; i < stages.size(); i++) {
+            long stageDuration = Math.max(0, stages.get(i).getDurationMillis());
+            if (elapsed < boundary + stageDuration) {
+                stageIndex = i;
+                elapsedInStage = elapsed - boundary;
+                break;
+            }
+            boundary += stageDuration;
+        }
+        if (stageIndex < 0) {
+            // Past the last stage boundary: the whole sequence is done.
             completeInternal(run);
             return;
         }
 
-        int target = Math.max(0, profile.targetVusAt(elapsed));
-        // activeVUs is the LIVE population (incremented once per launch below, decremented exactly
-        // once when a VU loop ends via endVu). VU ids are allocated from a separate monotonic
-        // sequence so id-allocation is never conflated with the live count.
+        run.stageIndex.set(stageIndex);
+        run.elapsedInStageMillis.set(elapsedInStage);
+        LoadStage stage = stages.get(stageIndex);
+
+        // On a stage transition (entering any new stage index, including the first), reset the RATE
+        // arrival-rate accumulator so a freshly-entered RATE stage integrates ONLY its own elapsed time.
+        // This re-arms the driveRateStage "last==0 → first tick initialises, does not integrate" guard
+        // and discards iterations still owed from a prior RATE stage, so a RATE stage that follows a
+        // VU/PAUSE stage (or another RATE stage after a gap) cannot add targetRate·gap to the deficit on
+        // its first tick and burst. Runs exactly once per boundary (guarded by activeStageIndex) on the
+        // single scheduler thread, so no extra synchronisation is needed for these run-local fields.
+        if (run.activeStageIndex != stageIndex) {
+            run.activeStageIndex = stageIndex;
+            run.lastRateTickMillis = 0;
+            run.rateDeficit = 0;
+        }
+
+        switch (stage.getType()) {
+            case VU:
+                driveVuStage(run, stage, elapsedInStage);
+                break;
+            case RATE:
+                driveRateStage(run, stage, elapsedInStage, now);
+                break;
+            case PAUSE:
+            default:
+                // No load: target zero VUs so any looping VUs from a prior VU stage retire at their
+                // iteration boundary and the pool drains.
+                run.targetVUs.set(0);
+                break;
+        }
+    }
+
+    /**
+     * Closed-model VU stage: maintain a pool of <em>looping</em> virtual users sized to the stage's
+     * VU setpoint. Growth launches new looping VUs; surplus VUs retire at their iteration boundary.
+     */
+    private void driveVuStage(RunningScenario run, LoadStage stage, long elapsedInStage) {
+        int target = Math.max(0, stage.targetVusAt(elapsedInStage));
         run.targetVUs.set(target);
         int active = run.activeVUs.get();
         if (active < target) {
-            // Grow: launch VU loops up to the target. Increment the live population BEFORE launching
-            // so the slot is owned for the whole loop; the loop releases it exactly once via endVu.
             int toLaunch = target - active;
             for (int i = 0; i < toLaunch; i++) {
                 int vuId = run.vuIdSequence.getAndIncrement();
                 run.activeVUs.incrementAndGet();
-                launchIteration(run, vuId, 0);
+                launchIteration(run, vuId, 0, true);
             }
         }
-        // Surplus VUs retire themselves at their next iteration boundary (see launchIteration),
-        // driven by the targetVUs setpoint above; no eager decrement here.
+    }
+
+    /**
+     * Open-model arrival-rate stage: start as many new one-shot iterations as the integral of the
+     * target rate since the last tick demands (deficit accounting), bounded by the stage's VU cap.
+     *
+     * <p>The deficit is a fractional accumulator: each tick adds {@code rate * dtSeconds} iterations
+     * owed and starts {@code floor(deficit)} of them, carrying the fractional remainder forward so the
+     * achieved long-run rate equals the target rate exactly regardless of tick granularity. Each
+     * started iteration occupies one VU slot for its lifetime; the {@code activeVUs} pool auto-scales
+     * up to the cap. When the cap is hit the unstarted owed iterations are dropped (deficit clamped)
+     * and counted as a {@code rate_limit} throttle so the operator can see the shortfall.
+     */
+    private void driveRateStage(RunningScenario run, LoadStage stage, long elapsedInStage, long now) {
+        double targetRate = stage.targetRateAt(elapsedInStage);
+        run.targetRate.set(Double.doubleToRawLongBits(Math.max(0.0, targetRate)));
+        // targetVUs for a RATE stage is the live in-use VU pool (informational for the status DTO).
+        int stageVuCap = stage.getMaxVus() != null && stage.getMaxVus() > 0
+            ? stage.getMaxVus()
+            : configuration.loadGenerationMaxVirtualUsers();
+
+        long last = run.lastRateTickMillis;
+        if (last == 0) {
+            run.lastRateTickMillis = now;
+            run.targetVUs.set(run.activeVUs.get());
+            return;
+        }
+        long dtMillis = Math.max(0, now - last);
+        run.lastRateTickMillis = now;
+        run.rateDeficit += targetRate * (dtMillis / 1000.0);
+
+        int toStart = (int) Math.floor(run.rateDeficit);
+        if (toStart > 0) {
+            int started = 0;
+            for (int i = 0; i < toStart; i++) {
+                if (run.activeVUs.get() >= stageVuCap) {
+                    break;
+                }
+                int vuId = run.vuIdSequence.getAndIncrement();
+                run.activeVUs.incrementAndGet();
+                launchIteration(run, vuId, 0, false);
+                started++;
+            }
+            run.rateDeficit -= started;
+            int shortfall = toStart - started;
+            if (shortfall > 0) {
+                // The VU cap blocked the rate: drop the owed-but-unstartable iterations (so the deficit
+                // does not snowball) and record the shortfall as a rate_limit throttle.
+                run.rateDeficit -= shortfall;
+                if (run.rateDeficit < 0) {
+                    run.rateDeficit = 0;
+                }
+                for (int i = 0; i < shortfall; i++) {
+                    Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
+                }
+            }
+        }
+        run.targetVUs.set(run.activeVUs.get());
     }
 
     private void completeInternal(RunningScenario run) {
@@ -281,33 +401,29 @@ public class LoadScenarioOrchestrator {
 
     /**
      * Run one iteration for a virtual user: render and fire each step in order, chaining the
-     * CompletableFutures. Step completion (on a sender/worker thread) schedules the next step
-     * after the step's think-time. After the last step, schedule the next iteration (respecting
-     * iteration pacing) unless the VU is retiring or the scenario is stopped. No dedicated thread
-     * per VU; no blocking.
+     * CompletableFutures. After the last step, a {@code looping} VU schedules its next iteration
+     * (closed model); a one-shot VU (open/arrival-rate model) ends and releases its slot. No
+     * dedicated thread per VU; no blocking.
      */
-    private void launchIteration(RunningScenario run, int vuId, long vuIteration) {
+    private void launchIteration(RunningScenario run, int vuId, long vuIteration, boolean looping) {
         if (run.stopped.get() || current.get() != run) {
             endVu(run);
             return;
         }
-        // Retire surplus VUs at the iteration boundary: if the live population currently exceeds the
-        // target concurrency, this VU's loop ends here. The retire decision is based on the live
-        // population (not the VU id, since ids come from a monotonic sequence) and is applied as a
-        // single atomic conditional decrement so that, when several surplus VUs reach the boundary
-        // concurrently, exactly (active - target) of them retire rather than all of them collapsing
-        // the population below the target.
-        if (vuIteration > 0 && tryRetireSurplus(run)) {
+        // Closed-model surplus retirement: if the live population currently exceeds the target
+        // concurrency, this looping VU's loop ends here. Applied as a single atomic conditional
+        // decrement so concurrent surplus VUs never collapse the population below the target. One-shot
+        // (rate) VUs never retire this way — they always run exactly one iteration.
+        if (looping && vuIteration > 0 && tryRetireSurplus(run)) {
             return;
         }
-        fireStep(run, vuId, vuIteration, 0);
+        fireStep(run, vuId, vuIteration, 0, looping);
     }
 
     /**
      * Atomically retire this VU iff the live population currently exceeds the target concurrency,
      * decrementing the active-population counter exactly once on success. Returns {@code true} when
-     * the VU was retired (its loop must end), {@code false} when it should continue. The
-     * compare-and-set loop guarantees concurrent surplus VUs never over-retire below the target.
+     * the VU was retired (its loop must end), {@code false} when it should continue.
      */
     private boolean tryRetireSurplus(RunningScenario run) {
         while (true) {
@@ -324,22 +440,20 @@ public class LoadScenarioOrchestrator {
     /**
      * End a virtual user's loop, releasing the single active-population slot it owned. Called from
      * exactly one of the loop's terminal exit points so the live counter decrements exactly once per
-     * launched VU (never zero, never twice). VU-id allocation is tracked separately and is never
-     * touched here.
+     * launched VU (never zero, never twice).
      */
     private void endVu(RunningScenario run) {
         run.activeVUs.decrementAndGet();
     }
 
-    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex) {
+    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping) {
         if (run.stopped.get() || current.get() != run) {
             endVu(run);
             return;
         }
-        // Stop dispatching once the request cap is reached; the control tick then transitions the
-        // scenario to "completed". Enforcing this here (not only on the tick) bounds the overshoot
-        // to roughly the active VU count rather than a full control interval of firing. This VU's
-        // loop ends here, so release its slot exactly once.
+        // Stop dispatching once the request cap is reached; the control tick then transitions to
+        // "completed". Enforcing this here (not only on the tick) bounds the overshoot. This VU's loop
+        // ends here, so release its slot exactly once.
         if (run.maxRequestsReached()) {
             endVu(run);
             completeInternal(run);
@@ -347,18 +461,17 @@ public class LoadScenarioOrchestrator {
         }
         List<LoadStep> steps = run.scenario.getSteps();
         if (stepIndex >= steps.size()) {
-            // Iteration finished: account it and schedule the next iteration (respect pacing).
+            // Iteration finished: account it.
             Metrics.incrementLoadIteration(run.scenario.getName(), run.runId);
-            long nextIteration = vuIteration + 1;
-            Long pacing = run.scenario.getProfile().getIterationPacingMillis();
-            long pacingMillis = pacing != null ? Math.max(0, pacing) : 0;
-            if (pacingMillis > 0) {
-                scheduler.schedule(() -> launchIteration(run, vuId, nextIteration), pacingMillis, TimeUnit.MILLISECONDS);
-            } else {
-                // Avoid unbounded recursion / starving the single scheduler thread: re-schedule
-                // immediately rather than recursing inline.
-                scheduler.schedule(() -> launchIteration(run, vuId, nextIteration), 0, TimeUnit.MILLISECONDS);
+            if (!looping) {
+                // One-shot (arrival-rate) iteration: end the VU and release its slot.
+                endVu(run);
+                return;
             }
+            // Closed-model VU: schedule the next iteration immediately (re-scheduled, not recursed, to
+            // avoid starving the single scheduler thread).
+            long nextIteration = vuIteration + 1;
+            scheduler.schedule(() -> launchIteration(run, vuId, nextIteration, true), 0, TimeUnit.MILLISECONDS);
             return;
         }
 
@@ -379,7 +492,7 @@ public class LoadScenarioOrchestrator {
             run.failed.incrementAndGet();
             run.requestsSent.incrementAndGet();
             Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
 
@@ -387,13 +500,13 @@ public class LoadScenarioOrchestrator {
         // distinct throttle reason so an operator can see why a scenario could not reach its setpoint.
         if (!run.inFlight.tryAcquire()) {
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
 
@@ -412,14 +525,14 @@ public class LoadScenarioOrchestrator {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, startNanos, true, "connection");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
         if (future == null) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, startNanos, true, "null_response");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
         future.whenComplete((response, throwable) -> {
@@ -429,15 +542,13 @@ public class LoadScenarioOrchestrator {
                 || (response.getStatusCode() != null && response.getStatusCode() >= 500);
             String errorKind = classifyError(throwable, response);
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, response, startNanos, error, errorKind);
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
         });
     }
 
     /**
      * Classify the error branch of a completed dispatch into one of the kind labels, or null when
-     * the request succeeded. A {@code TimeoutException} (or a cause/message naming a timeout) maps to
-     * {@code timeout}; any other throwable to {@code connection}; a null response to
-     * {@code null_response}; an HTTP 5xx to {@code http_5xx}.
+     * the request succeeded.
      */
     private static String classifyError(Throwable throwable, HttpResponse response) {
         if (throwable != null) {
@@ -458,16 +569,15 @@ public class LoadScenarioOrchestrator {
         return null;
     }
 
-    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step) {
+    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping) {
         if (run.stopped.get() || current.get() != run) {
             // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
-            // genuine loop-exit point, so release the slot exactly once — previously this path
-            // returned without decrementing, leaking the active-population slot.
+            // genuine loop-exit point, so release the slot exactly once.
             endVu(run);
             return;
         }
         long thinkMillis = step.getThinkTime() != null ? Math.max(0, step.getThinkTime().sampleValueMillis()) : 0;
-        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1), thinkMillis, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping), thinkMillis, TimeUnit.MILLISECONDS);
     }
 
     private void recordResult(RunningScenario run, String host, String stepLabel, String route, String method,
@@ -482,13 +592,11 @@ public class LoadScenarioOrchestrator {
         Integer statusCode = response != null ? response.getStatusCode() : null;
         double latencySeconds = latencyMillis / 1000.0;
         long responseBytes = bodyBytes(response != null ? response.getBodyAsRawBytes() : null);
-        // Mirror the forward-path observability so load traffic still shows up on the same metrics
-        // (unchanged behaviour — the load family is purely additive).
+        // Mirror the forward-path observability so load traffic still shows up on the same metrics.
         Metrics.observeForwardRequest(host, statusCode, latencySeconds);
-        // New first-class load family: scenario/run/step/route/method/status-class dimensioned.
-        // Only emit while this run is still the current run: a run replaced by a new PUT has already had
-        // its load series evicted, so a late-draining in-flight request must NOT resurrect them (those
-        // resurrected series would otherwise be orphaned, since eviction only ever targets the prior run).
+        // New first-class load family: scenario/run/step/route/method/status-class dimensioned. Only
+        // emit while this run is still the current run: a run replaced by a new PUT has already had its
+        // load series evicted, so a late-draining in-flight request must NOT resurrect them.
         if (current.get() == run) {
             Metrics.observeLoadRequest(run.scenario.getName(), run.runId, stepLabel, route, method, statusCode,
                 latencySeconds, requestBytes, responseBytes, traceId, customLabels);
@@ -545,8 +653,8 @@ public class LoadScenarioOrchestrator {
     }
 
     /**
-     * Force one control tick immediately (test hook), bypassing the scheduler interval, so ramp
-     * progression can be asserted deterministically. No-op when no scenario is running.
+     * Force one control tick immediately (test hook), bypassing the scheduler interval, so progression
+     * can be asserted deterministically. No-op when no scenario is running.
      */
     void tickNow() {
         RunningScenario run = current.get();
@@ -564,10 +672,8 @@ public class LoadScenarioOrchestrator {
     }
 
     /**
-     * Test hook: the live virtual-user population of the current run (the value the active-slot
-     * accounting maintains), or {@code 0} when no scenario is running. Used to assert that the
-     * active-VU count is decremented exactly once per VU and returns to zero after a scenario stops
-     * or completes.
+     * Test hook: the live virtual-user population of the current run, or {@code 0} when no scenario is
+     * running.
      */
     int activeVuCount() {
         RunningScenario run = current.get();
@@ -579,9 +685,7 @@ public class LoadScenarioOrchestrator {
 
     /**
      * Test hook: the live virtual-user population of the most recently started run, even after it has
-     * stopped or completed (so a test can verify the active-slot counter drains back to zero once all
-     * scheduled VU continuations have observed the terminal state). Returns {@code 0} when no scenario
-     * has ever run.
+     * stopped or completed. Returns {@code 0} when no scenario has ever run.
      */
     int lastRunActiveVuCount() {
         RunningScenario run = lastRun;
@@ -612,20 +716,79 @@ public class LoadScenarioOrchestrator {
         if (profile == null) {
             return "'profile' is required";
         }
-        if (profile.getDurationMillis() <= 0) {
-            return "'profile.durationMillis' must be > 0";
+        List<LoadStage> stages = profile.getStages();
+        if (stages == null || stages.isEmpty()) {
+            return "'profile.stages' must contain at least one stage";
         }
-        long maxDuration = configuration.loadGenerationMaxDurationMillis();
-        if (profile.getDurationMillis() > maxDuration) {
-            return "'profile.durationMillis' exceeds the maximum of " + maxDuration + " ms";
-        }
-        int peakVus = profile.peakVus();
-        if (peakVus <= 0) {
-            return "'profile' must request at least one virtual user";
+        int maxStages = configuration.loadGenerationMaxStages();
+        if (stages.size() > maxStages) {
+            return "'profile.stages' exceeds the maximum of " + maxStages;
         }
         int maxVus = configuration.loadGenerationMaxVirtualUsers();
-        if (peakVus > maxVus) {
-            return "'profile' requests " + peakVus + " virtual users, exceeding the maximum of " + maxVus;
+        double maxRate = configuration.loadGenerationMaxRate();
+        boolean anyLoad = false;
+        for (int i = 0; i < stages.size(); i++) {
+            LoadStage stage = stages.get(i);
+            if (stage == null) {
+                return "stage[" + i + "] is required";
+            }
+            if (stage.getType() == null) {
+                return "stage[" + i + "] must have a type";
+            }
+            if (stage.getDurationMillis() <= 0) {
+                return "stage[" + i + "].durationMillis must be > 0";
+            }
+            switch (stage.getType()) {
+                case VU:
+                    if (stage.isVuRamp()) {
+                        if (stage.getStartVus() == null || stage.getEndVus() == null) {
+                            return "stage[" + i + "] VU ramp requires both startVus and endVus";
+                        }
+                    } else if (stage.getVus() == null) {
+                        return "stage[" + i + "] VU stage requires vus (hold) or startVus+endVus (ramp)";
+                    }
+                    if (stage.peakVus() <= 0) {
+                        return "stage[" + i + "] must request at least one virtual user";
+                    }
+                    if (stage.peakVus() > maxVus) {
+                        return "stage[" + i + "] requests " + stage.peakVus() + " virtual users, exceeding the maximum of " + maxVus;
+                    }
+                    anyLoad = true;
+                    break;
+                case RATE:
+                    if (stage.isRateRamp()) {
+                        if (stage.getStartRate() == null || stage.getEndRate() == null) {
+                            return "stage[" + i + "] RATE ramp requires both startRate and endRate";
+                        }
+                    } else if (stage.getRate() == null) {
+                        return "stage[" + i + "] RATE stage requires rate (hold) or startRate+endRate (ramp)";
+                    }
+                    if (stage.peakRate() <= 0) {
+                        return "stage[" + i + "] must request a positive arrival rate";
+                    }
+                    if (stage.peakRate() > maxRate) {
+                        return "stage[" + i + "] requests " + stage.peakRate() + " iterations/sec, exceeding the maximum of " + maxRate;
+                    }
+                    if (stage.getMaxVus() != null && stage.getMaxVus() > maxVus) {
+                        return "stage[" + i + "].maxVus " + stage.getMaxVus() + " exceeds the maximum of " + maxVus;
+                    }
+                    anyLoad = true;
+                    break;
+                case PAUSE:
+                default:
+                    break;
+            }
+        }
+        if (!anyLoad) {
+            return "'profile' must contain at least one VU or RATE stage";
+        }
+        long totalDuration = profile.totalDurationMillis();
+        if (totalDuration <= 0) {
+            return "'profile' total duration must be > 0";
+        }
+        long maxDuration = configuration.loadGenerationMaxDurationMillis();
+        if (totalDuration > maxDuration) {
+            return "'profile' total duration " + totalDuration + " ms exceeds the maximum of " + maxDuration + " ms";
         }
         if (scenario.getTemplateType() == HttpTemplate.TemplateType.JAVASCRIPT) {
             return "templateType JAVASCRIPT is not supported for load steps; use VELOCITY or MUSTACHE";
@@ -650,6 +813,12 @@ public class LoadScenarioOrchestrator {
         /** Monotonic VU-id allocator, kept separate from the live population counter. */
         final AtomicInteger vuIdSequence = new AtomicInteger(0);
         final AtomicInteger targetVUs = new AtomicInteger(0);
+        /** Current stage index, exposed in the status DTO. */
+        final AtomicInteger stageIndex = new AtomicInteger(0);
+        /** Elapsed millis within the current stage, exposed in the status DTO. */
+        final AtomicLong elapsedInStageMillis = new AtomicLong(0);
+        /** Current target arrival rate (iterations/sec), stored as raw long bits; 0 for non-RATE stages. */
+        final AtomicLong targetRate = new AtomicLong(0);
         final AtomicLong iterationIndex = new AtomicLong(0);
         final AtomicLong requestsSent = new AtomicLong(0);
         final AtomicLong succeeded = new AtomicLong(0);
@@ -657,6 +826,16 @@ public class LoadScenarioOrchestrator {
         final Semaphore inFlight;
         final int maxRps;
         volatile ScheduledFuture<?> controlTick;
+
+        // Arrival-rate (RATE stage) deficit accounting; only touched on the single scheduler thread.
+        double rateDeficit;
+        long lastRateTickMillis;
+        /**
+         * The stage index the controller last drove, used to detect a stage transition on the single
+         * scheduler thread so the RATE accumulator can be reset exactly once per boundary. Starts at
+         * {@code -1} (no stage entered yet) so the very first stage is treated as a transition.
+         */
+        int activeStageIndex = -1;
 
         // RPS token bucket (1-second window). Synchronized on this monitor.
         private long rpsWindowStart;
@@ -704,7 +883,7 @@ public class LoadScenarioOrchestrator {
         /**
          * The low-cardinality {@code route} label. When the step has an explicit name, the name is
          * used (operator override); otherwise the rendered request path is templatised via
-         * {@link MetricLabels#routeOf(String)} so id-shaped segments collapse to {@code {id}}.
+         * {@link MetricLabels#routeOf(String)}.
          */
         String routeLabel(LoadStep step, HttpRequest rendered) {
             if (step != null && step.getName() != null && !step.getName().isBlank()) {
@@ -716,7 +895,7 @@ public class LoadScenarioOrchestrator {
 
         /**
          * Merge scenario-level and step-level custom labels (step keys win on conflict), or null when
-         * neither is present. These become OTEL attributes and allowlisted Prometheus labels.
+         * neither is present.
          */
         Map<String, String> customLabelsFor(LoadStep step) {
             Map<String, String> scenarioLabels = scenario.getLabels();
@@ -772,10 +951,15 @@ public class LoadScenarioOrchestrator {
 
         LoadScenarioStatus snapshot(String state, long now) {
             long elapsed = now - startedAt;
-            int currentVus = "running".equals(state) ? targetVUs.get() : 0;
-            // Percentiles are derived from the load histogram's buckets (bounded memory, no
-            // reservoir). Any percentile is also directly queryable from the histogram in Prometheus
-            // via histogram_quantile(); these DTO fields keep their identical shape.
+            boolean running = "running".equals(state);
+            int currentVus = running ? activeVUs.get() : 0;
+            int idx = stageIndex.get();
+            List<LoadStage> stages = scenario.getProfile().getStages();
+            LoadStageType stageType = idx >= 0 && idx < stages.size() ? stages.get(idx).getType() : null;
+            double targetRateValue = Double.longBitsToDouble(targetRate.get());
+            double currentTarget = running
+                ? (stageType == LoadStageType.RATE ? targetRateValue : targetVUs.get())
+                : 0.0;
             return new LoadScenarioStatus(
                 scenario.getName(),
                 state,
@@ -789,11 +973,14 @@ public class LoadScenarioOrchestrator {
                 Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 99),
                 runId,
                 startedAtEpoch,
-                "running".equals(state) ? null : now,
+                running ? null : now,
                 scenario.getLabels() != null && !scenario.getLabels().isEmpty()
                     ? Collections.unmodifiableMap(new LinkedHashMap<>(scenario.getLabels()))
                     : null,
-                scenario
+                scenario,
+                running ? idx : -1,
+                running && stageType != null ? stageType.name() : null,
+                currentTarget
             );
         }
     }
@@ -817,17 +1004,26 @@ public class LoadScenarioOrchestrator {
         public final Map<String, String> labels;
         /**
          * The full scenario definition this run was started with (never null for a real run). The GET
-         * endpoint serializes it under {@code definition} so any client/dashboard — not just the tab
-         * that started the run — can load the exact {@link LoadScenario} back into an author form and
-         * round-trip it as a PUT body.
+         * endpoint serializes it under {@code definition} so any client/dashboard can load the exact
+         * {@link LoadScenario} back into an author form and round-trip it as a PUT body.
          */
         public final LoadScenario scenario;
+        /** The 0-based index of the currently-running stage, or {@code -1} when not running. */
+        public final int stageIndex;
+        /** The type of the currently-running stage ({@code VU}/{@code RATE}/{@code PAUSE}), or null. */
+        public final String stageType;
+        /**
+         * The current setpoint for the running stage: target VUs for a VU stage, target arrival rate
+         * (iterations/second) for a RATE stage, {@code 0} for PAUSE or when not running.
+         */
+        public final double currentTarget;
 
         public LoadScenarioStatus(String name, String state, long elapsedMillis, int currentVus,
                                   long requestsSent, long succeeded, long failed,
                                   long p50Millis, long p95Millis, long p99Millis,
                                   String runId, long startedAtEpochMillis, Long endedAtEpochMillis,
-                                  Map<String, String> labels, LoadScenario scenario) {
+                                  Map<String, String> labels, LoadScenario scenario,
+                                  int stageIndex, String stageType, double currentTarget) {
             this.name = name;
             this.state = state;
             this.elapsedMillis = elapsedMillis;
@@ -843,6 +1039,9 @@ public class LoadScenarioOrchestrator {
             this.endedAtEpochMillis = endedAtEpochMillis;
             this.labels = labels;
             this.scenario = scenario;
+            this.stageIndex = stageIndex;
+            this.stageType = stageType;
+            this.currentTarget = currentTarget;
         }
     }
 }

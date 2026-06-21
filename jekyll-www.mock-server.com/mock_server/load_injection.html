@@ -12,7 +12,7 @@ sitemap:
   lastmod: 2026-06-21T00:00:00+00:00
 ---
 
-<p>MockServer can drive outbound API traffic on demand using <strong>Load Scenarios</strong> — a declarative, bounded load generator built into the server. A load scenario is an ordered list of templated request <em>steps</em> fired at a target concurrency described by a <em>load profile</em>, with per-iteration variable data. Results feed both the metrics histograms and the SLO sample store so a load run can be asserted with <a href="/mock_server/chaos_testing.html#slo_resilience_verdicts"><code class="inline code">PUT /mockserver/verifySLO</code></a>.</p>
+<p>MockServer can drive outbound API traffic on demand using <strong>Load Scenarios</strong> — a declarative, bounded load generator built into the server. A load scenario is an ordered list of templated request <em>steps</em> driven through a sequence of <em>stages</em> (a <em>load profile</em>), with per-iteration variable data. Each stage either holds or ramps the number of concurrent <strong>virtual users</strong> (<code class="inline code">VU</code>, closed model), holds or ramps an <strong>arrival rate</strong> in iterations per second (<code class="inline code">RATE</code>, open model), or <strong>pauses</strong>. Results feed both the metrics histograms and the SLO sample store so a load run can be asserted with <a href="/mock_server/chaos_testing.html#slo_resilience_verdicts"><code class="inline code">PUT /mockserver/verifySLO</code></a>.</p>
 
 <p>This makes MockServer useful for <strong>resilience verification</strong>: inject a chaos fault (see <a href="/mock_server/chaos_testing.html">Chaos Testing</a>), apply load, then assert that your SLOs held — all from a single control plane, with no external load tool required.</p>
 
@@ -34,9 +34,10 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
     "name": "checkout-load",
     "templateType": "VELOCITY",
     "profile": {
-      "type": "CONSTANT",
-      "vus": 10,
-      "durationMillis": 30000
+      "stages": [
+        { "type": "VU", "startVus": 1, "endVus": 10, "durationMillis": 30000, "curve": "LINEAR" },
+        { "type": "VU", "vus": 10, "durationMillis": 60000 }
+      ]
     },
     "steps": [
       {
@@ -79,7 +80,7 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
         <tr>
             <td><code class="inline code">GET</code></td>
             <td><code class="inline code">/mockserver/loadScenario</code></td>
-            <td>Return current scenario status. Fields: <code class="inline code">state</code> (<code class="inline code">running</code> / <code class="inline code">completed</code> / <code class="inline code">stopped</code> / <code class="inline code">none</code>), <code class="inline code">elapsedMillis</code>, <code class="inline code">currentVus</code>, <code class="inline code">requestsSent</code>, <code class="inline code">succeeded</code>, <code class="inline code">failed</code>, <code class="inline code">p50Millis</code>, <code class="inline code">p95Millis</code>, <code class="inline code">p99Millis</code>, <code class="inline code">runId</code>, <code class="inline code">startedAt</code>, <code class="inline code">endedAt</code>.</td>
+            <td>Return current scenario status. Fields: <code class="inline code">state</code> (<code class="inline code">running</code> / <code class="inline code">completed</code> / <code class="inline code">stopped</code> / <code class="inline code">none</code>), <code class="inline code">elapsedMillis</code>, <code class="inline code">currentVus</code> (live active VUs), <code class="inline code">stageIndex</code>, <code class="inline code">stageType</code> (<code class="inline code">VU</code> / <code class="inline code">RATE</code> / <code class="inline code">PAUSE</code>), <code class="inline code">currentTarget</code> (target VUs or target rate for the running stage), <code class="inline code">requestsSent</code>, <code class="inline code">succeeded</code>, <code class="inline code">failed</code>, <code class="inline code">p50Millis</code>, <code class="inline code">p95Millis</code>, <code class="inline code">p99Millis</code>, <code class="inline code">runId</code>, <code class="inline code">startedAt</code>, <code class="inline code">endedAt</code>, and the full <code class="inline code">definition</code>.</td>
         </tr>
         <tr>
             <td><code class="inline code">DELETE</code></td>
@@ -121,7 +122,7 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
             <td><code class="inline code">profile</code></td>
             <td>object</td>
             <td>Yes</td>
-            <td>The ramp profile controlling virtual users and duration (see <a href="#load_profile">Load Profile</a> below).</td>
+            <td>The load profile — an ordered list of <code class="inline code">stages</code> run in sequence (see <a href="#load_profile">Load Profile</a> below).</td>
         </tr>
         <tr>
             <td><code class="inline code">templateType</code></td>
@@ -186,7 +187,21 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
 
 <h3>Load Profile</h3>
 
-<p>The profile controls how many virtual users (VUs) are active over time:</p>
+<p>The profile is an ordered list of <code class="inline code">stages</code> (maximum 20) run one after another. The total run length is the sum of the stage durations. Each stage is one of three types:</p>
+
+<ul>
+    <li><strong><code class="inline code">VU</code> (closed model)</strong> — hold or ramp the number of concurrent <em>virtual users</em>. Each VU loops the steps back-to-back; throughput is whatever the target can sustain. Answers "how does my service behave with N concurrent clients?"</li>
+    <li><strong><code class="inline code">RATE</code> (open model)</strong> — hold or ramp an <em>arrival rate</em> in iterations per second. MockServer starts new iterations on schedule (auto-scaling the virtual-user pool to run them) regardless of how fast the target responds. Answers "how does my service behave at R requests/second?" — this is the model that exposes queue build-up and tail latency.</li>
+    <li><strong><code class="inline code">PAUSE</code></strong> — drive no load for the duration (virtual users drain). Use it to separate stages, e.g. let the target recover between a spike and a soak.</li>
+</ul>
+
+<p>A stage holds a value (set <code class="inline code">vus</code> / <code class="inline code">rate</code>) or ramps between two values (set <code class="inline code">startVus</code>+<code class="inline code">endVus</code> / <code class="inline code">startRate</code>+<code class="inline code">endRate</code>). A ramp follows a <code class="inline code">curve</code>:</p>
+
+<ul>
+    <li><code class="inline code">LINEAR</code> (default) — straight line.</li>
+    <li><code class="inline code">QUADRATIC</code> — ease-in: slow at first, then accelerating.</li>
+    <li><code class="inline code">EXPONENTIAL</code> — a steeper ease-in (handles ramps starting from zero correctly).</li>
+</ul>
 
 <table class="table-standard">
     <thead>
@@ -200,32 +215,42 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
         <tr>
             <td><code class="inline code">type</code></td>
             <td>string</td>
-            <td><code class="inline code">CONSTANT</code> — a fixed number of VUs for the whole duration. <code class="inline code">LINEAR</code> — ramp VUs linearly from <code class="inline code">startVus</code> to <code class="inline code">endVus</code>.</td>
+            <td><code class="inline code">VU</code>, <code class="inline code">RATE</code> or <code class="inline code">PAUSE</code>.</td>
         </tr>
         <tr>
             <td><code class="inline code">durationMillis</code></td>
             <td>integer</td>
-            <td>How long to run (milliseconds). Maximum 3 600 000 ms (1 hour).</td>
+            <td>How long this stage runs (milliseconds, &gt; 0). The total across all stages must not exceed 3 600 000 ms (1 hour).</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">curve</code></td>
+            <td>string</td>
+            <td>Ramp shape for a ramping stage: <code class="inline code">LINEAR</code> (default), <code class="inline code">QUADRATIC</code> or <code class="inline code">EXPONENTIAL</code>. Ignored for holds and pauses.</td>
         </tr>
         <tr>
             <td><code class="inline code">vus</code></td>
             <td>integer</td>
-            <td><code class="inline code">CONSTANT</code> only — number of concurrent virtual users. Maximum 50.</td>
+            <td><code class="inline code">VU</code> hold — number of concurrent virtual users to hold. Maximum 50.</td>
         </tr>
         <tr>
-            <td><code class="inline code">startVus</code></td>
+            <td><code class="inline code">startVus</code> / <code class="inline code">endVus</code></td>
             <td>integer</td>
-            <td><code class="inline code">LINEAR</code> only — virtual users at the start of the ramp.</td>
+            <td><code class="inline code">VU</code> ramp — virtual users at the start and end of the ramp. Maximum 50.</td>
         </tr>
         <tr>
-            <td><code class="inline code">endVus</code></td>
-            <td>integer</td>
-            <td><code class="inline code">LINEAR</code> only — virtual users at the end of the ramp. Maximum 50.</td>
+            <td><code class="inline code">rate</code></td>
+            <td>number</td>
+            <td><code class="inline code">RATE</code> hold — arrival rate in iterations per second to hold. Maximum 5000.</td>
         </tr>
         <tr>
-            <td><code class="inline code">iterationPacingMillis</code></td>
+            <td><code class="inline code">startRate</code> / <code class="inline code">endRate</code></td>
+            <td>number</td>
+            <td><code class="inline code">RATE</code> ramp — arrival rate (iterations/second) at the start and end of the ramp. Maximum 5000.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">maxVus</code></td>
             <td>integer</td>
-            <td>Optional minimum time between the start of successive iterations for a given VU. Limits the iteration rate per VU independently of step think times.</td>
+            <td><code class="inline code">RATE</code> only — optional cap on the auto-scaling virtual-user pool used to run the started iterations (defaults to the global virtual-user cap of 50). If the rate cannot be met within this cap, the shortfall is recorded as a <code class="inline code">rate_limit</code> throttle.</td>
         </tr>
     </tbody>
 </table>
@@ -285,9 +310,9 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
 
 <h2>Examples</h2>
 
-<h3>CONSTANT profile — templated path</h3>
+<h3>VU ramp then hold — templated path</h3>
 
-<p>Ten VUs, 30 seconds, each iteration fetches a different order ID derived from the global iteration index:</p>
+<p>Ramp from 1 to 10 VUs over 30 seconds, then hold 10 VUs for a minute. Each iteration fetches a different order ID derived from the global iteration index:</p>
 
 <pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -H "Content-Type: application/json" \
@@ -296,10 +321,10 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
     "templateType": "VELOCITY",
     "maxRequests": 5000,
     "profile": {
-      "type": "CONSTANT",
-      "vus": 10,
-      "durationMillis": 30000,
-      "iterationPacingMillis": 50
+      "stages": [
+        { "type": "VU", "startVus": 1, "endVus": 10, "durationMillis": 30000, "curve": "LINEAR" },
+        { "type": "VU", "vus": 10, "durationMillis": 60000 }
+      ]
     },
     "steps": [
       {
@@ -314,19 +339,21 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
     ]
   }'</code></pre>
 
-<h3>LINEAR ramp</h3>
+<h3>Arrival-rate soak with a pause (open model)</h3>
 
-<p>Ramp from 1 to 25 VUs over 60 seconds — useful for finding the concurrency at which a service starts to degrade:</p>
+<p>Hold 2 VUs to warm up, pause to let the target settle, then ramp the request rate from 10 to 200 iterations/second and hold it — the open model that exposes queue build-up and tail latency:</p>
 
 <pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "ramp-to-25",
+    "name": "rate-soak",
     "profile": {
-      "type": "LINEAR",
-      "startVus": 1,
-      "endVus": 25,
-      "durationMillis": 60000
+      "stages": [
+        { "type": "VU", "vus": 2, "durationMillis": 10000 },
+        { "type": "PAUSE", "durationMillis": 5000 },
+        { "type": "RATE", "startRate": 10, "endRate": 200, "durationMillis": 30000, "curve": "EXPONENTIAL", "maxVus": 40 },
+        { "type": "RATE", "rate": 200, "durationMillis": 60000 }
+      ]
     },
     "steps": [
       {
@@ -349,9 +376,9 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
     "name": "basket-journey",
     "templateType": "VELOCITY",
     "profile": {
-      "type": "CONSTANT",
-      "vus": 5,
-      "durationMillis": 60000
+      "stages": [
+        { "type": "VU", "vus": 5, "durationMillis": 60000 }
+      ]
     },
     "steps": [
       {
@@ -403,6 +430,18 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
             <td>Scenario validation (rejected at PUT)</td>
         </tr>
         <tr>
+            <td>Maximum arrival rate (iterations/second)</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxRate</code></td>
+            <td>5000</td>
+            <td>Scenario validation (rejected at PUT) — applies to <code class="inline code">RATE</code> stages</td>
+        </tr>
+        <tr>
+            <td>Maximum stages per profile</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxStages</code></td>
+            <td>20</td>
+            <td>Scenario validation (rejected at PUT)</td>
+        </tr>
+        <tr>
             <td>Maximum in-flight requests</td>
             <td><code class="inline code">mockserver.loadGenerationMaxInFlightRequests</code></td>
             <td>200</td>
@@ -415,10 +454,10 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
             <td>Live token bucket at dispatch</td>
         </tr>
         <tr>
-            <td>Maximum duration</td>
+            <td>Maximum total duration</td>
             <td><code class="inline code">mockserver.loadGenerationMaxDurationMillis</code></td>
             <td>3 600 000 ms (1 hour)</td>
-            <td>Scenario validation (rejected at PUT)</td>
+            <td>Scenario validation — the sum of all stage durations (rejected at PUT)</td>
         </tr>
         <tr>
             <td>Maximum steps per scenario</td>
@@ -441,12 +480,12 @@ docker run \
   -e MOCKSERVER_SLO_TRACKING_ENABLED=true \
   mockserver/mockserver
 
-# 2. Run a load scenario (e.g. CONSTANT 10 VUs for 30 s)
+# 2. Run a load scenario (e.g. 10 VUs for 30 s)
 curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -H "Content-Type: application/json" \
   -d '{
     "name": "slo-validation-run",
-    "profile": { "type": "CONSTANT", "vus": 10, "durationMillis": 30000 },
+    "profile": { "stages": [ { "type": "VU", "vus": 10, "durationMillis": 30000 } ] },
     "steps": [
       {
         "request": {
@@ -597,7 +636,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -d '{
     "name": "checkout-load",
     "labels": { "env": "staging", "region": "eu-west-1" },
-    "profile": { "type": "CONSTANT", "vus": 10, "durationMillis": 30000 },
+    "profile": { "stages": [ { "type": "VU", "vus": 10, "durationMillis": 30000 } ] },
     "steps": [
       {
         "name": "get-order",

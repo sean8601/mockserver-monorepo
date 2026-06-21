@@ -20,10 +20,20 @@ body:json {
     "templateType": "VELOCITY",
     "maxRequests": 5000,
     "profile": {
-      "type": "CONSTANT",
-      "vus": 10,
-      "durationMillis": 30000,
-      "iterationPacingMillis": 50
+      "stages": [
+        {
+          "type": "VU",
+          "startVus": 1,
+          "endVus": 10,
+          "durationMillis": 30000,
+          "curve": "LINEAR"
+        },
+        {
+          "type": "VU",
+          "vus": 10,
+          "durationMillis": 60000
+        }
+      ]
     },
     "steps": [
       {
@@ -51,7 +61,7 @@ body:json {
 }
 
 docs {
-  Starts an API load scenario — an ordered list of templated request steps fired at a target concurrency described by a ramp profile, with per-iteration data variation. It is a pure SLI producer: each completed request records a latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no verdict logic of its own. Off by default — returns 403 until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 50 steps, max 1h duration, plus a live in-flight semaphore (200) and an RPS token bucket (500).
+  Starts an API load scenario — an ordered list of templated request steps driven through a sequence of stages (a load profile), with per-iteration data variation. A stage either holds/ramps the number of concurrent virtual users (VU, closed model), holds/ramps an arrival rate in iterations/second (RATE, open model), or pauses. It is a pure SLI producer: each completed request records a latency/error sample into the metrics histograms and the SLO sample store (so PUT /mockserver/verifySLO can read load-driven SLIs), but it contains no verdict logic of its own. Off by default — returns 403 until loadGenerationEnabled=true. Hard caps protect the server: max 50 virtual users, max 5000 iterations/second, max 20 stages, max 50 steps, max 1h total duration, plus a live in-flight semaphore (200) and an RPS token bucket (500).
   
   the load scenario to start
   

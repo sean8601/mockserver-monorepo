@@ -2,127 +2,107 @@ package org.mockserver.load;
 
 import org.mockserver.model.ObjectWithJsonToString;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
- * The ramp / load profile of a {@link LoadScenario}: how many virtual users (VUs) the
- * scenario drives over its run, and for how long.
+ * The load profile of a {@link LoadScenario}: an ordered list of {@link LoadStage}s the orchestrator
+ * runs <em>in sequence</em>. Each stage holds or ramps a setpoint — concurrent virtual users
+ * (closed model, {@link LoadStageType#VU}), an arrival rate in iterations/second (open model,
+ * {@link LoadStageType#RATE}), or no load at all ({@link LoadStageType#PAUSE}) — for its
+ * {@code durationMillis}, optionally shaped by a {@link RampCurve}.
  *
- * <p>v1 supports two shapes (the {@code STEP} / {@code SPIKE} / {@code SOAK} shapes are
- * a deferred extension point):
- * <ul>
- *   <li>{@link Type#CONSTANT} — a fixed {@code vus} for the whole {@code durationMillis}.</li>
- *   <li>{@link Type#LINEAR} — ramp linearly from {@code startVus} to {@code endVus} across
- *       {@code durationMillis}.</li>
- * </ul>
- *
- * <p>{@link #targetVusAt(long)} is the single source of truth for the setpoint: the
- * orchestrator's control tick reads it and grows/retires VUs to match. It is pure and
- * deterministic so it can be unit-tested without driving real traffic.
+ * <p>The total run duration is the sum of the stage durations; the orchestrator advances stage by
+ * stage and ends after the last one (or when {@code maxRequests} is hit, or on stop). Per-stage
+ * setpoint functions ({@link LoadStage#targetVusAt(long)} / {@link LoadStage#targetRateAt(long)}) are
+ * pure and deterministic so ramp progression is unit-testable without driving traffic.
  */
 public class LoadProfile extends ObjectWithJsonToString {
 
-    public enum Type {
-        CONSTANT,
-        LINEAR
-    }
+    private List<LoadStage> stages = new ArrayList<>();
 
-    private Type type = Type.CONSTANT;
-    private long durationMillis;
-    private int vus;
-    private int startVus;
-    private int endVus;
-    private Long iterationPacingMillis;
+    public LoadProfile() {
+    }
 
     public static LoadProfile loadProfile() {
         return new LoadProfile();
     }
 
+    public static LoadProfile of(LoadStage... stages) {
+        LoadProfile profile = new LoadProfile();
+        Collections.addAll(profile.stages, stages);
+        return profile;
+    }
+
+    /** Convenience: a single constant-VU stage. */
     public static LoadProfile constant(int vus, long durationMillis) {
-        return new LoadProfile().withType(Type.CONSTANT).withVus(vus).withDurationMillis(durationMillis);
+        return of(LoadStage.constantVus(vus, durationMillis));
     }
 
+    /** Convenience: a single linear VU ramp stage. */
     public static LoadProfile linear(int startVus, int endVus, long durationMillis) {
-        return new LoadProfile().withType(Type.LINEAR).withStartVus(startVus).withEndVus(endVus).withDurationMillis(durationMillis);
+        return of(LoadStage.rampVus(startVus, endVus, durationMillis, RampCurve.LINEAR));
     }
 
-    /**
-     * The target number of concurrent virtual users at {@code elapsedMillis} into the run.
-     *
-     * <ul>
-     *   <li>{@code CONSTANT}: always {@code vus}.</li>
-     *   <li>{@code LINEAR}: {@code round(startVus + min(1, elapsed/duration) * (endVus - startVus))},
-     *       clamped so the fraction never exceeds 1 (after the duration it stays at {@code endVus}).</li>
-     * </ul>
-     */
-    public int targetVusAt(long elapsedMillis) {
-        if (type == Type.LINEAR) {
-            double fraction = durationMillis <= 0 ? 1.0 : Math.min(1.0, (double) Math.max(0, elapsedMillis) / durationMillis);
-            return (int) Math.round(startVus + fraction * (endVus - startVus));
+    /** Convenience: a single constant arrival-rate (iterations/second) stage. */
+    public static LoadProfile constantRate(double rate, long durationMillis) {
+        return of(LoadStage.constantRate(rate, durationMillis));
+    }
+
+    public List<LoadStage> getStages() {
+        return stages;
+    }
+
+    public LoadProfile withStages(List<LoadStage> stages) {
+        this.stages = stages != null ? stages : new ArrayList<>();
+        return this;
+    }
+
+    public LoadProfile withStages(LoadStage... stages) {
+        this.stages = new ArrayList<>();
+        Collections.addAll(this.stages, stages);
+        return this;
+    }
+
+    public LoadProfile addStage(LoadStage stage) {
+        if (this.stages == null) {
+            this.stages = new ArrayList<>();
         }
-        return vus;
-    }
-
-    public Type getType() {
-        return type;
-    }
-
-    public LoadProfile withType(Type type) {
-        this.type = type;
+        this.stages.add(stage);
         return this;
     }
 
-    public long getDurationMillis() {
-        return durationMillis;
+    /** Sum of all stage durations — the total run length. */
+    public long totalDurationMillis() {
+        long total = 0;
+        if (stages != null) {
+            for (LoadStage stage : stages) {
+                total += Math.max(0, stage.getDurationMillis());
+            }
+        }
+        return total;
     }
 
-    public LoadProfile withDurationMillis(long durationMillis) {
-        this.durationMillis = durationMillis;
-        return this;
-    }
-
-    public int getVus() {
-        return vus;
-    }
-
-    public LoadProfile withVus(int vus) {
-        this.vus = vus;
-        return this;
-    }
-
-    public int getStartVus() {
-        return startVus;
-    }
-
-    public LoadProfile withStartVus(int startVus) {
-        this.startVus = startVus;
-        return this;
-    }
-
-    public int getEndVus() {
-        return endVus;
-    }
-
-    public LoadProfile withEndVus(int endVus) {
-        this.endVus = endVus;
-        return this;
-    }
-
-    public Long getIterationPacingMillis() {
-        return iterationPacingMillis;
-    }
-
-    public LoadProfile withIterationPacingMillis(Long iterationPacingMillis) {
-        this.iterationPacingMillis = iterationPacingMillis;
-        return this;
-    }
-
-    /**
-     * The maximum concurrency this profile will ever request, used to enforce the
-     * VU hard cap up-front at validation regardless of ramp shape.
-     */
+    /** The maximum VU count any stage requests, used to enforce the VU hard cap up-front. */
     public int peakVus() {
-        if (type == Type.LINEAR) {
-            return Math.max(startVus, endVus);
+        int peak = 0;
+        if (stages != null) {
+            for (LoadStage stage : stages) {
+                peak = Math.max(peak, stage.peakVus());
+            }
         }
-        return vus;
+        return peak;
+    }
+
+    /** The maximum arrival rate any stage requests, used to enforce the rate hard cap up-front. */
+    public double peakRate() {
+        double peak = 0.0;
+        if (stages != null) {
+            for (LoadStage stage : stages) {
+                peak = Math.max(peak, stage.peakRate());
+            }
+        }
+        return peak;
     }
 }

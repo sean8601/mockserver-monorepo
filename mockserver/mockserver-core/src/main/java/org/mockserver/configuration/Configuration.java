@@ -59,6 +59,8 @@ public class Configuration {
     private Integer loadGenerationMaxRequestsPerSecond;
     private Long loadGenerationMaxDurationMillis;
     private Integer loadGenerationMaxSteps;
+    private Double loadGenerationMaxRate;
+    private Integer loadGenerationMaxStages;
     private java.util.List<String> loadGenerationMetricLabels;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
@@ -932,6 +934,42 @@ public class Configuration {
      */
     public Configuration loadGenerationMaxSteps(Integer loadGenerationMaxSteps) {
         this.loadGenerationMaxSteps = loadGenerationMaxSteps;
+        return this;
+    }
+
+    public Double loadGenerationMaxRate() {
+        if (loadGenerationMaxRate == null) {
+            return ConfigurationProperties.loadGenerationMaxRate();
+        }
+        return loadGenerationMaxRate;
+    }
+
+    /**
+     * Hard cap on the arrival rate (iterations per second) a {@code RATE} load stage may request.
+     * A stage asking for a higher rate is rejected at validation. Default is 5000.
+     *
+     * @param loadGenerationMaxRate maximum arrival rate in iterations per second
+     */
+    public Configuration loadGenerationMaxRate(Double loadGenerationMaxRate) {
+        this.loadGenerationMaxRate = loadGenerationMaxRate;
+        return this;
+    }
+
+    public Integer loadGenerationMaxStages() {
+        if (loadGenerationMaxStages == null) {
+            return ConfigurationProperties.loadGenerationMaxStages();
+        }
+        return loadGenerationMaxStages;
+    }
+
+    /**
+     * Hard cap on the number of stages a single load profile may define. A profile with more stages
+     * is rejected at validation. Default is 20.
+     *
+     * @param loadGenerationMaxStages maximum number of stages per profile
+     */
+    public Configuration loadGenerationMaxStages(Integer loadGenerationMaxStages) {
+        this.loadGenerationMaxStages = loadGenerationMaxStages;
         return this;
     }
 
