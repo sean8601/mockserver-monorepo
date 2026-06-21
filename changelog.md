@@ -1437,10 +1437,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared when a module is removed or the server is reset.
 - **Mustache response templates are compiled once and cached** (`mockserver-core`), mirroring the
   Velocity engine, instead of recompiling the template on every render.
-- **JavaScript response templates now share a cached engine** (`mockserver-core`). The GraalVM engine and
-  parsed script are cached and each request thread renders on its own context, instead of building and
-  tearing down a fresh context (and re-parsing the script) per request behind a single global lock.
-  Output is unchanged; measured ~14x faster single-threaded and ~10x higher throughput under concurrency.
 - **OpenAPI request/response schema validators are compiled once and cached** (`mockserver-core`). When
   validating requests/responses against an OpenAPI spec, the per-operation JSON-schema validator is now
   reused (keyed by schema content) instead of being recompiled on every request. Validation results and
@@ -1610,16 +1606,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
-
-#### Correctness & reliability
-- **GraalVM Engine leak in the JavaScript template engine** (`mockserver-core`). The recent JS-template-engine
-  caching change built a new native GraalVM `Engine` per `JavaScriptTemplateEngine` instance (and a per-instance
-  thread-local `Context`) that was never closed; since the engine is constructed per call/handler/test, native
-  Engines accumulated (each pinning Truffle/compiler threads and native memory), which exhausted the reused test
-  fork and timed out CI. The `Engine` is now a single process-wide instance (shared across all template engines,
-  the standard GraalVM pattern), and `JavaScriptTemplateEngine`/`PolyglotRunner` gain a `close()` that disposes
-  the thread-local `Context` (used by short-lived render paths). Rendering output and the `Java.type(...)`
-  class-lookup security boundary are unchanged (per-instance class filter retained).
 
 #### Documentation site & dashboard
 - **Docs left-nav showed "Examples" twice and re-ordered between pages** (`jekyll-www.mock-server.com`). Removed a
