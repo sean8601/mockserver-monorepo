@@ -261,6 +261,74 @@ module MockServer
     end
 
     # -------------------------------------------------------------------
+    # Load scenario (load injection)
+    # -------------------------------------------------------------------
+
+    # Start a load-injection scenario. The scenario drives synthetic traffic at the
+    # target(s) according to its profile and steps.
+    #
+    # +scenario+ may be a {LoadScenario} model (which responds to +to_h+) or a plain
+    # Hash already shaped to the +LoadScenario+ JSON contract.
+    #
+    # Requires +loadGenerationEnabled+ on the server; a 403 response raises a clear
+    # error explaining the feature is disabled.
+    #
+    # @param scenario [LoadScenario, Hash] the scenario to run
+    # @return [Hash] parsed response (e.g. the running scenario status)
+    def load_scenario(scenario)
+      payload = scenario.respond_to?(:to_h) ? scenario.to_h : scenario
+      body = JSON.generate(payload)
+      status, response_body = request('PUT', '/mockserver/loadScenario', body)
+      if status == 403
+        raise Error, 'Load scenario rejected (status=403): load generation is disabled ' \
+                     '(set loadGenerationEnabled=true on the server to enable it)'
+      end
+      if status >= 400
+        raise Error, "Failed to start load scenario (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Query the status of the currently running load scenario.
+    #
+    # Requires +loadGenerationEnabled+ on the server; a 403 response raises a clear
+    # error explaining the feature is disabled.
+    #
+    # @return [Hash] parsed load scenario status
+    def load_scenario_status
+      status, response_body = request('GET', '/mockserver/loadScenario')
+      if status == 403
+        raise Error, 'Load scenario status unavailable (status=403): load generation is disabled ' \
+                     '(set loadGenerationEnabled=true on the server to enable it)'
+      end
+      if status >= 400
+        raise Error, "Failed to get load scenario status (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Stop the currently running load scenario.
+    #
+    # Requires +loadGenerationEnabled+ on the server; a 403 response raises a clear
+    # error explaining the feature is disabled.
+    #
+    # @return [Hash] parsed response
+    def stop_load_scenario
+      status, response_body = request('DELETE', '/mockserver/loadScenario')
+      if status == 403
+        raise Error, 'Load scenario stop rejected (status=403): load generation is disabled ' \
+                     '(set loadGenerationEnabled=true on the server to enable it)'
+      end
+      if status >= 400
+        raise Error, "Failed to stop load scenario (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # -------------------------------------------------------------------
     # gRPC descriptor management
     # -------------------------------------------------------------------
 

@@ -797,6 +797,303 @@ public sealed class MockServerClient : IDisposable
     }
 
     // -------------------------------------------------------------------
+    // SRE control plane: load scenarios
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Start an API-driven load scenario (PUT /mockserver/loadScenario).
+    /// </summary>
+    /// <exception cref="MockServerClientException">
+    /// If load generation is disabled (HTTP 403 — start MockServer with
+    /// loadGenerationEnabled=true) or the scenario is invalid (HTTP 400).
+    /// </exception>
+    public string LoadScenario(LoadScenario scenario)
+        => LoadScenarioAsync(scenario).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Start an API-driven load scenario (async). See <see cref="LoadScenario(MockServer.Client.Models.LoadScenario)"/>.
+    /// </summary>
+    public async Task<string> LoadScenarioAsync(LoadScenario scenario)
+    {
+        if (scenario == null) throw new ArgumentNullException(nameof(scenario));
+        var json = JsonSerializer.Serialize(scenario, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/loadScenario", json).ConfigureAwait(false);
+
+        if (statusCode == 403)
+            throw new MockServerClientException(
+                "Failed to start load scenario: load generation is disabled " +
+                $"(start MockServer with loadGenerationEnabled=true) (HTTP 403): {body}");
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid load scenario: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to start load scenario (HTTP {statusCode}): {body}");
+
+        return body ?? "";
+    }
+
+    /// <summary>
+    /// Retrieve the status of the current (or most recent) load scenario (GET /mockserver/loadScenario).
+    /// </summary>
+    public LoadScenarioStatus LoadScenarioStatus()
+        => LoadScenarioStatusAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Retrieve the current load scenario status (async).
+    /// </summary>
+    public async Task<LoadScenarioStatus> LoadScenarioStatusAsync()
+    {
+        var (statusCode, body) = await GetAsync("/mockserver/loadScenario").ConfigureAwait(false);
+
+        if (statusCode == 403)
+            throw new MockServerClientException(
+                "Failed to get load scenario status: load generation is disabled " +
+                $"(start MockServer with loadGenerationEnabled=true) (HTTP 403): {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to get load scenario status (HTTP {statusCode}): {body}");
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<LoadScenarioStatus>(body, JsonOptions);
+            if (result != null) return result;
+        }
+        return new LoadScenarioStatus();
+    }
+
+    /// <summary>
+    /// Stop the current load scenario (DELETE /mockserver/loadScenario). Idempotent.
+    /// </summary>
+    public void StopLoadScenario() => StopLoadScenarioAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Stop the current load scenario (async).
+    /// </summary>
+    public async Task StopLoadScenarioAsync()
+    {
+        var (statusCode, body) = await DeleteAsync("/mockserver/loadScenario").ConfigureAwait(false);
+
+        if (statusCode == 403)
+            throw new MockServerClientException(
+                "Failed to stop load scenario: load generation is disabled " +
+                $"(start MockServer with loadGenerationEnabled=true) (HTTP 403): {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to stop load scenario (HTTP {statusCode}): {body}");
+    }
+
+    // -------------------------------------------------------------------
+    // SRE control plane: service chaos
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Register a service-scoped HTTP chaos profile for a downstream <paramref name="host"/>
+    /// (PUT /mockserver/serviceChaos). The profile applies to matched forward expectations to
+    /// that host that do not define their own chaos.
+    /// </summary>
+    /// <param name="host">Downstream host the chaos profile applies to.</param>
+    /// <param name="profile">The HTTP chaos profile to register.</param>
+    /// <param name="ttlMillis">Optional time-to-live after which the registration auto-reverts (dead-man's switch).</param>
+    public void SetServiceChaos(string host, ServiceChaosProfile profile, long? ttlMillis = null)
+        => SetServiceChaosAsync(host, profile, ttlMillis).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Register a service-scoped HTTP chaos profile (async). See <see cref="SetServiceChaos"/>.
+    /// </summary>
+    public async Task SetServiceChaosAsync(string host, ServiceChaosProfile profile, long? ttlMillis = null)
+    {
+        if (string.IsNullOrEmpty(host)) throw new ArgumentException("host is required", nameof(host));
+        if (profile == null) throw new ArgumentNullException(nameof(profile));
+
+        var payload = new Dictionary<string, object?> { ["host"] = host, ["chaos"] = profile };
+        if (ttlMillis.HasValue) payload["ttlMillis"] = ttlMillis.Value;
+
+        var json = JsonSerializer.Serialize(payload, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/serviceChaos", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid service chaos profile: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to set service chaos (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Remove the service-scoped chaos profile registered for <paramref name="host"/>
+    /// (PUT /mockserver/serviceChaos with remove:true).
+    /// </summary>
+    public void RemoveServiceChaos(string host) => RemoveServiceChaosAsync(host).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Remove the service-scoped chaos profile for a host (async).
+    /// </summary>
+    public async Task RemoveServiceChaosAsync(string host)
+    {
+        if (string.IsNullOrEmpty(host)) throw new ArgumentException("host is required", nameof(host));
+        var json = JsonSerializer.Serialize(new { host, remove = true }, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/serviceChaos", json).ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to remove service chaos (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Clear all service-scoped chaos profiles (PUT /mockserver/serviceChaos with clear:true).
+    /// </summary>
+    public void ClearServiceChaos() => ClearServiceChaosAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Clear all service-scoped chaos profiles (async).
+    /// </summary>
+    public async Task ClearServiceChaosAsync()
+    {
+        var json = JsonSerializer.Serialize(new { clear = true }, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/serviceChaos", json).ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to clear service chaos (HTTP {statusCode}): {body}");
+    }
+
+    // -------------------------------------------------------------------
+    // SRE control plane: SLO verdicts
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Evaluate a set of service-level objectives over a window and return the verdict
+    /// (PUT /mockserver/verifySLO). The HTTP status encodes the verdict: 200 = PASS or
+    /// INCONCLUSIVE, 406 = FAIL.
+    /// </summary>
+    /// <returns>The <see cref="SloVerdict"/> for a PASS, INCONCLUSIVE or FAIL outcome.</returns>
+    /// <exception cref="MockServerClientException">
+    /// If the criteria are malformed or SLO tracking is disabled (HTTP 400 —
+    /// start MockServer with sloTrackingEnabled=true).
+    /// </exception>
+    public SloVerdict VerifySlo(SloCriteria criteria)
+        => VerifySloAsync(criteria).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Evaluate an SLO criteria and return the verdict (async). See <see cref="VerifySlo"/>.
+    /// </summary>
+    public async Task<SloVerdict> VerifySloAsync(SloCriteria criteria)
+    {
+        if (criteria == null) throw new ArgumentNullException(nameof(criteria));
+        var json = JsonSerializer.Serialize(criteria, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/verifySLO", json).ConfigureAwait(false);
+
+        // 200 = PASS or INCONCLUSIVE, 406 = FAIL — both carry an SloVerdict body.
+        if (statusCode == 200 || statusCode == 406)
+        {
+            if (!string.IsNullOrEmpty(body))
+            {
+                var verdict = JsonSerializer.Deserialize<SloVerdict>(body, JsonOptions);
+                if (verdict != null) return verdict;
+            }
+            return new SloVerdict();
+        }
+
+        if (statusCode == 400)
+            throw new MockServerClientException(
+                "Failed to verify SLO: malformed criteria, or SLO tracking is disabled " +
+                $"(start MockServer with sloTrackingEnabled=true) (HTTP 400): {body}");
+        throw new MockServerClientException($"Failed to verify SLO (HTTP {statusCode}): {body}");
+    }
+
+    // -------------------------------------------------------------------
+    // SRE control plane: preemption simulation
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Cordon and drain the server (PUT /mockserver/preemption). A null
+    /// <paramref name="request"/> uses server defaults (mode "both", drain from stopDrainMillis, no TTL).
+    /// </summary>
+    /// <returns>The resulting <see cref="PreemptionStatus"/>.</returns>
+    public PreemptionStatus SetPreemption(PreemptionRequest? request = null)
+        => SetPreemptionAsync(request).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Cordon and drain the server (async). See <see cref="SetPreemption"/>.
+    /// </summary>
+    public async Task<PreemptionStatus> SetPreemptionAsync(PreemptionRequest? request = null)
+    {
+        var json = request != null ? JsonSerializer.Serialize(request, JsonOptions) : "";
+        var (statusCode, body) = await PutAsync("/mockserver/preemption", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid preemption request: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to set preemption (HTTP {statusCode}): {body}");
+
+        return DeserializePreemptionStatus(body);
+    }
+
+    /// <summary>
+    /// Retrieve the current preemption status (GET /mockserver/preemption).
+    /// </summary>
+    public PreemptionStatus PreemptionStatus()
+        => PreemptionStatusAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Retrieve the current preemption status (async).
+    /// </summary>
+    public async Task<PreemptionStatus> PreemptionStatusAsync()
+    {
+        var (statusCode, body) = await GetAsync("/mockserver/preemption").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to get preemption status (HTTP {statusCode}): {body}");
+
+        return DeserializePreemptionStatus(body);
+    }
+
+    /// <summary>
+    /// Uncordon the server, clearing any active preemption (DELETE /mockserver/preemption). Idempotent.
+    /// </summary>
+    public void ClearPreemption() => ClearPreemptionAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Uncordon the server (async).
+    /// </summary>
+    public async Task ClearPreemptionAsync()
+    {
+        var (statusCode, body) = await DeleteAsync("/mockserver/preemption").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to clear preemption (HTTP {statusCode}): {body}");
+    }
+
+    private static PreemptionStatus DeserializePreemptionStatus(string body)
+    {
+        if (!string.IsNullOrEmpty(body))
+        {
+            var status = JsonSerializer.Deserialize<PreemptionStatus>(body, JsonOptions);
+            if (status != null) return status;
+        }
+        return new PreemptionStatus();
+    }
+
+    // -------------------------------------------------------------------
+    // SRE control plane: scheduled chaos experiment
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Start a scheduled multi-stage chaos experiment (PUT /mockserver/chaosExperiment).
+    /// Only one experiment may be active at a time; starting a new one stops the previous one.
+    /// </summary>
+    public void StartChaosExperiment(ChaosExperiment experiment)
+        => StartChaosExperimentAsync(experiment).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Start a scheduled chaos experiment (async). See <see cref="StartChaosExperiment"/>.
+    /// </summary>
+    public async Task StartChaosExperimentAsync(ChaosExperiment experiment)
+    {
+        if (experiment == null) throw new ArgumentNullException(nameof(experiment));
+        var json = JsonSerializer.Serialize(experiment, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/chaosExperiment", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid chaos experiment: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to start chaos experiment (HTTP {statusCode}): {body}");
+    }
+
+    // -------------------------------------------------------------------
     // Internal: called by ForwardChainExpectation
     // -------------------------------------------------------------------
 
@@ -833,6 +1130,14 @@ public sealed class MockServerClient : IDisposable
     {
         var url = _baseUrl + path;
         using var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        return ((int)response.StatusCode, responseBody);
+    }
+
+    private async Task<(int StatusCode, string Body)> DeleteAsync(string path)
+    {
+        var url = _baseUrl + path;
+        using var response = await _httpClient.DeleteAsync(url).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         return ((int)response.StatusCode, responseBody);
     }

@@ -446,6 +446,73 @@ export interface HttpChaosProfile {
   degradationRampMillis?: number;
 }
 
+/**
+ * Traffic profile that shapes a {@link LoadScenario}'s virtual-user concurrency
+ * over time. `CONSTANT` holds `vus` for `durationMillis`; `LINEAR` ramps from
+ * `startVus` to `endVus` across `durationMillis`.
+ */
+export interface LoadProfile {
+  type: "CONSTANT" | "LINEAR";
+  durationMillis: number;
+  /** CONSTANT only: the fixed number of virtual users */
+  vus?: number;
+  /** LINEAR only: virtual users at the start of the ramp */
+  startVus?: number;
+  /** LINEAR only: virtual users at the end of the ramp */
+  endVus?: number;
+  /** optional minimum time between iterations per virtual user */
+  iterationPacingMillis?: number;
+}
+
+/**
+ * A single request step within a {@link LoadScenario} iteration.
+ */
+export interface LoadStep {
+  name?: string;
+  labels?: { [key: string]: string };
+  /** optional pause before issuing this step's request */
+  thinkTime?: Delay;
+  request: HttpRequest;
+}
+
+/**
+ * A server-driven load-injection scenario. MockServer drives the `steps`
+ * against the configured traffic `profile`. Requires the server to be started
+ * with `loadGenerationEnabled=true`.
+ */
+export interface LoadScenario {
+  name: string;
+  templateType?: "VELOCITY" | "MUSTACHE";
+  labels?: { [key: string]: string };
+  /** optional hard cap on the total number of requests sent */
+  maxRequests?: number;
+  profile: LoadProfile;
+  steps: LoadStep[];
+}
+
+/**
+ * Status of the current (or most recent) load scenario, as returned by
+ * `loadScenarioStatus()`. When no scenario has run the server returns
+ * `{ state: "none" }`.
+ */
+export interface LoadScenarioStatus {
+  state: string;
+  name?: string;
+  elapsedMillis?: number;
+  currentVus?: number;
+  requestsSent?: number;
+  succeeded?: number;
+  failed?: number;
+  p50Millis?: number;
+  p95Millis?: number;
+  p99Millis?: number;
+  runId?: string;
+  startedAt?: number;
+  endedAt?: number;
+  labels?: { [key: string]: string };
+  definition?: LoadScenario;
+}
+
 export interface AfterAction {
   httpRequest?: HttpRequest;
   httpClassCallback?: HttpClassCallback;

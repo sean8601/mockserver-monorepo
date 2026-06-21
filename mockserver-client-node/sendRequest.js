@@ -255,10 +255,70 @@
             };
         };
 
+        var sendDeleteRequest = function (tls, caCertPath) {
+            var http = tls ? require('https') : require('http');
+            return function (host, port, path) {
+                var deferred = defer();
+                downloadCACert(tls, caCertPath, function (ca) {
+
+                    var options = {
+                        protocol: tls ? 'https:' : 'http:',
+                        method: 'DELETE',
+                        host: host,
+                        path: path,
+                        port: port,
+                        ca: ca,
+                    };
+
+                    var req = http.request(options);
+
+                    req.once('response', function (response) {
+                        var data = '';
+
+                        response.on('data', function (chunk) {
+                            data += chunk;
+                        });
+
+                        response.on('end', function () {
+                            if (response.statusCode >= 400 && response.statusCode < 600) {
+                                if (response.statusCode === 404) {
+                                    deferred.reject("404 Not Found");
+                                } else {
+                                    deferred.reject(data);
+                                }
+                            } else {
+                                deferred.resolve({
+                                    statusCode: response.statusCode,
+                                    body: data
+                                });
+                            }
+                        });
+                    });
+
+                    req.once('error', function (error) {
+                        if (error.code && error.code === "ECONNREFUSED") {
+                            deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
+                        } else {
+                            // reject with the error message (not JSON.stringify, which
+                            // serialises an Error to "{}" since message/stack are
+                            // non-enumerable) to preserve diagnostic information while
+                            // keeping the string rejection contract used elsewhere
+                            deferred.reject(error.message || String(error));
+                        }
+                    });
+
+                    req.end();
+
+                });
+                return deferred.promise;
+            };
+        };
+
         module.exports = {
             sendRequest: sendRequest,
             sendGetRequest: sendGetRequest,
-            sendBinaryRequest: sendBinaryRequest
+            sendBinaryRequest: sendBinaryRequest,
+            sendDeleteRequest: sendDeleteRequest
         };
     }
 })();

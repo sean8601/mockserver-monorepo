@@ -41,12 +41,25 @@ pub struct HttpRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<Body>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub socket_address: Option<SocketAddress>,
 }
 
 impl HttpRequest {
     /// Create a new empty request matcher.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the downstream socket address to connect to.
+    ///
+    /// Used by load-scenario steps (and forwarded/proxied requests) to direct
+    /// the rendered request at a specific host/port/scheme rather than relying
+    /// on the request's `Host` header.
+    pub fn socket_address(mut self, socket_address: SocketAddress) -> Self {
+        self.socket_address = Some(socket_address);
+        self
     }
 
     /// Set the HTTP method to match.
@@ -1673,6 +1686,634 @@ pub struct GrpcService {
 
     /// The methods declared by this service.
     pub methods: Vec<GrpcMethod>,
+}
+
+// ---------------------------------------------------------------------------
+// SocketAddress
+// ---------------------------------------------------------------------------
+
+/// A downstream socket address (host / port / scheme) to direct a request at.
+///
+/// Maps to MockServer's `SocketAddress` model. Used by load-scenario steps to
+/// target a specific upstream rather than relying on the `Host` header.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SocketAddress {
+    /// The downstream host name or IP.
+    pub host: String,
+
+    /// The downstream port.
+    pub port: u16,
+
+    /// The scheme to connect with — `"HTTP"` or `"HTTPS"`. Defaults to `"HTTP"`
+    /// on the server when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheme: Option<String>,
+}
+
+impl SocketAddress {
+    /// Create a plain HTTP socket address.
+    pub fn new(host: impl Into<String>, port: u16) -> Self {
+        Self {
+            host: host.into(),
+            port,
+            scheme: None,
+        }
+    }
+
+    /// Set the scheme (`"HTTP"` or `"HTTPS"`).
+    pub fn scheme(mut self, scheme: impl Into<String>) -> Self {
+        self.scheme = Some(scheme.into());
+        self
+    }
+
+    /// Convenience: an HTTPS socket address.
+    pub fn https(host: impl Into<String>, port: u16) -> Self {
+        Self::new(host, port).scheme("HTTPS")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Load scenario (PUT/GET/DELETE /mockserver/loadScenario)
+// ---------------------------------------------------------------------------
+
+/// Ramp profile describing the target concurrency over the life of a load
+/// scenario. Maps to the `LoadProfile` schema.
+///
+/// Use [`LoadProfile::constant`] to hold a fixed number of virtual users, or
+/// [`LoadProfile::linear`] to ramp from `startVus` to `endVus`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadProfile {
+    /// Ramp shape — `"CONSTANT"` (default) or `"LINEAR"`.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub profile_type: Option<String>,
+
+    /// How long the scenario runs in milliseconds (max 3_600_000 = 1h).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_millis: Option<u64>,
+
+    /// CONSTANT: number of virtual users to hold (max 50).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vus: Option<u32>,
+
+    /// LINEAR: virtual users at the start of the ramp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_vus: Option<u32>,
+
+    /// LINEAR: virtual users at the end of the ramp (max 50).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_vus: Option<u32>,
+
+    /// Optional minimum delay in milliseconds between successive iterations of
+    /// a virtual user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iteration_pacing_millis: Option<u64>,
+}
+
+impl LoadProfile {
+    /// A CONSTANT profile holding `vus` virtual users for `duration_millis`.
+    pub fn constant(vus: u32, duration_millis: u64) -> Self {
+        Self {
+            profile_type: Some("CONSTANT".to_string()),
+            duration_millis: Some(duration_millis),
+            vus: Some(vus),
+            ..Default::default()
+        }
+    }
+
+    /// A LINEAR profile ramping from `start_vus` to `end_vus` over
+    /// `duration_millis`.
+    pub fn linear(start_vus: u32, end_vus: u32, duration_millis: u64) -> Self {
+        Self {
+            profile_type: Some("LINEAR".to_string()),
+            duration_millis: Some(duration_millis),
+            start_vus: Some(start_vus),
+            end_vus: Some(end_vus),
+            ..Default::default()
+        }
+    }
+
+    /// Set the minimum delay between successive iterations of a virtual user.
+    pub fn iteration_pacing_millis(mut self, millis: u64) -> Self {
+        self.iteration_pacing_millis = Some(millis);
+        self
+    }
+}
+
+/// A single templated request step in a load scenario. Maps to the `LoadStep`
+/// schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadStep {
+    /// The templated request to fire each iteration.
+    pub request: HttpRequest,
+
+    /// Optional inter-step pause (a [`Delay`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub think_time: Option<Delay>,
+}
+
+impl LoadStep {
+    /// Create a step from a request matcher/template.
+    pub fn new(request: HttpRequest) -> Self {
+        Self {
+            request,
+            think_time: None,
+        }
+    }
+
+    /// Set the inter-step pause.
+    pub fn think_time(mut self, delay: Delay) -> Self {
+        self.think_time = Some(delay);
+        self
+    }
+}
+
+/// An API-driven load scenario: ordered templated steps driven at a target
+/// concurrency. Maps to the `LoadScenario` schema (the body of
+/// `PUT /mockserver/loadScenario`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadScenario {
+    /// Human-readable scenario name.
+    pub name: String,
+
+    /// Template engine for per-iteration rendering — `"VELOCITY"` (default) or
+    /// `"MUSTACHE"`. (JavaScript is rejected for load steps.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_type: Option<String>,
+
+    /// Optional hard cap on the total number of requests dispatched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_requests: Option<u64>,
+
+    /// The ramp profile.
+    pub profile: LoadProfile,
+
+    /// Ordered list of request steps fired in sequence each iteration (max 50).
+    pub steps: Vec<LoadStep>,
+}
+
+impl LoadScenario {
+    /// Create a scenario with the given name, profile and steps.
+    pub fn new(name: impl Into<String>, profile: LoadProfile, steps: Vec<LoadStep>) -> Self {
+        Self {
+            name: name.into(),
+            template_type: None,
+            max_requests: None,
+            profile,
+            steps,
+        }
+    }
+
+    /// Set the template engine (`"VELOCITY"` or `"MUSTACHE"`).
+    pub fn template_type(mut self, template_type: impl Into<String>) -> Self {
+        self.template_type = Some(template_type.into());
+        self
+    }
+
+    /// Set the hard cap on total requests dispatched.
+    pub fn max_requests(mut self, max_requests: u64) -> Self {
+        self.max_requests = Some(max_requests);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SLO verdicts (PUT /mockserver/verifySLO)
+// ---------------------------------------------------------------------------
+
+/// A single service-level objective over the recorded SLI samples. Maps to the
+/// `SloObjective` schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SloObjective {
+    /// The indicator to evaluate — one of `LATENCY_P50`, `LATENCY_P95`,
+    /// `LATENCY_P99`, `ERROR_RATE`.
+    pub sli: String,
+
+    /// How the observed value is compared to the threshold — one of
+    /// `LESS_THAN`, `LESS_THAN_OR_EQUAL`, `GREATER_THAN`,
+    /// `GREATER_THAN_OR_EQUAL`.
+    pub comparator: String,
+
+    /// The objective threshold (milliseconds for latency SLIs, a 0.0–1.0
+    /// fraction for `ERROR_RATE`).
+    pub threshold: f64,
+
+    /// Which recorded traffic to evaluate — `"FORWARD"` (default) or
+    /// `"INBOUND"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+impl SloObjective {
+    /// Create an objective.
+    pub fn new(sli: impl Into<String>, comparator: impl Into<String>, threshold: f64) -> Self {
+        Self {
+            sli: sli.into(),
+            comparator: comparator.into(),
+            threshold,
+            scope: None,
+        }
+    }
+
+    /// Set the evaluation scope (`"FORWARD"` or `"INBOUND"`).
+    pub fn scope(mut self, scope: impl Into<String>) -> Self {
+        self.scope = Some(scope.into());
+        self
+    }
+}
+
+/// The time window of an SLO evaluation. Maps to the `SloCriteria.window`
+/// object.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SloWindow {
+    /// `"LOOKBACK"` (default) or `"EXPLICIT"`.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub window_type: Option<String>,
+
+    /// LOOKBACK: window length ending now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookback_millis: Option<u64>,
+
+    /// EXPLICIT: window start in epoch milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_epoch_millis: Option<u64>,
+
+    /// EXPLICIT: window end in epoch milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_epoch_millis: Option<u64>,
+}
+
+impl SloWindow {
+    /// A LOOKBACK window of `millis` ending now.
+    pub fn lookback(millis: u64) -> Self {
+        Self {
+            window_type: Some("LOOKBACK".to_string()),
+            lookback_millis: Some(millis),
+            ..Default::default()
+        }
+    }
+
+    /// An EXPLICIT window between two epoch-millisecond bounds.
+    pub fn explicit(from_epoch_millis: u64, to_epoch_millis: u64) -> Self {
+        Self {
+            window_type: Some("EXPLICIT".to_string()),
+            from_epoch_millis: Some(from_epoch_millis),
+            to_epoch_millis: Some(to_epoch_millis),
+            ..Default::default()
+        }
+    }
+}
+
+/// A named set of service-level objectives over a time window. Maps to the
+/// `SloCriteria` schema (the body of `PUT /mockserver/verifySLO`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SloCriteria {
+    /// Human-readable criteria name, echoed back in the verdict.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// The time window to evaluate over.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<SloWindow>,
+
+    /// Minimum samples required in the window; below this the verdict is
+    /// INCONCLUSIVE.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimum_sample_count: Option<u64>,
+
+    /// Optional list of upstream hosts to restrict the evaluation to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream_hosts: Option<Vec<String>>,
+
+    /// The objectives (the verdict is the logical AND of all of them).
+    pub objectives: Vec<SloObjective>,
+}
+
+impl SloCriteria {
+    /// Create criteria from a set of objectives.
+    pub fn new(objectives: Vec<SloObjective>) -> Self {
+        Self {
+            name: None,
+            window: None,
+            minimum_sample_count: None,
+            upstream_hosts: None,
+            objectives,
+        }
+    }
+
+    /// Set the criteria name.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set the evaluation window.
+    pub fn window(mut self, window: SloWindow) -> Self {
+        self.window = Some(window);
+        self
+    }
+
+    /// Set the minimum sample count.
+    pub fn minimum_sample_count(mut self, count: u64) -> Self {
+        self.minimum_sample_count = Some(count);
+        self
+    }
+
+    /// Restrict the evaluation to the given upstream hosts.
+    pub fn upstream_hosts(mut self, hosts: Vec<String>) -> Self {
+        self.upstream_hosts = Some(hosts);
+        self
+    }
+}
+
+/// The evaluated result of a single objective. Maps to the `SloObjectiveResult`
+/// schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SloObjectiveResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sli: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_value: Option<f64>,
+    /// `PASS`, `FAIL` or `INCONCLUSIVE`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// The overall verdict of an SLO evaluation. Maps to the `SloVerdict` schema —
+/// the response of `PUT /mockserver/verifySLO`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SloVerdict {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// `PASS`, `FAIL` or `INCONCLUSIVE`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_from_epoch_millis: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_to_epoch_millis: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_count: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objective_results: Vec<SloObjectiveResult>,
+}
+
+impl SloVerdict {
+    /// Whether the overall verdict is `PASS`.
+    pub fn is_pass(&self) -> bool {
+        self.result.as_deref() == Some("PASS")
+    }
+
+    /// Whether the overall verdict is `FAIL`.
+    pub fn is_fail(&self) -> bool {
+        self.result.as_deref() == Some("FAIL")
+    }
+
+    /// Whether the overall verdict is `INCONCLUSIVE`.
+    pub fn is_inconclusive(&self) -> bool {
+        self.result.as_deref() == Some("INCONCLUSIVE")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Preemption (PUT/GET/DELETE /mockserver/preemption)
+// ---------------------------------------------------------------------------
+
+/// Preemption simulation parameters (all fields optional). Maps to the
+/// `PreemptionRequest` schema (the body of `PUT /mockserver/preemption`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreemptionRequest {
+    /// How draining is signalled — `"reject503"`, `"goaway"` or `"both"`
+    /// (default).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+
+    /// How long in-flight requests are allowed to drain (clamped server-side).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drain_millis: Option<u64>,
+
+    /// Auto-uncordon after this many milliseconds (dead-man's switch); `0`
+    /// (default) means no auto-uncordon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_millis: Option<u64>,
+
+    /// HTTP/2 GOAWAY `last_stream_id` to advertise; `-1` (default) lets the
+    /// server choose.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_stream_id: Option<i64>,
+}
+
+impl PreemptionRequest {
+    /// An empty request (server defaults: mode "both", default drain, no TTL).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the signalling mode (`"reject503"`, `"goaway"` or `"both"`).
+    pub fn mode(mut self, mode: impl Into<String>) -> Self {
+        self.mode = Some(mode.into());
+        self
+    }
+
+    /// Set the drain window in milliseconds.
+    pub fn drain_millis(mut self, millis: u64) -> Self {
+        self.drain_millis = Some(millis);
+        self
+    }
+
+    /// Set the auto-uncordon TTL in milliseconds.
+    pub fn ttl_millis(mut self, millis: u64) -> Self {
+        self.ttl_millis = Some(millis);
+        self
+    }
+
+    /// Set the HTTP/2 GOAWAY `last_stream_id` to advertise.
+    pub fn last_stream_id(mut self, id: i64) -> Self {
+        self.last_stream_id = Some(id);
+        self
+    }
+}
+
+/// The current cordon/drain status of the server. Maps to the
+/// `PreemptionStatus` schema — the response of `PUT`/`GET /mockserver/preemption`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreemptionStatus {
+    /// `"inactive"`, `"draining"` or `"drained"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+
+    /// Number of requests currently in flight.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_flight: Option<u64>,
+
+    /// Milliseconds left in the drain window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drain_remaining_millis: Option<u64>,
+
+    /// Active signalling mode (omitted when inactive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Service chaos (PUT /mockserver/serviceChaos)
+// ---------------------------------------------------------------------------
+
+/// An HTTP chaos / fault-injection profile for a host or expectation. Maps to
+/// the `HttpChaosProfile` schema. Captures the commonly-used fields; the model
+/// carries an `extra` map for any additional server-supported keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpChaosProfile {
+    /// HTTP error status code to return instead of the real response.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_status: Option<u16>,
+
+    /// Probability (0.0–1.0) that a request triggers the error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_probability: Option<f64>,
+
+    /// Injected latency (a [`Delay`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latency: Option<Delay>,
+
+    /// When true, drops the TCP connection without responding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_drop: Option<bool>,
+
+    /// Fixed seed for deterministic probabilistic outcomes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i64>,
+
+    /// Any additional fields the server supports that are not modelled above.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl HttpChaosProfile {
+    /// Create an empty chaos profile.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the error status code returned on fault.
+    pub fn error_status(mut self, status: u16) -> Self {
+        self.error_status = Some(status);
+        self
+    }
+
+    /// Set the probability (0.0–1.0) of triggering the error.
+    pub fn error_probability(mut self, probability: f64) -> Self {
+        self.error_probability = Some(probability);
+        self
+    }
+
+    /// Set the injected latency.
+    pub fn latency(mut self, latency: Delay) -> Self {
+        self.latency = Some(latency);
+        self
+    }
+
+    /// Drop the TCP connection without responding.
+    pub fn connection_drop(mut self, drop: bool) -> Self {
+        self.connection_drop = Some(drop);
+        self
+    }
+
+    /// Set the deterministic seed.
+    pub fn seed(mut self, seed: i64) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Chaos experiment (PUT /mockserver/chaosExperiment)
+// ---------------------------------------------------------------------------
+
+/// A single stage of a chaos experiment. Maps to a `ChaosExperiment.stages[]`
+/// entry.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChaosStage {
+    /// How long this stage runs before advancing (max 86_400_000 = 24h).
+    pub duration_millis: u64,
+
+    /// Map of host -> chaos profile to apply during this stage.
+    pub profiles: HashMap<String, HttpChaosProfile>,
+}
+
+impl ChaosStage {
+    /// Create a stage running for `duration_millis`.
+    pub fn new(duration_millis: u64) -> Self {
+        Self {
+            duration_millis,
+            profiles: HashMap::new(),
+        }
+    }
+
+    /// Add a host -> chaos profile to apply during the stage.
+    pub fn profile(mut self, host: impl Into<String>, profile: HttpChaosProfile) -> Self {
+        self.profiles.insert(host.into(), profile);
+        self
+    }
+}
+
+/// A scheduled multi-stage chaos experiment definition. Maps to the
+/// `ChaosExperiment` schema (the body of `PUT /mockserver/chaosExperiment`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChaosExperiment {
+    /// Human-readable experiment name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Whether to loop back to stage 0 after the last stage completes (default
+    /// false). Serialized as `loop` on the wire.
+    #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
+    pub loop_back: Option<bool>,
+
+    /// The ordered sequence of stages.
+    pub stages: Vec<ChaosStage>,
+}
+
+impl ChaosExperiment {
+    /// Create an experiment from an ordered list of stages.
+    pub fn new(stages: Vec<ChaosStage>) -> Self {
+        Self {
+            name: None,
+            loop_back: None,
+            stages,
+        }
+    }
+
+    /// Set the experiment name.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set whether the experiment loops back to the first stage.
+    pub fn loop_back(mut self, loop_back: bool) -> Self {
+        self.loop_back = Some(loop_back);
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------

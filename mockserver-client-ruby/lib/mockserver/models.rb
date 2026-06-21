@@ -2083,6 +2083,121 @@ module MockServer
     end
   end
 
+  # The traffic-shaping profile of a load scenario. A +CONSTANT+ profile drives a
+  # fixed number of virtual users (+vus+); a +LINEAR+ profile ramps from +start_vus+
+  # to +end_vus+ over +duration_millis+.
+  class LoadProfile
+    attr_accessor :type, :vus, :start_vus, :end_vus, :duration_millis, :iteration_pacing_millis
+
+    def initialize(type:, vus: nil, start_vus: nil, end_vus: nil,
+                   duration_millis: nil, iteration_pacing_millis: nil)
+      @type = type
+      @vus = vus
+      @start_vus = start_vus
+      @end_vus = end_vus
+      @duration_millis = duration_millis
+      @iteration_pacing_millis = iteration_pacing_millis
+    end
+
+    def to_h
+      MockServer.strip_none({
+        'type'                  => @type,
+        'vus'                   => @vus,
+        'startVus'              => @start_vus,
+        'endVus'                => @end_vus,
+        'durationMillis'        => @duration_millis,
+        'iterationPacingMillis' => @iteration_pacing_millis
+      })
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      new(
+        type:                    data['type'],
+        vus:                     data['vus'],
+        start_vus:               data['startVus'],
+        end_vus:                 data['endVus'],
+        duration_millis:         data['durationMillis'],
+        iteration_pacing_millis: data['iterationPacingMillis']
+      )
+    end
+  end
+
+  # A single step within a load scenario. Each step fires +request+ (an HttpRequest)
+  # against the target, optionally pausing for +think_time+ (a Delay) afterwards.
+  class LoadStep
+    attr_accessor :name, :labels, :think_time, :request
+
+    def initialize(request:, name: nil, labels: nil, think_time: nil)
+      @request = request
+      @name = name
+      @labels = labels
+      @think_time = think_time
+    end
+
+    def to_h
+      MockServer.strip_none({
+        'name'      => @name,
+        'labels'    => @labels,
+        'thinkTime' => @think_time&.to_h,
+        'request'   => @request&.to_h
+      })
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      new(
+        name:       data['name'],
+        labels:     data['labels'],
+        think_time: Delay.from_hash(data['thinkTime']),
+        request:    HttpRequest.from_hash(data['request'])
+      )
+    end
+  end
+
+  # A load-injection scenario: a named set of +steps+ driven by a traffic +profile+.
+  # +template_type+ selects the templating engine (+VELOCITY+ or +MUSTACHE+) used to
+  # render step requests; +max_requests+ caps the total requests issued.
+  class LoadScenario
+    attr_accessor :name, :template_type, :labels, :max_requests, :profile, :steps
+
+    def initialize(name:, profile:, steps:, template_type: nil, labels: nil, max_requests: nil)
+      @name = name
+      @profile = profile
+      @steps = steps
+      @template_type = template_type
+      @labels = labels
+      @max_requests = max_requests
+    end
+
+    def to_h
+      MockServer.strip_none({
+        'name'         => @name,
+        'templateType' => @template_type,
+        'labels'       => @labels,
+        'maxRequests'  => @max_requests,
+        'profile'      => @profile&.to_h,
+        'steps'        => @steps&.map(&:to_h)
+      })
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      steps_data = data['steps']
+      new(
+        name:          data['name'],
+        template_type: data['templateType'],
+        labels:        data['labels'],
+        max_requests:  data['maxRequests'],
+        profile:       LoadProfile.from_hash(data['profile']),
+        steps:         steps_data ? steps_data.map { |s| LoadStep.from_hash(s) } : nil
+      )
+    end
+  end
+
   # Alias matching the Python client
   RequestDefinition = HttpRequest
 end

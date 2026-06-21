@@ -323,6 +323,42 @@ var mockServerClient;
             };
         });
 
+        var makeDeleteRequest = (runningInNode() ? require('./sendRequest').sendDeleteRequest(tls, caCertPemFilePath) : function (host, port, path) {
+            var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
+
+            return {
+                then: function (sucess, error) {
+                    try {
+                        var xmlhttp = new XMLHttpRequest();
+                        xmlhttp.addEventListener("load", (function (sucess, error) {
+                            return function () {
+                                if (error && this.status >= 400 && this.status < 600) {
+                                    if (this.statusCode === 404) {
+                                        error("404 Not Found");
+                                    } else {
+                                        error(this.responseText);
+                                    }
+                                } else {
+                                    if (sucess) {
+                                        sucess({
+                                            statusCode: this.status,
+                                            body: this.responseText
+                                        });
+                                    }
+                                }
+                            };
+                        })(sucess, error));
+                        xmlhttp.open('DELETE', url);
+                        xmlhttp.send();
+                    } catch (e) {
+                        if (error) {
+                            error(e);
+                        }
+                    }
+                }
+            };
+        });
+
         var cleanedContextPath = (function (contextPath) {
             if (contextPath) {
                 if (!contextPath.endsWith("/")) {
@@ -1719,6 +1755,69 @@ var mockServerClient;
         };
 
         // -------------------------------------------------------------------
+        // Load scenario (load injection) management
+        // -------------------------------------------------------------------
+
+        /**
+         * Start a load scenario (load injection) on the MockServer. The server
+         * drives the scenario's traffic profile against the configured steps.
+         *
+         * Requires the server to be started with `loadGenerationEnabled=true`;
+         * otherwise the server responds 403 and this promise rejects with a
+         * clear message explaining how to enable it.
+         *
+         * @param scenario the LoadScenario definition ({name, profile, steps, ...})
+         * @return promise resolving to the request response, or rejecting on 403
+         */
+        var loadScenario = function (scenario) {
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/loadScenario", scenario)
+                        .then(function (result) {
+                            if (sucess) {
+                                sucess(result);
+                            }
+                        }, function (err) {
+                            if (error) {
+                                var message = (typeof err === "string") ? err : "";
+                                if (message.indexOf("load generation not enabled") !== -1) {
+                                    error("load generation is not enabled on this MockServer - start it with loadGenerationEnabled=true to use load scenarios");
+                                } else {
+                                    error(err);
+                                }
+                            }
+                        });
+                }
+            };
+        };
+        /**
+         * Query the current load scenario status.
+         *
+         * @return promise resolving to the parsed status JSON (e.g. {state, name,
+         *         requestsSent, p95Millis, ...}, or {state: 'none'} when idle)
+         */
+        var loadScenarioStatus = function () {
+            return {
+                then: function (sucess, error) {
+                    makeGetRequest(host, port, "/mockserver/loadScenario")
+                        .then(function (result) {
+                            sucess(result.body && JSON.parse(result.body));
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
+        /**
+         * Stop any running load scenario.
+         *
+         * @return promise resolving to the request response
+         */
+        var stopLoadScenario = function () {
+            return makeDeleteRequest(host, port, "/mockserver/loadScenario");
+        };
+
+        // -------------------------------------------------------------------
         // Breakpoint matcher management
         // -------------------------------------------------------------------
 
@@ -2002,6 +2101,9 @@ var mockServerClient;
             removeServiceChaos: removeServiceChaos,
             clearServiceChaos: clearServiceChaos,
             serviceChaosStatus: serviceChaosStatus,
+            loadScenario: loadScenario,
+            loadScenarioStatus: loadScenarioStatus,
+            stopLoadScenario: stopLoadScenario,
             bind: bind,
             retrieveRecordedRequests: retrieveRecordedRequests,
             retrieveRecordedRequestsAndResponses: retrieveRecordedRequestsAndResponses,

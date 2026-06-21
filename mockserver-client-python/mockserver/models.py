@@ -1933,4 +1933,119 @@ class CrudExpectationsDefinition:
         )
 
 
+@dataclass
+class LoadProfile:
+    """The shape of load injected by a :class:`LoadScenario`.
+
+    For a ``CONSTANT`` profile set ``vus`` (virtual users). For a ``LINEAR``
+    profile set ``start_vus`` and ``end_vus`` to ramp between them over
+    ``duration_millis``. ``iteration_pacing_millis`` caps how often each
+    virtual user starts a fresh iteration.
+    """
+
+    type: str = "CONSTANT"
+    duration_millis: int = 0
+    vus: int | None = None
+    start_vus: int | None = None
+    end_vus: int | None = None
+    iteration_pacing_millis: int | None = None
+
+    def to_dict(self) -> dict:
+        return _strip_none({
+            "type": self.type,
+            "durationMillis": self.duration_millis,
+            "vus": self.vus,
+            "startVus": self.start_vus,
+            "endVus": self.end_vus,
+            "iterationPacingMillis": self.iteration_pacing_millis,
+        })
+
+    @classmethod
+    def from_dict(cls, data: dict) -> LoadProfile:
+        if data is None:
+            return None
+        return cls(
+            type=data.get("type", "CONSTANT"),
+            duration_millis=data.get("durationMillis", 0),
+            vus=data.get("vus"),
+            start_vus=data.get("startVus"),
+            end_vus=data.get("endVus"),
+            iteration_pacing_millis=data.get("iterationPacingMillis"),
+        )
+
+
+@dataclass
+class LoadStep:
+    """A single request issued on each iteration of a :class:`LoadScenario`.
+
+    ``think_time`` is inter-step pacing (a :class:`Delay`) applied after the
+    request before the next step. ``request`` reuses :class:`HttpRequest`; its
+    template placeholders are rendered per iteration.
+    """
+
+    request: HttpRequest | None = None
+    think_time: Delay | None = None
+    name: str | None = None
+    labels: dict | None = None
+
+    def to_dict(self) -> dict:
+        return _strip_none({
+            "request": self.request.to_dict() if self.request else None,
+            "thinkTime": self.think_time.to_dict() if self.think_time else None,
+            "name": self.name,
+            "labels": self.labels,
+        })
+
+    @classmethod
+    def from_dict(cls, data: dict) -> LoadStep:
+        if data is None:
+            return None
+        return cls(
+            request=HttpRequest.from_dict(data.get("request")),
+            think_time=Delay.from_dict(data.get("thinkTime")),
+            name=data.get("name"),
+            labels=data.get("labels"),
+        )
+
+
+@dataclass
+class LoadScenario:
+    """A load-injection scenario run by the server's load generator.
+
+    Requires the server to be started with ``loadGenerationEnabled`` — otherwise
+    the control-plane endpoint responds ``403`` and the client raises an error.
+    """
+
+    name: str | None = None
+    profile: LoadProfile | None = None
+    steps: list[LoadStep] | None = None
+    template_type: str | None = None
+    max_requests: int | None = None
+    labels: dict | None = None
+
+    def to_dict(self) -> dict:
+        return _strip_none({
+            "name": self.name,
+            "profile": self.profile.to_dict() if self.profile else None,
+            "steps": [s.to_dict() for s in self.steps] if self.steps is not None else None,
+            "templateType": self.template_type,
+            "maxRequests": self.max_requests,
+            "labels": self.labels,
+        })
+
+    @classmethod
+    def from_dict(cls, data: dict) -> LoadScenario:
+        if data is None:
+            return None
+        steps = data.get("steps")
+        return cls(
+            name=data.get("name"),
+            profile=LoadProfile.from_dict(data.get("profile")),
+            steps=[LoadStep.from_dict(s) for s in steps] if steps is not None else None,
+            template_type=data.get("templateType"),
+            max_requests=data.get("maxRequests"),
+            labels=data.get("labels"),
+        )
+
+
 RequestDefinition = HttpRequest

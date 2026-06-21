@@ -1315,6 +1315,67 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
     });
 
     // ========================================================================
+    // Load scenario (load injection) management
+    //   PUT    /mockserver/loadScenario  (start a scenario; 403 unless enabled)
+    //   GET    /mockserver/loadScenario  (status)
+    //   DELETE /mockserver/loadScenario  (stop)
+    // The integration server is started WITHOUT loadGenerationEnabled, so PUT is
+    // expected to be forbidden - which deterministically exercises the client's
+    // PUT path + body plumbing and its 403 rejection message.
+    // ========================================================================
+
+    var loadScenarioDefinition = {
+        name: "node-client-load-test",
+        templateType: "VELOCITY",
+        labels: { team: "node-client" },
+        maxRequests: 10,
+        profile: {
+            type: "CONSTANT",
+            vus: 2,
+            durationMillis: 1000,
+            iterationPacingMillis: 100
+        },
+        steps: [
+            {
+                name: "ping",
+                thinkTime: { timeUnit: "MILLISECONDS", value: 5 },
+                request: {
+                    method: "GET",
+                    path: "/load/ping",
+                    headers: { "X-Load": ["1"] }
+                }
+            }
+        ]
+    };
+
+    it('should reject loadScenario with a clear message when load generation is disabled', async function () {
+        var rejected = false;
+        try {
+            await client.loadScenario(loadScenarioDefinition);
+        } catch (err) {
+            rejected = true;
+            var message = (typeof err === "string") ? err : String(err);
+            assert.ok(
+                message.toLowerCase().indexOf("load generation is not enabled") !== -1,
+                "expected a clear 'load generation is not enabled' message but got: " + message
+            );
+        }
+        assert.equal(rejected, true, "loadScenario should reject when loadGenerationEnabled=false");
+    });
+
+    it('should query loadScenario status', async function () {
+        var status = await client.loadScenarioStatus();
+        assert.ok(status, "loadScenarioStatus should resolve a status object");
+        assert.ok(typeof status.state === "string", "status should carry a string 'state' field");
+    });
+
+    it('should stop a load scenario', async function () {
+        var result = await client.stopLoadScenario();
+        assert.ok(result, "stopLoadScenario should resolve a response");
+        assert.equal(result.statusCode, 200, "stopLoadScenario should return HTTP 200");
+    });
+
+    // ========================================================================
     // gRPC descriptor management
     //   PUT /mockserver/grpc/descriptors  (raw FileDescriptorSet bytes)
     //   PUT /mockserver/grpc/services     (list registered services)

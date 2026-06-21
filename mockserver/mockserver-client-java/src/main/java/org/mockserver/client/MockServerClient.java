@@ -17,6 +17,7 @@ import org.mockserver.configuration.Configuration;
 import org.mockserver.file.FileReader;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.httpclient.SocketConnectionException;
+import org.mockserver.load.LoadScenario;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.matchers.TimeToLive;
@@ -57,6 +58,7 @@ import java.util.function.Supplier;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.*;
 import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
+import static io.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
 import static io.netty.handler.codec.http.HttpResponseStatus.UNAUTHORIZED;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -109,6 +111,7 @@ public class MockServerClient implements Stoppable {
     private LogEntrySerializer logEntrySerializer = new LogEntrySerializer(MOCK_SERVER_LOGGER);
     private HttpRequestSerializer httpRequestSerializer = new HttpRequestSerializer(MOCK_SERVER_LOGGER);
     private HttpResponseSerializer httpResponseSerializer = new HttpResponseSerializer(MOCK_SERVER_LOGGER);
+    private LoadScenarioSerializer loadScenarioSerializer = new LoadScenarioSerializer(MOCK_SERVER_LOGGER);
     private final CompletableFuture<MockServerClient> stopFuture = new CompletableFuture<>();
     private volatile BreakpointWebSocketClient breakpointWebSocketClient;
 
@@ -2728,6 +2731,69 @@ public class MockServerClient implements Stoppable {
             false
         );
         return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    // load-scenario (load injection) control-plane helpers
+
+    /**
+     * Start a load-injection scenario. The scenario is serialized and sent as
+     * {@code PUT /mockserver/loadScenario}. Load generation is off by default — if
+     * {@code loadGenerationEnabled} is not set on the server this throws a
+     * {@link ClientException} with a helpful message (the server responds {@code 403}).
+     *
+     * @param loadScenario the load scenario to start (see {@link org.mockserver.load.LoadScenario})
+     * @return this MockServerClient
+     */
+    public MockServerClient loadScenario(LoadScenario loadScenario) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("loadScenario"))
+                .withBody(loadScenarioSerializer.serialize(loadScenario), StandardCharsets.UTF_8),
+            false
+        );
+        if (httpResponse != null && httpResponse.getStatusCode() != null) {
+            if (httpResponse.getStatusCode() == FORBIDDEN.code()) {
+                throw new ClientException("load generation is disabled on this MockServer; set loadGenerationEnabled=true to enable load scenarios - server responded: " + httpResponse.getBodyAsString());
+            } else if (httpResponse.getStatusCode() >= 400) {
+                throw new ClientException(formatLogMessage("error:{}while starting load scenario", httpResponse.getBodyAsString()));
+            }
+        }
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Retrieve the current load-scenario status as a JSON string via
+     * {@code GET /mockserver/loadScenario}. When no scenario is running the body is
+     * {@code {"state":"none"}}; while running it contains the scenario name, state,
+     * elapsed time, current virtual users, request counts and latency percentiles.
+     *
+     * @return JSON string describing the current load-scenario status
+     */
+    public String loadScenarioStatus() {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("loadScenario")),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Stop the currently-running load scenario via {@code DELETE /mockserver/loadScenario}.
+     *
+     * @return this MockServerClient
+     */
+    public MockServerClient stopLoadScenario() {
+        sendRequest(
+            request()
+                .withMethod("DELETE")
+                .withPath(calculatePath("loadScenario")),
+            true
+        );
+        return clientClass.cast(this);
     }
 
     // asyncapi control-plane helpers

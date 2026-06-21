@@ -16,6 +16,7 @@ from mockserver.models import (
     HttpRequestAndHttpResponse,
     HttpResponse,
     HttpTemplate,
+    LoadScenario,
     OpenAPIExpectation,
     TimeToLive,
     Times,
@@ -184,6 +185,22 @@ class MockServerClient:
     def service_chaos_status(self) -> dict:
         """Query the current service-scoped chaos registrations."""
         return self._run(self._async_client.service_chaos_status())
+
+    def load_scenario(self, scenario: LoadScenario | dict) -> dict:
+        """Start a load-injection scenario on the server's load generator.
+
+        The server must have been started with ``loadGenerationEnabled``;
+        otherwise this raises an error reporting the ``403`` response.
+        """
+        return self._run(self._async_client.load_scenario(scenario))
+
+    def load_scenario_status(self) -> dict:
+        """Query the status of the currently running load scenario."""
+        return self._run(self._async_client.load_scenario_status())
+
+    def stop_load_scenario(self) -> dict:
+        """Stop the currently running load scenario."""
+        return self._run(self._async_client.stop_load_scenario())
 
     def verify(
         self,

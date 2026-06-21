@@ -148,6 +148,64 @@ if ($client->hasStarted()) {
 }
 ```
 
+### SRE Control Plane
+
+Methods for resilience verification — load generation, fault injection, SLO
+verdicts, preemption (cordon/drain) and scheduled chaos experiments. Some are
+gated behind a server start-up flag and raise `FeatureNotEnabledException`
+(HTTP 403) until that flag is set.
+
+```php
+use MockServer\LoadScenario;
+use MockServer\LoadProfile;
+
+// Load generation (requires loadGenerationEnabled=true; SLI producer for SLOs)
+$client->loadScenario(
+    LoadScenario::scenario('checkout-load')
+        ->maxRequests(5000)
+        ->profile(LoadProfile::constant(10, 30000)->iterationPacingMillis(50))
+        ->addStep(
+            HttpRequest::request()->method('GET')->path('/api/item/$iteration.index'),
+            Delay::milliseconds(20),
+        )
+);
+$status = $client->loadScenarioStatus();   // GET — lifecycle state + percentiles
+$client->stopLoadScenario();               // DELETE — idempotent
+
+// Service-scoped HTTP chaos for a downstream host (optional TTL dead-man's switch)
+$client->setServiceChaos('payments.internal:8443', [
+    'errorStatus' => 503,
+    'errorProbability' => 0.3,
+    'latency' => ['timeUnit' => 'MILLISECONDS', 'value' => 200],
+], 60000);
+
+// SLO verdict (requires sloTrackingEnabled=true). FAIL raises VerificationException;
+// PASS / INCONCLUSIVE return the verdict array.
+$verdict = $client->verifySlo([
+    'name' => 'checkout-slo',
+    'window' => ['type' => 'LOOKBACK', 'lookbackMillis' => 60000],
+    'minimumSampleCount' => 20,
+    'objectives' => [
+        ['sli' => 'LATENCY_P95', 'comparator' => 'LESS_THAN', 'threshold' => 250.0],
+        ['sli' => 'ERROR_RATE', 'comparator' => 'LESS_THAN_OR_EQUAL', 'threshold' => 0.01],
+    ],
+]);
+
+// Preemption — cordon and drain the server (Kubernetes node drain / spot reclaim)
+$client->setPreemption(['mode' => 'both', 'drainMillis' => 10000, 'ttlMillis' => 60000]);
+$client->preemptionStatus();   // GET
+$client->clearPreemption();    // DELETE — uncordon
+
+// Scheduled multi-stage chaos experiment
+$client->startChaosExperiment([
+    'name' => 'gradual-degradation',
+    'stages' => [
+        ['durationMillis' => 10000, 'profiles' => ['api.example.com' => ['errorStatus' => 500, 'errorProbability' => 0.1]]],
+        ['durationMillis' => 10000, 'profiles' => ['api.example.com' => ['errorStatus' => 500, 'errorProbability' => 0.5]]],
+    ],
+]);
+```
+
 ## Mocking LLM APIs
 
 Fluent builders under the `MockServer\Llm` namespace mock provider-agnostic LLM

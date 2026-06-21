@@ -28,6 +28,7 @@ class HttpRequest implements \JsonSerializable
     private string|array|null $body = null;
     private ?bool $keepAlive = null;
     private ?bool $secure = null;
+    private ?array $socketAddress = null;
 
     /**
      * Static factory for fluent construction.
@@ -142,6 +143,12 @@ class HttpRequest implements \JsonSerializable
         return $this;
     }
 
+    public function socketAddress(string $host, int $port, string $scheme = 'HTTP'): self
+    {
+        $this->socketAddress = ['host' => $host, 'port' => $port, 'scheme' => $scheme];
+        return $this;
+    }
+
     public function secure(bool $secure): self
     {
         $this->secure = $secure;
@@ -225,6 +232,9 @@ class HttpRequest implements \JsonSerializable
         }
         if ($this->secure !== null) {
             $data['secure'] = $this->secure;
+        }
+        if ($this->socketAddress !== null) {
+            $data['socketAddress'] = $this->socketAddress;
         }
 
         return $data;

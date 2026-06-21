@@ -897,8 +897,257 @@ impl MockServerClient {
     }
 
     // ------------------------------------------------------------------
+    // SRE control plane — load scenarios
+    // ------------------------------------------------------------------
+
+    /// Start a load scenario.
+    ///
+    /// Sends a `PUT /mockserver/loadScenario` with the given [`LoadScenario`].
+    /// The scenario is a pure SLI producer — each completed request records a
+    /// latency/error sample (readable later via [`verify_slo`](Self::verify_slo)).
+    ///
+    /// Off by default on the server: returns [`Error::FeatureDisabled`] when the
+    /// server responds `403` (`loadGenerationEnabled=false`). Returns the raw
+    /// JSON status the server echoes (`{"status":"started","name":..,"steps":..}`).
+    pub fn set_load_scenario(&self, scenario: &LoadScenario) -> Result<Value> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/loadScenario"))
+            .json(scenario)
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    /// Retrieve the status of the current (or most recent) load scenario.
+    ///
+    /// Sends a `GET /mockserver/loadScenario` and returns the raw JSON status
+    /// (lifecycle state, request counts, latency percentiles, etc.).
+    pub fn load_scenario_status(&self) -> Result<Value> {
+        let resp = self
+            .http
+            .get(self.url("/mockserver/loadScenario"))
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    /// Stop the current load scenario.
+    ///
+    /// Sends a `DELETE /mockserver/loadScenario`. Idempotent — succeeds whether
+    /// or not a scenario was running. Returns the raw JSON status
+    /// (`{"status":"stopped"}`).
+    pub fn stop_load_scenario(&self) -> Result<Value> {
+        let resp = self
+            .http
+            .delete(self.url("/mockserver/loadScenario"))
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    // ------------------------------------------------------------------
+    // SRE control plane — service chaos
+    // ------------------------------------------------------------------
+
+    /// Register a service-scoped HTTP chaos profile for a downstream host.
+    ///
+    /// Sends a `PUT /mockserver/serviceChaos`. `ttl_millis`, when supplied, sets
+    /// an optional time-to-live after which the registration auto-reverts.
+    /// Returns the raw JSON the server echoes.
+    pub fn set_service_chaos(
+        &self,
+        host: impl Into<String>,
+        profile: &HttpChaosProfile,
+        ttl_millis: Option<u64>,
+    ) -> Result<Value> {
+        let mut body = serde_json::json!({
+            "host": host.into(),
+            "chaos": profile,
+        });
+        if let Some(ttl) = ttl_millis {
+            body["ttlMillis"] = serde_json::json!(ttl);
+        }
+        let resp = self
+            .http
+            .put(self.url("/mockserver/serviceChaos"))
+            .json(&body)
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    /// Remove a single host's service-scoped chaos profile.
+    ///
+    /// Sends a `PUT /mockserver/serviceChaos` with `{"host":..,"remove":true}`.
+    pub fn remove_service_chaos(&self, host: impl Into<String>) -> Result<Value> {
+        let body = serde_json::json!({ "host": host.into(), "remove": true });
+        let resp = self
+            .http
+            .put(self.url("/mockserver/serviceChaos"))
+            .json(&body)
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    /// Clear all service-scoped chaos.
+    ///
+    /// Sends a `PUT /mockserver/serviceChaos` with `{"clear":true}`.
+    pub fn clear_service_chaos(&self) -> Result<Value> {
+        let body = serde_json::json!({ "clear": true });
+        let resp = self
+            .http
+            .put(self.url("/mockserver/serviceChaos"))
+            .json(&body)
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    // ------------------------------------------------------------------
+    // SRE control plane — SLO verdicts
+    // ------------------------------------------------------------------
+
+    /// Verify a set of service-level objectives over a window.
+    ///
+    /// Sends a `PUT /mockserver/verifySLO`. The HTTP status encodes the verdict:
+    /// `200` for PASS or INCONCLUSIVE, `406` for FAIL — both deserialize into a
+    /// [`SloVerdict`] (inspect [`SloVerdict::result`]). A `400` (malformed
+    /// criteria, or SLO tracking disabled) surfaces as [`Error::FeatureDisabled`].
+    ///
+    /// Returns `Ok(SloVerdict)` for both PASS/INCONCLUSIVE (200) and FAIL (406)
+    /// so callers can branch on the verdict; transport/parse failures and `400`
+    /// are returned as `Err`.
+    pub fn verify_slo(&self, criteria: &SloCriteria) -> Result<SloVerdict> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/verifySLO"))
+            .json(criteria)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            // PASS / INCONCLUSIVE (200) and FAIL (406) both carry a SloVerdict.
+            200 | 406 => {
+                let text = resp.text()?;
+                Ok(serde_json::from_str(&text)?)
+            }
+            400 => Err(Error::FeatureDisabled(resp.text()?)),
+            403 => Err(Error::FeatureDisabled(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // SRE control plane — preemption
+    // ------------------------------------------------------------------
+
+    /// Cordon and drain the server (preemption simulation).
+    ///
+    /// Sends a `PUT /mockserver/preemption` with the given [`PreemptionRequest`]
+    /// and returns the resulting [`PreemptionStatus`].
+    pub fn set_preemption(&self, request: &PreemptionRequest) -> Result<PreemptionStatus> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/preemption"))
+            .json(request)
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                let text = resp.text()?;
+                Ok(serde_json::from_str(&text)?)
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            403 => Err(Error::FeatureDisabled(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Retrieve the current preemption status.
+    ///
+    /// Sends a `GET /mockserver/preemption` and returns the [`PreemptionStatus`].
+    pub fn preemption_status(&self) -> Result<PreemptionStatus> {
+        let resp = self
+            .http
+            .get(self.url("/mockserver/preemption"))
+            .send()?;
+
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                let text = resp.text()?;
+                Ok(serde_json::from_str(&text)?)
+            }
+            403 => Err(Error::FeatureDisabled(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Uncordon the server (clear any active preemption simulation).
+    ///
+    /// Sends a `DELETE /mockserver/preemption`. Idempotent — succeeds whether or
+    /// not a simulation was active. Returns the raw JSON status.
+    pub fn clear_preemption(&self) -> Result<Value> {
+        let resp = self
+            .http
+            .delete(self.url("/mockserver/preemption"))
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    // ------------------------------------------------------------------
+    // SRE control plane — chaos experiments
+    // ------------------------------------------------------------------
+
+    /// Start a scheduled multi-stage chaos experiment.
+    ///
+    /// Sends a `PUT /mockserver/chaosExperiment` with the given
+    /// [`ChaosExperiment`]. Only one experiment may be active at a time; starting
+    /// a new one stops the previous one. Returns the raw JSON status
+    /// (`{"status":"started","name":..}`).
+    pub fn start_chaos_experiment(&self, experiment: &ChaosExperiment) -> Result<Value> {
+        let resp = self
+            .http
+            .put(self.url("/mockserver/chaosExperiment"))
+            .json(experiment)
+            .send()?;
+        self.json_or_feature_error(resp)
+    }
+
+    // ------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------
+
+    /// Common handler for SRE endpoints returning JSON on `200`, mapping `403`
+    /// to [`Error::FeatureDisabled`] (the feature is disabled on the server),
+    /// `400` to [`Error::InvalidRequest`], and any other status to
+    /// [`Error::UnexpectedStatus`]. An empty `200` body deserializes to JSON
+    /// `null`.
+    fn json_or_feature_error(&self, resp: reqwest::blocking::Response) -> Result<Value> {
+        let status = resp.status().as_u16();
+        match status {
+            200 | 201 => {
+                let text = resp.text()?;
+                if text.is_empty() {
+                    Ok(Value::Null)
+                } else {
+                    Ok(serde_json::from_str(&text)?)
+                }
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            403 => Err(Error::FeatureDisabled(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
 
     fn do_verify(&self, verification: &Verification) -> Result<()> {
         let resp = self

@@ -21,6 +21,9 @@ from mockserver.models import (
     HttpRequest,
     HttpRequestAndHttpResponse,
     HttpResponse,
+    LoadProfile,
+    LoadScenario,
+    LoadStep,
     OpenAPIExpectation,
     Ports,
     TimeToLive,
@@ -127,6 +130,26 @@ class MockHandler(BaseHTTPRequestHandler):
         MockHandler.last_request_body = raw.decode("utf-8", errors="replace")
         MockHandler.last_path = self.path
         MockHandler.last_method = "PUT"
+
+        self.send_response(MockHandler.response_status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(MockHandler.response_body.encode("utf-8"))
+
+    def do_GET(self):
+        MockHandler.last_request_body = None
+        MockHandler.last_path = self.path
+        MockHandler.last_method = "GET"
+
+        self.send_response(MockHandler.response_status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(MockHandler.response_body.encode("utf-8"))
+
+    def do_DELETE(self):
+        MockHandler.last_request_body = None
+        MockHandler.last_path = self.path
+        MockHandler.last_method = "DELETE"
 
         self.send_response(MockHandler.response_status)
         self.send_header("Content-Type", "application/json")
@@ -583,3 +606,52 @@ class TestGrpcDescriptors:
         client = AsyncMockServerClient("127.0.0.1", mock_server)
         with pytest.raises(MockServerError, match="Failed to clear gRPC descriptors"):
             await client.clear_grpc_descriptors()
+
+
+class TestAsyncLoadScenario:
+    def _scenario(self) -> LoadScenario:
+        return LoadScenario(
+            name="checkout-flow",
+            profile=LoadProfile(type="CONSTANT", vus=5, duration_millis=30000),
+            steps=[
+                LoadStep(request=HttpRequest(method="GET", path="/health")),
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_load_scenario(self, mock_server):
+        MockHandler.response_body = json.dumps({"status": "running"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.load_scenario(self._scenario())
+        assert MockHandler.last_method == "PUT"
+        assert MockHandler.last_path == "/mockserver/loadScenario"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent["name"] == "checkout-flow"
+        assert sent["profile"]["vus"] == 5
+        assert result["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_load_scenario_status(self, mock_server):
+        MockHandler.response_body = json.dumps({"status": "running"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.load_scenario_status()
+        assert MockHandler.last_method == "GET"
+        assert MockHandler.last_path == "/mockserver/loadScenario"
+        assert result["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_stop_load_scenario(self, mock_server):
+        MockHandler.response_body = json.dumps({"status": "stopped"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.stop_load_scenario()
+        assert MockHandler.last_method == "DELETE"
+        assert MockHandler.last_path == "/mockserver/loadScenario"
+        assert result["status"] == "stopped"
+
+    @pytest.mark.asyncio
+    async def test_load_scenario_forbidden_when_disabled(self, mock_server):
+        MockHandler.response_status = 403
+        MockHandler.response_body = '{"error": "disabled"}'
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="load generation is disabled"):
+            await client.load_scenario(self._scenario())

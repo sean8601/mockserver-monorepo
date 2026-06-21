@@ -8,7 +8,7 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpWebSocketResponse, KeyToMultiValue, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
+import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioStatus, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
 import {Llm, LlmConversationBuilder, LlmFailoverBuilder, LlmMockBuilder} from './llm';
 import {McpMockBuilder} from './mcpMockBuilder';
 
@@ -130,6 +130,12 @@ export interface MockServerClient {
     clearServiceChaos(): Promise<RequestResponse>;
 
     serviceChaosStatus(): Promise<{ services: { [host: string]: HttpChaosProfile } }>;
+
+    loadScenario(scenario: LoadScenario): Promise<RequestResponse>;
+
+    loadScenarioStatus(): Promise<LoadScenarioStatus>;
+
+    stopLoadScenario(): Promise<RequestResponse>;
 
     bind(ports: Port[]): Promise<RequestResponse>;
 

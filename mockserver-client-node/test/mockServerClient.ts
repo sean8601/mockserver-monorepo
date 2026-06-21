@@ -1,6 +1,6 @@
 import {mockServerClient, ClockStatus, GrpcService, MockServerClient, llm as llmFactory, mcpMock} from '../index';
 import {RequestResponse} from '../mockServerClient';
-import {Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, RequestDefinition} from '../mockServer';
+import {Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioStatus, RequestDefinition} from '../mockServer';
 
 const client: MockServerClient = mockServerClient('mockhttp', 1080);
 
@@ -291,6 +291,31 @@ async function test() {
     requestResponse = await client.removeServiceChaos("payments.svc");
     requestResponse = await client.clearServiceChaos();
     let serviceChaos: { services: { [host: string]: HttpChaosProfile } } = await client.serviceChaosStatus();
+
+    // load scenario (load injection)
+    const loadScenarioDefinition: LoadScenario = {
+        name: "load-test",
+        templateType: "VELOCITY",
+        labels: {team: "node"},
+        maxRequests: 100,
+        profile: {
+            type: "LINEAR",
+            startVus: 1,
+            endVus: 10,
+            durationMillis: 5000,
+            iterationPacingMillis: 50
+        },
+        steps: [
+            {
+                name: "ping",
+                thinkTime: {timeUnit: "MILLISECONDS", value: 10},
+                request: {method: "GET", path: "/ping"}
+            }
+        ]
+    };
+    requestResponse = await client.loadScenario(loadScenarioDefinition);
+    let loadStatus: LoadScenarioStatus = await client.loadScenarioStatus();
+    requestResponse = await client.stopLoadScenario();
 
     // LLM mocking builders (type-checking only)
     requestResponse = await client.mockWithLLM(

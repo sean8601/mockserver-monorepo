@@ -9,6 +9,7 @@ use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\RequestOptions;
 use MockServer\Exception\ConnectionException;
+use MockServer\Exception\FeatureNotEnabledException;
 use MockServer\Exception\InvalidRequestException;
 use MockServer\Exception\MockServerException;
 use MockServer\Exception\VerificationException;
@@ -681,8 +682,315 @@ class MockServerClient
     }
 
     // -----------------------------------------------------------------
+    // SRE control-plane: load generation
+    // -----------------------------------------------------------------
+
+    /**
+     * Start an API load scenario (a pure SLI producer).
+     *
+     * A scenario is an ordered list of templated request steps fired at a target
+     * concurrency described by a ramp profile. Each completed request records a
+     * latency/error sample that {@see verifySlo()} can read.
+     *
+     * Off by default — the server returns 403 until started with
+     * {@code loadGenerationEnabled=true}.
+     *
+     * @param LoadScenario|array<string, mixed> $scenario The scenario, as a
+     *        {@see LoadScenario} value object or an equivalent camelCase array.
+     * @return array<string, mixed> The started-run status ({status, name, steps}).
+     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @throws InvalidRequestException If the scenario is rejected (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function loadScenario(LoadScenario|array $scenario): array
+    {
+        $body = json_encode(self::toPayload($scenario), JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/loadScenario', $body);
+
+        return $this->decodeSreResponse(
+            $response,
+            'start load scenario',
+            featureFlag: 'loadGenerationEnabled',
+        );
+    }
+
+    /**
+     * Retrieve the status of the current (or most recent) load scenario.
+     *
+     * When a run exists the response also echoes its full {@code definition} (a
+     * valid {@code LoadScenario} body that can be re-submitted).
+     *
+     * @return array<string, mixed> The load scenario status.
+     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @throws MockServerException On communication errors.
+     */
+    public function loadScenarioStatus(): array
+    {
+        $response = $this->get('/mockserver/loadScenario');
+
+        return $this->decodeSreResponse(
+            $response,
+            'get load scenario status',
+            featureFlag: 'loadGenerationEnabled',
+        );
+    }
+
+    /**
+     * Stop the current load scenario. Idempotent.
+     *
+     * @return array<string, mixed> The stop status ({status: "stopped"}).
+     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @throws MockServerException On communication errors.
+     */
+    public function stopLoadScenario(): array
+    {
+        $response = $this->delete('/mockserver/loadScenario');
+
+        return $this->decodeSreResponse(
+            $response,
+            'stop load scenario',
+            featureFlag: 'loadGenerationEnabled',
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // SRE control-plane: service-scoped HTTP chaos
+    // -----------------------------------------------------------------
+
+    /**
+     * Register a service-scoped HTTP chaos profile for a downstream host.
+     *
+     * The profile is applied to forward expectations targeting {@code $host} that
+     * do not define their own chaos. The host is matched case-insensitively,
+     * ignoring any {@code :port}. When {@code $ttlMillis} is supplied the chaos
+     * auto-reverts after that many milliseconds (a dead-man's switch).
+     *
+     * @param string $host The downstream host the chaos applies to.
+     * @param array<string, mixed> $profile The chaos profile (errorStatus,
+     *        errorProbability, latency{value,timeUnit}, connectionDrop, seed).
+     * @param int|null $ttlMillis Optional time-to-live in milliseconds.
+     * @return array<string, mixed> The server response.
+     * @throws InvalidRequestException If the chaos profile is invalid (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function setServiceChaos(string $host, array $profile, ?int $ttlMillis = null): array
+    {
+        $payload = ['host' => $host, 'chaos' => $profile];
+        if ($ttlMillis !== null) {
+            $payload['ttlMillis'] = $ttlMillis;
+        }
+
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/serviceChaos', $body);
+
+        return $this->decodeSreResponse($response, 'set service chaos');
+    }
+
+    // -----------------------------------------------------------------
+    // SRE control-plane: SLO verdicts
+    // -----------------------------------------------------------------
+
+    /**
+     * Verify a service-level objective over a window of recorded SLI samples.
+     *
+     * Returns the verdict with a {@code result} of PASS, FAIL or INCONCLUSIVE.
+     * A FAIL verdict (HTTP 406) raises {@see VerificationException} so a CI or
+     * chaos gate can assert on it directly; PASS and INCONCLUSIVE return the
+     * verdict array.
+     *
+     * Off by default — the server returns 400 until started with
+     * {@code sloTrackingEnabled=true}.
+     *
+     * @param array<string, mixed> $criteria The SLO criteria (name, window,
+     *        minimumSampleCount, upstreamHosts, objectives[{sli,comparator,threshold,scope}]).
+     * @return array<string, mixed> The SLO verdict (result PASS or INCONCLUSIVE).
+     * @throws VerificationException If the verdict is FAIL (HTTP 406).
+     * @throws InvalidRequestException If criteria are malformed or SLO tracking
+     *         is disabled (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function verifySlo(array $criteria): array
+    {
+        $body = json_encode($criteria, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/verifySLO', $body);
+
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 406) {
+            throw new VerificationException($responseBody ?: 'SLO verdict: FAIL');
+        }
+        if ($status === 400) {
+            throw new InvalidRequestException(
+                "Invalid SLO criteria (or SLO tracking disabled — set sloTrackingEnabled=true): {$responseBody}"
+            );
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Verify SLO failed (HTTP {$status}): {$responseBody}");
+        }
+
+        if ($responseBody !== '') {
+            $parsed = json_decode($responseBody, true);
+            if (is_array($parsed)) {
+                return $parsed;
+            }
+        }
+
+        return [];
+    }
+
+    // -----------------------------------------------------------------
+    // SRE control-plane: preemption (cordon / drain)
+    // -----------------------------------------------------------------
+
+    /**
+     * Cordon and drain the server (preemption simulation).
+     *
+     * Simulates a connection-lifecycle preemption (e.g. a Kubernetes node drain
+     * or spot reclamation). While cordoned, new exchanges are signalled to back
+     * off while in-flight requests drain. All fields are optional; an empty array
+     * uses server defaults (mode "both", drain from {@code stopDrainMillis}, no TTL).
+     *
+     * @param array<string, mixed> $request Preemption parameters
+     *        (mode, drainMillis, ttlMillis, lastStreamId). Defaults to empty.
+     * @return array<string, mixed> The preemption status.
+     * @throws InvalidRequestException If the request is invalid (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function setPreemption(array $request = []): array
+    {
+        $body = json_encode((object) $request, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/preemption', $body);
+
+        return $this->decodeSreResponse($response, 'set preemption');
+    }
+
+    /**
+     * Retrieve the current preemption (cordon/drain) status.
+     *
+     * @return array<string, mixed> The preemption status
+     *         (state, inFlight, drainRemainingMillis, mode).
+     * @throws MockServerException On communication errors.
+     */
+    public function preemptionStatus(): array
+    {
+        $response = $this->get('/mockserver/preemption');
+
+        return $this->decodeSreResponse($response, 'get preemption status');
+    }
+
+    /**
+     * Uncordon the server (clear any active preemption simulation). Idempotent.
+     *
+     * @return array<string, mixed> The cleared status ({state: "inactive"}).
+     * @throws MockServerException On communication errors.
+     */
+    public function clearPreemption(): array
+    {
+        $response = $this->delete('/mockserver/preemption');
+
+        return $this->decodeSreResponse($response, 'clear preemption');
+    }
+
+    // -----------------------------------------------------------------
+    // SRE control-plane: scheduled chaos experiments
+    // -----------------------------------------------------------------
+
+    /**
+     * Start a scheduled multi-stage chaos experiment.
+     *
+     * The experiment is an ordered sequence of stages, each applying
+     * service-scoped chaos profiles to one or more hosts for a duration; stages
+     * progress automatically. Only one experiment may be active at a time;
+     * starting a new one stops the previous one.
+     *
+     * @param array<string, mixed> $experiment The experiment definition
+     *        (name, loop, stages[{durationMillis, profiles{host: profile}}]).
+     * @return array<string, mixed> The started status ({status: "started", name}).
+     * @throws InvalidRequestException If the experiment definition is invalid (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function startChaosExperiment(array $experiment): array
+    {
+        $body = json_encode($experiment, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/chaosExperiment', $body);
+
+        return $this->decodeSreResponse($response, 'start chaos experiment');
+    }
+
+    // -----------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------
+
+    /**
+     * Coerce a value-object-or-array argument into a JSON-encodable array.
+     *
+     * @param object|array<string, mixed> $value
+     * @return array<string, mixed>|object
+     */
+    private static function toPayload(object|array $value): array|object
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (method_exists($value, 'toArray')) {
+            return $value->toArray();
+        }
+        if ($value instanceof \JsonSerializable) {
+            $serialized = $value->jsonSerialize();
+            if (is_array($serialized)) {
+                return $serialized;
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * Decode a control-plane (SRE) JSON response, surfacing the common error
+     * statuses with clear, typed exceptions.
+     *
+     * @param \Psr\Http\Message\ResponseInterface $response
+     * @param string $action Human-readable action used in error messages.
+     * @param string|null $featureFlag When set, a 403 is surfaced as a
+     *        {@see FeatureNotEnabledException} naming the server flag to enable.
+     * @return array<string, mixed>
+     * @throws FeatureNotEnabledException
+     * @throws InvalidRequestException
+     * @throws MockServerException
+     */
+    private function decodeSreResponse(
+        \Psr\Http\Message\ResponseInterface $response,
+        string $action,
+        ?string $featureFlag = null,
+    ): array {
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 403) {
+            $hint = $featureFlag !== null
+                ? " (start MockServer with {$featureFlag}=true to enable it)"
+                : '';
+            throw new FeatureNotEnabledException(
+                "Failed to {$action}: feature is disabled{$hint} (HTTP 403): {$responseBody}"
+            );
+        }
+        if ($status === 400) {
+            throw new InvalidRequestException("Failed to {$action} (HTTP 400): {$responseBody}");
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Failed to {$action} (HTTP {$status}): {$responseBody}");
+        }
+
+        if ($responseBody !== '') {
+            $parsed = json_decode($responseBody, true);
+            if (is_array($parsed)) {
+                return $parsed;
+            }
+        }
+
+        return [];
+    }
 
     /**
      * Generic retrieve method.
@@ -765,6 +1073,57 @@ class MockServerClient
 
         try {
             return $this->httpClient->request('PUT', $path, $options);
+        } catch (ConnectException $e) {
+            throw new ConnectionException(
+                "Failed to connect to MockServer at {$this->baseUri}: {$e->getMessage()}",
+                (int) $e->getCode(),
+                $e
+            );
+        } catch (GuzzleException $e) {
+            throw new ConnectionException(
+                "Request to MockServer at {$this->baseUri} failed: {$e->getMessage()}",
+                (int) $e->getCode(),
+                $e
+            );
+        }
+    }
+
+    /**
+     * Send a GET request to MockServer (used by control-plane status endpoints).
+     *
+     * @param string $path Request path (including query string if any)
+     * @return \Psr\Http\Message\ResponseInterface
+     * @throws ConnectionException
+     */
+    private function get(string $path): \Psr\Http\Message\ResponseInterface
+    {
+        return $this->send('GET', $path);
+    }
+
+    /**
+     * Send a DELETE request to MockServer (used by control-plane stop/clear endpoints).
+     *
+     * @param string $path Request path (including query string if any)
+     * @return \Psr\Http\Message\ResponseInterface
+     * @throws ConnectionException
+     */
+    private function delete(string $path): \Psr\Http\Message\ResponseInterface
+    {
+        return $this->send('DELETE', $path);
+    }
+
+    /**
+     * Send a body-less request (GET/DELETE) to MockServer.
+     *
+     * @param string $method HTTP method
+     * @param string $path Request path (including query string if any)
+     * @return \Psr\Http\Message\ResponseInterface
+     * @throws ConnectionException
+     */
+    private function send(string $method, string $path): \Psr\Http\Message\ResponseInterface
+    {
+        try {
+            return $this->httpClient->request($method, $path);
         } catch (ConnectException $e) {
             throw new ConnectionException(
                 "Failed to connect to MockServer at {$this->baseUri}: {$e->getMessage()}",

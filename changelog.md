@@ -63,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Load scenario + SRE control plane across all client libraries -->
+- **Load-scenario (load injection) support in all client libraries, and SRE control-plane parity for the
+  remaining clients.** Every client (Java, Node, Python, Ruby, Go, .NET, Rust, PHP) gains start / status / stop
+  for load scenarios (`PUT/GET/DELETE /mockserver/loadScenario`), surfacing the off-by-default `403` as a clear,
+  catchable error. The four clients that previously had no SRE control plane (Go, .NET, Rust, PHP) additionally
+  gain idiomatic methods for service chaos (`/serviceChaos`), SLO verdicts (`/verifySLO`, with the 200 PASS /
+  406 FAIL / 400 status semantics preserved so the verdict stays readable), preemption (`/preemption`), and
+  chaos experiments (`/chaosExperiment`). All request bodies are camelCase-on-the-wire and were verified against
+  the OpenAPI contract; the PHP `HttpRequest` builder gains a `socketAddress(host, port, scheme)` setter so a
+  load step can target an upstream the typed way, matching the other clients.
+- **`scripts/verify-php-client.sh`** — a Dockerised PHP lint + Composer + PHPUnit runner so the PHP client can be
+  verified locally with no PHP/Composer on the host. Auto-detects a host CA bundle (`SSL_CERT_FILE` /
+  `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE`) and mounts it so it works behind a corporate TLS-inspection proxy.
+
 <!-- Dashboard Performance (load scenario) panel -->
 - **Dashboard "Performance" panel for load scenarios** (`mockserver-ui`, `mockserver-core`). A new dashboard tab
   to author, run, monitor, stop and edit load scenarios (load injection) without leaving the UI. Authoring covers

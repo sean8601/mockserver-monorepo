@@ -23,6 +23,7 @@ from mockserver.models import (
     HttpRequest,
     HttpRequestAndHttpResponse,
     HttpResponse,
+    LoadScenario,
     OpenAPIExpectation,
     Ports,
     TimeToLive,
@@ -335,6 +336,64 @@ class AsyncMockServerClient:
         if status >= 400:
             raise MockServerError(
                 f"Failed to get service chaos (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def load_scenario(self, scenario: LoadScenario | dict) -> dict:
+        """Start a load-injection scenario on the server's load generator.
+
+        *scenario* is a :class:`LoadScenario` (or an equivalent dict). The server
+        must have been started with ``loadGenerationEnabled``; otherwise this
+        raises :class:`MockServerError` reporting the ``403`` response.
+
+        Returns the JSON status of the started run.
+        """
+        payload = scenario.to_dict() if hasattr(scenario, "to_dict") else scenario
+        body = json.dumps(payload)
+        status, response_body = await self._request(
+            "PUT", "/mockserver/loadScenario", body
+        )
+        if status == 403:
+            raise MockServerError(
+                "Failed to start load scenario: load generation is disabled "
+                "(start MockServer with loadGenerationEnabled to enable it) "
+                f"(status=403): {response_body}"
+            )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to start load scenario (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def load_scenario_status(self) -> dict:
+        """Query the status of the currently running load scenario."""
+        status, response_body = await self._request("GET", "/mockserver/loadScenario")
+        if status == 403:
+            raise MockServerError(
+                "Failed to get load scenario status: load generation is disabled "
+                "(start MockServer with loadGenerationEnabled to enable it) "
+                f"(status=403): {response_body}"
+            )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to get load scenario status (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    async def stop_load_scenario(self) -> dict:
+        """Stop the currently running load scenario."""
+        status, response_body = await self._request(
+            "DELETE", "/mockserver/loadScenario"
+        )
+        if status == 403:
+            raise MockServerError(
+                "Failed to stop load scenario: load generation is disabled "
+                "(start MockServer with loadGenerationEnabled to enable it) "
+                f"(status=403): {response_body}"
+            )
+        if status >= 400:
+            raise MockServerError(
+                f"Failed to stop load scenario (status={status}): {response_body}"
             )
         return json.loads(response_body) if response_body else {}
 
