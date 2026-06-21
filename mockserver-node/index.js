@@ -247,11 +247,16 @@ module.exports = (function () {
           }
         }
         commandLineOptions.push('-jar');
-        let items = glob.sync('node_modules/mockserver-node/mockserver-netty-*-jar-with-dependencies.jar');
+        // Resolve the jar for the specific version being launched. Globbing with a
+        // wildcard version would match every downloaded version (e.g. when test
+        // fixtures pull a different version into the same directory) and push an
+        // array, which spawn joins with a comma into an invalid "a.jar,b.jar" path.
+        var jarName = 'mockserver-netty-' + mockServerVersion + '-jar-with-dependencies.jar';
+        let items = glob.sync('node_modules/mockserver-node/' + jarName);
         if (items.length === 0) {
-          items = glob.sync('**/mockserver-netty-*-jar-with-dependencies.jar');
+          items = glob.sync('**/' + jarName);
         }
-        commandLineOptions.push(items);
+        commandLineOptions.push(items[0]);
         if (options.serverPort) {
           commandLineOptions.push("-serverPort");
           commandLineOptions.push(options.serverPort);
