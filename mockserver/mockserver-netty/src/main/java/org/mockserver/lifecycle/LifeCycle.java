@@ -38,6 +38,24 @@ public abstract class LifeCycle implements Stoppable {
     protected final MockServerLogger mockServerLogger;
     protected final EventLoopGroup bossGroup;
     protected final EventLoopGroup workerGroup;
+    // Dedicated event-loop group for the outbound forward/proxy (loopback) HTTP client. It is kept
+    // DISJOINT from the server worker group so that a pooled keep-alive channel reused inside a
+    // synchronous local object-callback (which runs ON a server worker thread and makes a blocking
+    // loopback call back to this server) is never pinned to the very worker thread that is blocked
+    // in the callback — which would self-deadlock the event loop. This disjoint group is what makes
+    // forwardConnectionPoolEnabled safe to default on. Sized by clientNioEventLoopThreadCount.
+    //
+    // VERIFICATION GUARD: this self-deadlock only surfaces in the FAILSAFE integration phase (e.g.
+    // WebsocketCallbackRegistryIntegrationTest, ExtendedNettyMockingIntegrationTest, the proxy
+    // integration tests), NOT in a targeted `-Dtest` unit run — this area has regressed TWICE because
+    // per-unit verification skipped that phase. Any change to this group, its wiring into the forward
+    // HttpActionHandler (MockServer.java getForwardClientEventLoopGroup()), or HttpClientHandler's
+    // pool-return gate MUST be verified by running those failsafe integration classes with pooling on
+    // (the default), not just targeted unit tests. The surefire-phase guards
+    // ForwardClientEventLoopIsolationTest / ForwardConnectionPoolLoopbackCallbackTest (mockserver-netty)
+    // and NettyHttpClientConnectionPoolTest (mockserver-core) lock the invariant, but the failsafe
+    // phase remains the backstop. See docs/operations/performance-tuning.md.
+    protected final EventLoopGroup forwardClientGroup;
     protected final HttpState httpState;
     private final Configuration configuration;
     protected ServerBootstrap serverServerBootstrap;
@@ -62,6 +80,9 @@ public abstract class LifeCycle implements Stoppable {
         boolean nativeTransport = this.configuration.useNativeTransport();
         this.bossGroup = NettyTransport.newEventLoopGroup(5, new Scheduler.SchedulerThreadFactory(this.getClass().getSimpleName() + "-bossEventLoop"), nativeTransport);
         this.workerGroup = NettyTransport.newEventLoopGroup(this.configuration.nioEventLoopThreadCount(), new Scheduler.SchedulerThreadFactory(this.getClass().getSimpleName() + "-workerEventLoop"), nativeTransport);
+        // Outbound forward/proxy (loopback) HTTP client gets its OWN event-loop group, disjoint from
+        // the server worker group above (see field javadoc). Sized by clientNioEventLoopThreadCount.
+        this.forwardClientGroup = NettyTransport.newEventLoopGroup(this.configuration.clientNioEventLoopThreadCount(), new Scheduler.SchedulerThreadFactory(this.getClass().getSimpleName() + "-forwardClientEventLoop"), nativeTransport);
         this.scheduler = new Scheduler(this.configuration, this.mockServerLogger);
         this.httpState = new HttpState(this.configuration, this.mockServerLogger, this.scheduler);
         this.otelMetricsExporter = org.mockserver.metrics.OtelMetricsExporter.startIfEnabled();
@@ -355,10 +376,12 @@ public abstract class LifeCycle implements Stoppable {
                 // Shut down all event loops to terminate all threads.
                 bossGroup.shutdownGracefully(5, 5, MILLISECONDS);
                 workerGroup.shutdownGracefully(5, 5, MILLISECONDS);
+                forwardClientGroup.shutdownGracefully(5, 5, MILLISECONDS);
 
                 // Wait until all threads are terminated.
                 bossGroup.terminationFuture().syncUninterruptibly();
                 workerGroup.terminationFuture().syncUninterruptibly();
+                forwardClientGroup.terminationFuture().syncUninterruptibly();
 
                 stopFuture.complete(message);
             }).start();
@@ -393,6 +416,15 @@ public abstract class LifeCycle implements Stoppable {
 
     protected EventLoopGroup getEventLoopGroup() {
         return workerGroup;
+    }
+
+    /**
+     * @return the dedicated event-loop group for the outbound forward/proxy (loopback) HTTP client,
+     * kept disjoint from the server worker group so a pooled channel reused inside a synchronous
+     * local callback is never pinned to a blocked server worker thread (see field javadoc).
+     */
+    protected EventLoopGroup getForwardClientEventLoopGroup() {
+        return forwardClientGroup;
     }
 
     public Scheduler getScheduler() {

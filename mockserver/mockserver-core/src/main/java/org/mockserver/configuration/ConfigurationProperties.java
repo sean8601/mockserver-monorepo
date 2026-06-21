@@ -1635,23 +1635,27 @@ public class ConfigurationProperties {
     }
 
     public static boolean forwardConnectionPoolEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + false));
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + true));
     }
 
     /**
-     * If true idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host,
+     * If true (the default) idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host,
      * port and scheme) and reused for subsequent requests to the same upstream, eliminating repeated
      * connection and TLS handshakes for proxy-heavy workloads and avoiding ephemeral-port exhaustion
-     * under sustained forward load. If false (the default) every forwarded or proxied request opens a
-     * fresh upstream TCP (and TLS) connection that is closed once the response is received, restoring
-     * the historical behaviour of a fresh upstream connection per request.
+     * under sustained forward load. If false every forwarded or proxied request opens a fresh upstream
+     * TCP (and TLS) connection that is closed once the response is received, restoring the historical
+     * behaviour of a fresh upstream connection per request (the opt-out for unusual upstreams).
      * <p>
-     * Pooling is off by default because it is only safe for workloads where every upstream reply is a
-     * cleanly-framed HTTP response. MockServer's {@code error()} action (HttpError) deliberately
-     * writes raw, non-HTTP bytes and/or drops the connection; such a reply can leave a pooled
-     * keep-alive channel's decoder corrupted or with undelivered bytes, desynchronising a later
-     * request that reuses it (the reused request's response is then lost or mismatched). Enable
-     * pooling only when forwarding to upstreams that always return well-formed HTTP responses.
+     * Pooling is safe to default on because two independent guards close the only ways a reused
+     * channel could be corrupt: (1) the outbound forward/proxy HTTP client runs on its own dedicated
+     * event-loop group, disjoint from the server worker group, so a pooled channel reused inside a
+     * synchronous local object-callback is never pinned to a server worker thread that is blocked in
+     * that callback (which would otherwise self-deadlock the event loop); and (2) a channel is only
+     * returned to the pool when its client codec is genuinely quiescent — a valid in-range status is
+     * necessary but not sufficient, so the decoder must also have zero leftover undecoded bytes. Any
+     * uncertainty fails closed (the channel is closed, not pooled). MockServer's {@code error()}
+     * action (HttpError), which writes raw non-HTTP bytes and/or drops the connection, is therefore
+     * never pooled.
      * <p>
      * Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2 and HTTP/3 (which multiplex
      * differently), binary forwarding, streaming responses, proxy-tunnelled connections, any

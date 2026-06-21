@@ -313,6 +313,336 @@ public class NettyHttpClientConnectionPoolTest {
     }
 
     /**
+     * Regression for the "valid in-range status but dirty channel" case that the status-range gate
+     * alone does NOT catch. The upstream returns, on its FIRST connection, a perfectly valid
+     * {@code 200 OK} whose framing is wrong: it declares {@code Content-Length: 2} but writes extra
+     * trailing bytes after the body. The aggregator emits a clean status-200 {@link FullHttpResponse}
+     * (so the status gate would happily pool the channel), yet the extra bytes sit undecoded in the
+     * client codec's buffer. Reusing that channel would feed the leftover bytes into the parse of the
+     * next response — silently swallowing it so the caller blocks until the forward timeout.
+     * <p>
+     * With the {@link org.mockserver.httpclient.ChannelCleanliness#isQuiescent} gate in place the
+     * dirty channel is NOT pooled, so the SECOND request opens a FRESH connection and completes
+     * normally. Were the dirty channel reused, this test would hang and time out.
+     */
+    @Test
+    public void shouldNotReuseChannelAfterInRangeStatusButDirtyFraming() throws Exception {
+        // given - the upstream returns a valid 200 with trailing junk on its first connection only
+        DirtyFramingThenValidUpstreamServer dirtyUpstream = new DirtyFramingThenValidUpstreamServer();
+        try {
+            NettyHttpClient client = pooledClient();
+
+            // when - first request receives a valid status 200 (the status gate would pool it) but the
+            // channel is left dirty by the extra trailing bytes
+            HttpResponse first = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + dirtyUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+            assertThat(first.getStatusCode(), is(200));
+
+            // and - a SECOND request must succeed; if the dirty channel had been pooled and reused this
+            // would hang and time out (the desync). A fresh connection is opened instead.
+            HttpResponse second = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + dirtyUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+
+            // then - the second exchange completed cleanly on a fresh connection
+            assertThat(second.getStatusCode(), is(200));
+            // the dirty channel was never reused, so at least two connections were opened
+            assertThat(dirtyUpstream.acceptedConnections(), is(greaterThanOrEqualTo(2)));
+        } finally {
+            dirtyUpstream.stop();
+        }
+    }
+
+    /**
+     * Clean-channel gate edge case: a {@code 204 No Content} response carries no body and no
+     * {@code Content-Length}, so the codec returns to a clean message boundary with zero leftover
+     * bytes. {@link org.mockserver.httpclient.ChannelCleanliness#isQuiescent} must therefore report
+     * the channel as quiescent and it must be POOLED — three sequential 204s reuse a single
+     * connection. This locks the "true" side of the quiescence boundary for a no-body status.
+     */
+    @Test
+    public void shouldReuseChannelAfterNoBody204Response() throws Exception {
+        // given - the upstream always replies 204 No Content (no body, keep-alive)
+        ScriptedFirstResponseUpstreamServer upstream204 = new ScriptedFirstResponseUpstreamServer(
+            "HTTP/1.1 204 No Content\r\n\r\n", true);
+        try {
+            NettyHttpClient client = pooledClient();
+
+            // when - three sequential requests, each receiving a clean no-body 204
+            for (int i = 0; i < 3; i++) {
+                HttpResponse response = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + upstream204.port()))
+                    .get(10, TimeUnit.SECONDS);
+                assertThat(response.getStatusCode(), is(204));
+            }
+
+            // then - the no-body channel is clean and was reused: only one connection accepted
+            assertThat(upstream204.acceptedConnections(), is(1));
+        } finally {
+            upstream204.stop();
+        }
+    }
+
+    /**
+     * Clean-channel gate edge case: a chunked {@code 200 OK} with a proper {@code 0\r\n\r\n}
+     * terminator leaves the codec at a clean message boundary with zero leftover bytes, so the
+     * channel is quiescent and must be POOLED. Three sequential chunked responses reuse one
+     * connection. This locks the "true" side of the boundary for chunked transfer-encoding.
+     */
+    @Test
+    public void shouldReuseChannelAfterProperlyTerminatedChunkedResponse() throws Exception {
+        // given - a chunked 200 OK with a correct terminating zero-length chunk
+        ScriptedFirstResponseUpstreamServer chunkedUpstream = new ScriptedFirstResponseUpstreamServer(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n", true);
+        try {
+            NettyHttpClient client = pooledClient();
+
+            // when - three sequential requests, each receiving a cleanly-terminated chunked body
+            for (int i = 0; i < 3; i++) {
+                HttpResponse response = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + chunkedUpstream.port()))
+                    .get(10, TimeUnit.SECONDS);
+                assertThat(response.getStatusCode(), is(200));
+            }
+
+            // then - the cleanly-terminated channel was reused: only one connection accepted
+            assertThat(chunkedUpstream.acceptedConnections(), is(1));
+        } finally {
+            chunkedUpstream.stop();
+        }
+    }
+
+    /**
+     * Clean-channel gate edge case (dirty, "false" side of the boundary): the upstream's FIRST reply
+     * declares a {@code Content-Length} LARGER than its intended body and immediately pipelines a
+     * second response, so the codec satisfies the inflated length by borrowing the leading bytes of the
+     * next response and leaves the remainder as undecoded leftover. The first response still surfaces as
+     * a status-200 (so the status-range gate alone would happily pool the channel), but the codec is
+     * desynchronised with leftover bytes — {@link org.mockserver.httpclient.ChannelCleanliness} reports
+     * it dirty and it must NOT be pooled. The SECOND request therefore opens a FRESH connection; were
+     * the desynced channel reused this would hang until the forward timeout. This exercises a wrong
+     * (overstated) {@code Content-Length} distinctly from the pure-trailing-junk case.
+     */
+    @Test
+    public void shouldNotReuseChannelAfterWrongContentLengthResponse() throws Exception {
+        // given - first reply declares Content-Length 6 but the body is only "OK"; a second response is
+        // pipelined immediately so the codec borrows "HTTP" to fill the inflated length, leaving the rest
+        // of the second response as undecoded leftover (a desynced, dirty channel)
+        ScriptedFirstResponseUpstreamServer wrongLengthUpstream = new ScriptedFirstResponseUpstreamServer(
+            "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nOK"
+                + "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK", false);
+        try {
+            NettyHttpClient client = pooledClient();
+
+            // when - first request completes (with corrupted framing) but leaves the channel dirty
+            HttpResponse first = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + wrongLengthUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+            assertThat(first.getStatusCode(), is(200));
+
+            // and - a SECOND request must still succeed on a FRESH connection
+            HttpResponse second = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + wrongLengthUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+
+            // then - second exchange completed cleanly; the dirty channel was not reused (>= 2 connections)
+            assertThat(second.getStatusCode(), is(200));
+            assertThat(wrongLengthUpstream.acceptedConnections(), is(greaterThanOrEqualTo(2)));
+        } finally {
+            wrongLengthUpstream.stop();
+        }
+    }
+
+    /**
+     * Clean-channel gate edge case (dirty, "false" side of the boundary): the upstream PIPELINES an
+     * extra, unsolicited HTTP response after the first one on its FIRST connection. The first response
+     * decodes as a clean 200, but the bytes of the SECOND (pipelined) response are left sitting in the
+     * codec's cumulation buffer. {@link org.mockserver.httpclient.ChannelCleanliness#isQuiescent} sees
+     * the leftover bytes and reports the channel dirty, so it must NOT be pooled — otherwise those
+     * leftover bytes would be misread as the reply to the next request, desynchronising the codec. The
+     * SECOND request therefore opens a FRESH connection.
+     */
+    @Test
+    public void shouldNotReuseChannelAfterPipelinedExtraResponse() throws Exception {
+        // given - first connection writes TWO back-to-back responses (the extra one is leftover)
+        ScriptedFirstResponseUpstreamServer pipelinedUpstream = new ScriptedFirstResponseUpstreamServer(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"
+                + "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK", true);
+        try {
+            NettyHttpClient client = pooledClient();
+
+            // when - first request decodes the first response; the pipelined second response is leftover
+            HttpResponse first = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + pipelinedUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+            assertThat(first.getStatusCode(), is(200));
+
+            // and - a SECOND request must succeed on a FRESH connection (the dirty channel is not reused)
+            HttpResponse second = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + pipelinedUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+
+            // then - second exchange completed cleanly; channel with leftover bytes was not reused
+            assertThat(second.getStatusCode(), is(200));
+            assertThat(pipelinedUpstream.acceptedConnections(), is(greaterThanOrEqualTo(2)));
+        } finally {
+            pipelinedUpstream.stop();
+        }
+    }
+
+    /**
+     * A minimal raw TCP upstream that, on its FIRST accepted connection, writes a fixed raw byte
+     * script verbatim (allowing exact control over framing — short Content-Length, pipelined extras,
+     * chunked terminators, no-body statuses) and optionally keeps the socket open; on every subsequent
+     * connection it speaks valid, cleanly-framed HTTP/1.1 (200 OK, keep-alive). Counts accepted
+     * connections so a test can assert whether the first channel was reused. This is the flexible
+     * sibling of {@link DirtyFramingThenValidUpstreamServer} / {@link MalformedThenValidUpstreamServer}
+     * for the clean-channel gate edge cases.
+     */
+    private static final class ScriptedFirstResponseUpstreamServer {
+
+        private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        private final EventLoopGroup workerGroup = new NioEventLoopGroup(2);
+        private final AtomicInteger accepted = new AtomicInteger();
+        private final Channel serverChannel;
+        private final String firstResponseScript;
+        private final boolean replyToEveryRequestOnFirstConnection;
+
+        /**
+         * @param firstResponseScript raw bytes written verbatim in response to the first request on the
+         *                             first connection
+         * @param replyOncePerRequest when true the script is (re)written for every request received on
+         *                             the first connection (so a CLEAN keep-alive channel can serve a
+         *                             whole sequential burst from one connection); when false the script
+         *                             is written once and the socket left as-is
+         */
+        ScriptedFirstResponseUpstreamServer(String firstResponseScript, boolean replyOncePerRequest) {
+            this.firstResponseScript = firstResponseScript;
+            this.replyToEveryRequestOnFirstConnection = replyOncePerRequest;
+            ServerBootstrap bootstrap = new ServerBootstrap()
+                .group(bossGroup, workerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        boolean firstConnection = accepted.incrementAndGet() == 1;
+                        if (firstConnection) {
+                            ch.pipeline().addLast(new SimpleChannelInboundHandler<io.netty.buffer.ByteBuf>() {
+                                private boolean written;
+
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, io.netty.buffer.ByteBuf msg) {
+                                    if (replyToEveryRequestOnFirstConnection || !written) {
+                                        written = true;
+                                        ctx.writeAndFlush(Unpooled.copiedBuffer(firstResponseScript, StandardCharsets.UTF_8));
+                                    }
+                                }
+                            });
+                        } else {
+                            ch.pipeline().addLast(new HttpServerCodec());
+                            ch.pipeline().addLast(new HttpObjectAggregator(64 * 1024));
+                            ch.pipeline().addLast(new SimpleChannelInboundHandler<FullHttpRequest>() {
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest msg) {
+                                    byte[] body = "OK".getBytes(StandardCharsets.UTF_8);
+                                    FullHttpResponse response = new DefaultFullHttpResponse(
+                                        HttpVersion.HTTP_1_1,
+                                        io.netty.handler.codec.http.HttpResponseStatus.OK,
+                                        ctx.alloc().buffer().writeBytes(body)
+                                    );
+                                    response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length);
+                                    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+                                    ctx.writeAndFlush(response);
+                                }
+                            });
+                        }
+                    }
+                });
+            serverChannel = bootstrap.bind(new InetSocketAddress("127.0.0.1", 0)).syncUninterruptibly().channel();
+        }
+
+        int port() {
+            return ((InetSocketAddress) serverChannel.localAddress()).getPort();
+        }
+
+        int acceptedConnections() {
+            return accepted.get();
+        }
+
+        void stop() {
+            serverChannel.close().syncUninterruptibly();
+            bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+            workerGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * A minimal raw TCP upstream that, on its FIRST accepted connection, writes a valid
+     * {@code HTTP/1.1 200 OK} response whose declared {@code Content-Length} is shorter than the bytes
+     * it actually writes (leaving trailing junk undecoded on the channel) and keeps the socket open;
+     * on every subsequent connection it speaks valid, cleanly-framed HTTP/1.1. Counts accepted
+     * connections so the test can assert the dirty channel was not reused.
+     */
+    private static final class DirtyFramingThenValidUpstreamServer {
+
+        private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        private final EventLoopGroup workerGroup = new NioEventLoopGroup(2);
+        private final AtomicInteger accepted = new AtomicInteger();
+        private final Channel serverChannel;
+
+        DirtyFramingThenValidUpstreamServer() {
+            ServerBootstrap bootstrap = new ServerBootstrap()
+                .group(bossGroup, workerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        boolean firstConnection = accepted.incrementAndGet() == 1;
+                        if (firstConnection) {
+                            // Valid status line + headers (so the aggregator emits a clean 200), but
+                            // Content-Length: 2 understates the body, leaving "EXTRA" undecoded on the
+                            // channel. The socket stays open (keep-alive) so the channel would be a
+                            // pool candidate were it not for the leftover-bytes cleanliness gate.
+                            ch.pipeline().addLast(new SimpleChannelInboundHandler<io.netty.buffer.ByteBuf>() {
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, io.netty.buffer.ByteBuf msg) {
+                                    ctx.writeAndFlush(Unpooled.copiedBuffer(
+                                        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOKEXTRA",
+                                        StandardCharsets.UTF_8));
+                                }
+                            });
+                        } else {
+                            ch.pipeline().addLast(new HttpServerCodec());
+                            ch.pipeline().addLast(new HttpObjectAggregator(64 * 1024));
+                            ch.pipeline().addLast(new SimpleChannelInboundHandler<FullHttpRequest>() {
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest msg) {
+                                    byte[] body = "OK".getBytes(StandardCharsets.UTF_8);
+                                    FullHttpResponse response = new DefaultFullHttpResponse(
+                                        HttpVersion.HTTP_1_1,
+                                        io.netty.handler.codec.http.HttpResponseStatus.OK,
+                                        ctx.alloc().buffer().writeBytes(body)
+                                    );
+                                    response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length);
+                                    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+                                    ctx.writeAndFlush(response);
+                                }
+                            });
+                        }
+                    }
+                });
+            serverChannel = bootstrap.bind(new InetSocketAddress("127.0.0.1", 0)).syncUninterruptibly().channel();
+        }
+
+        int port() {
+            return ((InetSocketAddress) serverChannel.localAddress()).getPort();
+        }
+
+        int acceptedConnections() {
+            return accepted.get();
+        }
+
+        void stop() {
+            serverChannel.close().syncUninterruptibly();
+            bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+            workerGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
      * A minimal raw TCP upstream that, on its FIRST accepted connection, replies with a single
      * non-HTTP garbage line and keeps the socket open (mimicking an {@code error()} raw-bytes reply
      * on a keep-alive connection); on every subsequent connection it speaks valid HTTP/1.1. Counts

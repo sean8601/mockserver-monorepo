@@ -67,7 +67,16 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
      * A channel is never reused when: pooling is off, the upstream signalled {@code Connection:
      * close}, the channel is no longer active, the message is not a complete {@link HttpResponse},
      * the response did not go through clean HTTP framing (see {@link #isCleanlyFramedHttpResponse}),
-     * or the pool is saturated for the key.
+     * the channel is not genuinely quiescent (see {@link ChannelCleanliness#isQuiescent}), or the
+     * pool is saturated for the key.
+     * <p>
+     * VERIFICATION GUARD: pooling is on by default, and a desync from wrongly pooling a dirty channel
+     * (or the loopback self-deadlock from the shared event-loop variant) only surfaces in the FAILSAFE
+     * integration phase — this area has regressed TWICE because targeted {@code -Dtest} unit runs skip
+     * it. Any change to this pool-return gate, the quiescence check, or the forward client's event-loop
+     * wiring MUST be verified by running the Extended / Websocket / proxy {@code *IntegrationTest}
+     * classes with pooling on, not just the unit guards (NettyHttpClientConnectionPoolTest /
+     * ForwardConnectionPoolLoopbackCallbackTest). See docs/operations/performance-tuning.md.
      */
     private boolean tryReturnToPool(Channel channel, Message response) {
         HttpForwardConnectionPool pool = channel.attr(CONNECTION_POOL).get();
@@ -77,6 +86,12 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
         }
         HttpResponse httpResponse = (HttpResponse) response;
         if (!isCleanlyFramedHttpResponse(httpResponse) || !permitsKeepAlive(httpResponse)) {
+            return false;
+        }
+        // Final, decisive gate: even a valid in-range status can leave the channel dirty (wrong
+        // Content-Length, trailing/pipelined bytes, raw bytes that frame mid-stream). Only pool when
+        // the client codec's decoder has no leftover undecoded bytes; otherwise close (fail-closed).
+        if (!ChannelCleanliness.isQuiescent(channel)) {
             return false;
         }
         // Detach the completed future so a stale reference cannot be completed again, and so the
@@ -97,10 +112,11 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
      * a channel must never be pooled. Only a status code in the valid HTTP range [100, 599] indicates
      * a cleanly-framed response, so only those channels are eligible for reuse.
      * <p>
-     * Note: this guard is necessary but not sufficient to make pooling safe for all workloads — a
-     * non-HTTP/raw upstream reply can also leave undelivered bytes that desynchronise a later reuse.
-     * That is why {@code forwardConnectionPoolEnabled} is off by default (opt-in for plain forward
-     * workloads); this guard hardens the opt-in path against the most common corruption.
+     * This status-range guard is a cheap necessary filter but is not on its own sufficient: a reply
+     * with a valid in-range status can still leave undecoded bytes on the channel (wrong
+     * {@code Content-Length}, trailing/pipelined bytes, raw bytes that frame mid-stream). The decisive
+     * cleanliness gate that catches those cases is {@link ChannelCleanliness#isQuiescent}, which
+     * verifies the client codec's decoder has no leftover bytes before the channel is pooled.
      */
     private boolean isCleanlyFramedHttpResponse(HttpResponse response) {
         Integer statusCode = response.getStatusCode();

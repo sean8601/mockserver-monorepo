@@ -943,10 +943,10 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 <button id="button_configuration_forward_connection_pool_enabled" class="accordion title"><strong>Reuse Upstream Connections (Connection Pooling)</strong></button>
 <div class="panel title">
-    <p>Set this to <span class="inline_code">true</span> to pool idle keep-alive HTTP/1.1 upstream connections (keyed by host, port and scheme) and reuse them for subsequent requests to the same upstream. Reusing the upstream's keep-alive connections eliminates repeated TCP and TLS handshakes, significantly improves throughput for proxy-heavy workloads that repeatedly call the same upstream, and avoids ephemeral-port exhaustion under sustained forward load (where opening a fresh connection per request can exhaust the operating system's available local ports and cause request failures). By default (<span class="inline_code">false</span>) MockServer opens a fresh upstream connection per request that is closed once the response is received (the historical behaviour).</p>
-    <p>Pooling is off by default because it is only safe when every upstream reply is a well-formed HTTP response. MockServer's <span class="inline_code">error()</span> action (which deliberately returns raw, non-HTTP bytes and/or drops the connection) — or any malformed upstream reply — can leave a pooled keep-alive connection corrupted, so a later request reusing it loses or receives the wrong response. Enable pooling only when forwarding to upstreams that always return valid HTTP responses.</p>
+    <p>By default (<span class="inline_code">true</span>) MockServer pools idle keep-alive HTTP/1.1 upstream connections (keyed by host, port and scheme) and reuses them for subsequent requests to the same upstream. Reusing the upstream's keep-alive connections eliminates repeated TCP and TLS handshakes, significantly improves throughput for proxy-heavy workloads that repeatedly call the same upstream, and avoids ephemeral-port exhaustion under sustained forward load (where opening a fresh connection per request can exhaust the operating system's available local ports and cause request failures). Set this to <span class="inline_code">false</span> to open a fresh upstream connection per request that is closed once the response is received (the historical behaviour) — useful only for unusual upstreams.</p>
+    <p>Pooling is safe to leave on: a connection is only returned to the pool when it is genuinely clean — its HTTP client codec must have no leftover undecoded bytes after the response, and any uncertainty closes the connection instead of pooling it. MockServer's <span class="inline_code">error()</span> action (which deliberately returns raw, non-HTTP bytes and/or drops the connection) — or any malformed upstream reply — is therefore never pooled, so a later request can never reuse a corrupted connection.</p>
     <p>Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2, HTTP/3, binary forwarding, streaming (Server-Sent Events) responses, and proxy-tunnelled connections are never pooled. A connection the upstream closed, that returned <span class="inline_code">Connection: close</span>, or that returned a reply which did not parse as valid HTTP is never reused and falls back to a fresh connection.</p>
-    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardConnectionPoolEnabled(boolean enable)</code></pre>
     <p>System Property:</p>
@@ -956,7 +956,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <p>Property File:</p>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardConnectionPoolEnabled=...</code></pre>
     <p>Example:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolEnabled="true"</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolEnabled="false"</code></pre>
 </div>
 
 <button id="button_configuration_forward_connection_pool_max_idle_per_key" class="accordion title"><strong>Maximum Idle Pooled Connections Per Upstream</strong></button>
