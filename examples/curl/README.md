@@ -204,6 +204,16 @@ These runnable shell scripts were extracted from the original reference markdown
 | `websocket_response.sh` | WebSocket expectation with subprotocol and text messages |
 | `websocket_with_matchers.sh` | WebSocket expectation with a message matcher (ping/pong) |
 
+### scenario/
+
+| File | Description |
+|------|-------------|
+| `state_machine.sh` | Stateful scenario: login flow with `scenarioName` / `scenarioState` / `newScenarioState` |
+| `sequential_cycling.sh` | Multiple responses served sequentially (`httpResponses` array, `SEQUENTIAL` mode) |
+| `timed_transition.sh` | Auto-advance a scenario state after a delay (`PUT /mockserver/scenario/{name}`) |
+| `external_trigger.sh` | Force a scenario state change from a test harness (`PUT /mockserver/scenario/{name}/trigger`) |
+| `cross_protocol.sh` | `crossProtocolScenarios`: an HTTP_REQUEST event advances a second expectation's gating state |
+
 ### sse/
 
 | File | Description |

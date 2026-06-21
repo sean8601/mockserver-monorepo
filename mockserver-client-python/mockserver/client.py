@@ -82,6 +82,43 @@ class SyncForwardChainExpectation:
         return self._run(self._async_chain.error(error))
 
 
+class SyncScenarioHandle:
+    """A synchronous handle to a single named stateful scenario on the server.
+
+    Obtained via :meth:`MockServerClient.scenario`. Wraps the
+    ``/mockserver/scenario/{name}`` control-plane endpoints.
+    """
+
+    def __init__(self, async_handle, run_fn: Callable) -> None:
+        self._async_handle = async_handle
+        self._run = run_fn
+
+    @property
+    def name(self) -> str:
+        return self._async_handle.name
+
+    def state(self) -> str | None:
+        """Return the current state of this scenario (``None`` if not yet set)."""
+        return self._run(self._async_handle.state())
+
+    def set(
+        self,
+        state: str,
+        transition_after_ms: int | None = None,
+        next_state: str | None = None,
+    ) -> dict:
+        """Set this scenario's state, optionally scheduling a timed transition
+        to ``next_state`` after ``transition_after_ms`` milliseconds.
+        """
+        return self._run(
+            self._async_handle.set(state, transition_after_ms, next_state)
+        )
+
+    def trigger(self, new_state: str) -> dict:
+        """Trigger an external advance of this scenario to ``new_state``."""
+        return self._run(self._async_handle.trigger(new_state))
+
+
 class MockServerClient:
     def __init__(
         self,
@@ -201,6 +238,19 @@ class MockServerClient:
     def stop_load_scenario(self) -> dict:
         """Stop the currently running load scenario."""
         return self._run(self._async_client.stop_load_scenario())
+
+    def scenario(self, name: str) -> SyncScenarioHandle:
+        """Return a handle to the named stateful scenario, wrapping the
+        ``/mockserver/scenario/{name}`` control-plane endpoints.
+        """
+        return SyncScenarioHandle(self._async_client.scenario(name), self._run)
+
+    def scenarios(self) -> list[dict]:
+        """List every known scenario and its current state.
+
+        Returns a list of dicts each with ``scenarioName`` and ``currentState``.
+        """
+        return self._run(self._async_client.scenarios())
 
     def verify(
         self,

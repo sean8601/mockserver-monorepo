@@ -7,6 +7,7 @@ so the examples are **compiled and tested in CI** and cannot silently rot.
 ## What it demonstrates
 
 - **Mocking scenarios** — [`src/main/java/org/mockserver/examples/mockserver/`](src/main/java/org/mockserver/examples/mockserver/): response actions, forward actions, callbacks, OpenAPI expectations, request matchers, verification, recording/retrieval, interactive breakpoints (modify proxied exchanges).
+- **Stateful scenarios** — [`src/test/java/org/mockserver/examples/mockserver/StatefulScenarioExamples.java`](src/test/java/org/mockserver/examples/mockserver/StatefulScenarioExamples.java): a single runnable, self-asserting test demonstrating all 5 canonical stateful-scenario features via the typed Java client — a login state machine (`withScenarioName`/`withScenarioState`/`withNewScenarioState`), sequential multi-response cycling (`withHttpResponses` + `ResponseMode.SEQUENTIAL`), a timed auto-transition (`scenario(name).set(state, ms, next)`), an external trigger (`scenario(name).trigger(state)`), and a cross-protocol trigger (`withCrossProtocolScenario(...)`). It starts its own embedded MockServer by default, or connects to one given by `MOCKSERVER_HOST`/`MOCKSERVER_PORT`, and resets the server before each scenario.
 - **Proxying with a range of HTTP libraries** — [`src/main/java/org/mockserver/examples/proxy/`](src/main/java/org/mockserver/examples/proxy/): Apache HttpClient, Google HTTP Client, JDK `HttpURLConnection`, Jersey, Jetty, Spring `RestTemplate`, and Spring `WebClient`.
 
 ## Prerequisites

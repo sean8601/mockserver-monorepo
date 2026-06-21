@@ -329,6 +329,41 @@ module MockServer
     end
 
     # -------------------------------------------------------------------
+    # Stateful scenarios (state machine control plane)
+    # -------------------------------------------------------------------
+
+    # Return a handle to the named stateful scenario, wrapping the
+    # +/mockserver/scenario/{name}+ control-plane endpoints.
+    #
+    # @param name [String] the scenario (state-machine) name
+    # @return [ScenarioHandle]
+    def scenario(name)
+      ScenarioHandle.new(self, name)
+    end
+
+    # List every known scenario and its current state.
+    #
+    # @return [Array<ScenarioState>] each with +scenario_name+ and +current_state+
+    def scenarios
+      result = scenario_request('GET', '/mockserver/scenario')
+      list = result.is_a?(Hash) ? (result['scenarios'] || []) : []
+      list.map { |s| ScenarioState.from_hash(s) }
+    end
+
+    # @api private
+    # Issue a control-plane scenario request, parsing the JSON response and
+    # raising {Error} on any >= 400 status. Reuses the same transport
+    # (+request+) as the other +/mockserver/...+ control endpoints.
+    def scenario_request(method, path, body = nil)
+      status, response_body = request(method, path, body)
+      if status >= 400
+        raise Error, "Scenario request failed (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # -------------------------------------------------------------------
     # gRPC descriptor management
     # -------------------------------------------------------------------
 

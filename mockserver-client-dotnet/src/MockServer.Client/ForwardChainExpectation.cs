@@ -35,6 +35,106 @@ public sealed class ForwardChainExpectation
     }
 
     /// <summary>
+    /// Set the scenario name this expectation participates in.
+    /// </summary>
+    public ForwardChainExpectation WithScenarioName(string scenarioName)
+    {
+        _expectation.ScenarioName = scenarioName;
+        return this;
+    }
+
+    /// <summary>
+    /// Require the scenario to be in <paramref name="scenarioState"/> for this expectation to match.
+    /// </summary>
+    public ForwardChainExpectation WithScenarioState(string scenarioState)
+    {
+        _expectation.ScenarioState = scenarioState;
+        return this;
+    }
+
+    /// <summary>
+    /// Transition the scenario to <paramref name="newScenarioState"/> after this expectation matches.
+    /// </summary>
+    public ForwardChainExpectation WithNewScenarioState(string newScenarioState)
+    {
+        _expectation.NewScenarioState = newScenarioState;
+        return this;
+    }
+
+    /// <summary>
+    /// Set the response-selection mode (used with <see cref="WithHttpResponses"/>).
+    /// </summary>
+    public ForwardChainExpectation WithResponseMode(ResponseMode responseMode)
+    {
+        _expectation.ResponseMode = responseMode;
+        return this;
+    }
+
+    /// <summary>
+    /// Set the relative weights index-aligned with the responses (WEIGHTED mode).
+    /// </summary>
+    public ForwardChainExpectation WithResponseWeights(IEnumerable<int> responseWeights)
+    {
+        _expectation.ResponseWeights = new List<int>(responseWeights);
+        return this;
+    }
+
+    /// <summary>
+    /// Set the number of requests served per response block before advancing (SWITCH mode).
+    /// </summary>
+    public ForwardChainExpectation WithSwitchAfter(int switchAfter)
+    {
+        _expectation.SwitchAfter = switchAfter;
+        return this;
+    }
+
+    /// <summary>
+    /// Add a single cross-protocol trigger that advances a named scenario.
+    /// </summary>
+    public ForwardChainExpectation WithCrossProtocolScenario(CrossProtocolScenario crossProtocolScenario)
+    {
+        (_expectation.CrossProtocolScenarios ??= new List<CrossProtocolScenario>()).Add(crossProtocolScenario);
+        return this;
+    }
+
+    /// <summary>
+    /// Set the cross-protocol triggers that advance named scenarios.
+    /// </summary>
+    public ForwardChainExpectation WithCrossProtocolScenarios(IEnumerable<CrossProtocolScenario> crossProtocolScenarios)
+    {
+        _expectation.CrossProtocolScenarios = new List<CrossProtocolScenario>(crossProtocolScenarios);
+        return this;
+    }
+
+    /// <summary>
+    /// Complete the expectation with multiple responses served per <see cref="WithResponseMode"/>.
+    /// </summary>
+    public List<Expectation> Respond(IEnumerable<HttpResponse> responses)
+    {
+        _expectation.HttpResponses = new List<HttpResponse>(responses);
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with multiple responses (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondAsync(IEnumerable<HttpResponse> responses)
+    {
+        _expectation.HttpResponses = new List<HttpResponse>(responses);
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Set multiple responses (served per <see cref="WithResponseMode"/>) without completing the expectation,
+    /// so further chaining (e.g. <see cref="WithResponseWeights"/>) can follow.
+    /// </summary>
+    public ForwardChainExpectation WithHttpResponses(IEnumerable<HttpResponse> responses)
+    {
+        _expectation.HttpResponses = new List<HttpResponse>(responses);
+        return this;
+    }
+
+    /// <summary>
     /// Complete the expectation with a response action.
     /// </summary>
     public List<Expectation> Respond(HttpResponse response)

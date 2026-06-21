@@ -24,6 +24,14 @@ public sealed class Expectation
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpResponse? HttpResponse { get; set; }
 
+    /// <summary>
+    /// Multiple responses for a stateful scenario. When set, takes priority over the singular
+    /// <see cref="HttpResponse"/>; the response served per match is selected by <see cref="ResponseMode"/>.
+    /// </summary>
+    [JsonPropertyName("httpResponses")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<HttpResponse>? HttpResponses { get; set; }
+
     [JsonPropertyName("httpForward")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpForward? HttpForward { get; set; }
@@ -75,6 +83,38 @@ public sealed class Expectation
     [JsonPropertyName("newScenarioState")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? NewScenarioState { get; set; }
+
+    /// <summary>
+    /// How a response is selected from <see cref="HttpResponses"/> on each match:
+    /// SEQUENTIAL (default), RANDOM, WEIGHTED or SWITCH.
+    /// </summary>
+    [JsonPropertyName("responseMode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ResponseMode? ResponseMode { get; set; }
+
+    /// <summary>
+    /// Relative weights index-aligned with <see cref="HttpResponses"/>; only meaningful when
+    /// <see cref="ResponseMode"/> is <see cref="Models.ResponseMode.WEIGHTED"/>.
+    /// </summary>
+    [JsonPropertyName("responseWeights")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<int>? ResponseWeights { get; set; }
+
+    /// <summary>
+    /// Number of requests served per response block before advancing to the next; only meaningful when
+    /// <see cref="ResponseMode"/> is <see cref="Models.ResponseMode.SWITCH"/> (default 1 on the server).
+    /// </summary>
+    [JsonPropertyName("switchAfter")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SwitchAfter { get; set; }
+
+    /// <summary>
+    /// Cross-protocol triggers that advance a named scenario when a DNS query, WebSocket connect,
+    /// gRPC request or HTTP request is observed.
+    /// </summary>
+    [JsonPropertyName("crossProtocolScenarios")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CrossProtocolScenario>? CrossProtocolScenarios { get; set; }
 
     [JsonPropertyName("times")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

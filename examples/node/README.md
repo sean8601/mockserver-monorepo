@@ -19,5 +19,6 @@ This folder contains examples for [mockserver-client-node](../../../mockserver-c
 | [retrieve_recorded_requests_and_responses_examples](retrieve_recorded_requests_and_responses_examples/) | Retrieve recorded requests and responses. |
 | [retrieve_recorded_requests_examples](retrieve_recorded_requests_examples/) | Retrieve recorded requests. |
 | [reverse_proxy_example](reverse_proxy_example/) | Use MockServer as a reverse proxy. |
+| [scenario_examples](scenario_examples/) | Stateful (state-machine) scenarios: login flow, sequential cycling, timed transition, external trigger, and cross-protocol trigger. |
 | [run_mockserver](run_mockserver/) | Start a MockServer instance. |
 | [run_mockserver_and_add_expectations](run_mockserver_and_add_expectations/) | Start MockServer and register expectations. |

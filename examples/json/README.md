@@ -226,6 +226,16 @@ as the request body for MockServer's REST API (e.g. `PUT /mockserver/expectation
 |------|-------------|
 | `pact_with_provider_state.json` | A Pact v3 contract with a provider-state-gated interaction (`PUT /mockserver/pact/import`) |
 
+### scenario/
+
+| File | Description |
+|------|-------------|
+| `state_machine.json` | Array of expectations for a login state machine (`scenarioName` / `scenarioState` / `newScenarioState`) |
+| `sequential_cycling.json` | Single expectation with an `httpResponses` array in `SEQUENTIAL` mode |
+| `cross_protocol.json` | Array of two expectations using `crossProtocolScenarios` for cross-protocol state correlation |
+| `timed_transition.json` | Request body for `PUT /mockserver/scenario/DeployFlow` — set state with timed auto-transition |
+| `external_trigger.json` | Request body for `PUT /mockserver/scenario/HealthFlow/trigger` — force a state change externally |
+
 ### llm/
 
 | File | Description |

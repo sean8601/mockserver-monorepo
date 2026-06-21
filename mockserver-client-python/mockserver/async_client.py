@@ -37,6 +37,59 @@ from mockserver.websocket_client import MockServerWebSocketClient
 logger = logging.getLogger(__name__)
 
 
+class AsyncScenarioHandle:
+    """An async handle to a single named stateful scenario on the server.
+
+    Obtained via :meth:`AsyncMockServerClient.scenario`. Wraps the
+    ``/mockserver/scenario/{name}`` control-plane endpoints. Each method returns
+    the server's JSON response as a dict (with ``scenarioName`` and
+    ``currentState`` keys).
+    """
+
+    def __init__(self, client: AsyncMockServerClient, name: str) -> None:
+        self._client = client
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def state(self) -> str | None:
+        """GET the current state of this scenario (``None`` if not yet set)."""
+        result = await self._client._scenario_request(
+            "GET", f"/mockserver/scenario/{urllib.parse.quote(self._name, safe="")}"
+        )
+        return result.get("currentState")
+
+    async def set(
+        self,
+        state: str,
+        transition_after_ms: int | None = None,
+        next_state: str | None = None,
+    ) -> dict:
+        """PUT to set this scenario's state, optionally scheduling a timed
+        transition to ``next_state`` after ``transition_after_ms`` milliseconds.
+        """
+        payload: dict = {"state": state}
+        if transition_after_ms is not None:
+            payload["transitionAfterMs"] = transition_after_ms
+        if next_state is not None:
+            payload["nextState"] = next_state
+        return await self._client._scenario_request(
+            "PUT",
+            f"/mockserver/scenario/{urllib.parse.quote(self._name, safe="")}",
+            json.dumps(payload),
+        )
+
+    async def trigger(self, new_state: str) -> dict:
+        """PUT an external trigger advancing this scenario to ``new_state``."""
+        return await self._client._scenario_request(
+            "PUT",
+            f"/mockserver/scenario/{urllib.parse.quote(self._name, safe="")}/trigger",
+            json.dumps({"newState": new_state}),
+        )
+
+
 class AsyncMockServerClient:
     def __init__(
         self,
@@ -396,6 +449,30 @@ class AsyncMockServerClient:
                 f"Failed to stop load scenario (status={status}): {response_body}"
             )
         return json.loads(response_body) if response_body else {}
+
+    async def _scenario_request(
+        self, method: str, path: str, body: str | None = None
+    ) -> dict:
+        status, response_body = await self._request(method, path, body)
+        if status >= 400:
+            raise MockServerError(
+                f"Scenario request failed (status={status}): {response_body}"
+            )
+        return json.loads(response_body) if response_body else {}
+
+    def scenario(self, name: str) -> AsyncScenarioHandle:
+        """Return a handle to the named stateful scenario, wrapping the
+        ``/mockserver/scenario/{name}`` control-plane endpoints.
+        """
+        return AsyncScenarioHandle(self, name)
+
+    async def scenarios(self) -> list[dict]:
+        """List every known scenario and its current state.
+
+        Returns a list of dicts each with ``scenarioName`` and ``currentState``.
+        """
+        result = await self._scenario_request("GET", "/mockserver/scenario")
+        return result.get("scenarios", [])
 
     async def verify(
         self,

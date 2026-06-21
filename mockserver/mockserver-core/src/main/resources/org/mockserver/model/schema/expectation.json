@@ -137,6 +137,37 @@
       "type": "integer",
       "minimum": 1
     },
+    "crossProtocolScenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "trigger": {
+            "enum": [
+              "DNS_QUERY",
+              "WEBSOCKET_CONNECT",
+              "GRPC_REQUEST",
+              "HTTP_REQUEST"
+            ]
+          },
+          "matchPattern": {
+            "type": "string"
+          },
+          "scenarioName": {
+            "type": "string"
+          },
+          "targetState": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger",
+          "scenarioName",
+          "targetState"
+        ]
+      }
+    },
     "times": {
       "$ref": "#/definitions/times"
     },

@@ -48,6 +48,55 @@ export interface GrpcService {
     methods: GrpcMethod[];
 }
 
+/**
+ * The current state of a single scenario, as returned by
+ * client.scenario(name).state(), .set(...) and .trigger(...).
+ */
+export interface ScenarioState {
+    scenarioName: string;
+    currentState: string;
+    /** present only when .set(...) scheduled a timed transition */
+    nextState?: string;
+    /** present only when .set(...) scheduled a timed transition */
+    transitionAfterMs?: number;
+}
+
+/**
+ * The list of all known scenarios and their current states, as returned by
+ * client.scenarios().
+ */
+export interface ScenarioList {
+    scenarios: Array<{ scenarioName: string; currentState: string }>;
+}
+
+/**
+ * Options for client.scenario(name).set(state, options) — schedule a timed
+ * transition to nextState after transitionAfterMs milliseconds.
+ */
+export interface ScenarioSetOptions {
+    transitionAfterMs?: number;
+    nextState?: string;
+}
+
+/**
+ * A handle to a single named scenario's state machine. Returned by
+ * client.scenario(name); wraps the /mockserver/scenario REST endpoints.
+ */
+export interface ScenarioHandle {
+    /** GET /mockserver/scenario/{name} — the scenario's current state */
+    state(): Promise<ScenarioState>;
+
+    /**
+     * PUT /mockserver/scenario/{name} — set the scenario's state, optionally
+     * scheduling a timed transition to options.nextState after
+     * options.transitionAfterMs milliseconds.
+     */
+    set(state: string, options?: ScenarioSetOptions): Promise<ScenarioState>;
+
+    /** PUT /mockserver/scenario/{name}/trigger — set the state to newState immediately */
+    trigger(newState: string): Promise<ScenarioState>;
+}
+
 export type RequestResponse = SuccessFullRequest | string;
 
 export type PathOrRequestDefinition = string | Expectation | RequestDefinition | undefined | null;
@@ -136,6 +185,21 @@ export interface MockServerClient {
     loadScenarioStatus(): Promise<LoadScenarioStatus>;
 
     stopLoadScenario(): Promise<RequestResponse>;
+
+    /**
+     * Obtain a handle to a named stateful scenario, exposing typed helpers over
+     * the /mockserver/scenario REST endpoints to read (.state()), set (.set())
+     * and externally trigger (.trigger()) the scenario's state.
+     *
+     * @param name the scenario name
+     */
+    scenario(name: string): ScenarioHandle;
+
+    /**
+     * List every known scenario and its current state
+     * (GET /mockserver/scenario).
+     */
+    scenarios(): Promise<ScenarioList>;
 
     bind(ports: Port[]): Promise<RequestResponse>;
 

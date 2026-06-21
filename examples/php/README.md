@@ -24,6 +24,7 @@ Runnable examples demonstrating the [MockServer PHP client](../../mockserver-cli
 |--------|-------------|
 | [create_expectation](create_expectation/) | Create an expectation, send a test request, and verify it was received. |
 | [forward_override](forward_override/) | Use `httpOverrideForwardedRequest` to statically modify proxied requests (PHP has no WebSocket breakpoints). |
+| [scenario](scenario/) | Stateful scenarios: state-machine login flow, sequential response cycling, timed and external transitions, and cross-protocol triggers. |
 
 Each folder contains a runnable PHP script and its own `README.md` with
 instructions.

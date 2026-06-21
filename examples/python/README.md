@@ -24,6 +24,7 @@ Runnable examples demonstrating the MockServer Python client.
 | Folder | Description |
 |--------|-------------|
 | [response_action](response_action/) | Return canned HTTP responses (status codes, headers, cookies, JSON bodies, delays). |
+| [scenario](scenario/) | Stateful, sequential, timed, and cross-protocol mocking with the typed scenario API. |
 | [forward_action](forward_action/) | Forward requests to another host, with optional request/response overrides. |
 | [request_matchers](request_matchers/) | Match requests by path, query parameters, headers, cookies, and body content. |
 | [openapi_expectations](openapi_expectations/) | Generate expectations automatically from an OpenAPI specification. |

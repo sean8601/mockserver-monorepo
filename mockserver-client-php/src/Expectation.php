@@ -39,6 +39,14 @@ class Expectation implements \JsonSerializable
     private ?string $scenarioName = null;
     private ?string $scenarioState = null;
     private ?string $newScenarioState = null;
+    /** @var list<HttpResponse> */
+    private array $httpResponses = [];
+    private ?string $responseMode = null;
+    /** @var list<int> */
+    private array $responseWeights = [];
+    private ?int $switchAfter = null;
+    /** @var list<CrossProtocolScenario> */
+    private array $crossProtocolScenarios = [];
     private ?Times $times = null;
     private ?TimeToLive $timeToLive = null;
 
@@ -129,6 +137,83 @@ class Expectation implements \JsonSerializable
     public function newScenarioState(string $newScenarioState): self
     {
         $this->newScenarioState = $newScenarioState;
+        return $this;
+    }
+
+    /**
+     * Set the list of responses to serve (replaces any previously set list).
+     *
+     * Takes priority over the singular {@see Expectation::httpResponse()} when
+     * present. Combine with {@see Expectation::responseMode()} to control how a
+     * response is selected per request.
+     *
+     * @param HttpResponse ...$httpResponses
+     */
+    public function httpResponses(HttpResponse ...$httpResponses): self
+    {
+        $this->httpResponses = array_values($httpResponses);
+        return $this;
+    }
+
+    /**
+     * Add a single response to the {@code httpResponses} list.
+     */
+    public function addHttpResponse(HttpResponse $httpResponse): self
+    {
+        $this->httpResponses[] = $httpResponse;
+        return $this;
+    }
+
+    /**
+     * Set the response-selection mode. Use a {@see ResponseMode} constant
+     * (SEQUENTIAL, RANDOM, WEIGHTED, SWITCH).
+     */
+    public function responseMode(string $responseMode): self
+    {
+        $this->responseMode = $responseMode;
+        return $this;
+    }
+
+    /**
+     * Set the relative weights index-aligned with {@code httpResponses}
+     * (used when {@code responseMode} is WEIGHTED).
+     *
+     * @param int ...$responseWeights
+     */
+    public function responseWeights(int ...$responseWeights): self
+    {
+        $this->responseWeights = array_values($responseWeights);
+        return $this;
+    }
+
+    /**
+     * Set the number of requests served per response block before advancing
+     * (used when {@code responseMode} is SWITCH).
+     */
+    public function switchAfter(int $switchAfter): self
+    {
+        $this->switchAfter = $switchAfter;
+        return $this;
+    }
+
+    /**
+     * Set the list of cross-protocol scenario transitions (replaces any
+     * previously set list).
+     *
+     * @param CrossProtocolScenario ...$crossProtocolScenarios
+     */
+    public function crossProtocolScenarios(CrossProtocolScenario ...$crossProtocolScenarios): self
+    {
+        $this->crossProtocolScenarios = array_values($crossProtocolScenarios);
+        return $this;
+    }
+
+    /**
+     * Add a single cross-protocol scenario transition.
+     */
+    public function addCrossProtocolScenario(CrossProtocolScenario $crossProtocolScenario): self
+    {
+        $this->crossProtocolScenarios[] = $crossProtocolScenario;
         return $this;
     }
 
@@ -247,6 +332,27 @@ class Expectation implements \JsonSerializable
         }
         if ($this->newScenarioState !== null) {
             $data['newScenarioState'] = $this->newScenarioState;
+        }
+        if ($this->httpResponses !== []) {
+            $data['httpResponses'] = array_map(
+                static fn(HttpResponse $response): array => $response->toArray(),
+                $this->httpResponses,
+            );
+        }
+        if ($this->responseMode !== null) {
+            $data['responseMode'] = $this->responseMode;
+        }
+        if ($this->responseWeights !== []) {
+            $data['responseWeights'] = $this->responseWeights;
+        }
+        if ($this->switchAfter !== null) {
+            $data['switchAfter'] = $this->switchAfter;
+        }
+        if ($this->crossProtocolScenarios !== []) {
+            $data['crossProtocolScenarios'] = array_map(
+                static fn(CrossProtocolScenario $scenario): array => $scenario->toArray(),
+                $this->crossProtocolScenarios,
+            );
         }
         if ($this->times !== null) {
             $data['times'] = $this->times->toArray();

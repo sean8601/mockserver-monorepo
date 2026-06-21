@@ -1094,6 +1094,96 @@ public sealed class MockServerClient : IDisposable
     }
 
     // -------------------------------------------------------------------
+    // Stateful scenarios
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Begin interacting with a named scenario state-machine. The returned handle exposes
+    /// <see cref="ScenarioHandle.State"/>, <see cref="ScenarioHandle.Set(string)"/>,
+    /// <see cref="ScenarioHandle.Set(string, long, string)"/> and <see cref="ScenarioHandle.Trigger"/>.
+    /// </summary>
+    /// <param name="name">The scenario name.</param>
+    public ScenarioHandle Scenario(string name)
+    {
+        if (string.IsNullOrEmpty(name)) throw new ArgumentException("name is required", nameof(name));
+        return new ScenarioHandle(this, name);
+    }
+
+    /// <summary>
+    /// List all known scenarios and their current states (GET /mockserver/scenario).
+    /// </summary>
+    public List<ScenarioState> Scenarios()
+        => ScenariosAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// List all known scenarios and their current states (async).
+    /// </summary>
+    public async Task<List<ScenarioState>> ScenariosAsync()
+    {
+        var (statusCode, body) = await GetAsync("/mockserver/scenario").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to list scenarios (HTTP {statusCode}): {body}");
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<ScenarioList>(body, JsonOptions);
+            if (result?.Scenarios != null) return result.Scenarios;
+        }
+        return new List<ScenarioState>();
+    }
+
+    internal async Task<ScenarioState> ScenarioStateAsync(string name)
+    {
+        var (statusCode, body) = await GetAsync($"/mockserver/scenario/{Uri.EscapeDataString(name)}").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to get scenario '{name}' (HTTP {statusCode}): {body}");
+
+        return DeserializeScenarioState(body);
+    }
+
+    internal async Task<ScenarioState> ScenarioSetAsync(string name, string state, long? transitionAfterMs, string? nextState)
+    {
+        var payload = new Dictionary<string, object?> { ["state"] = state };
+        if (transitionAfterMs.HasValue) payload["transitionAfterMs"] = transitionAfterMs.Value;
+        if (nextState != null) payload["nextState"] = nextState;
+
+        var json = JsonSerializer.Serialize(payload, JsonOptions);
+        var (statusCode, body) = await PutAsync($"/mockserver/scenario/{Uri.EscapeDataString(name)}", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid scenario state: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to set scenario '{name}' (HTTP {statusCode}): {body}");
+
+        return DeserializeScenarioState(body);
+    }
+
+    internal async Task<ScenarioState> ScenarioTriggerAsync(string name, string newState)
+    {
+        var json = JsonSerializer.Serialize(new { newState }, JsonOptions);
+        var (statusCode, body) = await PutAsync($"/mockserver/scenario/{Uri.EscapeDataString(name)}/trigger", json).ConfigureAwait(false);
+
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid scenario trigger: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to trigger scenario '{name}' (HTTP {statusCode}): {body}");
+
+        return DeserializeScenarioState(body);
+    }
+
+    private static ScenarioState DeserializeScenarioState(string body)
+    {
+        if (!string.IsNullOrEmpty(body))
+        {
+            var state = JsonSerializer.Deserialize<ScenarioState>(body, JsonOptions);
+            if (state != null) return state;
+        }
+        return new ScenarioState();
+    }
+
+    // -------------------------------------------------------------------
     // Internal: called by ForwardChainExpectation
     // -------------------------------------------------------------------
 

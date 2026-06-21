@@ -1,6 +1,6 @@
-import {mockServerClient, ClockStatus, GrpcService, MockServerClient, llm as llmFactory, mcpMock} from '../index';
+import {mockServerClient, ClockStatus, GrpcService, MockServerClient, ScenarioHandle, ScenarioList, ScenarioState, llm as llmFactory, mcpMock} from '../index';
 import {RequestResponse} from '../mockServerClient';
-import {Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioStatus, RequestDefinition} from '../mockServer';
+import {CrossProtocolScenario, Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioStatus, RequestDefinition} from '../mockServer';
 
 const client: MockServerClient = mockServerClient('mockhttp', 1080);
 
@@ -317,6 +317,32 @@ async function test() {
     requestResponse = await client.loadScenario(loadScenarioDefinition);
     let loadStatus: LoadScenarioStatus = await client.loadScenarioStatus();
     requestResponse = await client.stopLoadScenario();
+
+    // stateful scenario (state machine) management
+    const deployScenario: ScenarioHandle = client.scenario("Deploy");
+    let scenarioState: ScenarioState = await deployScenario.state();
+    scenarioState = await deployScenario.set("Deploying");
+    scenarioState = await deployScenario.set("Deploying", {transitionAfterMs: 5000, nextState: "Deployed"});
+    scenarioState = await deployScenario.trigger("Failed");
+    const scenarioList: ScenarioList = await client.scenarios();
+
+    // typed Expectation scenario fields (responseWeights / switchAfter / crossProtocolScenarios)
+    const crossProtocol: CrossProtocolScenario[] = [
+        {trigger: "DNS_QUERY", matchPattern: "api.example.com", scenarioName: "Deploy", targetState: "Resolving"},
+        {trigger: "WEBSOCKET_CONNECT", scenarioName: "Deploy", targetState: "Connected"}
+    ];
+    const scenarioExpectation: Expectation = {
+        httpRequest: {path: "/stateful"},
+        httpResponses: [{statusCode: 200}, {statusCode: 503}],
+        responseMode: "WEIGHTED",
+        responseWeights: [3, 1],
+        switchAfter: 2,
+        scenarioName: "Deploy",
+        scenarioState: "Deploying",
+        newScenarioState: "Deployed",
+        crossProtocolScenarios: crossProtocol
+    };
+    requestResponse = await client.mockAnyResponse(scenarioExpectation);
 
     // LLM mocking builders (type-checking only)
     requestResponse = await client.mockWithLLM(

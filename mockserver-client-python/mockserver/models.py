@@ -85,6 +85,12 @@ _FIELD_MAP = {
     "http_object_callback": "httpObjectCallback",
     "failure_policy": "failurePolicy",
     "http_llm_response": "httpLlmResponse",
+    "response_weights": "responseWeights",
+    "switch_after": "switchAfter",
+    "cross_protocol_scenarios": "crossProtocolScenarios",
+    "match_pattern": "matchPattern",
+    "scenario_name": "scenarioName",
+    "target_state": "targetState",
 }
 
 
@@ -1626,6 +1632,64 @@ def _deserialize_http_llm_response(data: Any) -> Any | None:
     return HttpLlmResponse.from_dict(data)
 
 
+class ResponseMode:
+    """How the server selects a response when an expectation has multiple
+    ``http_responses``. Mirrors the core ``ResponseMode`` enum; use the string
+    constants as the ``Expectation.response_mode`` value.
+    """
+
+    SEQUENTIAL = "SEQUENTIAL"
+    RANDOM = "RANDOM"
+    WEIGHTED = "WEIGHTED"
+    SWITCH = "SWITCH"
+
+
+class CrossProtocolTrigger:
+    """The protocol event that advances a cross-protocol scenario. Mirrors the
+    core ``CrossProtocolTrigger`` enum; use the string constants as the
+    :class:`CrossProtocolScenario` ``trigger`` value.
+    """
+
+    DNS_QUERY = "DNS_QUERY"
+    WEBSOCKET_CONNECT = "WEBSOCKET_CONNECT"
+    GRPC_REQUEST = "GRPC_REQUEST"
+    HTTP_REQUEST = "HTTP_REQUEST"
+
+
+@dataclass
+class CrossProtocolScenario:
+    """Correlates a protocol event with a scenario state transition.
+
+    When an event matching ``trigger`` (and optionally ``match_pattern``, a
+    substring filter on the event identifier — omit to match all) is observed,
+    the scenario named ``scenario_name`` is advanced to ``target_state``.
+    """
+
+    trigger: str | None = None
+    scenario_name: str | None = None
+    target_state: str | None = None
+    match_pattern: str | None = None
+
+    def to_dict(self) -> dict:
+        return _strip_none({
+            "trigger": self.trigger,
+            "matchPattern": self.match_pattern,
+            "scenarioName": self.scenario_name,
+            "targetState": self.target_state,
+        })
+
+    @classmethod
+    def from_dict(cls, data: dict) -> CrossProtocolScenario:
+        if data is None:
+            return None
+        return cls(
+            trigger=data.get("trigger"),
+            scenario_name=data.get("scenarioName"),
+            target_state=data.get("targetState"),
+            match_pattern=data.get("matchPattern"),
+        )
+
+
 @dataclass
 class Expectation:
     id: str | None = None
@@ -1658,6 +1722,9 @@ class Expectation:
     after_actions: list[AfterAction] | None = None
     http_responses: list[HttpResponse] | None = None
     response_mode: str | None = None
+    response_weights: list[int] | None = None
+    switch_after: int | None = None
+    cross_protocol_scenarios: list[CrossProtocolScenario] | None = None
     steps: list[ExpectationStep] | None = None
     scenario_name: str | None = None
     scenario_state: str | None = None
@@ -1693,6 +1760,9 @@ class Expectation:
             "afterActions": [a.to_dict() for a in self.after_actions] if self.after_actions else None,
             "httpResponses": [r.to_dict() for r in self.http_responses] if self.http_responses else None,
             "responseMode": self.response_mode,
+            "responseWeights": self.response_weights,
+            "switchAfter": self.switch_after,
+            "crossProtocolScenarios": [c.to_dict() for c in self.cross_protocol_scenarios] if self.cross_protocol_scenarios else None,
             "steps": [s.to_dict() for s in self.steps] if self.steps else None,
             "scenarioName": self.scenario_name,
             "scenarioState": self.scenario_state,
@@ -1738,6 +1808,9 @@ class Expectation:
             after_actions=[AfterAction.from_dict(a) for a in after_actions_data] if after_actions_data else None,
             http_responses=[HttpResponse.from_dict(r) for r in data["httpResponses"]] if data.get("httpResponses") else None,
             response_mode=data.get("responseMode"),
+            response_weights=data.get("responseWeights"),
+            switch_after=data.get("switchAfter"),
+            cross_protocol_scenarios=[CrossProtocolScenario.from_dict(c) for c in data["crossProtocolScenarios"]] if data.get("crossProtocolScenarios") else None,
             steps=[ExpectationStep.from_dict(s) for s in data["steps"]] if data.get("steps") else None,
             scenario_name=data.get("scenarioName"),
             scenario_state=data.get("scenarioState"),

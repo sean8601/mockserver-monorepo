@@ -1219,6 +1219,7 @@ pub struct Times {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remaining_times: Option<u32>,
 
+    #[serde(default)]
     pub unlimited: bool,
 }
 
@@ -1259,6 +1260,7 @@ pub struct TimeToLive {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_to_live: Option<u64>,
 
+    #[serde(default)]
     pub unlimited: bool,
 }
 
@@ -1357,6 +1359,100 @@ impl VerificationTimes {
 }
 
 // ---------------------------------------------------------------------------
+// Stateful scenarios
+// ---------------------------------------------------------------------------
+
+/// How MockServer selects which of an expectation's multiple `http_responses`
+/// to return on each match. Maps to the `responseMode` field.
+///
+/// - `Sequential` (default) — cycle through the responses in order.
+/// - `Random` — pick a response uniformly at random.
+/// - `Weighted` — pick a response weighted by the index-aligned
+///   [`Expectation::response_weights`].
+/// - `Switch` — return the same response for [`Expectation::switch_after`]
+///   matches before advancing to the next.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ResponseMode {
+    /// Cycle through the responses in order (default).
+    Sequential,
+    /// Pick a response uniformly at random.
+    Random,
+    /// Pick a response weighted by [`Expectation::response_weights`].
+    Weighted,
+    /// Return each response for [`Expectation::switch_after`] matches before advancing.
+    Switch,
+}
+
+/// The protocol event that triggers a [`CrossProtocolScenario`] state
+/// transition. Maps to the `trigger` field.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CrossProtocolTrigger {
+    /// A DNS query is observed.
+    DnsQuery,
+    /// A WebSocket connection is established.
+    WebsocketConnect,
+    /// A gRPC request is observed.
+    GrpcRequest,
+    /// An HTTP request is observed.
+    HttpRequest,
+}
+
+/// A cross-protocol scenario correlation: when a protocol event matching
+/// [`trigger`](Self::trigger) (and optionally [`match_pattern`](Self::match_pattern))
+/// is observed, the named scenario is advanced to [`target_state`](Self::target_state).
+///
+/// Maps to entries of the `crossProtocolScenarios` array.
+///
+/// # Example
+/// ```
+/// use mockserver_client::{CrossProtocolScenario, CrossProtocolTrigger};
+///
+/// let scenario = CrossProtocolScenario::new(
+///     CrossProtocolTrigger::DnsQuery,
+///     "Deploy",
+///     "DnsObserved",
+/// )
+/// .match_pattern("api.example.com");
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrossProtocolScenario {
+    pub trigger: CrossProtocolTrigger,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_pattern: Option<String>,
+
+    pub scenario_name: String,
+
+    pub target_state: String,
+}
+
+impl CrossProtocolScenario {
+    /// Create a cross-protocol scenario for the given trigger that advances
+    /// `scenario_name` to `target_state` when an event fires.
+    pub fn new(
+        trigger: CrossProtocolTrigger,
+        scenario_name: impl Into<String>,
+        target_state: impl Into<String>,
+    ) -> Self {
+        Self {
+            trigger,
+            match_pattern: None,
+            scenario_name: scenario_name.into(),
+            target_state: target_state.into(),
+        }
+    }
+
+    /// Set the substring filter on the event identifier (omit to match all).
+    pub fn match_pattern(mut self, pattern: impl Into<String>) -> Self {
+        self.match_pattern = Some(pattern.into());
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Expectation
 // ---------------------------------------------------------------------------
 
@@ -1407,6 +1503,38 @@ pub struct Expectation {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_to_live: Option<TimeToLive>,
+
+    /// Name of the state-machine this expectation participates in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scenario_name: Option<String>,
+
+    /// State the scenario must be in for this expectation to match.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scenario_state: Option<String>,
+
+    /// State the scenario transitions to after this expectation matches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_scenario_state: Option<String>,
+
+    /// Multiple responses; takes priority over the singular [`Expectation::http_response`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_responses: Option<Vec<HttpResponse>>,
+
+    /// How a response is selected from [`Expectation::http_responses`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_mode: Option<ResponseMode>,
+
+    /// Index-aligned relative weights for [`ResponseMode::Weighted`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_weights: Option<Vec<i32>>,
+
+    /// Requests per response block before advancing under [`ResponseMode::Switch`] (default 1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub switch_after: Option<i32>,
+
+    /// Cross-protocol scenario correlations that advance scenario state on protocol events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross_protocol_scenarios: Option<Vec<CrossProtocolScenario>>,
 }
 
 impl Expectation {
@@ -1501,6 +1629,74 @@ impl Expectation {
         self.time_to_live = Some(ttl);
         self
     }
+
+    /// Set the scenario (state-machine) name this expectation participates in.
+    pub fn scenario_name(mut self, name: impl Into<String>) -> Self {
+        self.scenario_name = Some(name.into());
+        self
+    }
+
+    /// Set the state the scenario must be in for this expectation to match.
+    pub fn scenario_state(mut self, state: impl Into<String>) -> Self {
+        self.scenario_state = Some(state.into());
+        self
+    }
+
+    /// Set the state the scenario transitions to after this expectation matches.
+    pub fn new_scenario_state(mut self, state: impl Into<String>) -> Self {
+        self.new_scenario_state = Some(state.into());
+        self
+    }
+
+    /// Append a response to the multiple-responses list (`http_responses`).
+    ///
+    /// When set, `http_responses` takes priority over the singular
+    /// [`respond`](Self::respond) action.
+    pub fn respond_with(mut self, response: HttpResponse) -> Self {
+        self.http_responses
+            .get_or_insert_with(Vec::new)
+            .push(response);
+        self
+    }
+
+    /// Replace all multiple responses (`http_responses`).
+    pub fn http_responses(mut self, responses: Vec<HttpResponse>) -> Self {
+        self.http_responses = Some(responses);
+        self
+    }
+
+    /// Set how a response is selected from `http_responses`.
+    pub fn response_mode(mut self, mode: ResponseMode) -> Self {
+        self.response_mode = Some(mode);
+        self
+    }
+
+    /// Set the index-aligned relative weights for [`ResponseMode::Weighted`].
+    pub fn response_weights(mut self, weights: Vec<i32>) -> Self {
+        self.response_weights = Some(weights);
+        self
+    }
+
+    /// Set the number of requests per response block before advancing under
+    /// [`ResponseMode::Switch`].
+    pub fn switch_after(mut self, switch_after: i32) -> Self {
+        self.switch_after = Some(switch_after);
+        self
+    }
+
+    /// Append a [`CrossProtocolScenario`] correlation.
+    pub fn cross_protocol_scenario(mut self, scenario: CrossProtocolScenario) -> Self {
+        self.cross_protocol_scenarios
+            .get_or_insert_with(Vec::new)
+            .push(scenario);
+        self
+    }
+
+    /// Replace all cross-protocol scenario correlations.
+    pub fn cross_protocol_scenarios(mut self, scenarios: Vec<CrossProtocolScenario>) -> Self {
+        self.cross_protocol_scenarios = Some(scenarios);
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1552,6 +1748,29 @@ pub struct VerificationSequence {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Ports {
     pub ports: Vec<u16>,
+}
+
+// ---------------------------------------------------------------------------
+// Scenario state
+// ---------------------------------------------------------------------------
+
+/// A scenario and its current state, as returned by the scenario REST
+/// endpoints (`GET /mockserver/scenario` and `GET /mockserver/scenario/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioState {
+    /// The scenario (state-machine) name.
+    pub scenario_name: String,
+    /// The scenario's current state.
+    pub current_state: String,
+}
+
+/// Wrapper for the `GET /mockserver/scenario` list response shape
+/// (`{"scenarios":[{"scenarioName","currentState"}]}`).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ScenarioList {
+    #[serde(default)]
+    pub scenarios: Vec<ScenarioState>,
 }
 
 // ---------------------------------------------------------------------------

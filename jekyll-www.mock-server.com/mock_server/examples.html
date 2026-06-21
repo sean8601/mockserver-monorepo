@@ -114,6 +114,7 @@ sitemap:
     and <a href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/json" target="_blank" rel="noopener noreferrer">json/</a>
     directories are the most comprehensive reference: they cover every MockServer API endpoint and are organised
     into feature-category subdirectories. The same categories exist in both trees (shell scripts and raw JSON payloads respectively).
+    Per-language stateful scenario examples live under <code>examples/&lt;language&gt;/scenario/</code> for every client (curl, json, java, node, python, ruby, go, dotnet, rust, php).
 </p>
 
 <table class="comparison">
@@ -191,6 +192,10 @@ sitemap:
         <tr>
             <td><a href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/curl/pact" target="_blank" rel="noopener noreferrer">pact/</a></td>
             <td>Import a Pact v3 contract with provider state and activate the state so it matches</td>
+        </tr>
+        <tr>
+            <td><a href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/curl/scenario" target="_blank" rel="noopener noreferrer">scenario/</a></td>
+            <td>Stateful scenarios &mdash; state-machine flows (<code>scenarioName</code> / <code>scenarioState</code> / <code>newScenarioState</code>), sequential/cycling responses (<code>responseMode</code>), timed &amp; externally-triggered transitions, and cross-protocol correlation</td>
         </tr>
         <tr>
             <td><a href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/curl/graphql" target="_blank" rel="noopener noreferrer">graphql/</a></td>

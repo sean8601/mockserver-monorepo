@@ -3199,4 +3199,167 @@ public class MockServerClient implements Stoppable {
         }
         return httpResponse;
     }
+
+    // -------------------------------------------------------------------
+    // Stateful scenarios
+    // -------------------------------------------------------------------
+
+    private static final ObjectMapper SCENARIO_OBJECT_MAPPER = new ObjectMapper();
+
+    /**
+     * A scenario and its current state, as returned by the scenario control-plane endpoints.
+     *
+     * @param scenarioName the name of the scenario state-machine
+     * @param currentState the scenario's current state, or {@code null} if it has never been set
+     */
+    public record Scenario(String scenarioName, String currentState) {
+    }
+
+    /**
+     * Obtain a typed handle for inspecting and driving a stateful scenario by name. The handle
+     * wraps the {@code /mockserver/scenario/{name}} control-plane endpoints.
+     *
+     * @param name the scenario name
+     * @return a handle for the named scenario
+     */
+    public ScenarioHandle scenario(String name) {
+        if (isBlank(name)) {
+            throw new IllegalArgumentException("scenario name can not be null or empty");
+        }
+        return new ScenarioHandle(name);
+    }
+
+    /**
+     * List every known scenario and its current state.
+     *
+     * @return the list of scenarios, empty if none are known
+     */
+    public List<Scenario> scenarios() {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("scenario")),
+            true
+        );
+        List<Scenario> scenarios = new ArrayList<>();
+        String body = httpResponse != null ? httpResponse.getBodyAsString() : null;
+        if (isNotBlank(body)) {
+            try {
+                JsonNode root = SCENARIO_OBJECT_MAPPER.readTree(body);
+                JsonNode array = root.path("scenarios");
+                if (array.isArray()) {
+                    for (JsonNode node : array) {
+                        scenarios.add(parseScenario(node));
+                    }
+                }
+            } catch (Exception e) {
+                throw new ClientException("Unable to parse scenarios response: " + body, e);
+            }
+        }
+        return scenarios;
+    }
+
+    private Scenario parseScenario(JsonNode node) {
+        String scenarioName = node.path("scenarioName").isMissingNode() ? null : node.path("scenarioName").asText(null);
+        String currentState = node.path("currentState").isNull() || node.path("currentState").isMissingNode()
+            ? null : node.path("currentState").asText(null);
+        return new Scenario(scenarioName, currentState);
+    }
+
+    /**
+     * Typed handle that wraps the scenario control-plane endpoints for a single named scenario.
+     */
+    public class ScenarioHandle {
+
+        private final String name;
+
+        private ScenarioHandle(String name) {
+            this.name = name;
+        }
+
+        /**
+         * Get the current state of this scenario via {@code GET /mockserver/scenario/{name}}.
+         *
+         * @return the current state, or {@code null} if the scenario has never had a state set
+         */
+        public String state() {
+            HttpResponse httpResponse = sendRequest(
+                request()
+                    .withMethod("GET")
+                    .withPath(calculatePath("scenario/" + name)),
+                true
+            );
+            String body = httpResponse != null ? httpResponse.getBodyAsString() : null;
+            if (isNotBlank(body)) {
+                try {
+                    return parseScenario(SCENARIO_OBJECT_MAPPER.readTree(body)).currentState();
+                } catch (Exception e) {
+                    throw new ClientException("Unable to parse scenario state response: " + body, e);
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Set this scenario's state via {@code PUT /mockserver/scenario/{name}}.
+         *
+         * @param state the new state
+         * @return this handle for chaining
+         */
+        public ScenarioHandle set(String state) {
+            return set(state, null, null);
+        }
+
+        /**
+         * Set this scenario's state and optionally schedule a timed transition to {@code nextState}
+         * via {@code PUT /mockserver/scenario/{name}}.
+         *
+         * @param state              the new state
+         * @param transitionAfterMs  delay before transitioning to {@code nextState}, or {@code null} for none
+         * @param nextState          the state to transition to after {@code transitionAfterMs}, or {@code null} for none
+         * @return this handle for chaining
+         */
+        public ScenarioHandle set(String state, Long transitionAfterMs, String nextState) {
+            ObjectNode requestBody = SCENARIO_OBJECT_MAPPER.createObjectNode();
+            requestBody.put("state", state);
+            if (transitionAfterMs != null) {
+                requestBody.put("transitionAfterMs", transitionAfterMs);
+            }
+            if (isNotBlank(nextState)) {
+                requestBody.put("nextState", nextState);
+            }
+            sendScenarioPut("scenario/" + name, requestBody);
+            return this;
+        }
+
+        /**
+         * Externally trigger a state transition via {@code PUT /mockserver/scenario/{name}/trigger}.
+         *
+         * @param newState the state to transition to
+         * @return this handle for chaining
+         */
+        public ScenarioHandle trigger(String newState) {
+            ObjectNode requestBody = SCENARIO_OBJECT_MAPPER.createObjectNode();
+            requestBody.put("newState", newState);
+            sendScenarioPut("scenario/" + name + "/trigger", requestBody);
+            return this;
+        }
+
+        private void sendScenarioPut(String path, ObjectNode requestBody) {
+            String body;
+            try {
+                body = SCENARIO_OBJECT_MAPPER.writeValueAsString(requestBody);
+            } catch (Exception e) {
+                throw new ClientException("Unable to serialize scenario request", e);
+            }
+            sendRequest(
+                request()
+                    .withMethod("PUT")
+                    .withContentType(APPLICATION_JSON_UTF_8)
+                    .withPath(calculatePath(path))
+                    .withBody(body, StandardCharsets.UTF_8),
+                true
+            );
+        }
+    }
 }

@@ -688,3 +688,99 @@ class TestSyncGrpcDescriptors:
             client.clear_grpc_descriptors()
             assert SyncMockHandler.last_method == "PUT"
             assert SyncMockHandler.last_path == "/mockserver/grpc/clear"
+
+
+class TestSyncScenario:
+    def test_scenario_state(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps(
+            {"scenarioName": "Deploy", "currentState": "Deploying"}
+        )
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            state = client.scenario("Deploy").state()
+            assert SyncMockHandler.last_path == "/mockserver/scenario/Deploy"
+            assert SyncMockHandler.last_method == "GET"
+            assert state == "Deploying"
+
+    def test_scenario_set(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps(
+            {"scenarioName": "Deploy", "currentState": "Deploying"}
+        )
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.scenario("Deploy").set("Deploying")
+            assert SyncMockHandler.last_path == "/mockserver/scenario/Deploy"
+            assert SyncMockHandler.last_method == "PUT"
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent == {"state": "Deploying"}
+            assert "transitionAfterMs" not in sent
+            assert "nextState" not in sent
+            assert result["currentState"] == "Deploying"
+
+    def test_scenario_set_timed(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps(
+            {
+                "scenarioName": "Deploy",
+                "currentState": "Deploying",
+                "nextState": "Deployed",
+                "transitionAfterMs": 5000,
+            }
+        )
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.scenario("Deploy").set(
+                "Deploying", transition_after_ms=5000, next_state="Deployed"
+            )
+            assert SyncMockHandler.last_path == "/mockserver/scenario/Deploy"
+            assert SyncMockHandler.last_method == "PUT"
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent == {
+                "state": "Deploying",
+                "transitionAfterMs": 5000,
+                "nextState": "Deployed",
+            }
+
+    def test_scenario_trigger(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps(
+            {"scenarioName": "Deploy", "currentState": "Failed"}
+        )
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            result = client.scenario("Deploy").trigger("Failed")
+            assert SyncMockHandler.last_path == "/mockserver/scenario/Deploy/trigger"
+            assert SyncMockHandler.last_method == "PUT"
+            sent = json.loads(SyncMockHandler.last_request_body)
+            assert sent == {"newState": "Failed"}
+            assert result["currentState"] == "Failed"
+
+    def test_scenarios_list(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps(
+            {
+                "scenarios": [
+                    {"scenarioName": "Deploy", "currentState": "Deploying"},
+                    {"scenarioName": "Login", "currentState": "LoggedOut"},
+                ]
+            }
+        )
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            scenarios = client.scenarios()
+            assert SyncMockHandler.last_path == "/mockserver/scenario"
+            assert SyncMockHandler.last_method == "GET"
+            assert len(scenarios) == 2
+            assert scenarios[0]["scenarioName"] == "Deploy"
+            assert scenarios[0]["currentState"] == "Deploying"
+
+    def test_scenario_name_is_url_encoded(self, sync_mock_server):
+        SyncMockHandler.response_body = json.dumps(
+            {"scenarioName": "deploy flow", "currentState": "x"}
+        )
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            client.scenario("deploy flow").state()
+            assert SyncMockHandler.last_path == "/mockserver/scenario/deploy%20flow"
+
+    def test_scenario_handle_name(self, sync_mock_server):
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            assert client.scenario("Deploy").name == "Deploy"
+
+    def test_scenario_error(self, sync_mock_server):
+        SyncMockHandler.response_status = 400
+        SyncMockHandler.response_body = '{"error": "scenario name is required in the path"}'
+        with MockServerClient("127.0.0.1", sync_mock_server) as client:
+            with pytest.raises(MockServerError, match="Scenario request failed"):
+                client.scenario("Deploy").set("Deploying")

@@ -656,3 +656,66 @@ class TestAsyncLoadScenario:
         client = AsyncMockServerClient("127.0.0.1", mock_server)
         with pytest.raises(MockServerError, match="load generation is disabled"):
             await client.load_scenario(self._scenario())
+
+
+class TestAsyncScenario:
+    @pytest.mark.asyncio
+    async def test_scenario_state(self, mock_server):
+        MockHandler.response_body = json.dumps(
+            {"scenarioName": "Deploy", "currentState": "Deploying"}
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        state = await client.scenario("Deploy").state()
+        assert MockHandler.last_path == "/mockserver/scenario/Deploy"
+        assert MockHandler.last_method == "GET"
+        assert state == "Deploying"
+
+    @pytest.mark.asyncio
+    async def test_scenario_set_timed(self, mock_server):
+        MockHandler.response_body = json.dumps(
+            {"scenarioName": "Deploy", "currentState": "Deploying"}
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.scenario("Deploy").set(
+            "Deploying", transition_after_ms=5000, next_state="Deployed"
+        )
+        assert MockHandler.last_path == "/mockserver/scenario/Deploy"
+        assert MockHandler.last_method == "PUT"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {
+            "state": "Deploying",
+            "transitionAfterMs": 5000,
+            "nextState": "Deployed",
+        }
+
+    @pytest.mark.asyncio
+    async def test_scenario_trigger(self, mock_server):
+        MockHandler.response_body = json.dumps(
+            {"scenarioName": "Deploy", "currentState": "Failed"}
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.scenario("Deploy").trigger("Failed")
+        assert MockHandler.last_path == "/mockserver/scenario/Deploy/trigger"
+        assert MockHandler.last_method == "PUT"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {"newState": "Failed"}
+        assert result["currentState"] == "Failed"
+
+    @pytest.mark.asyncio
+    async def test_scenarios_list(self, mock_server):
+        MockHandler.response_body = json.dumps(
+            {"scenarios": [{"scenarioName": "Deploy", "currentState": "Deploying"}]}
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        scenarios = await client.scenarios()
+        assert MockHandler.last_path == "/mockserver/scenario"
+        assert MockHandler.last_method == "GET"
+        assert scenarios == [{"scenarioName": "Deploy", "currentState": "Deploying"}]
+
+    @pytest.mark.asyncio
+    async def test_scenario_error(self, mock_server):
+        MockHandler.response_status = 400
+        MockHandler.response_body = '{"error": "bad"}'
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="Scenario request failed"):
+            await client.scenario("Deploy").set("Deploying")

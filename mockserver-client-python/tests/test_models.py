@@ -7,6 +7,8 @@ from mockserver.models import (
     BinaryResponse,
     Body,
     ConnectionOptions,
+    CrossProtocolScenario,
+    CrossProtocolTrigger,
     Delay,
     DelayDistribution,
     DnsRecord,
@@ -32,6 +34,7 @@ from mockserver.models import (
     OpenAPIExpectation,
     Ports,
     RequestDefinition,
+    ResponseMode,
     SocketAddress,
     TimeToLive,
     Times,
@@ -1779,6 +1782,152 @@ class TestExpectation:
         restored = Expectation.from_dict(original.to_dict())
         assert restored.chaos is not None
         assert restored.chaos.to_dict() == original.chaos.to_dict()
+
+
+class TestCrossProtocolScenario:
+    def test_defaults_emit_nothing(self):
+        assert CrossProtocolScenario().to_dict() == {}
+
+    def test_to_dict_camel_case(self):
+        c = CrossProtocolScenario(
+            trigger=CrossProtocolTrigger.DNS_QUERY,
+            match_pattern="api.example.com",
+            scenario_name="Deploy",
+            target_state="DnsObserved",
+        )
+        assert c.to_dict() == {
+            "trigger": "DNS_QUERY",
+            "matchPattern": "api.example.com",
+            "scenarioName": "Deploy",
+            "targetState": "DnsObserved",
+        }
+
+    def test_match_pattern_omitted_when_none(self):
+        c = CrossProtocolScenario(
+            trigger=CrossProtocolTrigger.WEBSOCKET_CONNECT,
+            scenario_name="Deploy",
+            target_state="Connected",
+        )
+        d = c.to_dict()
+        assert "matchPattern" not in d
+        assert d == {
+            "trigger": "WEBSOCKET_CONNECT",
+            "scenarioName": "Deploy",
+            "targetState": "Connected",
+        }
+
+    def test_from_dict(self):
+        c = CrossProtocolScenario.from_dict({
+            "trigger": "GRPC_REQUEST",
+            "matchPattern": "MyService",
+            "scenarioName": "Deploy",
+            "targetState": "GrpcSeen",
+        })
+        assert c.trigger == "GRPC_REQUEST"
+        assert c.match_pattern == "MyService"
+        assert c.scenario_name == "Deploy"
+        assert c.target_state == "GrpcSeen"
+
+    def test_from_dict_none(self):
+        assert CrossProtocolScenario.from_dict(None) is None
+
+    def test_round_trip(self):
+        original = CrossProtocolScenario(
+            trigger=CrossProtocolTrigger.HTTP_REQUEST,
+            match_pattern="/health",
+            scenario_name="Deploy",
+            target_state="HttpSeen",
+        )
+        assert CrossProtocolScenario.from_dict(original.to_dict()).to_dict() == original.to_dict()
+
+
+class TestExpectationScenarioParity:
+    """Serialization of the typed stateful-scenario fields against the
+    scenario-parity contract (camelCase JSON must match the core contract).
+    """
+
+    def test_response_mode_constants(self):
+        assert ResponseMode.SEQUENTIAL == "SEQUENTIAL"
+        assert ResponseMode.RANDOM == "RANDOM"
+        assert ResponseMode.WEIGHTED == "WEIGHTED"
+        assert ResponseMode.SWITCH == "SWITCH"
+
+    def test_cross_protocol_trigger_constants(self):
+        assert CrossProtocolTrigger.DNS_QUERY == "DNS_QUERY"
+        assert CrossProtocolTrigger.WEBSOCKET_CONNECT == "WEBSOCKET_CONNECT"
+        assert CrossProtocolTrigger.GRPC_REQUEST == "GRPC_REQUEST"
+        assert CrossProtocolTrigger.HTTP_REQUEST == "HTTP_REQUEST"
+
+    def test_new_fields_emit_camel_case(self):
+        e = Expectation(
+            http_request=HttpRequest(path="/api"),
+            http_responses=[
+                HttpResponse(status_code=200, body="a"),
+                HttpResponse(status_code=500, body="b"),
+            ],
+            response_mode=ResponseMode.WEIGHTED,
+            response_weights=[3, 1],
+            switch_after=2,
+            cross_protocol_scenarios=[
+                CrossProtocolScenario(
+                    trigger=CrossProtocolTrigger.DNS_QUERY,
+                    match_pattern="api.example.com",
+                    scenario_name="Deploy",
+                    target_state="DnsObserved",
+                )
+            ],
+            scenario_name="Deploy",
+            scenario_state="Pending",
+            new_scenario_state="Deploying",
+        )
+        d = e.to_dict()
+        assert d["responseMode"] == "WEIGHTED"
+        assert d["responseWeights"] == [3, 1]
+        assert d["switchAfter"] == 2
+        assert d["crossProtocolScenarios"] == [{
+            "trigger": "DNS_QUERY",
+            "matchPattern": "api.example.com",
+            "scenarioName": "Deploy",
+            "targetState": "DnsObserved",
+        }]
+        assert d["scenarioName"] == "Deploy"
+        assert d["scenarioState"] == "Pending"
+        assert d["newScenarioState"] == "Deploying"
+        assert len(d["httpResponses"]) == 2
+
+    def test_new_fields_omitted_when_unset(self):
+        d = Expectation(
+            http_request=HttpRequest(path="/api"),
+            http_response=HttpResponse(status_code=200),
+        ).to_dict()
+        assert "responseWeights" not in d
+        assert "switchAfter" not in d
+        assert "crossProtocolScenarios" not in d
+
+    def test_round_trip(self):
+        original = Expectation(
+            http_request=HttpRequest(path="/api"),
+            http_responses=[HttpResponse(status_code=200), HttpResponse(status_code=500)],
+            response_mode=ResponseMode.SWITCH,
+            response_weights=[5, 2],
+            switch_after=3,
+            cross_protocol_scenarios=[
+                CrossProtocolScenario(
+                    trigger=CrossProtocolTrigger.WEBSOCKET_CONNECT,
+                    scenario_name="Deploy",
+                    target_state="Connected",
+                )
+            ],
+        )
+        restored = Expectation.from_dict(original.to_dict())
+        assert restored.response_mode == "SWITCH"
+        assert restored.response_weights == [5, 2]
+        assert restored.switch_after == 3
+        assert len(restored.cross_protocol_scenarios) == 1
+        assert restored.cross_protocol_scenarios[0].trigger == "WEBSOCKET_CONNECT"
+        assert restored.cross_protocol_scenarios[0].scenario_name == "Deploy"
+        assert restored.cross_protocol_scenarios[0].target_state == "Connected"
+        assert restored.to_dict() == original.to_dict()
 
 
 class TestOpenAPIDefinition:

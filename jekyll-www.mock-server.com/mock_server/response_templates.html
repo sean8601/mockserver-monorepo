@@ -2,7 +2,7 @@
 title: Response Templates
 description: Generate dynamic mock responses using Mustache, Velocity, or JavaScript templates with access to request data, UUIDs, timestamps, and helper objects.
 layout: page
-pageOrder: 2
+pageOrder: 3
 section: 'Creating Mocks'
 subsection: true
 sitemap:
@@ -67,6 +67,157 @@ lastmod: 2019-11-10T08:00:00+01:00
     </li>
     <li><a href="#response_template_security"><strong>Security Considerations</strong></a> &mdash; restrict the Java classes templates can reach via <code class="inline code">velocityDisallowClassLoading</code> and <code class="inline code">javascriptDisallowedClasses</code></li>
 </ul>
+
+<a id="template_feature_overview" class="anchor" href="#template_feature_overview">&nbsp;</a>
+
+<h2>Template Feature Overview</h2>
+
+<p>The table below is a one-look index of every template feature on this page. Click the link in the <strong>Section</strong> column to jump straight to the reference.</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Feature / Object</th>
+            <th>What it provides</th>
+            <th>Section</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td colspan="3"><strong>Template Formats</strong></td>
+        </tr>
+        <tr>
+            <td>Mustache</td>
+            <td>Logic-less templates with sections, loops, JsonPath, and XPath extraction</td>
+            <td><a href="#mustache_templates">Mustache Templates</a></td>
+        </tr>
+        <tr>
+            <td>Velocity</td>
+            <td>Apache Velocity engine &mdash; conditionals, loops, math, JSON/XML body parsing</td>
+            <td><a href="#velocity_templates">Velocity Templates</a></td>
+        </tr>
+        <tr>
+            <td>JavaScript</td>
+            <td>Full ES2023+ via GraalVM Polyglot &mdash; requires the <code>graaljs</code> image variant</td>
+            <td><a href="#javascript_templates">JavaScript Templates</a></td>
+        </tr>
+        <tr>
+            <td colspan="3"><strong>Template Sources</strong></td>
+        </tr>
+        <tr>
+            <td>Templates in JSON Files</td>
+            <td>Embedding templates in JSON initializer files; newline escaping rules</td>
+            <td><a href="#templates_in_json_files">Templates in JSON Initializer Files</a></td>
+        </tr>
+        <tr>
+            <td>Templates from Files</td>
+            <td>Reference a template stored in a file with <code>templateFile</code></td>
+            <td><a href="#templates_from_files">Loading Templates From Files</a></td>
+        </tr>
+        <tr>
+            <td>Body File Templating</td>
+            <td>Render a <code>FILE</code> response body as a Mustache or Velocity template</td>
+            <td><a href="#templating_a_response_body_file">Templating A Response Body File</a></td>
+        </tr>
+        <tr>
+            <td>Template Testing</td>
+            <td>Test templates locally with <code>ResponseTemplateTester</code></td>
+            <td><a href="#response_template_testing">Response Template Testing</a></td>
+        </tr>
+        <tr>
+            <td colspan="3"><strong>Request Variables</strong></td>
+        </tr>
+        <tr>
+            <td>Request Model Variables</td>
+            <td>Access method, path, headers, cookies, body, remoteAddress, and more</td>
+            <td><a href="#request_model_variables">Request Model Variables</a></td>
+        </tr>
+        <tr>
+            <td>Multi-Value Maps</td>
+            <td>Access headers, path parameters, and query parameters by key, entry set, values, or key set</td>
+            <td><a href="#request_multi_value_maps">Multi-Value And Single Value Maps</a></td>
+        </tr>
+        <tr>
+            <td colspan="3"><strong>Built-in Dynamic Variables</strong></td>
+        </tr>
+        <tr>
+            <td>Dynamic Variables</td>
+            <td>Timestamps (<code>now_iso_8601</code>, <code>now_epoch</code>, <code>now_rfc_1123</code>), UUID, random integers, random bytes</td>
+            <td><a href="#dynamic_model_variables">Dynamic Model Variables</a></td>
+        </tr>
+        <tr>
+            <td colspan="3"><strong>Helper Objects</strong></td>
+        </tr>
+        <tr>
+            <td><code>jwt</code></td>
+            <td>Generate signed JWTs and JWKS for testing OAuth2/OIDC flows</td>
+            <td><a href="#jwt_helper">JWT Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>strings</code></td>
+            <td>Trim, capitalize, URL/Base64 encode/decode, substring, replace, length, contains</td>
+            <td><a href="#strings_helper">String Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>jsonTransform</code></td>
+            <td>Merge, sort, extract fields, add/remove elements, pretty-print JSON strings</td>
+            <td><a href="#json_helper">JSON Transform Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>dates</code></td>
+            <td>Date formatting, arithmetic (plus/minus seconds/minutes/hours/days), epoch conversion</td>
+            <td><a href="#dates_helper">Date Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>calc</code></td>
+            <td>Random numbers, rounding, min/max, abs, ceil/floor, number formatting</td>
+            <td><a href="#math_helper">Calc Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>faker</code></td>
+            <td>Realistic fake data — names, addresses, emails, phone numbers, 250+ categories</td>
+            <td><a href="#faker_helper">Faker Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>crypto</code></td>
+            <td>MD5, SHA-1, SHA-256, SHA-512 digests and HMAC-SHA-256 signatures, all as lowercase hex</td>
+            <td><a href="#crypto_helper">Crypto Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>regex</code></td>
+            <td>Test patterns, capture groups, and replace substrings using Java regex</td>
+            <td><a href="#regex_helper">Regex Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>html</code></td>
+            <td>Escape and unescape HTML entities (HTML 4.0)</td>
+            <td><a href="#html_helper">HTML Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>csv</code></td>
+            <td>Parse CSV text into rows and format a row back to CSV (RFC 4180)</td>
+            <td><a href="#csv_helper">CSV Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>xpath</code></td>
+            <td>Evaluate an XPath expression against an XML document (XXE-safe)</td>
+            <td><a href="#xpath_helper">XPath Helper</a></td>
+        </tr>
+        <tr>
+            <td><code>yaml</code></td>
+            <td>Convert YAML to JSON and read a top-level field from a YAML document</td>
+            <td><a href="#yaml_helper">YAML Helper</a></td>
+        </tr>
+        <tr>
+            <td colspan="3"><strong>Security</strong></td>
+        </tr>
+        <tr>
+            <td>Security Considerations</td>
+            <td>Restrict Java class access via <code>velocityDisallowClassLoading</code> and <code>javascriptDisallowedClasses</code></td>
+            <td><a href="#response_template_security">Security Considerations</a></td>
+        </tr>
+    </tbody>
+</table>
 
 <a id="templates_in_json_files" class="anchor" href="#templates_in_json_files">&nbsp;</a>
 

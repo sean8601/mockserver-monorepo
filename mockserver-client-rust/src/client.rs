@@ -1,7 +1,38 @@
 //! The MockServer client and its builder.
 
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use reqwest::blocking::Client;
 use serde_json::Value;
+
+/// Characters percent-encoded when interpolating a scenario name into a path
+/// segment — everything unsafe for a single segment (matches the other clients'
+/// path-escaping). Unreserved characters (`-` `_` `.` `~`) are left intact.
+const SCENARIO_NAME: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'/')
+    .add(b'?')
+    .add(b'#')
+    .add(b'%')
+    .add(b'[')
+    .add(b']')
+    .add(b'{')
+    .add(b'}')
+    .add(b'|')
+    .add(b'\\')
+    .add(b'^')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`');
+
+/// Build the control-plane path for a named scenario with the name
+/// percent-encoded as a single path segment (matching the other MockServer clients).
+fn scenario_path(name: &str) -> String {
+    format!(
+        "/mockserver/scenario/{}",
+        utf8_percent_encode(name, SCENARIO_NAME)
+    )
+}
 
 use crate::breakpoint::{
     BreakpointMatcherList, BreakpointMatcherRegistration, BreakpointMatcherResponse,
@@ -897,6 +928,127 @@ impl MockServerClient {
     }
 
     // ------------------------------------------------------------------
+    // Stateful scenarios
+    // ------------------------------------------------------------------
+
+    /// Obtain a handle for inspecting and driving a named scenario state-machine.
+    ///
+    /// The returned [`Scenario`] borrows the client and issues control-plane
+    /// requests against `/mockserver/scenario/{name}`.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use mockserver_client::ClientBuilder;
+    ///
+    /// let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+    /// client.scenario("Deploy").set("Deploying").unwrap();
+    /// client.scenario("Deploy").set_timed("Deploying", 5000, "Deployed").unwrap();
+    /// client.scenario("Deploy").trigger("Failed").unwrap();
+    /// let state = client.scenario("Deploy").state().unwrap();
+    /// assert_eq!(state, "Failed");
+    /// ```
+    pub fn scenario(&self, name: &str) -> Scenario<'_> {
+        Scenario {
+            client: self,
+            name: name.to_string(),
+        }
+    }
+
+    /// List every known scenario and its current state.
+    ///
+    /// Sends a `GET /mockserver/scenario` and returns the parsed list of
+    /// [`ScenarioState`]s.
+    pub fn scenarios(&self) -> Result<Vec<ScenarioState>> {
+        let resp = self.http.get(self.url("/mockserver/scenario")).send()?;
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                let text = resp.text()?;
+                if text.is_empty() {
+                    Ok(vec![])
+                } else {
+                    let list: ScenarioList = serde_json::from_str(&text)?;
+                    Ok(list.scenarios)
+                }
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Get the current state of a named scenario.
+    fn scenario_state(&self, name: &str) -> Result<String> {
+        let resp = self
+            .http
+            .get(self.url(&scenario_path(name)))
+            .send()?;
+        let status = resp.status().as_u16();
+        match status {
+            200 => {
+                let text = resp.text()?;
+                let state: ScenarioState = serde_json::from_str(&text)?;
+                Ok(state.current_state)
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Set a scenario's state, optionally scheduling a timed transition.
+    fn scenario_set(
+        &self,
+        name: &str,
+        state: &str,
+        transition_after_ms: Option<u64>,
+        next_state: Option<&str>,
+    ) -> Result<()> {
+        let mut body = serde_json::json!({ "state": state });
+        if let Some(ms) = transition_after_ms {
+            body["transitionAfterMs"] = serde_json::json!(ms);
+        }
+        if let Some(next) = next_state {
+            body["nextState"] = serde_json::json!(next);
+        }
+        let resp = self
+            .http
+            .put(self.url(&scenario_path(name)))
+            .json(&body)
+            .send()?;
+        self.scenario_ok(resp)
+    }
+
+    /// Externally trigger a scenario state transition.
+    fn scenario_trigger(&self, name: &str, new_state: &str) -> Result<()> {
+        let body = serde_json::json!({ "newState": new_state });
+        let resp = self
+            .http
+            .put(self.url(&format!("{}/trigger", scenario_path(name))))
+            .json(&body)
+            .send()?;
+        self.scenario_ok(resp)
+    }
+
+    /// Map a scenario REST response to `Ok(())` on `200`, surfacing the server's
+    /// error body on `400` and any other status as [`Error::UnexpectedStatus`].
+    fn scenario_ok(&self, resp: reqwest::blocking::Response) -> Result<()> {
+        let status = resp.status().as_u16();
+        match status {
+            200 => Ok(()),
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    // ------------------------------------------------------------------
     // SRE control plane — load scenarios
     // ------------------------------------------------------------------
 
@@ -1369,5 +1521,60 @@ impl<'a> ForwardChainExpectation<'a> {
         exp.priority = priority;
         exp.id = id;
         (client, exp)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario (control-plane handle)
+// ---------------------------------------------------------------------------
+
+/// A handle for inspecting and driving a named scenario state-machine.
+///
+/// Obtained via [`MockServerClient::scenario`]. Each method issues a single
+/// control-plane request against `/mockserver/scenario/{name}`.
+pub struct Scenario<'a> {
+    client: &'a MockServerClient,
+    name: String,
+}
+
+impl Scenario<'_> {
+    /// Get the scenario's current state.
+    ///
+    /// Sends `GET /mockserver/scenario/{name}`.
+    pub fn state(&self) -> Result<String> {
+        self.client.scenario_state(&self.name)
+    }
+
+    /// Set the scenario's state.
+    ///
+    /// Sends `PUT /mockserver/scenario/{name}` with `{"state": state}`.
+    pub fn set(&self, state: &str) -> Result<()> {
+        self.client.scenario_set(&self.name, state, None, None)
+    }
+
+    /// Set the scenario's state and schedule an automatic transition to
+    /// `next_state` after `transition_after_ms` milliseconds.
+    ///
+    /// Sends `PUT /mockserver/scenario/{name}` with
+    /// `{"state", "transitionAfterMs", "nextState"}`.
+    pub fn set_timed(
+        &self,
+        state: &str,
+        transition_after_ms: u64,
+        next_state: &str,
+    ) -> Result<()> {
+        self.client.scenario_set(
+            &self.name,
+            state,
+            Some(transition_after_ms),
+            Some(next_state),
+        )
+    }
+
+    /// Externally trigger a transition to `new_state`.
+    ///
+    /// Sends `PUT /mockserver/scenario/{name}/trigger` with `{"newState": new_state}`.
+    pub fn trigger(&self, new_state: &str) -> Result<()> {
+        self.client.scenario_trigger(&self.name, new_state)
     }
 }

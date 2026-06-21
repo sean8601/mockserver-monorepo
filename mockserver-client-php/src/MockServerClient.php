@@ -532,6 +532,99 @@ class MockServerClient
     }
 
     // -----------------------------------------------------------------
+    // Stateful scenarios
+    // -----------------------------------------------------------------
+
+    /**
+     * Obtain a typed handle for a named scenario state machine.
+     *
+     * @param string $name The scenario name.
+     * @return ScenarioHandle A handle exposing state()/set()/trigger().
+     */
+    public function scenario(string $name): ScenarioHandle
+    {
+        return new ScenarioHandle($this, $name);
+    }
+
+    /**
+     * List all known scenarios and their current states.
+     *
+     * @return array<string, mixed> {@code {"scenarios":[{"scenarioName","currentState"}]}}.
+     * @throws MockServerException On communication errors.
+     */
+    public function scenarios(): array
+    {
+        $response = $this->get('/mockserver/scenario');
+
+        return $this->decodeScenarioResponse($response, 'list scenarios');
+    }
+
+    /**
+     * Get the current state of a single scenario.
+     *
+     * @internal Prefer {@see MockServerClient::scenario()}->state().
+     * @param string $name The scenario name.
+     * @return array<string, mixed> {@code {"scenarioName","currentState"}}.
+     * @throws MockServerException On communication errors.
+     */
+    public function getScenario(string $name): array
+    {
+        $response = $this->get('/mockserver/scenario/' . rawurlencode($name));
+
+        return $this->decodeScenarioResponse($response, 'get scenario');
+    }
+
+    /**
+     * Set a scenario's state, optionally scheduling a timed transition.
+     *
+     * @internal Prefer {@see MockServerClient::scenario()}->set().
+     * @param string $name The scenario name.
+     * @param string $state The state to set immediately.
+     * @param int|null $transitionAfterMs Milliseconds after which to transition.
+     * @param string|null $nextState The state to transition to.
+     * @return array<string, mixed> {@code {"scenarioName","currentState",...}}.
+     * @throws InvalidRequestException If the request is rejected (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function setScenario(
+        string $name,
+        string $state,
+        ?int $transitionAfterMs = null,
+        ?string $nextState = null,
+    ): array {
+        $payload = ['state' => $state];
+        if ($transitionAfterMs !== null) {
+            $payload['transitionAfterMs'] = $transitionAfterMs;
+        }
+        if ($nextState !== null) {
+            $payload['nextState'] = $nextState;
+        }
+
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/scenario/' . rawurlencode($name), $body);
+
+        return $this->decodeScenarioResponse($response, 'set scenario');
+    }
+
+    /**
+     * Trigger an immediate transition of a scenario to a new state.
+     *
+     * @internal Prefer {@see MockServerClient::scenario()}->trigger().
+     * @param string $name The scenario name.
+     * @param string $newState The state to transition to.
+     * @return array<string, mixed> {@code {"scenarioName","currentState"}}.
+     * @throws InvalidRequestException If the request is rejected (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function triggerScenario(string $name, string $newState): array
+    {
+        $body = json_encode(['newState' => $newState], JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/scenario/' . rawurlencode($name) . '/trigger', $body);
+
+        return $this->decodeScenarioResponse($response, 'trigger scenario');
+    }
+
+    // -----------------------------------------------------------------
     // OpenAPI import
     // -----------------------------------------------------------------
 
@@ -977,6 +1070,40 @@ class MockServerClient
         }
         if ($status === 400) {
             throw new InvalidRequestException("Failed to {$action} (HTTP 400): {$responseBody}");
+        }
+        if ($status >= 400) {
+            throw new MockServerException("Failed to {$action} (HTTP {$status}): {$responseBody}");
+        }
+
+        if ($responseBody !== '') {
+            $parsed = json_decode($responseBody, true);
+            if (is_array($parsed)) {
+                return $parsed;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Decode a scenario control-plane JSON response, surfacing the common error
+     * statuses with clear, typed exceptions.
+     *
+     * @param \Psr\Http\Message\ResponseInterface $response
+     * @param string $action Human-readable action used in error messages.
+     * @return array<string, mixed>
+     * @throws InvalidRequestException
+     * @throws MockServerException
+     */
+    private function decodeScenarioResponse(
+        \Psr\Http\Message\ResponseInterface $response,
+        string $action,
+    ): array {
+        $status = $response->getStatusCode();
+        $responseBody = (string) $response->getBody();
+
+        if ($status === 400 || $status === 406) {
+            throw new InvalidRequestException("Failed to {$action} (HTTP {$status}): {$responseBody}");
         }
         if ($status >= 400) {
             throw new MockServerException("Failed to {$action} (HTTP {$status}): {$responseBody}");

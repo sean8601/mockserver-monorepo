@@ -47,12 +47,34 @@ export type Expectation = {
   beforeActions?: AfterAction | AfterAction[];
   afterActions?: AfterAction | AfterAction[];
   httpResponses?: HttpResponse[];
-  responseMode?: "SEQUENTIAL" | "RANDOM";
+  responseMode?: "SEQUENTIAL" | "RANDOM" | "WEIGHTED" | "SWITCH";
+  /** index-aligned with httpResponses; relative weights used when responseMode is WEIGHTED */
+  responseWeights?: number[];
+  /** requests served per response block before advancing when responseMode is SWITCH (default 1) */
+  switchAfter?: number;
   steps?: ExpectationStep[];
   scenarioName?: string;
   scenarioState?: string;
   newScenarioState?: string;
+  /** advance a (possibly different) scenario when a non-HTTP protocol event occurs */
+  crossProtocolScenarios?: CrossProtocolScenario[];
 };
+
+/**
+ * Advances a named scenario to a target state when a non-HTTP protocol event
+ * occurs (a DNS query, WebSocket connect, gRPC request, or HTTP request),
+ * letting a single expectation drive a cross-protocol state machine.
+ */
+export interface CrossProtocolScenario {
+  /** the protocol event that triggers the transition */
+  trigger: "DNS_QUERY" | "WEBSOCKET_CONNECT" | "GRPC_REQUEST" | "HTTP_REQUEST";
+  /** optional substring filter on the event identifier; omit to match all events */
+  matchPattern?: string;
+  /** the scenario to advance */
+  scenarioName: string;
+  /** the state to transition the scenario to */
+  targetState: string;
+}
 
 export interface ExpectationId {
   id: string;

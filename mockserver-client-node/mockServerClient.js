@@ -1818,6 +1818,108 @@ var mockServerClient;
         };
 
         // -------------------------------------------------------------------
+        // Stateful scenario (state-machine) management
+        // -------------------------------------------------------------------
+
+        /**
+         * Obtain a handle to a named stateful scenario, exposing typed helpers
+         * over the /mockserver/scenario REST endpoints:
+         *
+         *   client.scenario("Deploy").set("Deploying", { transitionAfterMs: 5000, nextState: "Deployed" });
+         *   client.scenario("Deploy").trigger("Failed");
+         *   client.scenario("Deploy").state();
+         *
+         * @param name the scenario name
+         * @return a handle with state(), set(state, options) and trigger(newState)
+         */
+        var scenario = function (name) {
+            var scenarioPath = "/mockserver/scenario/" + encodeURIComponent(name);
+            return {
+                /**
+                 * GET /mockserver/scenario/{name} — the scenario's current state.
+                 *
+                 * @return promise resolving to {scenarioName, currentState}
+                 */
+                state: function () {
+                    return {
+                        then: function (sucess, error) {
+                            makeGetRequest(host, port, scenarioPath)
+                                .then(function (result) {
+                                    sucess(result.body && JSON.parse(result.body));
+                                }, function (err) {
+                                    error(err);
+                                });
+                        }
+                    };
+                },
+                /**
+                 * PUT /mockserver/scenario/{name} — set the scenario's state,
+                 * optionally scheduling a timed transition.
+                 *
+                 * @param state    the state to set immediately
+                 * @param options  optional {transitionAfterMs, nextState} to schedule a timed transition
+                 * @return promise resolving to {scenarioName, currentState, nextState?, transitionAfterMs?}
+                 */
+                set: function (state, options) {
+                    options = options || {};
+                    var body = {state: state};
+                    if (options.transitionAfterMs !== undefined && options.transitionAfterMs !== null) {
+                        body.transitionAfterMs = options.transitionAfterMs;
+                    }
+                    if (options.nextState !== undefined && options.nextState !== null) {
+                        body.nextState = options.nextState;
+                    }
+                    return {
+                        then: function (sucess, error) {
+                            makeRequest(host, port, scenarioPath, body)
+                                .then(function (result) {
+                                    sucess(result.body ? JSON.parse(result.body) : result);
+                                }, function (err) {
+                                    error(err);
+                                });
+                        }
+                    };
+                },
+                /**
+                 * PUT /mockserver/scenario/{name}/trigger — set the state to
+                 * newState immediately.
+                 *
+                 * @param newState the state to transition to
+                 * @return promise resolving to {scenarioName, currentState}
+                 */
+                trigger: function (newState) {
+                    return {
+                        then: function (sucess, error) {
+                            makeRequest(host, port, scenarioPath + "/trigger", {newState: newState})
+                                .then(function (result) {
+                                    sucess(result.body ? JSON.parse(result.body) : result);
+                                }, function (err) {
+                                    error(err);
+                                });
+                        }
+                    };
+                }
+            };
+        };
+        /**
+         * List every known scenario and its current state.
+         *
+         * @return promise resolving to {scenarios: [{scenarioName, currentState}, ...]}
+         */
+        var scenarios = function () {
+            return {
+                then: function (sucess, error) {
+                    makeGetRequest(host, port, "/mockserver/scenario")
+                        .then(function (result) {
+                            sucess(result.body && JSON.parse(result.body));
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
+
+        // -------------------------------------------------------------------
         // Breakpoint matcher management
         // -------------------------------------------------------------------
 
@@ -2104,6 +2206,8 @@ var mockServerClient;
             loadScenario: loadScenario,
             loadScenarioStatus: loadScenarioStatus,
             stopLoadScenario: stopLoadScenario,
+            scenario: scenario,
+            scenarios: scenarios,
             bind: bind,
             retrieveRecordedRequests: retrieveRecordedRequests,
             retrieveRecordedRequestsAndResponses: retrieveRecordedRequestsAndResponses,

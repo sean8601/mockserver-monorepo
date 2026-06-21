@@ -705,6 +705,7 @@ version = "7.1.0"
 dependencies = [
  "base64",
  "dirs",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",

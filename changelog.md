@@ -83,6 +83,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New cap `mockserver.loadGenerationMaxConcurrentScenarios` (default 10). The `mock_server_load_*` metrics keep
     one series per `(scenario, run_id)`, so concurrent runs stay distinguishable; per-run series are evicted on
     re-trigger/removal.
+- **Stateful scenarios: typed support across every client, runnable examples, and a dedicated docs page.**
+  All eight client libraries (Java, JavaScript/Node, Python, Ruby, Go, .NET, Rust, PHP) now expose
+  **typed** stateful-scenario APIs at parity: the expectation fields `scenarioName` / `scenarioState` /
+  `newScenarioState`, sequential / cycling responses (`httpResponses` + `responseMode` of
+  `SEQUENTIAL` / `RANDOM` / `WEIGHTED` + `responseWeights` / `SWITCH` + `switchAfter`),
+  `crossProtocolScenarios`, and a typed `scenario(name)` helper wrapping the scenario REST endpoints
+  (`state` / `set` / timed `set` / `trigger`, plus a `scenarios()` listing). The Java fluent builder
+  gained the previously-missing `withHttpResponses` / `withResponseWeights` / `withSwitchAfter` /
+  `withCrossProtocolScenario(s)` setters. New runnable, self-asserting **examples** live under
+  `examples/<curl|json|node|python|ruby|go|dotnet|rust|php>/scenario/` (plus the Java examples module),
+  covering the login state machine, sequential cycling, timed auto-transition, external trigger, and
+  cross-protocol correlation. A new consumer docs page — **Stateful Scenarios** — presents every
+  feature in a jump-link feature table with per-language accordion examples linking to the runnable code.
+- **Docker example-validation harness** (`examples/validate/run.sh`). Builds a MockServer image from the
+  current checkout, starts it on a private Docker network, and runs each client's scenario example
+  inside the matching toolchain container wired to the local client source, asserting it passes — so
+  client example code is validated against a real server even for toolchains not installed on the host.
+  Mounts the host CA bundle when present so dependency fetches work behind a TLS-inspecting proxy.
 
 <!-- Load Profile v2: stages, arrival-rate (iterations/sec), ramp curves -->
 - **Load scenarios: multi-stage profiles, open-model arrival rate, and ramp curves** (`mockserver-core`). A load
@@ -1613,6 +1631,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loadScenarioInitializationJsonPath` properties were read from system properties but missing from
   `ConfigurationDTO`, so they were dropped by `GET`/`PUT /mockserver/configuration` round-trips and by
   `applyTo()`. They are now mirrored like the other `loadGeneration*` properties.
+- **`crossProtocolScenarios` was rejected by the expectation schema** (`mockserver-core`). The
+  cross-protocol scenario-correlation field was present in the model and honoured at runtime, but it
+  was missing from the expectation validation schema, so any expectation that used it was rejected with
+  `400 incorrect expectation json format` — making the documented feature unusable via the JSON / REST
+  API (and therefore from every client). Added `crossProtocolScenarios` to both `expectation.json` and
+  the embedded OpenAPI model.
+- **Rust client rejected expectations with a finite `times` / `timeToLive`** (`mockserver-client-rust`).
+  `Times` and `TimeToLive` required an `unlimited` field when deserializing the server's response, so
+  creating an expectation with e.g. `times(once())` failed with `missing field 'unlimited'`. The field
+  now defaults to `false` when absent.
+- **GraalVM Engine leak in the JavaScript template engine** (`mockserver-core`). The recent JS-template-engine
+  caching change built a new native GraalVM `Engine` per `JavaScriptTemplateEngine` instance (and a per-instance
+  thread-local `Context`) that was never closed; since the engine is constructed per call/handler/test, native
+  Engines accumulated (each pinning Truffle/compiler threads and native memory), which exhausted the reused test
+  fork and timed out CI. The `Engine` is now a single process-wide instance (shared across all template engines,
+  the standard GraalVM pattern), and `JavaScriptTemplateEngine`/`PolyglotRunner` gain a `close()` that disposes
+  the thread-local `Context` (used by short-lived render paths). Rendering output and the `Java.type(...)`
+  class-lookup security boundary are unchanged (per-instance class filter retained).
 
 #### Documentation site & dashboard
 - **Docs left-nav showed "Examples" twice and re-ordered between pages** (`jekyll-www.mock-server.com`). Removed a

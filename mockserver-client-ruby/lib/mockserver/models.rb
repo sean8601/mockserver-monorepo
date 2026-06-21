@@ -3,6 +3,7 @@
 require 'base64'
 require 'json'
 require 'set'
+require 'erb'
 
 module MockServer
   # Explicit mapping from Ruby snake_case field names to the camelCase
@@ -85,7 +86,16 @@ module MockServer
     'http_class_callback'            => 'httpClassCallback',
     'http_object_callback'           => 'httpObjectCallback',
     'failure_policy'                 => 'failurePolicy',
-    'http_responses'                 => 'httpResponses'
+    'http_responses'                 => 'httpResponses',
+    'response_mode'                  => 'responseMode',
+    'response_weights'               => 'responseWeights',
+    'switch_after'                   => 'switchAfter',
+    'cross_protocol_scenarios'       => 'crossProtocolScenarios',
+    'scenario_name'                  => 'scenarioName',
+    'scenario_state'                 => 'scenarioState',
+    'new_scenario_state'             => 'newScenarioState',
+    'match_pattern'                  => 'matchPattern',
+    'target_state'                   => 'targetState'
   }.freeze
 
   REVERSE_FIELD_MAP = FIELD_MAP.invert.freeze
@@ -118,6 +128,13 @@ module MockServer
   # @api private
   def self.strip_none(hash)
     hash.reject { |_k, v| v.nil? }
+  end
+
+  # @api private
+  # Percent-encode a single URL path segment (e.g. a scenario name), encoding
+  # spaces as %20 (not +) so the segment is safe inside +/mockserver/scenario/{name}+.
+  def self.encode_path_segment(value)
+    ERB::Util.url_encode(value.to_s)
   end
 
   # @api private
@@ -1710,6 +1727,146 @@ module MockServer
     end
   end
 
+  # The strategy used to pick which of an expectation's +http_responses+ is
+  # returned for each matching request. Mirrors the core +ResponseMode+ enum.
+  module ResponseMode
+    SEQUENTIAL = 'SEQUENTIAL'
+    RANDOM     = 'RANDOM'
+    WEIGHTED   = 'WEIGHTED'
+    SWITCH     = 'SWITCH'
+  end
+
+  # The protocol event that advances a cross-protocol scenario. Mirrors the
+  # core +CrossProtocolTrigger+ enum.
+  module CrossProtocolTrigger
+    DNS_QUERY         = 'DNS_QUERY'
+    WEBSOCKET_CONNECT = 'WEBSOCKET_CONNECT'
+    GRPC_REQUEST      = 'GRPC_REQUEST'
+    HTTP_REQUEST      = 'HTTP_REQUEST'
+  end
+
+  # Describes a cross-protocol scenario correlation: when a protocol event
+  # matching +trigger+ (and optionally +match_pattern+) is observed, the named
+  # scenario +scenario_name+ is advanced to +target_state+.
+  class CrossProtocolScenario
+    attr_accessor :trigger, :match_pattern, :scenario_name, :target_state
+
+    def initialize(trigger: nil, match_pattern: nil, scenario_name: nil, target_state: nil)
+      @trigger = trigger
+      @match_pattern = match_pattern
+      @scenario_name = scenario_name
+      @target_state = target_state
+    end
+
+    def to_h
+      MockServer.strip_none({
+        'trigger'      => @trigger,
+        'matchPattern' => @match_pattern,
+        'scenarioName' => @scenario_name,
+        'targetState'  => @target_state
+      })
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      new(
+        trigger:       data['trigger'],
+        match_pattern: data['matchPattern'],
+        scenario_name: data['scenarioName'],
+        target_state:  data['targetState']
+      )
+    end
+  end
+
+  # The state of a single named scenario as reported by the server's scenario
+  # control plane. +scenario_name+ is the state-machine name and +current_state+
+  # is its current state (+nil+ if not yet set).
+  class ScenarioState
+    attr_accessor :scenario_name, :current_state, :next_state, :transition_after_ms
+
+    def initialize(scenario_name: nil, current_state: nil, next_state: nil, transition_after_ms: nil)
+      @scenario_name = scenario_name
+      @current_state = current_state
+      @next_state = next_state
+      @transition_after_ms = transition_after_ms
+    end
+
+    def to_h
+      MockServer.strip_none({
+        'scenarioName'      => @scenario_name,
+        'currentState'      => @current_state,
+        'nextState'         => @next_state,
+        'transitionAfterMs' => @transition_after_ms
+      })
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      new(
+        scenario_name:       data['scenarioName'],
+        current_state:       data['currentState'],
+        next_state:          data['nextState'],
+        transition_after_ms: data['transitionAfterMs']
+      )
+    end
+  end
+
+  # A handle to a single named stateful scenario on the server, wrapping the
+  # +/mockserver/scenario/{name}+ control-plane endpoints.
+  #
+  # Obtained via {Client#scenario}:
+  #   client.scenario('Deploy').set('Deploying', transition_after_ms: 5000, next_state: 'Deployed')
+  #   client.scenario('Deploy').trigger('Failed')
+  #   client.scenario('Deploy').state # => "Failed"
+  class ScenarioHandle
+    attr_reader :name
+
+    def initialize(client, name)
+      @client = client
+      @name = name
+    end
+
+    # GET the current state of this scenario (+nil+ if not yet set).
+    # @return [String, nil]
+    def state
+      result = @client.scenario_request('GET', scenario_path)
+      result['currentState']
+    end
+
+    # PUT to set this scenario's state, optionally scheduling a timed transition
+    # to +next_state+ after +transition_after_ms+ milliseconds.
+    #
+    # @param state [String] the state to set
+    # @param transition_after_ms [Integer, nil] delay before auto-transitioning
+    # @param next_state [String, nil] the state to auto-transition to
+    # @return [ScenarioState]
+    def set(state, transition_after_ms: nil, next_state: nil)
+      payload = { 'state' => state }
+      payload['transitionAfterMs'] = transition_after_ms unless transition_after_ms.nil?
+      payload['nextState'] = next_state unless next_state.nil?
+      result = @client.scenario_request('PUT', scenario_path, JSON.generate(payload))
+      ScenarioState.from_hash(result)
+    end
+
+    # PUT an external trigger advancing this scenario to +new_state+.
+    #
+    # @param new_state [String]
+    # @return [ScenarioState]
+    def trigger(new_state)
+      body = JSON.generate({ 'newState' => new_state })
+      result = @client.scenario_request('PUT', "#{scenario_path}/trigger", body)
+      ScenarioState.from_hash(result)
+    end
+
+    private
+
+    def scenario_path
+      "/mockserver/scenario/#{MockServer.encode_path_segment(@name)}"
+    end
+  end
+
   class Expectation
     attr_accessor :id, :priority, :percentage, :http_request, :http_response,
                   :http_response_template, :http_response_class_callback,
@@ -1721,7 +1878,8 @@ module MockServer
                   :grpc_stream_response, :grpc_bidi_response,
                   :binary_response, :dns_response,
                   :before_actions, :after_actions,
-                  :http_responses, :response_mode, :steps,
+                  :http_responses, :response_mode, :response_weights, :switch_after,
+                  :cross_protocol_scenarios, :steps,
                   :scenario_name, :scenario_state, :new_scenario_state
 
     def initialize(id: nil, priority: nil, percentage: nil, http_request: nil, http_response: nil,
@@ -1734,7 +1892,8 @@ module MockServer
                    grpc_stream_response: nil, grpc_bidi_response: nil,
                    binary_response: nil, dns_response: nil,
                    before_actions: nil, after_actions: nil,
-                   http_responses: nil, response_mode: nil, steps: nil,
+                   http_responses: nil, response_mode: nil, response_weights: nil,
+                   switch_after: nil, cross_protocol_scenarios: nil, steps: nil,
                    scenario_name: nil, scenario_state: nil, new_scenario_state: nil)
       @id = id
       @priority = priority
@@ -1763,6 +1922,9 @@ module MockServer
       @after_actions = after_actions
       @http_responses = http_responses
       @response_mode = response_mode
+      @response_weights = response_weights
+      @switch_after = switch_after
+      @cross_protocol_scenarios = cross_protocol_scenarios
       @steps = steps
       @scenario_name = scenario_name
       @scenario_state = scenario_state
@@ -1809,6 +1971,9 @@ module MockServer
         'afterActions'                 => after_actions_h,
         'httpResponses'                => @http_responses&.map(&:to_h),
         'responseMode'                 => @response_mode,
+        'responseWeights'              => @response_weights,
+        'switchAfter'                  => @switch_after,
+        'crossProtocolScenarios'       => @cross_protocol_scenarios&.map(&:to_h),
         'steps'                        => @steps&.map(&:to_h),
         'times'                        => @times&.to_h,
         'timeToLive'                   => @time_to_live&.to_h,
@@ -1861,6 +2026,9 @@ module MockServer
         after_actions:                   after_actions,
         http_responses:                  data['httpResponses']&.map { |r| HttpResponse.from_hash(r) },
         response_mode:                   data['responseMode'],
+        response_weights:                data['responseWeights'],
+        switch_after:                    data['switchAfter'],
+        cross_protocol_scenarios:        data['crossProtocolScenarios']&.map { |c| CrossProtocolScenario.from_hash(c) },
         steps:                           data['steps']&.map { |s| ExpectationStep.from_hash(s) },
         times:                           Times.from_hash(data['times']),
         time_to_live:                    TimeToLive.from_hash(data['timeToLive']),

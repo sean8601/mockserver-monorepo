@@ -34,7 +34,7 @@ pub mod launcher;
 pub mod llm;
 pub mod mcp;
 
-pub use client::{ClientBuilder, MockServerClient, ForwardChainExpectation};
+pub use client::{ClientBuilder, MockServerClient, ForwardChainExpectation, Scenario};
 pub use error::{Error, Result};
 pub use model::*;
 pub use breakpoint::{

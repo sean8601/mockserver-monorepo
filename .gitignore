@@ -203,3 +203,8 @@ __pycache__/
 # MQTT broker (e.g. the demo's launch-with-demo-data.sh --with-broker mode)      #
 ##################################################################################
 mockserver-mqtt-*/
+
+# Compiled Go example binaries (examples are run via `go run`, not committed)
+examples/go/create_expectation/create_expectation
+examples/go/modify_proxied_response/modify_proxied_response
+examples/go/scenario/scenario

@@ -106,10 +106,52 @@ func (f *ForwardChainExpectation) WithPriority(priority int) *ForwardChainExpect
 	return f
 }
 
+// WithResponseMode sets how MockServer selects between multiple responses
+// registered via RespondMultiple (SEQUENTIAL, RANDOM, WEIGHTED, or SWITCH).
+func (f *ForwardChainExpectation) WithResponseMode(mode ResponseMode) *ForwardChainExpectation {
+	f.expectation.ResponseMode = mode
+	return f
+}
+
+// WithResponseWeights sets the relative weights (index-aligned with the
+// responses passed to RespondMultiple) used when the response mode is WEIGHTED.
+func (f *ForwardChainExpectation) WithResponseWeights(weights ...int) *ForwardChainExpectation {
+	f.expectation.ResponseWeights = weights
+	return f
+}
+
+// WithSwitchAfter sets the number of requests served per response before
+// advancing to the next one when the response mode is SWITCH.
+func (f *ForwardChainExpectation) WithSwitchAfter(requests int) *ForwardChainExpectation {
+	f.expectation.SwitchAfter = &requests
+	return f
+}
+
+// WithCrossProtocolScenario registers a cross-protocol scenario transition on
+// the expectation.
+func (f *ForwardChainExpectation) WithCrossProtocolScenario(scenarios ...CrossProtocolScenario) *ForwardChainExpectation {
+	f.expectation.CrossProtocolScenarios = append(f.expectation.CrossProtocolScenarios, scenarios...)
+	return f
+}
+
 // Respond completes the expectation with an HTTP response action.
 func (f *ForwardChainExpectation) Respond(rb *ResponseBuilder) ([]Expectation, error) {
 	resp := rb.Build()
 	f.expectation.HttpResponse = &resp
+	return f.client.Upsert(f.expectation)
+}
+
+// RespondMultiple completes the expectation with multiple HTTP responses.
+// MockServer selects between them according to the response mode (set via
+// WithResponseMode; defaults to SEQUENTIAL). Multiple responses take priority
+// over a singular response.
+func (f *ForwardChainExpectation) RespondMultiple(builders ...*ResponseBuilder) ([]Expectation, error) {
+	responses := make([]*HttpResponse, len(builders))
+	for i, b := range builders {
+		resp := b.Build()
+		responses[i] = &resp
+	}
+	f.expectation.HttpResponses = responses
 	return f.client.Upsert(f.expectation)
 }
 
