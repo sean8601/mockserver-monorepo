@@ -49,7 +49,10 @@ const IDLE_POLL_MS = 5000;
 const MAX_SAMPLES = 120;
 
 const responsiveWidth = (px: number) => ({ width: { xs: '100%', sm: px } });
-const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 1, alignItems: 'start' } as const;
+// Responsive grid for author-form field rows — fields fill available width and wrap
+// uniformly via CSS Grid auto-fit (matching ServiceChaosPanel's CHAOS_GRID), so columns
+// line up across rows instead of each row stretching its own items independently.
+const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 1, alignItems: 'start' } as const;
 
 /** Parse a trimmed numeric field, or undefined when blank/NaN. */
 function num(raw: string): number | undefined {
@@ -638,50 +641,50 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           {running ? 'Edit / restart scenario' : 'Create a load scenario'}
         </Typography>
 
+        {/* Scenario-level fields in their own uniform grid (matching ServiceChaosPanel's
+            CHAOS_GRID idiom). The profile fields follow as a separate labelled group using
+            the same FIELD_GRID so column widths line up across both groups. */}
         <Box sx={FIELD_GRID}>
           <TextField
             label="Scenario name" size="small" required value={form.name}
-            onChange={setField('name')} sx={responsiveWidth(220)}
-           
+            onChange={setField('name')} fullWidth
           />
           <TextField
             select label="Template type" size="small" value={form.templateType}
             onChange={(e) => setForm((p) => ({ ...p, templateType: e.target.value as FormState['templateType'] }))}
-            sx={responsiveWidth(160)}
+            helperText="Engine for rendering templated step path/body (whole scenario)"
+            fullWidth
           >
             <MenuItem value="VELOCITY">Velocity</MenuItem>
             <MenuItem value="MUSTACHE">Mustache</MenuItem>
           </TextField>
           <TextField
             label="Max requests (optional)" size="small" value={form.maxRequests}
-            onChange={setField('maxRequests')} sx={responsiveWidth(180)} placeholder="unlimited"
-           
+            onChange={setField('maxRequests')} fullWidth placeholder="unlimited"
           />
         </Box>
 
         {/* Profile */}
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5, mb: 0.5, fontWeight: 600 }}>
-          Profile
-        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block', mt: 1.5, mb: 0.5 }}>Profile</Typography>
         <Box sx={FIELD_GRID}>
           <TextField
             select label="Profile type" size="small" value={form.profileType}
             onChange={(e) => setForm((p) => ({ ...p, profileType: e.target.value as FormState['profileType'] }))}
-            sx={responsiveWidth(150)}
+            fullWidth
           >
             <MenuItem value="CONSTANT">Constant</MenuItem>
             <MenuItem value="LINEAR">Linear ramp</MenuItem>
           </TextField>
           {form.profileType === 'CONSTANT' ? (
-            <TextField label="Virtual users (VUs)" size="small" value={form.vus} onChange={setField('vus')} sx={responsiveWidth(150)} />
+            <TextField label="Virtual users (VUs)" size="small" value={form.vus} onChange={setField('vus')} fullWidth />
           ) : (
             <>
-              <TextField label="Start VUs" size="small" value={form.startVus} onChange={setField('startVus')} sx={responsiveWidth(130)} />
-              <TextField label="End VUs" size="small" value={form.endVus} onChange={setField('endVus')} sx={responsiveWidth(130)} />
+              <TextField label="Start VUs" size="small" value={form.startVus} onChange={setField('startVus')} fullWidth />
+              <TextField label="End VUs" size="small" value={form.endVus} onChange={setField('endVus')} fullWidth />
             </>
           )}
-          <TextField label="Duration (ms)" size="small" value={form.durationMillis} onChange={setField('durationMillis')} sx={responsiveWidth(150)} />
-          <TextField label="Iteration pacing (ms)" size="small" value={form.iterationPacingMillis} onChange={setField('iterationPacingMillis')} sx={responsiveWidth(170)} placeholder="none" />
+          <TextField label="Duration (ms)" size="small" value={form.durationMillis} onChange={setField('durationMillis')} fullWidth />
+          <TextField label="Iteration pacing (ms)" size="small" value={form.iterationPacingMillis} onChange={setField('iterationPacingMillis')} fullWidth placeholder="none" />
         </Box>
 
         {/* Labels */}
@@ -711,25 +714,25 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
+            {/* All step fields flow into ONE uniform grid so columns line up
+                instead of two independently-stretched sub-rows. */}
             <Box sx={FIELD_GRID}>
-              <TextField label="Step name (optional)" size="small" value={step.name} onChange={setStepField(i, 'name')} sx={responsiveWidth(180)} />
+              <TextField label="Step name (optional)" size="small" value={step.name} onChange={setStepField(i, 'name')} fullWidth />
               <TextField select label="Method" size="small" value={step.method}
                 onChange={(e) => setForm((p) => ({ ...p, steps: p.steps.map((s, j) => (j === i ? { ...s, method: e.target.value } : s)) }))}
-                sx={responsiveWidth(120)}>
+                fullWidth>
                 {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
               </TextField>
-              <TextField label="Path" size="small" value={step.path} onChange={setStepField(i, 'path')} sx={responsiveWidth(200)} />
-            </Box>
-            <Box sx={{ ...FIELD_GRID, mt: 1 }}>
-              <TextField label="Target host" size="small" value={step.host} onChange={setStepField(i, 'host')} sx={responsiveWidth(180)} />
-              <TextField label="Target port" size="small" value={step.port} onChange={setStepField(i, 'port')} sx={responsiveWidth(120)} />
+              <TextField label="Path" size="small" value={step.path} onChange={setStepField(i, 'path')} fullWidth />
+              <TextField label="Target host" size="small" value={step.host} onChange={setStepField(i, 'host')} fullWidth />
+              <TextField label="Target port" size="small" value={step.port} onChange={setStepField(i, 'port')} fullWidth />
               <TextField select label="Scheme" size="small" value={step.scheme}
                 onChange={(e) => setForm((p) => ({ ...p, steps: p.steps.map((s, j) => (j === i ? { ...s, scheme: e.target.value as 'HTTP' | 'HTTPS' } : s)) }))}
-                sx={responsiveWidth(120)}>
+                fullWidth>
                 <MenuItem value="HTTP">HTTP</MenuItem>
                 <MenuItem value="HTTPS">HTTPS</MenuItem>
               </TextField>
-              <TextField label="Think time (ms)" size="small" value={step.thinkTimeMs} onChange={setStepField(i, 'thinkTimeMs')} sx={responsiveWidth(150)} placeholder="none" />
+              <TextField label="Delay after step (ms)" size="small" value={step.thinkTimeMs} onChange={setStepField(i, 'thinkTimeMs')} helperText="Wait this long after this step's request before the next step (a.k.a. think-time)" fullWidth placeholder="none" />
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, mb: 0.5 }}>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Request headers (optional)</Typography>
