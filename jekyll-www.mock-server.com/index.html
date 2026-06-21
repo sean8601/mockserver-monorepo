@@ -144,11 +144,11 @@ curl http://localhost:1080/hello
 <p>MockServer supports the follow <strong>actions</strong>:</p>
 <ul>
 	<li>
-        <strong>return a "mock" <a href="/mock_server/creating_expectations.html#response_action">response</a></strong> when a request matches an <a href="/mock_server/creating_expectations.html">expectation</a>
+        <strong>return a "mock" <a href="/mock_server/creating_expectations.html#response_action">response</a></strong> when a request matches an <a href="/mock_server/creating_expectations.html">expectation</a>; including returning <strong><a href="/mock_server/llm_response_mocking.html">an LLM or AI-provider API</a></strong> (OpenAI, Anthropic, Bedrock, etc) realistic token-by-token streamed responses
         <p><img class="action_image" src="images/expectation_response_action.png" alt="Response Action Expectation"></p>
     </li>
 	<li>
-        <strong><a href="/mock_server/creating_expectations.html#forward_action">forward</a> a request</strong> when the request matches an <a href="/mock_server/creating_expectations.html">expectation</a> (i.e. a dynamic port forwarding proxy)
+        <strong><a href="/mock_server/creating_expectations.html#forward_action">forward</a> a request</strong> when the request matches an <a href="/mock_server/creating_expectations.html">expectation</a>; including injecting <strong><a href="/mock_server/chaos_testing.html">chaos and faults</a></strong> &mdash; latency, error responses, dropped connections and malformed responses
         <p><img class="action_image" src="images/expectation_forward_action.png" alt="Forward Action Expectation"></p>
     </li>
 	<li>
@@ -171,10 +171,6 @@ curl http://localhost:1080/hello
     <li>
         <strong><a href="/mock_server/chaos_testing.html">inject chaos and faults</a></strong> &mdash; latency, error responses, dropped connections and malformed responses &mdash; when a request matches an <a href="/mock_server/creating_expectations.html">expectation</a> or is proxied
         <p><img class="action_image" src="images/mockserver_chaos_action.png" alt="Chaos / Fault Injection Action"></p>
-    </li>
-    <li>
-        <strong><a href="/mock_server/llm_response_mocking.html">mock an LLM or AI-provider API</a></strong> (OpenAI, Anthropic, Bedrock &amp; more), returning a realistic token-by-token streamed response when a request matches an <a href="/mock_server/creating_expectations.html">expectation</a>
-        <p><img class="action_image" src="images/mockserver_llm_mocking.png" alt="LLM Response Mocking Action"></p>
     </li>
 </ul>
 
@@ -259,7 +255,7 @@ curl http://localhost:1080/hello
 				<a href="/mock_server/HTTPS_TLS.html">easily imported</a></li>
 		</ul>
 	</li>
-	<li><a id="protlist" class="anchor" href="#protlist">&nbsp;</a><strong>Port Unification</strong>
+	<li><strong>Port Unification</strong>
 		<ul>
 			<li>to simplify configuration all protocols (i.e. HTTP, HTTPS / TLS, SOCKS, etc) are supported on the same port</li>
 			<li>the protocol is detected dynamically by MockServer</li>
@@ -406,7 +402,7 @@ curl http://localhost:1080/hello
 
 <p><strong>Verifying Responses</strong></p>
 
-<p>MockServer records the responses returned by proxied or forwarded upstreams as well as the requests, so a test can <a href="/mock_server/verification.html">verify the responses</a> a dependency actually returned &mdash; not just what was sent to it:</p>
+<p>MockServer records the responses returned when it proxies requests, so a test can <a href="/mock_server/verification.html">verify the responses</a> received using request matchers:</p>
 
 <p><img src="images/mockserver_response_verification.png" alt="Verifying service responses with MockServer Proxy" style="max-width:100%;"></p>
 
