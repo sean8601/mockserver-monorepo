@@ -314,10 +314,17 @@ histogram_quantile(0.99,
 |----------|---------|-------------|
 | `mockserver.loadGenerationMetricLabels` | `""` (empty) | Comma-separated allowlist of custom label keys to expose in Prometheus. OTEL always receives all custom labels. |
 
+## Dashboard UI
+
+The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the dashboard control surface for load scenarios. See [Dashboard UI — Performance View](dashboard-ui.md#performance-view) for the component-level architecture. Key points:
+
+- Stage builder submits `PUT /mockserver/loadScenario` with the assembled `LoadProfile.stages` array.
+- Live status polls `GET /mockserver/loadScenario` every 1 s and surfaces `stageIndex`, `stageType`, `currentTarget`, `currentVus`, percentile latencies, and run counters.
+- Metrics graph shares the `@mui/x-charts` bundle with `MetricsView` (lazy-loaded); scrapes `GET /mockserver/metrics` every 3 s and plots throughput and p95 latency for the `mock_server_load_*` family.
+
 ## Deferred
 
 - Distributed / multi-node load.
 - In-run thresholds (pass/fail decided during the run, as opposed to post-run `verifySLO`).
-- Dashboard UI (coming next — `GET /mockserver/loadScenario` status already queryable via the REST API).
 - Seeding scenarios from recorded traffic or an OpenAPI spec.
 - Programmatic cross-step capture (v1 uses template-side `$scenario.set/get`).

@@ -126,6 +126,8 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 | gRPC Services | `useAutoRefresh` (interval, 5 s) |
 | MCP tools panel | `useAutoRefresh` (interval, 3 s) |
 | Chaos | `setInterval` poll every 4 s (predates `useAutoRefresh`) |
+| Performance — live status | `useAutoRefresh` (interval, 1 s) polling `GET /mockserver/loadScenario` |
+| Performance — metrics graph | `usePolling` (interval, 3 s) scraping `GET /mockserver/metrics` (shared with Metrics view) |
 | Metrics | `usePolling` directly in `useMetricsPolling` (3 s) |
 
 ## Shared Error Helpers
@@ -145,15 +147,15 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 
 ## Top-Level Views
 
-The dashboard has **thirteen top-level views** controlled by the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
+The dashboard has **fourteen top-level views** controlled by the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
 
 ```
 ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'
-         | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async'
-         | 'grpc' | 'breakpoints' | 'get-started'
+         | 'chaos' | 'performance' | 'metrics' | 'drift' | 'verification'
+         | 'async' | 'grpc' | 'breakpoints' | 'get-started'
 ```
 
-`'composer'` is surfaced in the UI under the button label **Mocks**; `'async'` is the **AsyncAPI** broker view; `'get-started'` is the initial onboarding view shown to new users before any data arrives.
+`'composer'` is surfaced in the UI under the button label **Mocks**; `'async'` is the **AsyncAPI** broker view; `'performance'` is the **Performance** load-scenario panel; `'get-started'` is the initial onboarding view shown to new users before any data arrives.
 
 The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on all other views.
 
@@ -166,6 +168,7 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 | `composer` | Mocks | `ComposerView.tsx` | Unified expectation creator/editor for Standard HTTP and LLM Conversation expectations |
 | `library` | Library | `LibraryView.tsx` | Fixture cassettes, run comparison, and export (HAR / OpenAPI / Postman / Bruno) |
 | `chaos` | Chaos | `ServiceChaosPanel.tsx` | Service-scoped HTTP chaos registration, live TTL countdown, and clear-all |
+| `performance` | Performance | `LoadScenarioPanel.tsx` | Create and run load scenarios: stage-builder (VU / RATE / PAUSE stages with ramp curves), live run status (stageIndex / stageType / currentTarget / active VUs), and a toggleable latency+throughput metrics graph (see [Performance View](#performance-view)) |
 | `drift` | Drift | `DriftPanel.tsx` | Mock drift detection results: divergence records between forwarded responses and stub expectations |
 | `verification` | Verify | `VerificationView.tsx` | Build and run verifications — request matchers, expected counts (atLeast/atMost/exactly/between), or an ordered sequence — against received requests |
 | `async` | Async | `AsyncApiPanel.tsx` | AsyncAPI broker mock status: loaded spec, channels/topics, publisher/subscriber summary, and recorded broker messages |
@@ -194,6 +197,8 @@ primary tabs + More overflow"]
 (view = 'library')"]
     SCP["ServiceChaosPanel.tsx
 (view = 'chaos')"]
+    LSP["LoadScenarioPanel.tsx
+(view = 'performance')"]
     DP["DriftPanel.tsx
 (view = 'drift')"]
     VV["VerificationView.tsx
@@ -217,6 +222,7 @@ primary tabs + More overflow"]
     APP -->|view = composer| CV
     APP -->|view = library| LV
     APP -->|view = chaos| SCP
+    APP -->|view = performance| LSP
     APP -->|view = drift| DP
     APP -->|view = verification| VV
     APP -->|view = async| AAP
@@ -251,6 +257,48 @@ There is **no charting dependency** (inline SVG) and no server change required. 
 - a **Clear all** button.
 
 `lib/serviceChaos.ts` is framework-agnostic (plain `fetch`) so it is unit-tested independently of the component; it surfaces the server's `{"error": ...}` message on a 4xx.
+
+## Performance View
+
+`LoadScenarioPanel.tsx` (view = `performance`) is the dashboard control surface for [load injection](load-generation.md). It is lazy-loaded (shares the `@mui/x-charts` chunk with `MetricsView`) so the bundle does not download until the tab is opened.
+
+The panel is split into three areas:
+
+**Stage builder.** Presents an ordered list of stages that forms the `LoadProfile.stages` array sent in `PUT /mockserver/loadScenario`. Each stage row lets the user pick the stage type, duration, setpoint (hold or ramp), and curve:
+
+| Stage type | Setpoint fields shown |
+|------------|----------------------|
+| `VU` hold | `vus` |
+| `VU` ramp | `startVus`, `endVus`, `curve` |
+| `RATE` hold | `rate` (iterations/second) |
+| `RATE` ramp | `startRate`, `endRate`, `curve`, optional `maxVus` |
+| `PAUSE` | duration only |
+
+Ramp curves offered: `LINEAR` / `QUADRATIC` / `EXPONENTIAL`. The builder prevents submitting a scenario that would exceed any safety cap (`loadGenerationMaxVirtualUsers`, `loadGenerationMaxRate`, `loadGenerationMaxStages`).
+
+**Live status.** Once a scenario is running, the panel polls `GET /mockserver/loadScenario` and surfaces the status DTO:
+
+| Status field | Meaning |
+|-------------|---------|
+| `state` | `running` / `completed` / `stopped` / `none` |
+| `stageIndex` | 0-based index of the currently executing stage |
+| `stageType` | `VU` / `RATE` / `PAUSE` |
+| `currentTarget` | Target VU count or target arrival rate for the active stage |
+| `currentVus` | Actual live VU count |
+| `elapsedMillis` | Milliseconds since the run started |
+| `requestsSent`, `succeeded`, `failed` | Cumulative counters |
+| `p50Millis`, `p95Millis`, `p99Millis` | Latency percentiles from the histogram |
+
+**Metrics graph.** A toggleable `@mui/x-charts` `AreaChart` drawn from the `mock_server_load_*` Prometheus family (scraped from `GET /mockserver/metrics`). Shows throughput (requests/second) and p95 latency over the run's lifetime. Requires `metricsEnabled=true`; when metrics are off, the graph area shows a prompt to enable them.
+
+**Refresh mechanism:**
+
+| Panel area | Mechanism |
+|-----------|-----------|
+| Live status | `useAutoRefresh` polling `GET /mockserver/loadScenario` (default 1 s) |
+| Metrics graph | `usePolling` scraping `GET /mockserver/metrics` (default 3 s, shared interval with `MetricsView`) |
+
+When `loadGenerationEnabled=false` the panel renders a configuration prompt (property name + environment variable) instead of the stage builder.
 
 ## Dashboard View
 
@@ -600,7 +648,7 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
   receivedSearch: '',
   proxiedSearch: '',
   trafficSearch: '',
-  view: 'get-started',          // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'metrics' | 'drift' | 'verification' | 'async' | 'grpc' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view, grpc is the gRPC Services view)
+  view: 'get-started',          // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'performance' | 'metrics' | 'drift' | 'verification' | 'async' | 'grpc' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view, grpc is the gRPC Services view, performance is the Load Scenarios panel)
   selectedTrafficIndex: null,
   actionTypeFilter: [],
   llmProviderFilter: [],
@@ -630,7 +678,7 @@ graph TB
 Orchestrator: theme, WebSocket, shortcuts"]
     AB["AppBar.tsx
 Title bar: status, theme, clear menu
-12-button view toggle"]
+view toggle (14 views)"]
     FP["FilterPanel.tsx
 Collapsible request filter form"]
     DG["DashboardGrid.tsx
@@ -710,7 +758,7 @@ Expandable match failure reasons"]
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu; on wide screens: 5-button primary `ToggleButtonGroup` (Get Started / Dashboard / Traffic / Breakpoints / Mocks) + "More ▾" overflow menu (Chaos / Async / gRPC / Sessions / Library / Drift / Verify / Metrics); on narrow screens: hamburger menu listing all 13 views |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu; on wide screens: 5-button primary `ToggleButtonGroup` (Get Started / Dashboard / Traffic / Breakpoints / Mocks) + "More ▾" overflow menu (Chaos / Performance / Async / gRPC / Sessions / Library / Drift / Verify / Metrics); on narrow screens: hamburger menu listing all 14 views |
 | `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send; shown on dashboard/traffic/sessions |
 | `DashboardGrid` | `DashboardGrid.tsx` | 2×2 CSS grid layout for the four panels |
 | `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for all captured traffic (mock-matched + proxied) |

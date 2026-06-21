@@ -11,7 +11,7 @@ sitemap:
   lastmod: 2026-06-10T00:00:00+01:00
 ---
 
-<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Twelve views are available from the navigation bar at the top of the page:</p>
+<p>MockServer has a real-time dashboard that gives you full visibility into what MockServer is doing. Thirteen views are available from the navigation bar at the top of the page:</p>
 
 <ul>
     <li><strong><a href="#ui_get_started_section">Get Started</a></strong> — guided first-run view: import an OpenAPI spec, set up a proxy, try a quick-start recipe, or browse the docs</li>
@@ -20,6 +20,7 @@ sitemap:
     <li><strong><a href="#ui_breakpoints_section">Breakpoints</a></strong> — pause, inspect, and manipulate live stream frames (SSE, gRPC, WebSocket, GraphQL subscription) and request/response exchanges; see <a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a></li>
     <li><strong><a href="#ui_composer_section">Mocks</a></strong> — create or edit expectations of every kind (HTTP, gRPC, DNS, MCP, LLM), import them (OpenAPI, WSDL, HAR, Postman), and insert engine-aware template snippets without writing any code</li>
     <li><strong><a href="#ui_chaos_section">Chaos</a></strong> — configure and inject HTTP, gRPC, and TCP faults (chaos experiments) that apply to all forwarded requests to a given upstream host or service. The HTTP fault set covers error responses, dropped connections, latency, body corruption, slow-response chunking, quotas/rate limits, count and time windows, gradual degradation, and a GraphQL error envelope, with a TTL so chaos auto-expires</li>
+    <li><strong><a href="#ui_performance_section">Performance</a></strong> — create and run <a href="/mock_server/load_injection.html">load scenarios</a>: a stage-builder for VU and arrival-rate stages with ramp curves, live run status (current stage, target, active VUs), and a combined toggleable latency/throughput metrics graph</li>
     <li><strong><a href="#ui_async_section">AsyncAPI</a></strong> — inspect the AsyncAPI broker mock: loaded spec, active channels, and messages recorded from broker subscriptions</li>
     <li><strong><a href="#ui_sessions_section">Sessions</a></strong> — isolated LLM conversation sessions grouped into swim-lanes, plus a <strong>Compare</strong> tab for diffing two captured runs side-by-side</li>
     <li><strong><a href="#ui_library_section">Library</a></strong> — import expectations, export traffic, and manage cassette files, WASM modules, and gRPC descriptors</li>
@@ -193,7 +194,7 @@ sitemap:
     </tbody>
 </table>
 
-<p>Below the cards, a <strong>More in the tabs above</strong> list links to the remaining views — <a href="#ui_dashboard_section">Dashboard</a> (active mocks &amp; live event log), <a href="#ui_library_section">Library</a> (import / export, Postman, WSDL, HAR), <a href="#ui_verification_section">Verification</a> (assert which requests were received), <a href="#ui_drift_section">Drift</a> (spot when an upstream API changes), <a href="#ui_async_section">Async</a> (Kafka / MQTT / AMQP broker mocking), and <a href="#ui_metrics_section">Metrics</a> (Prometheus stats).</p>
+<p>Below the cards, a <strong>More in the tabs above</strong> list links to the remaining views — <a href="#ui_dashboard_section">Dashboard</a> (active mocks &amp; live event log), <a href="#ui_library_section">Library</a> (import / export, Postman, WSDL, HAR), <a href="#ui_verification_section">Verification</a> (assert which requests were received), <a href="#ui_drift_section">Drift</a> (spot when an upstream API changes), <a href="#ui_async_section">Async</a> (Kafka / MQTT / AMQP broker mocking), <a href="#ui_performance_section">Performance</a> (load scenarios and live metrics graphs), and <a href="#ui_metrics_section">Metrics</a> (Prometheus stats).</p>
 
 <p>When the first expectation or traffic record arrives, MockServer automatically navigates to the Dashboard view. The Get Started view remains accessible at any time via the <strong>Get Started</strong> button (rocket icon) in the navigation bar.</p>
 
@@ -598,6 +599,31 @@ sitemap:
 </ul>
 
 <p>The <strong>Active registrations</strong> panel lists each host with chaos in force and its remaining auto-revert countdown (or shows <em>No service-scoped chaos registered</em> when none is set). Each registration can be edited in place or removed with its remove icon (trash), or use the section's <strong>Clear HTTP</strong> / <strong>Clear gRPC</strong> / <strong>Clear TCP</strong> button to remove everything in that section at once. Injected faults are also counted in the <a href="#ui_metrics_section">Metrics</a> view under <strong>HTTP Chaos Faults</strong>.</p>
+
+<p>To drive load alongside chaos — inject a fault and simultaneously apply load to verify resilience — see the <a href="#ui_performance_section">Performance</a> view.</p>
+
+<a id="ui_performance_section" class="anchor" href="#ui_performance_section">&nbsp;</a>
+
+<h2>Performance</h2>
+
+<p>The <strong>Performance</strong> view lets you create, run, and monitor <a href="/mock_server/load_injection.html">load scenarios</a> directly from the dashboard. Load generation must be enabled first (<code>loadGenerationEnabled=true</code>); until then the panel shows the configuration flag needed to unlock it.</p>
+
+<p>The view has three areas:</p>
+
+<ul>
+    <li><strong>Stage builder</strong> — add an ordered list of stages to the load profile. For each stage choose:
+        <ul>
+            <li><strong>VU</strong> (closed model) — hold a fixed number of concurrent virtual users, or ramp from <code>startVus</code> to <code>endVus</code></li>
+            <li><strong>RATE</strong> (open model) — hold or ramp an arrival rate in iterations per second, with an optional <code>maxVus</code> cap on the auto-scaling VU pool</li>
+            <li><strong>PAUSE</strong> — drive no load for the duration (lets the target recover between stages)</li>
+        </ul>
+        Ramp stages accept a <strong>curve</strong> of <strong>LINEAR</strong>, <strong>QUADRATIC</strong>, or <strong>EXPONENTIAL</strong>. Set the duration in milliseconds for each stage.
+    </li>
+    <li><strong>Live status</strong> — once a scenario starts, the panel shows the current stage index, stage type (<code>VU</code> / <code>RATE</code> / <code>PAUSE</code>), current target (active VUs or arrival rate), elapsed time, requests sent, and success/failure counts. The status polls <code>GET /mockserver/loadScenario</code> and refreshes automatically.</li>
+    <li><strong>Metrics graph</strong> — a toggleable combined chart showing throughput (requests/second) and p95 latency over the lifetime of the run, drawn from the <code>mock_server_load_*</code> Prometheus family. The graph requires <code>metricsEnabled=true</code>.</li>
+</ul>
+
+<p>Use the <strong>Run</strong> button to start the scenario (<code>PUT /mockserver/loadScenario</code>) and the <strong>Stop</strong> button to terminate it early (<code>DELETE /mockserver/loadScenario</code>). See <a href="/mock_server/load_injection.html">Performance Testing / Load Injection</a> for the full REST API reference, safety caps, SLO integration, and Prometheus metric catalogue.</p>
 
 <a id="ui_async_section" class="anchor" href="#ui_async_section">&nbsp;</a>
 
