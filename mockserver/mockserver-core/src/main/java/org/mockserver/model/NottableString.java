@@ -24,8 +24,15 @@ public class NottableString extends ObjectWithJsonToString implements Comparable
     private final Boolean not;
     private final int hashCode;
     private final String json;
-    private Pattern pattern;
-    private Pattern caseSensitivePattern;
+    // volatile so the lazily-compiled patterns are safely published across threads. The matcher is
+    // called concurrently from request-matching worker threads on a single shared NottableString;
+    // without volatile the non-final writes here can be seen as a half-constructed/never-visible
+    // Pattern by another thread (unsafe publication) and every racing thread recompiles on the first
+    // burst (thundering herd). Pattern is itself immutable and safely publishable, so a rare
+    // duplicate Pattern.compile under a race is harmless — the last writer wins and all readers then
+    // see a fully-built Pattern.
+    private volatile Pattern pattern;
+    private volatile Pattern caseSensitivePattern;
     private ParameterStyle parameterStyle;
     private String schemaType;
 

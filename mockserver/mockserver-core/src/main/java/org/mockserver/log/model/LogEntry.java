@@ -14,9 +14,11 @@ import org.mockserver.time.EpochService;
 import org.mockserver.uuid.UUIDService;
 import org.slf4j.event.Level;
 
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.Date;
 import java.util.Locale;
 
 import static org.apache.commons.lang3.StringUtils.isBlank;
@@ -33,7 +35,42 @@ public class LogEntry implements EventTranslator<LogEntry> {
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
     private static final RequestDefinition[] EMPTY_REQUEST_DEFINITIONS = new RequestDefinition[0];
     private static final RequestDefinition[] DEFAULT_REQUESTS_DEFINITIONS = {request()};
-    public static final DateFormat LOG_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+    /**
+     * Thread-safe replacement for the previous shared {@code SimpleDateFormat}.
+     * <p>
+     * {@code SimpleDateFormat} is NOT thread-safe; this single static instance was formatted
+     * concurrently from the Disruptor log handler and the retrieve/export/serialize threads,
+     * which can corrupt its internal {@code Calendar} and produce garbled timestamps or an
+     * intermittent {@link ArrayIndexOutOfBoundsException}. {@link DateTimeFormatter} is
+     * immutable and thread-safe, so a single shared instance is safe to format from any number
+     * of threads. The pattern and the system-default zone reproduce exactly the same output the
+     * old {@code SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS")} (which used the default zone)
+     * produced, so timestamp strings remain byte-for-byte identical.
+     */
+    public static final LogDateFormat LOG_DATE_FORMAT = new LogDateFormat();
+
+    /**
+     * Tiny thread-safe formatter exposing the same {@code format(Date)} call shape the previous
+     * public {@code DateFormat LOG_DATE_FORMAT} field offered, backed by an immutable
+     * {@link DateTimeFormatter}. Kept as a nested type so existing callers
+     * ({@code LOG_DATE_FORMAT.format(new Date(...))}) compile unchanged while gaining
+     * thread-safety.
+     */
+    public static final class LogDateFormat {
+        private static final DateTimeFormatter FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ENGLISH).withZone(ZoneId.systemDefault());
+
+        private LogDateFormat() {
+        }
+
+        public String format(Date date) {
+            return FORMATTER.format(date.toInstant());
+        }
+
+        public String format(long epochMillis) {
+            return FORMATTER.format(Instant.ofEpochMilli(epochMillis));
+        }
+    }
     private int hashCode;
     private String id;
     private String correlationId;
@@ -138,7 +175,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
 
     public String getTimestamp() {
         if (timestamp == null) {
-            timestamp = LOG_DATE_FORMAT.format(new Date(epochTime));
+            timestamp = LOG_DATE_FORMAT.format(epochTime);
         }
         return timestamp;
     }

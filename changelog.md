@@ -1525,6 +1525,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode (full control).
 
 #### Correctness & reliability (code-quality review)
+- **Log timestamps are now thread-safe** (`mockserver-core`). The event log shared a single mutable
+  `SimpleDateFormat` formatted concurrently from the log handler and the retrieve/export threads; under load
+  this produced garbled timestamps and occasional `ArrayIndexOutOfBoundsException`. It now uses an immutable
+  `DateTimeFormatter` (same output format and local timezone), so timestamps are correct under concurrency.
+- **Compiled-regex caching in request matchers is now safely published** (`mockserver-core`). `NottableString`
+  memoises its compiled `Pattern`s in fields that were not `volatile`, so concurrent first use could observe a
+  partially-published value; the fields are now `volatile` (a rare duplicate compile is harmless).
 - **gRPC chaos injection now honours its configured probability** (`mockserver-core`). The decision used
   a fresh seeded `Random` per request, so a probability behaved as all-or-nothing; it now samples through
   the shared chaos-probability helper like the HTTP/TCP paths.
