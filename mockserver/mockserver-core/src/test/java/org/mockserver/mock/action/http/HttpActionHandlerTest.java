@@ -422,7 +422,7 @@ public class HttpActionHandlerTest {
                 .setMessageFormat("returning response:{}for request:{}for action:{}from expectation:{}")
                 .setArguments(response, request, callback, expectation.getId())
         );
-        verify(scheduler).schedule(any(Runnable.class), eq(true), eq(milliseconds(1)));
+        verify(scheduler).scheduleLocalCallback(any(Runnable.class), eq(true), eq(milliseconds(1)));
         verify(scheduler).schedule(any(Runnable.class), eq(true), eq(milliseconds(0)));
     }
 
