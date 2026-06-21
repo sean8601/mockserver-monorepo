@@ -17,6 +17,11 @@
 #   --no-browser    Do not auto-open the browser
 #   --with-broker   Start a Mosquitto MQTT broker (Docker) so the AsyncAPI panel's
 #                   Recorded Messages table populates with a live, ticking feed
+#   --with-load-injection
+#                   Enable load generation + SLO tracking, register delayed
+#                   self-target endpoints, and start a long-running load scenario
+#                   so the Performance tab shows a live scenario with latency /
+#                   throughput against a real (delayed) target
 #   --port PORT     MockServer port (default: 1080)
 #   --ui-port PORT  UI dev server port (default: 3000)
 #   --mqtt-port P   MQTT broker port (default: 1883; only with --with-broker)
@@ -39,6 +44,7 @@ UI_PORT=3000
 REBUILD=false
 NO_BROWSER=false
 WITH_BROKER=false
+WITH_LOAD_INJECTION=false
 MQTT_PORT=1883
 MQTT_CONTAINER="mockserver-demo-mqtt"
 
@@ -47,10 +53,11 @@ while [[ $# -gt 0 ]]; do
     --rebuild) REBUILD=true; shift ;;
     --no-browser) NO_BROWSER=true; shift ;;
     --with-broker) WITH_BROKER=true; shift ;;
+    --with-load-injection) WITH_LOAD_INJECTION=true; shift ;;
     --port) MOCKSERVER_PORT="$2"; shift 2 ;;
     --ui-port) UI_PORT="$2"; shift 2 ;;
     --mqtt-port) MQTT_PORT="$2"; shift 2 ;;
-    --help|-h) sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1 (use --help)"; exit 1 ;;
   esac
 done
@@ -106,8 +113,15 @@ fi
 
 # --- start MockServer ------------------------------------------------------
 MOCKSERVER_LOG="$UI_DIR/mockserver-demo.log"
+# Feature flags passed to the JVM. Load injection needs loadGenerationEnabled (the
+# /mockserver/loadScenario control plane is 403 otherwise) + sloTrackingEnabled so the
+# load run's latency/error samples feed the SLO verdict store the Performance tab reads.
+MOCKSERVER_JVM_ARGS=(-Dmockserver.metricsEnabled=true -Dmockserver.wasmEnabled=true)
+if [ "$WITH_LOAD_INJECTION" = true ]; then
+  MOCKSERVER_JVM_ARGS+=(-Dmockserver.loadGenerationEnabled=true -Dmockserver.sloTrackingEnabled=true)
+fi
 echo "→ Starting MockServer on port $MOCKSERVER_PORT (log: $MOCKSERVER_LOG)..."
-java -Dmockserver.metricsEnabled=true -Dmockserver.wasmEnabled=true -jar "$MOCKSERVER_JAR" -serverPort "$MOCKSERVER_PORT" -logLevel INFO > "$MOCKSERVER_LOG" 2>&1 &
+java "${MOCKSERVER_JVM_ARGS[@]}" -jar "$MOCKSERVER_JAR" -serverPort "$MOCKSERVER_PORT" -logLevel INFO > "$MOCKSERVER_LOG" 2>&1 &
 MOCKSERVER_PID=$!
 
 UI_PID=""
@@ -159,7 +173,7 @@ fi
 
 # --- populate demo data ----------------------------------------------------
 echo "→ Populating demo data..."
-DEMO_MQTT_BROKER_URL="$DEMO_MQTT_BROKER_URL" node "$SCRIPT_DIR/populate-demo-data.mjs" --url "http://localhost:$MOCKSERVER_PORT"
+DEMO_MQTT_BROKER_URL="$DEMO_MQTT_BROKER_URL" DEMO_WITH_LOAD_INJECTION="$WITH_LOAD_INJECTION" node "$SCRIPT_DIR/populate-demo-data.mjs" --url "http://localhost:$MOCKSERVER_PORT"
 
 # --- start UI dev server ---------------------------------------------------
 echo "→ Starting UI dev server on port $UI_PORT..."
@@ -189,6 +203,14 @@ echo "  UI (dev) : $UI_URL"
 echo "  Dashboard: http://localhost:$MOCKSERVER_PORT/mockserver/dashboard"
 echo "  MockServer log: $MOCKSERVER_LOG"
 echo ""
+if [ "$WITH_LOAD_INJECTION" = true ]; then
+  echo "  ⚡ Load injection is RUNNING against delayed self-target endpoints."
+  echo "     Open the Performance tab to watch / edit the live load scenario and its"
+  echo "     latency + throughput metrics:"
+  echo "       $UI_URL  (then click the Performance tab)"
+  echo "     or the bundled dashboard: http://localhost:$MOCKSERVER_PORT/mockserver/dashboard/?port=$MOCKSERVER_PORT"
+  echo ""
+fi
 echo "  Re-populate at any time:  npm run demo:data"
 echo "  Press Ctrl+C to stop both servers."
 echo "========================================"

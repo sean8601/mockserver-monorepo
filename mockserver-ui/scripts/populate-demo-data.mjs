@@ -88,7 +88,7 @@ const SELF_HOST = TARGET.hostname;
 const SELF_PORT = Number(TARGET.port || (TARGET.protocol === 'https:' ? 443 : 80));
 const SELF_SCHEME = TARGET.protocol === 'https:' ? 'HTTPS' : 'HTTP';
 
-const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, grpcChaos: 0, experiments: 0, drift: 0, wasmModules: 0, scenarios: 0, grpcServices: 0, sideEffects: 0, cassettes: 0, asyncChannels: 0, mcpCalls: 0 };
+const counts = { expectations: 0, requests: 0, unmatched: 0, serviceChaos: 0, tcpChaos: 0, grpcHealth: 0, grpcChaos: 0, experiments: 0, drift: 0, wasmModules: 0, scenarios: 0, grpcServices: 0, sideEffects: 0, cassettes: 0, asyncChannels: 0, mcpCalls: 0, loadScenario: 0 };
 function log(msg) { if (!quiet) console.log(msg); }
 
 // ---------------------------------------------------------------------------
@@ -1712,6 +1712,135 @@ async function optimisationShowcase() {
 }
 
 // ---------------------------------------------------------------------------
+// 6b. Load injection (Performance tab — live load scenario vs a delayed target)
+// ---------------------------------------------------------------------------
+
+// Opt-in via DEMO_WITH_LOAD_INJECTION=true (the launcher's --with-load-injection flag,
+// which also starts the server with -Dmockserver.loadGenerationEnabled=true so the
+// /mockserver/loadScenario control plane is enabled, and -Dmockserver.sloTrackingEnabled
+// so the load run's samples feed the SLO store). This registers a few SELF-TARGET
+// endpoints with realistic delays, then PUTs a long-running load scenario that drives
+// traffic at them — so opening the dashboard's Performance tab shows a running scenario
+// with live latency / throughput against a real (delayed) target you can watch and edit.
+
+// Endpoints the load scenario drives. Each is a normal mock on THIS server with a
+// deliberate delay so the latency histogram has something non-trivial to show. The
+// slow endpoint uses a UNIFORM delay distribution for per-request jitter (so p50/p95
+// differ); the others use a fixed delay. All are unlimited so the scenario can hammer
+// them for the whole run.
+const LOAD_TARGETS = [
+  {
+    label: 'fast health (≈5ms)',
+    path: '/demo-target/health',
+    response: {
+      statusCode: 200,
+      headers: { 'content-type': ['application/json'] },
+      body: '{"status":"UP"}',
+      delay: { timeUnit: 'MILLISECONDS', value: 5 },
+    },
+  },
+  {
+    label: 'slow checkout (≈250ms ± jitter)',
+    path: '/demo-target/checkout',
+    response: {
+      statusCode: 200,
+      headers: { 'content-type': ['application/json'] },
+      body: '{"order":"placed","ms":250}',
+      // UNIFORM jitter 180–320ms → realistic spread so p50 < p95 < p99 in the metrics.
+      delay: { timeUnit: 'MILLISECONDS', value: 250, distribution: { type: 'UNIFORM', min: 180, max: 320 } },
+    },
+  },
+  {
+    // Parameterised: a path regex so /demo-target/orders/<anything> matches; the
+    // scenario step varies the id via the iteration.index template var below.
+    label: 'parameterised order (≈80ms)',
+    path: '/demo-target/orders/.*',
+    response: {
+      statusCode: 200,
+      headers: { 'content-type': ['application/json'] },
+      body: '{"order":"found"}',
+      delay: { timeUnit: 'MILLISECONDS', value: 80 },
+    },
+  },
+];
+
+async function loadInjectionExamples() {
+  if (process.env.DEMO_WITH_LOAD_INJECTION !== 'true') return;
+  log('\n→ Load injection (Performance tab — live load scenario vs a delayed target)');
+
+  // a) Register the delayed self-target endpoints (unlimited times).
+  for (const t of LOAD_TARGETS) {
+    await expectation(`load target  GET ${t.path}  (${t.label})`, {
+      httpRequest: { method: 'GET', path: t.path },
+      httpResponse: t.response,
+    });
+  }
+
+  // b) PUT a long-running CONSTANT load scenario that self-targets THIS server. A
+  //    1-hour duration + a high maxRequests keeps it running while the user explores
+  //    the UI; 5 VUs with per-step think-time keeps the self-load gentle. The path
+  //    uses $iteration.index (Velocity) so the order id varies each iteration.
+  const scenario = {
+    name: 'demo checkout journey',
+    templateType: 'VELOCITY',
+    // Cap well above what 5 VUs hit in an hour so the run is bounded but never ends early.
+    maxRequests: 2000000,
+    labels: { team: 'demo', env: 'local' },
+    profile: {
+      type: 'CONSTANT',
+      vus: 5,
+      durationMillis: 3600000, // 1 hour (the documented max)
+      iterationPacingMillis: 100,
+    },
+    steps: [
+      {
+        name: 'health',
+        request: {
+          method: 'GET',
+          path: '/demo-target/health',
+          socketAddress: { host: SELF_HOST, port: SELF_PORT, scheme: SELF_SCHEME },
+        },
+        thinkTime: { timeUnit: 'MILLISECONDS', value: 50 },
+      },
+      {
+        name: 'checkout',
+        request: {
+          method: 'GET',
+          path: '/demo-target/checkout',
+          socketAddress: { host: SELF_HOST, port: SELF_PORT, scheme: SELF_SCHEME },
+        },
+        thinkTime: { timeUnit: 'MILLISECONDS', value: 100 },
+      },
+      {
+        name: 'order',
+        request: {
+          method: 'GET',
+          // iteration.index varies the order id each iteration so the data isn't static.
+          path: '/demo-target/orders/$iteration.index',
+          socketAddress: { host: SELF_HOST, port: SELF_PORT, scheme: SELF_SCHEME },
+        },
+        thinkTime: { timeUnit: 'MILLISECONDS', value: 50 },
+      },
+    ],
+  };
+
+  const res = await api('PUT', '/mockserver/loadScenario', scenario);
+  if (res.status === 403) {
+    // Shouldn't happen via the launcher (it sets loadGenerationEnabled=true), but be helpful.
+    log('   ! load scenario NOT started — server returned 403 (load generation disabled).');
+    log('     Start MockServer with -Dmockserver.loadGenerationEnabled=true (the launcher\'s');
+    log('     --with-load-injection flag does this) and re-run, or use: npm run demo -- --with-load-injection');
+    return;
+  }
+  if (!res.ok) throw new Error(`Failed to start load scenario "${scenario.name}": HTTP ${res.status}`);
+  counts.loadScenario = 1;
+  log(`   ⚡ load scenario  "${scenario.name}"  (CONSTANT 5 VUs, ${scenario.steps.length} steps: health / checkout / order)`);
+  log('   ↳ a load scenario is now RUNNING against the delayed self-target endpoints —');
+  log('     open the dashboard Performance tab to watch live throughput + latency and to edit it,');
+  log(`     or curl ${BASE}/mockserver/loadScenario for the live JSON status.`);
+}
+
+// ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
 
@@ -1765,6 +1894,7 @@ async function main() {
   await optimisationShowcase();
   await mcpToolCallExamples();
   await matchedShowcaseTraffic();
+  await loadInjectionExamples();
 
   log('\n========================================');
   log(' Demo data loaded');
@@ -1784,6 +1914,9 @@ async function main() {
   log(` Drift scenarios      : ${counts.drift} (status / schema-added / schema-removed+type / header)`);
   log(` AsyncAPI channels    : ${counts.asyncChannels}${process.env.DEMO_MQTT_BROKER_URL ? ' (live MQTT broker — Recorded Messages ticking up)' : ' (broker-less; Recorded Messages need --with-broker)'}`);
   log(` MCP tool calls       : ${counts.mcpCalls} (read-only tools; Metrics · "MCP tool calls" chart + Tools · MCP panel)`);
+  if (counts.loadScenario) {
+    log(` Load scenario        : ${counts.loadScenario} running (5 VUs vs delayed self-target endpoints; live in the Performance tab)`);
+  }
   log('');
 
   // The example cassettes are registered in the server-side registry (so they appear in the
@@ -1807,6 +1940,9 @@ async function main() {
   log('   AsyncAPI           — Tools · AsyncAPI Broker Mock: loaded spec + Channels table (5 channels, varied schema/example counts)');
   log('   Metrics            — request activity, throughput, MCP tool calls (6 tools), chaos faults' + (process.env.DEMO_MQTT_BROKER_URL ? ', async messages' : ''));
   log('   Breakpoints        — register a matcher (Matchers tab), then trigger the loopback below to pause Live Exchanges / Live Streams');
+  if (counts.loadScenario) {
+    log('   Performance        — a load scenario is RUNNING (5 VUs) against delayed self-target endpoints; watch live throughput + latency, and edit/restart it');
+  }
   log('');
 
   // --- Interactive breakpoints: loopback endpoints + how to drive them ---
