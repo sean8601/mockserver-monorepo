@@ -931,6 +931,53 @@ public class VelocityTemplateEngineTest {
     }
 
     @Test
+    public void shouldShareStatelessFunctionsAndHelpersAcrossConcurrentRendersWithoutCrossContamination() throws ExecutionException, InterruptedException {
+        // The built-in functions ($strings, $uuid) and helpers are hoisted into a single shared map that
+        // every render references (not copies) via Velocity context chaining. This exercises that shared
+        // path under heavy concurrency: each render mixes a per-request value (request.body, via the
+        // shared $strings helper) with the per-render-varying $uuid generator, and asserts (a) every
+        // thread sees ONLY its own request value back (no cross-thread contamination of the shared
+        // bindings) and (b) the $uuid generator still produces a distinct value per render. A regression
+        // that mutated the shared map would also surface here as an UnsupportedOperationException, since
+        // the shared map is wrapped unmodifiable.
+        // given
+        String template = "{" + NEW_LINE +
+            "    'statusCode': 200," + NEW_LINE +
+            "    'body': '$strings.uppercase($!request.body)-$uuid'" + NEW_LINE +
+            "}";
+
+        // when
+        VelocityTemplateEngine velocityTemplateEngine = new VelocityTemplateEngine(mockServerLogger, configuration);
+        ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(30);
+        List<Future<String>> futures = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            final int requestNumber = i;
+            futures.add(newFixedThreadPool.submit(() -> {
+                HttpRequest request = request()
+                    .withPath("/somePath")
+                    .withMethod("POST")
+                    .withHeader(HOST.toString(), "mock-server.com")
+                    .withBody(String.format("value%s", requestNumber));
+
+                HttpResponse response = velocityTemplateEngine.executeTemplate(template, request, HttpResponseDTO.class);
+                String body = response.getBodyAsString();
+                // each render must see its OWN request body back, upper-cased by the shared $strings helper
+                assertThat(body, startsWith(String.format("VALUE%s-", requestNumber)));
+                // and the shared $uuid generator must still have produced a value for this render
+                return body.substring(body.indexOf('-') + 1);
+            }));
+        }
+
+        java.util.Set<String> uuids = new java.util.HashSet<>();
+        for (Future<String> future : futures) {
+            uuids.add(future.get());
+        }
+        newFixedThreadPool.shutdown();
+        // every render produced a distinct uuid — the hoisted generator is still invoked per render
+        assertThat(uuids, hasSize(200));
+    }
+
+    @Test
     public void shouldHandleVelocityResponseTemplateWithJsonPath() {
         // given
         String template = "{" + NEW_LINE +

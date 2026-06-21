@@ -57,6 +57,32 @@ public class VelocityTemplateEngine implements TemplateEngine {
     private final VelocityEngine velocityEngine;
     private final ToolManager toolManager;
 
+    // ----- shared, request-independent function/helper bindings (built once, read by every render) -----
+    // The BUILT_IN_FUNCTIONS ($uuid, $now, $rand_int, ...) and BUILT_IN_HELPERS ($faker, $strings,
+    // $crypto, ...) are identical for every render: they are static final ImmutableMaps holding the SAME
+    // stateless value objects for the life of the JVM, and the function/helper objects are already shared
+    // and invoked concurrently today (the original path merely re-referenced them from a fresh per-render
+    // context). The original path copied all ~26 entries into a fresh VelocityContext on EVERY render via
+    // two forEach loops. We instead build the combined map ONCE and reference it (never copy it) per
+    // render through Velocity's context chaining, so the per-render work drops to a couple of thin context
+    // wrappers with no 26-entry copy.
+    //
+    // The Velocity TOOLS ($json, $xml, $import, $math, ...) are NOT hoisted: $json/$xml/$import are
+    // configured request-scoped and hold per-request parse state (e.g. $json.parse($request.body)), so a
+    // fresh ToolContext MUST be created per render — sharing one across render threads cross-contaminates
+    // request state (guarded by VelocityTemplateEngineTest.shouldUseRequestScopeToolsInThreadSafeWay).
+    //
+    // Per-render context chain (outermost first): child(request/iteration/jsonPath/xPath) ->
+    //   functionsLayer(own map = the shared sharedFunctionsAndHelpers, read-only here) ->
+    //   perRenderToolContext(tools). Reads fall through the chain; every put during a render targets only
+    //   the outermost child (AbstractContext.put writes to the outermost map only) so neither the shared
+    //   function/helper map nor its layer is ever mutated. functionsLayer's own storage is the SHARED map
+    //   passed by reference: nothing ever calls put on functionsLayer, so the map stays read-only and
+    //   safe for concurrent reads. Output is byte-for-byte identical to copying every binding into one
+    //   flat context, and the per-render-varying functions ($uuid, $now, $rand, $faker, $iteration.*)
+    //   still recompute on each get() because the same supplier/helper objects are invoked either way.
+    private final Map<String, Object> sharedFunctionsAndHelpers;
+
     // ----- parsed-template cache (parse once, render many) -----
     // Templates are mostly static for the lifetime of a mock — the same template string is rendered
     // on every matching request. The original path re-parsed the template string into a fresh AST on
@@ -98,6 +124,14 @@ public class VelocityTemplateEngine implements TemplateEngine {
         this.templateRepositoryName = "mockserver-velocity-templates-" + ENGINE_INSTANCE_COUNTER.incrementAndGet();
         velocityEngine = buildVelocityEngine(configuration);
         toolManager = buildToolManager(velocityEngine);
+        // Build the shared, request-independent function/helper map once. It is referenced (not copied)
+        // by every render via context chaining and is never mutated after construction, so it is safe for
+        // concurrent reads. unmodifiableMap makes that read-only contract explicit and fail-fast.
+        Map<String, Object> functionsAndHelpers = new LinkedHashMap<>(
+            TemplateFunctions.BUILT_IN_FUNCTIONS.size() + TemplateFunctions.BUILT_IN_HELPERS.size());
+        functionsAndHelpers.putAll(TemplateFunctions.BUILT_IN_FUNCTIONS);
+        functionsAndHelpers.putAll(TemplateFunctions.BUILT_IN_HELPERS);
+        this.sharedFunctionsAndHelpers = Collections.unmodifiableMap(functionsAndHelpers);
         this.templateRepository = StringResourceLoader.getRepository(templateRepositoryName);
         this.registeredTemplates = Collections.synchronizedMap(new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
             @Override
@@ -298,13 +332,10 @@ public class VelocityTemplateEngine implements TemplateEngine {
         try {
             validateTemplate(template);
             Writer writer = new StringWriter();
-            VelocityContext context = new VelocityContext(toolManager.createContext());
-            context.put("request", new HttpRequestTemplateObject(request));
+            VelocityContext context = newRenderContext(request);
             if (iteration != null) {
                 context.put("iteration", iteration);
             }
-            TemplateFunctions.BUILT_IN_FUNCTIONS.forEach(context::put);
-            TemplateFunctions.BUILT_IN_HELPERS.forEach(context::put);
             RequestBodyExtractionHelper bodyExtractionHelper = new RequestBodyExtractionHelper(request, mockServerLogger);
             context.put("jsonPath", new RequestBodyExtractionHelper.JsonPathTool(bodyExtractionHelper));
             context.put("xPath", new RequestBodyExtractionHelper.XPathTool(bodyExtractionHelper));
@@ -320,13 +351,10 @@ public class VelocityTemplateEngine implements TemplateEngine {
         try {
             validateTemplate(template);
             Writer writer = new StringWriter();
-            VelocityContext context = new VelocityContext(toolManager.createContext());
-            context.put("request", new HttpRequestTemplateObject(request));
+            VelocityContext context = newRenderContext(request);
             if (response != null) {
                 context.put("response", new HttpResponseTemplateObject(response));
             }
-            TemplateFunctions.BUILT_IN_FUNCTIONS.forEach(context::put);
-            TemplateFunctions.BUILT_IN_HELPERS.forEach(context::put);
             RequestBodyExtractionHelper bodyExtractionHelper = new RequestBodyExtractionHelper(request, mockServerLogger);
             context.put("jsonPath", new RequestBodyExtractionHelper.JsonPathTool(bodyExtractionHelper));
             context.put("xPath", new RequestBodyExtractionHelper.XPathTool(bodyExtractionHelper));
@@ -360,6 +388,28 @@ public class VelocityTemplateEngine implements TemplateEngine {
             throw new RuntimeException(formatLogMessage("Exception:{}transforming template:{}for request:{}", isNotBlank(e.getMessage()) ? e.getMessage() : e.getClass().getSimpleName(), template, request), e);
         }
         return result;
+    }
+
+    /**
+     * Build the per-render context chain for the given request with the {@code request} binding already
+     * in place. The chain is, outermost first:
+     * <pre>
+     *   child(request, + caller adds iteration/response/jsonPath/xPath) -&gt;
+     *     functionsLayer(own map = the shared sharedFunctionsAndHelpers, read-only) -&gt;
+     *       perRenderToolContext(tools)
+     * </pre>
+     * Only the per-render bindings live in the outermost child; the stateless function/helper map is
+     * referenced (never copied) and the request-scoped tool context is created fresh per render. Reads
+     * fall through the chain; every {@code put} during a render targets only the outermost child, so the
+     * shared map and its layer are never mutated. Output is byte-for-byte identical to copying every
+     * binding into a single flat context.
+     */
+    private VelocityContext newRenderContext(HttpRequest request) {
+        // fresh per render: $json/$xml/$import are request-scoped and hold per-request parse state
+        VelocityContext functionsLayer = new VelocityContext(sharedFunctionsAndHelpers, toolManager.createContext());
+        VelocityContext context = new VelocityContext(functionsLayer);
+        context.put("request", new HttpRequestTemplateObject(request));
+        return context;
     }
 
     private void validateTemplate(String template) {
