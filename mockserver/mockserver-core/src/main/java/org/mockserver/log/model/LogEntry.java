@@ -78,6 +78,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
 
     public void clear() {
         id = null;
+        hashCode = 0;
         logLevel = Level.INFO;
         alwaysLog = false;
         correlationId = null;
@@ -86,7 +87,9 @@ public class LogEntry implements EventTranslator<LogEntry> {
         timestamp = null;
         type = null;
         httpRequests = null;
+        httpUpdatedRequests = null;
         httpResponse = null;
+        httpUpdatedResponse = null;
         httpError = null;
         expectation = null;
         expectationId = null;
@@ -108,6 +111,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
         if (type == null) {
             type = LogMessageType.valueOf(logLevel.name());
         }
+        this.hashCode = 0;
         return this;
     }
 
@@ -117,6 +121,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
 
     public LogEntry setAlwaysLog(boolean alwaysLog) {
         this.alwaysLog = alwaysLog;
+        this.hashCode = 0;
         return this;
     }
 
@@ -127,6 +132,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
     public LogEntry setEpochTime(long epochTime) {
         this.epochTime = epochTime;
         this.timestamp = null;
+        this.hashCode = 0;
         return this;
     }
 
@@ -143,6 +149,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
 
     public LogEntry setType(LogMessageType type) {
         this.type = type;
+        this.hashCode = 0;
         return this;
     }
 
@@ -261,6 +268,8 @@ public class LogEntry implements EventTranslator<LogEntry> {
     @JsonIgnore
     public LogEntry setHttpRequests(RequestDefinition[] httpRequests) {
         this.httpRequests = httpRequests;
+        this.httpUpdatedRequests = null;
+        this.hashCode = 0;
         return this;
     }
 
@@ -282,6 +291,8 @@ public class LogEntry implements EventTranslator<LogEntry> {
         } else {
             this.httpRequests = DEFAULT_REQUESTS_DEFINITIONS;
         }
+        this.httpUpdatedRequests = null;
+        this.hashCode = 0;
         return this;
     }
 
@@ -305,6 +316,8 @@ public class LogEntry implements EventTranslator<LogEntry> {
     @JsonIgnore
     public LogEntry setHttpResponse(HttpResponse httpResponse) {
         this.httpResponse = httpResponse;
+        this.httpUpdatedResponse = null;
+        this.hashCode = 0;
         return this;
     }
 
@@ -315,6 +328,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
     @JsonIgnore
     public LogEntry setHttpError(HttpError httpError) {
         this.httpError = httpError;
+        this.hashCode = 0;
         return this;
     }
 
@@ -325,12 +339,14 @@ public class LogEntry implements EventTranslator<LogEntry> {
     @JsonIgnore
     public LogEntry setExpectation(Expectation expectation) {
         this.expectation = expectation;
+        this.hashCode = 0;
         return this;
     }
 
     @JsonIgnore
     public LogEntry setExpectation(RequestDefinition httpRequest, HttpResponse httpResponse) {
         this.expectation = new Expectation(httpRequest, Times.once(), TimeToLive.unlimited(), 0).thenRespond(httpResponse);
+        this.hashCode = 0;
         return this;
     }
 
@@ -340,6 +356,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
 
     public LogEntry setExpectationId(String expectationId) {
         this.expectationId = expectationId;
+        this.hashCode = 0;
         return this;
     }
 
@@ -359,6 +376,8 @@ public class LogEntry implements EventTranslator<LogEntry> {
         this.throwable = throwable;
         if (isBlank(messageFormat) && throwable != null) {
             messageFormat = throwable.getClass().getSimpleName();
+            this.message = null;
+            this.hashCode = 0;
         }
         return this;
     }
@@ -370,6 +389,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
     @JsonIgnore
     public LogEntry setConsumer(Runnable consumer) {
         this.consumer = consumer;
+        this.hashCode = 0;
         return this;
     }
 
@@ -379,6 +399,7 @@ public class LogEntry implements EventTranslator<LogEntry> {
 
     public LogEntry setDeleted(boolean deleted) {
         this.deleted = deleted;
+        this.hashCode = 0;
         return this;
     }
 
@@ -392,6 +413,8 @@ public class LogEntry implements EventTranslator<LogEntry> {
         } else {
             this.messageFormat = messageFormat;
         }
+        this.message = null;
+        this.hashCode = 0;
         return this;
     }
 
@@ -439,6 +462,8 @@ public class LogEntry implements EventTranslator<LogEntry> {
         } else {
             this.arguments = null;
         }
+        this.message = null;
+        this.hashCode = 0;
         return this;
     }
 

@@ -78,9 +78,9 @@ public class WebSocketClientRegistry {
                 channel.close();
             }
         }));
-        this.responseCallbackRegistry = new CircularHashMap<>(configuration.maxWebSocketExpectations());
-        this.forwardCallbackRegistry = new CircularHashMap<>(configuration.maxWebSocketExpectations());
-        this.streamFrameCallbackRegistry = new CircularHashMap<>(configuration.maxWebSocketExpectations());
+        this.responseCallbackRegistry = Collections.synchronizedMap(new CircularHashMap<>(configuration.maxWebSocketExpectations()));
+        this.forwardCallbackRegistry = Collections.synchronizedMap(new CircularHashMap<>(configuration.maxWebSocketExpectations()));
+        this.streamFrameCallbackRegistry = Collections.synchronizedMap(new CircularHashMap<>(configuration.maxWebSocketExpectations()));
         this.metrics = new Metrics(configuration);
     }
 
@@ -342,11 +342,18 @@ public class WebSocketClientRegistry {
         forwardCallbackRegistry.clear();
         responseCallbackRegistry.clear();
         streamFrameCallbackRegistry.clear();
-        clientRegistry.forEach((clientId, channel) -> {
-            LocalCallbackRegistry.unregisterCallback(clientId);
-            channel.close();
-        });
-        clientRegistry.clear();
+        // Iteration over a Collections.synchronizedMap is only safe while holding
+        // the map's own monitor (the synchronized(this) on reset() guards a
+        // different lock than registerClient/unregisterClient, which mutate the
+        // map under the map's monitor). Synchronize on the map to make the
+        // forEach + clear atomic with respect to those mutators.
+        synchronized (clientRegistry) {
+            clientRegistry.forEach((clientId, channel) -> {
+                LocalCallbackRegistry.unregisterCallback(clientId);
+                channel.close();
+            });
+            clientRegistry.clear();
+        }
         clearWebSocketMetrics();
     }
 }

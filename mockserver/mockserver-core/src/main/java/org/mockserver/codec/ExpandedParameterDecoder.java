@@ -212,7 +212,7 @@ public class ExpandedParameterDecoder {
                         splitValues.add(string(quotedValue.group(1), value.isNot()));
                     }
                 } else if (!JSON_VALUE.matcher(value.getValue()).matches()) {
-                    for (String splitValue : value.getValue().split(style.getRegex().replaceAll("<name>", name))) {
+                    for (String splitValue : value.getValue().split(style.getRegex().replaceAll("<name>", Matcher.quoteReplacement(Pattern.quote(name))))) {
                         if (value.isOptional()) {
                             splitValues.add(optional(splitValue, value.isNot()));
                         } else {

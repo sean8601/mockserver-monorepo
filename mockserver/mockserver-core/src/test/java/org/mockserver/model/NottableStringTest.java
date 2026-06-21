@@ -40,6 +40,50 @@ public class NottableStringTest {
     }
 
     @Test
+    public void shouldParseOptionalOnlyPrefixWithoutThrowing() {
+        // when
+        NottableString nottableString = string("?");
+
+        // then
+        assertThat(nottableString.isOptional(), is(true));
+        assertThat(nottableString.isNot(), is(false));
+        assertThat(nottableString.getValue(), is(""));
+    }
+
+    @Test
+    public void shouldParseNotOnlyPrefixWithoutThrowing() {
+        // when
+        NottableString nottableString = string("!");
+
+        // then
+        assertThat(nottableString.isOptional(), is(false));
+        assertThat(nottableString.isNot(), is(true));
+        assertThat(nottableString.getValue(), is(""));
+    }
+
+    @Test
+    public void shouldParseOptionalThenNotPrefixWithoutThrowing() {
+        // when
+        NottableString nottableString = string("?!");
+
+        // then
+        assertThat(nottableString.isOptional(), is(true));
+        assertThat(nottableString.isNot(), is(true));
+        assertThat(nottableString.getValue(), is(""));
+    }
+
+    @Test
+    public void shouldParseNotThenOptionalPrefixWithoutThrowing() {
+        // when
+        NottableString nottableString = string("!?");
+
+        // then
+        assertThat(nottableString.isOptional(), is(true));
+        assertThat(nottableString.isNot(), is(true));
+        assertThat(nottableString.getValue(), is(""));
+    }
+
+    @Test
     public void shouldEqual() {
         assertThat(string("value"), is(string("value")));
         assertThat(NottableString.not("value"), is(NottableString.not("value")));

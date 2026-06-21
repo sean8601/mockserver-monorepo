@@ -1427,6 +1427,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Correctness & reliability (code-quality review)
+- **Callback WebSocket registry is now thread-safe** (`mockserver-core`). The response, forward and
+  stream-frame callback registries backing `mockWithCallback`/forward callbacks and breakpoints were
+  unsynchronized maps shared between request-handling threads and the Netty I/O thread; under concurrent
+  load this could drop callbacks or corrupt the registry. They are now synchronized like the client
+  registry, and registry iteration is guarded.
+- **Reused log entries no longer leak stale data** (`mockserver-core`). Recycled event-log entries (the
+  log uses a ring buffer) could retain a previous entry's redacted/templated request or cached hash,
+  which could make equal entries compare unequal; the entry is now fully reset on reuse.
+- **Path/matrix parameter names containing regex metacharacters** (e.g. `.`, `+`, `$`, `\`) are now
+  matched literally during extraction instead of corrupting the match or throwing (`mockserver-core`).
+- **Matchers prefixed with only `?` or `!`** (e.g. the string `"?"`) no longer throw
+  `IndexOutOfBoundsException` when constructed (`mockserver-core`).
+- **`VerificationTimes` rejects negative counts** with a clear error instead of silently matching any
+  number of requests (`mockserver-core`).
+- **Connection-tunnel buffer leak fixed** (`mockserver-netty`). The CONNECT/SOCKS relay handshake handler
+  released its inbound buffer on the handled path, fixing a small pooled-buffer leak per tunnel.
+- **One client's `reset()`/`stop()` no longer tears down other clients on the same port**
+  (`mockserver-client-java`). The per-port event bus now removes only the subscribers for the published
+  event type instead of clearing all subscribers.
+- **S3 expectation/recorded-request persistence** no longer throws on an empty/missing prefix listing,
+  matching the GCS and Azure stores (`mockserver-blob-s3`).
+
+#### Consistency
+- **Client default MockServer version aligned to the released version** across the Node, Rust, Python and
+  PHP clients (the Node client now reads it from its own `package.json`), so each client no longer
+  defaults to downloading a stale server binary.
+- Removed two orphaned duplicate resource files left at the repository root by the monorepo migration.
+
 #### AI / LLM
 - The `model` field on an LLM response `completion` now round-trips through expectation
   serialization: it is permitted by the `httpLlmResponse` JSON schema, so a captured completion
