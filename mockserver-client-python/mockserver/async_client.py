@@ -92,12 +92,15 @@ class AsyncMockServerClient:
 
         def _do_request() -> tuple[int, str]:
             try:
-                response = urllib.request.urlopen(
+                with urllib.request.urlopen(
                     req, context=self._ssl_context, timeout=60
-                )
-                return response.status, response.read().decode("utf-8")
+                ) as response:
+                    return response.status, response.read().decode("utf-8")
             except urllib.error.HTTPError as e:
-                return e.code, e.read().decode("utf-8")
+                # HTTPError is itself a closeable, response-like object; reading
+                # its body without closing leaks the underlying socket/fd.
+                with e:
+                    return e.code, e.read().decode("utf-8")
             except socket.timeout as e:
                 raise MockServerConnectionError(
                     f"Request to MockServer at {self._base_url} timed out: {e}"

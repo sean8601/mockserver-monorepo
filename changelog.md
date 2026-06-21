@@ -1418,6 +1418,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually renders, not the repo README).
 
 #### Client libraries
+- **Client connection/error-handling fixes** (code-quality review): the Python client closes each HTTP
+  response (was leaking a socket per control-plane call); the Node client rejects with the error message
+  instead of `JSON.stringify(error)` (which produced an empty `{}`, losing all diagnostics); the Ruby
+  client uses `Net::HTTP.start { ... }` so the connection is always closed.
 - **Clearer error when a client's binary launcher finds no release bundle**: the Go, Node, Python, Ruby,
   Rust and PHP clients' auto-download launchers now detect an HTTP 404 on the MockServer release bundle and
   fail with an actionable message — naming the requested version and pointing to a version that ships

@@ -115,7 +115,11 @@
                         if (error.code && error.code === "ECONNREFUSED") {
                             deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
                         } else {
-                            deferred.reject(JSON.stringify(error));
+                            // reject with the error message (not JSON.stringify, which
+                            // serialises an Error to "{}" since message/stack are
+                            // non-enumerable) to preserve diagnostic information while
+                            // keeping the string rejection contract used elsewhere
+                            deferred.reject(error.message || String(error));
                         }
                     });
 
@@ -176,7 +180,11 @@
                         if (error.code && error.code === "ECONNREFUSED") {
                             deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
                         } else {
-                            deferred.reject(JSON.stringify(error));
+                            // reject with the error message (not JSON.stringify, which
+                            // serialises an Error to "{}" since message/stack are
+                            // non-enumerable) to preserve diagnostic information while
+                            // keeping the string rejection contract used elsewhere
+                            deferred.reject(error.message || String(error));
                         }
                     });
 
@@ -232,7 +240,11 @@
                         if (error.code && error.code === "ECONNREFUSED") {
                             deferred.reject("Can't connect to MockServer running on host: \"" + host + "\" and port: \"" + port + "\"");
                         } else {
-                            deferred.reject(JSON.stringify(error));
+                            // reject with the error message (not JSON.stringify, which
+                            // serialises an Error to "{}" since message/stack are
+                            // non-enumerable) to preserve diagnostic information while
+                            // keeping the string rejection contract used elsewhere
+                            deferred.reject(error.message || String(error));
                         }
                     });
 

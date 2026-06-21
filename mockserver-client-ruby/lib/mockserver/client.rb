@@ -861,7 +861,12 @@ module MockServer
 
     # @api private
     def execute_request(http, req)
-      response = http.request(req)
+      # Use the block form of #start so the underlying TCP/TLS connection is
+      # always closed (#finish) when the request completes, rather than being
+      # left open until garbage collection. All connection options (use_ssl,
+      # ca_file, verify_mode, read_timeout, open_timeout) configured on +http+
+      # by #build_http are preserved because #start operates on this instance.
+      response = http.start { |conn| conn.request(req) }
       [response.code.to_i, response.body || '']
     rescue Net::OpenTimeout, Net::ReadTimeout => e
       raise ConnectionError, "Request to MockServer at #{@base_url} timed out: #{e.message}"
