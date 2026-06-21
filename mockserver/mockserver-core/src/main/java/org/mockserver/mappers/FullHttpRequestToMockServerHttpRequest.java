@@ -204,10 +204,21 @@ public class FullHttpRequestToMockServerHttpRequest {
         byte[] decompressedBytes = null;
         if (content != null && content.readableBytes() > 0) {
             decompressedBytes = new byte[content.readableBytes()];
-            // non-destructive read so byteBufToBody can still consume the content below
+            // non-destructive read (does not advance the reader index) so the body is
+            // materialised exactly once: these bytes are handed straight to bytesToBody
+            // below instead of letting byteBufToBody allocate and read a second identical
+            // copy out of the same ByteBuf. The mapper neither owns nor releases content
+            // (the FullHttpRequest is released by the inbound MessageToMessageDecoder), so
+            // leaving the reader index untouched is safe and nothing downstream re-reads it.
             content.getBytes(content.readerIndex(), decompressedBytes);
         }
-        httpRequest.withBody(bodyDecoderEncoder.byteBufToBody(content, fullHttpRequest.headers().get(CONTENT_TYPE)));
+        // bytesToBody on the already-materialised bytes is byte-for-byte equivalent to the
+        // previous byteBufToBody(content) call (which itself only copied content into a
+        // byte[] then delegated to bytesToBody) — and preserves the null body when there
+        // are no readable bytes (byteBufToBody also returned null for empty/null content).
+        if (decompressedBytes != null) {
+            httpRequest.withBody(bodyDecoderEncoder.bytesToBody(decompressedBytes, fullHttpRequest.headers().get(CONTENT_TYPE)));
+        }
         // retain the original on-the-wire bytes only when the body was actually compressed (i.e. the
         // captured bytes differ from the decompressed body), so getBodyAsOriginalRawBytes() returns what
         // the client sent and a BinaryBody expectation can match the compressed payload

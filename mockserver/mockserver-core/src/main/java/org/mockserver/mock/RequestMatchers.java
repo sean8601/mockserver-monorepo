@@ -420,6 +420,23 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         // path does no extra work (the counter stays 0 and is never read).
         int namespaceSkipped = 0;
 
+        // Allocation optimisation: with detailedMatchFailures OFF (the default), a
+        // MatchDifference records NOTHING — addDifference(Field,...) is gated entirely
+        // on the flag, so its lazily-allocated differences map is never created and
+        // getAllDifferences() always returns the empty map. The only per-match mutable
+        // state, the currentField marker, is overwritten at the start of every field
+        // match and is never read by this loop, so a SINGLE reusable instance is
+        // behaviourally identical across the whole scan (and never escapes this method).
+        // This removes the per-candidate MatchDifference shell that a large no-match scan
+        // would otherwise allocate (e.g. 1000 throwaway objects for a 1000-expectation
+        // miss). When the flag is ON, each matcher still gets its OWN MatchDifference so
+        // the recorded per-field differences (and the closest-match diagnostic that reads
+        // getAllDifferences().size()) are exactly as before.
+        final boolean detailedMatchFailures = configuration.detailedMatchFailures();
+        final MatchDifference sharedMatchDifference = detailedMatchFailures
+            ? null
+            : new MatchDifference(false, requestDefinition);
+
         for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
             // Namespace (multi-tenancy) gate: skip expectations belonging to a
             // different namespace than the request's. Global (null-namespace)
@@ -432,7 +449,9 @@ public class RequestMatchers extends MockServerMatcherNotifier {
                 }
                 continue;
             }
-            MatchDifference matchDifference = new MatchDifference(configuration.detailedMatchFailures(), requestDefinition);
+            MatchDifference matchDifference = detailedMatchFailures
+                ? new MatchDifference(true, requestDefinition)
+                : sharedMatchDifference;
             if (httpRequestMatcher.matches(matchDifference, requestDefinition)) {
                 Expectation expectation = httpRequestMatcher.getExpectation();
 
