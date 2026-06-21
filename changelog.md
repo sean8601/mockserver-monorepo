@@ -1516,6 +1516,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Documentation site & dashboard
+- **Docs left-nav showed "Examples" twice and re-ordered between pages** (`jekyll-www.mock-server.com`). Removed a
+  leftover hardcoded "Examples" nav link that duplicated the auto-listed `examples.html` page, and made every
+  in-section `pageOrder` unique so `site.pages | sort` is stable (duplicate orders rendered in an unstable order,
+  shuffling the nav as you navigated).
+- **Dashboard "Mocks" tab description clarified** (`mockserver-ui`) to mention quick mode (common cases) vs advanced
+  mode (full control).
+
 #### Correctness & reliability (code-quality review)
 - **gRPC chaos injection now honours its configured probability** (`mockserver-core`). The decision used
   a fresh seeded `Random` per request, so a probability behaved as all-or-nothing; it now samples through
