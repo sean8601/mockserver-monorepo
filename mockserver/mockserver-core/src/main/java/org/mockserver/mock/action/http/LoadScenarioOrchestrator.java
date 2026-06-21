@@ -792,7 +792,8 @@ public class LoadScenarioOrchestrator {
                 "running".equals(state) ? null : now,
                 scenario.getLabels() != null && !scenario.getLabels().isEmpty()
                     ? Collections.unmodifiableMap(new LinkedHashMap<>(scenario.getLabels()))
-                    : null
+                    : null,
+                scenario
             );
         }
     }
@@ -814,12 +815,19 @@ public class LoadScenarioOrchestrator {
         public final Long endedAtEpochMillis;
         /** Scenario-level custom annotation labels (null when none), echoed for dashboards/clients. */
         public final Map<String, String> labels;
+        /**
+         * The full scenario definition this run was started with (never null for a real run). The GET
+         * endpoint serializes it under {@code definition} so any client/dashboard — not just the tab
+         * that started the run — can load the exact {@link LoadScenario} back into an author form and
+         * round-trip it as a PUT body.
+         */
+        public final LoadScenario scenario;
 
         public LoadScenarioStatus(String name, String state, long elapsedMillis, int currentVus,
                                   long requestsSent, long succeeded, long failed,
                                   long p50Millis, long p95Millis, long p99Millis,
                                   String runId, long startedAtEpochMillis, Long endedAtEpochMillis,
-                                  Map<String, String> labels) {
+                                  Map<String, String> labels, LoadScenario scenario) {
             this.name = name;
             this.state = state;
             this.elapsedMillis = elapsedMillis;
@@ -834,6 +842,7 @@ public class LoadScenarioOrchestrator {
             this.startedAtEpochMillis = startedAtEpochMillis;
             this.endedAtEpochMillis = endedAtEpochMillis;
             this.labels = labels;
+            this.scenario = scenario;
         }
     }
 }

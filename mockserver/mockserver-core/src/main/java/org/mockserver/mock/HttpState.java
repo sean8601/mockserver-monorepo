@@ -3501,6 +3501,13 @@ public class HttpState {
                     com.fasterxml.jackson.databind.node.ObjectNode labelsNode = result.putObject("labels");
                     status.labels.forEach(labelsNode::put);
                 }
+                if (status.scenario != null) {
+                    // Echo the full scenario definition so any client/dashboard can load it back into an
+                    // author form. Serialized via LoadScenarioSerializer and re-parsed as a JSON object so
+                    // the embedded `definition` is itself a valid LoadScenario PUT body (round-trips exactly).
+                    result.set("definition",
+                        objectMapper.readTree(getLoadScenarioSerializer().serialize(status.scenario)));
+                }
             }
             return response().withStatusCode(OK.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);

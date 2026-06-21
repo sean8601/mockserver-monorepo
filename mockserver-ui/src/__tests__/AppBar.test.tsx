@@ -249,8 +249,8 @@ describe('AppBar responsive navigation', () => {
     // self-explanatory Get Started tab is intentionally omitted (no bar).
     const views = Object.keys(NAV_TAB_DESCRIPTIONS);
     // Exact count guards against descriptions being accidentally dropped from
-    // other tabs: 15 tabs carry one (every tab except the omitted Get Started).
-    expect(views.length).toBe(15);
+    // other tabs: 16 tabs carry one (every tab except the omitted Get Started).
+    expect(views.length).toBe(16);
     for (const v of views) {
       expect(NAV_TAB_DESCRIPTIONS[v as keyof typeof NAV_TAB_DESCRIPTIONS]?.length ?? 0).toBeGreaterThan(0);
     }

@@ -63,6 +63,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Dashboard Performance (load scenario) panel -->
+- **Dashboard "Performance" panel for load scenarios** (`mockserver-ui`, `mockserver-core`). A new dashboard tab
+  to author, run, monitor, stop and edit load scenarios (load injection) without leaving the UI. Authoring covers
+  the scenario name, custom labels, `CONSTANT`/`LINEAR` ramp profile, and steps (method, path, target
+  `socketAddress`, request headers, think-time, per-step name/labels; template type limited to the supported
+  `VELOCITY`/`MUSTACHE`). A running test is polled live (state, VUs, throughput, latency percentiles, errors) and
+  can be stopped or edited — editing reloads the running scenario's definition (now echoed by
+  `GET /mockserver/loadScenario` as a `definition` field, so any running test can be edited, not only one started
+  in the same browser) and re-submitting replaces/restarts it. When a run stops, key metrics are summarised, and a
+  single combined chart plots RPS / active VUs / in-flight / p50 / p95 / p99 / error-rate with per-series toggles
+  to fit the available space. Cross-links the Metrics tab (`mock_server_load_*`). The dashboard is bundled into the
+  `mockserver-netty` jar at build time, so a running server shows the new tab after rebuilding from this change.
+
 <!-- First-class load-injection metrics (Prometheus + OTEL) -->
 - **First-class metrics for load injection (load scenarios)** (`mockserver-core`). A load run now exposes a
   dedicated `mock_server_load_*` metric family over **both Prometheus and OTEL** (previously a load run was

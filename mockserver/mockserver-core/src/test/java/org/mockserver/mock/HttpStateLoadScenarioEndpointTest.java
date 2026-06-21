@@ -147,7 +147,61 @@ public class HttpStateLoadScenarioEndpointTest {
     public void getReportsNoneWhenNothingStarted() throws Exception {
         HttpResponse response = get();
         assertThat(response.getStatusCode(), is(200));
-        assertThat(objectMapper.readTree(response.getBodyAsString()).get("state").asText(), is("none"));
+        JsonNode body = objectMapper.readTree(response.getBodyAsString());
+        assertThat(body.get("state").asText(), is("none"));
+        // no run exists, so the scenario definition must be omitted entirely
+        assertThat(body.has("definition"), is(false));
+    }
+
+    @Test
+    public void getEchoesRunningScenarioDefinition() throws Exception {
+        put(scenarioJson());
+        try {
+            JsonNode runningBody = objectMapper.readTree(get().getBodyAsString());
+            assertThat(runningBody.get("state").asText(), is("running"));
+
+            // the GET response must carry the full scenario definition, matching what was PUT, so a
+            // client/dashboard that did not start the run can still load it into an author form
+            JsonNode definition = runningBody.get("definition");
+            assertThat("definition is present", definition != null && definition.isObject(), is(true));
+            assertThat(definition.get("name").asText(), is("smoke"));
+            assertThat(definition.get("profile").get("vus").asInt(), is(1));
+            assertThat(definition.get("profile").get("durationMillis").asLong(), is(60000L));
+            assertThat(definition.get("steps").get(0).get("request").get("path").asText(), is("/health"));
+        } finally {
+            delete();
+        }
+    }
+
+    @Test
+    public void getDefinitionRoundTripsAsAValidPutBody() throws Exception {
+        put(scenarioJson());
+        try {
+            // the echoed definition is itself a valid LoadScenario body — re-submitting it as a PUT
+            // (re-starting the same scenario) must succeed and start a run with the same name
+            JsonNode definition = objectMapper.readTree(get().getBodyAsString()).get("definition");
+            assertThat("definition is present", definition != null && definition.isObject(), is(true));
+
+            HttpResponse rePut = put(objectMapper.writeValueAsString(definition));
+            assertThat(rePut.getStatusCode(), is(200));
+            JsonNode rePutBody = objectMapper.readTree(rePut.getBodyAsString());
+            assertThat(rePutBody.get("status").asText(), is("started"));
+            assertThat(rePutBody.get("name").asText(), is("smoke"));
+        } finally {
+            delete();
+        }
+    }
+
+    @Test
+    public void getEchoesDefinitionForTerminatedRun() throws Exception {
+        put(scenarioJson());
+        delete();
+        // even after the run is stopped, the most-recent definition is still echoed so it can be edited
+        JsonNode stoppedBody = objectMapper.readTree(get().getBodyAsString());
+        assertThat(stoppedBody.get("state").asText(), is("stopped"));
+        JsonNode definition = stoppedBody.get("definition");
+        assertThat("definition is present", definition != null && definition.isObject(), is(true));
+        assertThat(definition.get("name").asText(), is("smoke"));
     }
 
     @Test

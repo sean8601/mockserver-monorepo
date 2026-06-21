@@ -49,6 +49,10 @@ const ComposerView = lazy(() => import('./components/ComposerView'));
 // dashboard load (it is only needed when the LLM Optimise tab is opened).
 const OptimiseView = lazy(() => import('./components/OptimiseView'));
 
+// Lazy-loaded so the @mui/x-charts bundle (shared with Metrics) only loads when
+// the Performance tab is opened, keeping it off the initial dashboard load.
+const LoadScenarioPanel = lazy(() => import('./components/LoadScenarioPanel'));
+
 // How long the WebSocket must stay down before the persistent connection-loss
 // banner appears. Brief reconnects (the common case under StrictMode remount or
 // a server restart) clear well before this, so the banner only nags on a real,
@@ -229,6 +233,11 @@ export default function App() {
               </Suspense>
             )}
             {view === 'chaos' && <ServiceChaosPanel connectionParams={params} />}
+            {view === 'performance' && (
+              <Suspense fallback={<Box sx={{ p: 2 }}>Loading performance…</Box>}>
+                <LoadScenarioPanel connectionParams={params} />
+              </Suspense>
+            )}
             {view === 'drift' && <DriftPanel connectionParams={params} />}
             {view === 'verification' && <VerificationView connectionParams={params} />}
             {view === 'async' && <AsyncApiPanel connectionParams={params} />}

@@ -35,6 +35,7 @@ import Inventory2Icon from '@mui/icons-material/Inventory2';
 import SpeedIcon from '@mui/icons-material/Speed';
 import SavingsIcon from '@mui/icons-material/Savings';
 import BoltIcon from '@mui/icons-material/Bolt';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
@@ -147,6 +148,7 @@ const NAV_TABS: NavTab[] = [
   { value: 'breakpoints', label: 'Breakpoints', ariaLabel: 'Breakpoints view', description: 'Pause matching requests or responses mid-flight to inspect and edit them.', icon: <PanToolIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'composer', label: 'Mocks', ariaLabel: 'Mocks view', description: 'Create, edit, and manage mock expectations — quick mode for common cases, advanced mode for full control.', icon: <PostAddIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'chaos', label: 'Chaos', ariaLabel: 'Service chaos view', description: 'Inject latency, errors, and faults to test how your system handles failure.', icon: <BoltIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'performance', label: 'Performance', ariaLabel: 'Performance testing view', description: 'Create, run, and monitor load scenarios — drive traffic at a target and watch live throughput and latency.', icon: <TrendingUpIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'optimise', label: 'LLM Optimise', ariaLabel: 'LLM Optimise view', description: 'Analyse captured LLM traffic to optimise prompts, inference cost, safety, and speed.', icon: <SavingsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'async', label: 'Async', ariaLabel: 'AsyncAPI broker mock view', description: 'Mock event-driven APIs from an AsyncAPI spec — publish test messages to Kafka, MQTT, and AMQP (RabbitMQ) brokers.', icon: <HubIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'grpc', label: 'gRPC', ariaLabel: 'gRPC services view', description: 'Mock gRPC services and inspect gRPC calls.', icon: <RpcIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },

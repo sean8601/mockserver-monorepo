@@ -2746,8 +2746,10 @@ paths:
       summary: retrieve the current load scenario status
       description: >-
         Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time,
-        current virtual users, request counts and latency percentiles. When no scenario has ever run the
-        state is "none".
+        current virtual users, request counts and latency percentiles. When a scenario exists the response
+        also echoes its full "definition" (the LoadScenario it was started with), so any client or dashboard
+        — not just the one that started the run — can load it back and re-submit it as a PUT body. When no
+        scenario has ever run the state is "none".
       responses:
         '200':
           description: load scenario status returned
@@ -2790,6 +2792,12 @@ paths:
                   endedAt:
                     type: integer
                     format: int64
+                  definition:
+                    description: >-
+                      The full scenario definition this run was started with — present whenever a run
+                      exists (omitted only when state is "none"). It is itself a valid LoadScenario body
+                      that can be re-submitted to PUT /mockserver/loadScenario.
+                    $ref: "#/components/schemas/LoadScenario"
         '400':
           description: failed to get load scenario status
           content:
