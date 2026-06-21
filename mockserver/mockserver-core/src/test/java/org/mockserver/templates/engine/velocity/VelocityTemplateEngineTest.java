@@ -1003,4 +1003,122 @@ public class VelocityTemplateEngineTest {
         ));
     }
 
+    // ----- parsed-template cache regression tests -----
+    // These exercise the parse-once cache (render via Velocity's own Template.merge) on both the
+    // cold-cache (first render) and warm-cache (subsequent render) paths, proving the cached path
+    // matches the re-parsing path for directives that depend on Velocity's native render — most
+    // importantly #stop (StopCommand) and #macro — and that bounding/eviction stays correct.
+
+    @Test
+    public void shouldRenderStopDirectiveAsCleanPartialOutputOnColdAndWarmCache() {
+        // given - #stop ends rendering mid-template, so only the text before it should appear; this
+        // only works if rendering goes through Velocity's own merge (which catches StopCommand)
+        String template = "before#stop after";
+        HttpRequest request = request().withPath("/somePath");
+        VelocityTemplateEngine velocityTemplateEngine = new VelocityTemplateEngine(mockServerLogger, configuration);
+
+        // when - cold cache (first render parses) and warm cache (second render reuses parsed AST)
+        String cold = velocityTemplateEngine.renderTemplate(template, request);
+        String warm = velocityTemplateEngine.renderTemplate(template, request);
+
+        // then - both produce the clean partial output
+        assertThat(cold, is("before"));
+        assertThat(warm, is("before"));
+    }
+
+    @Test
+    public void shouldRenderStopDirectiveInExecuteTemplateOnColdAndWarmCache() {
+        // given
+        String template = "{'statusCode': 200, 'body': 'kept'}#stop {'this': 'dropped'}";
+        HttpRequest request = request().withPath("/somePath");
+        VelocityTemplateEngine velocityTemplateEngine = new VelocityTemplateEngine(mockServerLogger, configuration);
+
+        // when - run twice to cover cold then warm cache
+        HttpResponse cold = velocityTemplateEngine.executeTemplate(template, request, HttpResponseDTO.class);
+        HttpResponse warm = velocityTemplateEngine.executeTemplate(template, request, HttpResponseDTO.class);
+
+        // then
+        assertThat(cold, is(response().withStatusCode(200).withBody("kept")));
+        assertThat(warm, is(response().withStatusCode(200).withBody("kept")));
+    }
+
+    @Test
+    public void shouldRenderMacroDefineAndInvokeStablyAcrossRepeatedRenders() {
+        // given - a macro defined and invoked twice; macros are resolved during Velocity's own render,
+        // so a hand-rolled render path would mishandle them - this proves merge() is used
+        String template = "#macro(greet $name)Hi $name!#end#greet(\"a\") #greet(\"b\")";
+        HttpRequest request = request().withPath("/somePath");
+        VelocityTemplateEngine velocityTemplateEngine = new VelocityTemplateEngine(mockServerLogger, configuration);
+
+        // when - single render then a repeated render against the warm cache
+        String first = velocityTemplateEngine.renderTemplate(template, request);
+        String second = velocityTemplateEngine.renderTemplate(template, request);
+
+        // then - output stable across renders
+        assertThat(first, is("Hi a! Hi b!"));
+        assertThat(second, is(first));
+    }
+
+    @Test
+    public void shouldRemainCorrectAfterCacheOverflowEviction() {
+        // given - render more than PARSED_TEMPLATE_CACHE_MAX distinct templates so the bounded cache
+        // evicts entries, then re-render an early (now-evicted) template and confirm it still renders
+        VelocityTemplateEngine velocityTemplateEngine = new VelocityTemplateEngine(mockServerLogger, configuration);
+        HttpRequest request = request().withPath("/somePath");
+
+        String firstTemplate = "tmpl-0=$request.path";
+        String firstExpected = "tmpl-0=/somePath";
+        assertThat(velocityTemplateEngine.renderTemplate(firstTemplate, request), is(firstExpected));
+
+        // when - overflow the cache with distinct templates (forces eviction of the first template)
+        int overflow = VelocityTemplateEngine.PARSED_TEMPLATE_CACHE_MAX + 50;
+        for (int i = 1; i <= overflow; i++) {
+            String distinct = "tmpl-" + i + "=$request.path";
+            assertThat(velocityTemplateEngine.renderTemplate(distinct, request), is("tmpl-" + i + "=/somePath"));
+        }
+
+        // then - the evicted first template re-parses cleanly and renders the same output (no exception)
+        assertThat(velocityTemplateEngine.renderTemplate(firstTemplate, request), is(firstExpected));
+        // and the most recent template still renders correctly
+        assertThat(velocityTemplateEngine.renderTemplate("tmpl-" + overflow + "=$request.path", request), is("tmpl-" + overflow + "=/somePath"));
+    }
+
+    @Test
+    public void shouldRenderSharedCachedTemplateCorrectlyUnderConcurrencyWithPerIterationState()
+        throws InterruptedException, ExecutionException {
+        // given - a single template rendered concurrently with a per-iteration $uuid and $iteration.*,
+        // proving the shared cached/parsed Template is rendered thread-safely with distinct per-call state
+        String template = "id=$uuid,index=$iteration.index,count=$iteration.count";
+        VelocityTemplateEngine velocityTemplateEngine = new VelocityTemplateEngine(mockServerLogger, configuration);
+        ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(30);
+
+        // when
+        List<Future<String>> futures = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            final int index = i;
+            futures.add(newFixedThreadPool.submit(() -> {
+                HttpRequest request = request().withPath("/somePath");
+                org.mockserver.load.IterationContext iteration =
+                    new org.mockserver.load.IterationContext(index, index, index, 0, 200);
+                String rendered = velocityTemplateEngine.renderTemplate(template, request, iteration);
+                // per-call state must be the caller's own index/count even though the parsed AST is shared
+                assertThat(rendered, startsWith("id="));
+                assertThat(rendered, containsString(",index=" + index + ","));
+                assertThat(rendered, endsWith(",count=200"));
+                // return the rendered uuid portion so the caller can assert distinctness
+                return rendered.substring("id=".length(), rendered.indexOf(",index="));
+            }));
+        }
+
+        // then - per-call uuids did not bleed across threads: either all distinct (default random UUIDs)
+        // or all identical (when another test in this phase pinned UUIDService.fixedUUID(true)); never a
+        // partial mix, which would indicate cross-thread state corruption of the shared cached template
+        java.util.Set<String> uuids = new java.util.HashSet<>();
+        for (Future<String> future : futures) {
+            uuids.add(future.get());
+        }
+        newFixedThreadPool.shutdown();
+        assertThat(uuids.size(), anyOf(is(200), is(1)));
+    }
+
 }
