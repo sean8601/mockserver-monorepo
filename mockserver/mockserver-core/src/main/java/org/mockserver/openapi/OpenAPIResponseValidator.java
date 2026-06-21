@@ -142,7 +142,7 @@ public class OpenAPIResponseValidator {
 
         try {
             String schemaJson = OBJECT_MAPPER.writeValueAsString(schema);
-            JsonSchemaValidator validator = new JsonSchemaValidator(logger, schemaJson);
+            JsonSchemaValidator validator = JsonSchemaValidator.cachedJsonSchemaValidator(logger, schemaJson);
             String validationResult = validator.isValid(bodyString, false);
             if (isNotBlank(validationResult)) {
                 errors.add("response body validation error: " + validationResult);
@@ -177,7 +177,7 @@ public class OpenAPIResponseValidator {
 
             try {
                 String schemaJson = OBJECT_MAPPER.writeValueAsString(headerSchema);
-                JsonSchemaValidator validator = new JsonSchemaValidator(logger, schemaJson);
+                JsonSchemaValidator validator = JsonSchemaValidator.cachedJsonSchemaValidator(logger, schemaJson);
                 // Resolve type from getType() (OAS 3.0) or getTypes() (OAS 3.1)
                 String schemaType = headerSchema.getType();
                 if (schemaType == null && headerSchema.getTypes() != null) {

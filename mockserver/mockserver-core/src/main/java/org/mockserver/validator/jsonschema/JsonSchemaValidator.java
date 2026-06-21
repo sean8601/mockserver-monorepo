@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Joiner;
+import com.google.common.hash.Hashing;
 import com.networknt.schema.AbsoluteIri;
 import com.networknt.schema.Error;
 import com.networknt.schema.InputFormat;
@@ -13,6 +14,7 @@ import com.networknt.schema.SchemaRegistryConfig;
 import com.networknt.schema.SpecificationVersion;
 import com.networknt.schema.path.PathType;
 import org.apache.commons.lang3.StringUtils;
+import org.mockserver.cache.LRUCache;
 import org.mockserver.file.FileReader;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -60,6 +62,71 @@ public class JsonSchemaValidator extends ObjectWithReflectiveEqualsHashCodeToStr
     private final JsonNode schemaJsonNode;
     private Schema validator;
     private final static ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
+
+    /**
+     * Immutable, thread-safe holder for the result of compiling a schema once: the resolved schema
+     * string, its parsed {@link JsonNode}, and the compiled networknt {@link Schema}. A networknt
+     * {@link Schema} is immutable and safe for concurrent {@code validate} calls, so a single holder
+     * can be shared across request threads. Caching this holder — rather than a whole
+     * {@link JsonSchemaValidator} — keeps each request's validator instance (and therefore its
+     * {@code mockServerLogger} and the post-construction {@code validator}-field reassignment in the
+     * rare "Unknown MetaSchema" recovery branch) thread-confined, so cached reuse is byte-for-byte
+     * equivalent to constructing a fresh validator per request.
+     */
+    private static final class CompiledSchema {
+        private final String schema;
+        private final JsonNode schemaJsonNode;
+        private final Schema validator;
+
+        private CompiledSchema(String schema, JsonNode schemaJsonNode, Schema validator) {
+            this.schema = schema;
+            this.schemaJsonNode = schemaJsonNode;
+            this.validator = validator;
+        }
+    }
+
+    /**
+     * Caches the compiled-schema holder keyed by the SHA-256 of the schema JSON. Compiling a networknt
+     * {@link Schema}/{@link SchemaRegistry} is expensive and allocation-heavy and was previously
+     * repeated per request on the OpenAPI request/response validation hot path even though the
+     * operation schema never changes. Keying by schema <em>content</em> (not operationId/spec) means
+     * identical schemas — within one spec or across specs — share a single compilation with no
+     * cross-spec collisions. The cache is bounded (250 entries / 30 minute TTL, matching
+     * {@code OpenAPIParser}), thread-safe, and participates in {@link LRUCache#clearAllCaches()}.
+     */
+    private final static LRUCache<String, CompiledSchema> COMPILED_SCHEMA_CACHE =
+        new LRUCache<>(new MockServerLogger(), 250, java.util.concurrent.TimeUnit.MINUTES.toMillis(30));
+
+    /**
+     * Returns a {@link JsonSchemaValidator} for {@code schemaJson} that reuses a cached one-time
+     * compilation of the schema when the same content has been seen before. The returned validator is
+     * behaviour-identical to {@code new JsonSchemaValidator(logger, schemaJson)} for the same input —
+     * same validation outcomes and error messages, the caller's own {@code logger}, and an independent
+     * per-call instance — only the expensive {@code Schema}/{@code SchemaRegistry} compilation is
+     * elided on a cache hit. Intended for the per-request OpenAPI validation path.
+     */
+    public static JsonSchemaValidator cachedJsonSchemaValidator(MockServerLogger mockServerLogger, String schemaJson) {
+        String key = Hashing.sha256().hashString(schemaJson, java.nio.charset.StandardCharsets.UTF_8).toString();
+        CompiledSchema compiled = COMPILED_SCHEMA_CACHE.getOrCompute(key, k -> {
+            // compile exactly as the (MockServerLogger, String) constructor does — same resolution,
+            // same registry selection, same getSchema call — but store the result for reuse. A detached
+            // logger is used only for any compile-time logging; per-call validation logging still uses
+            // the caller's logger via the wrapper instance below.
+            JsonSchemaValidator built = new JsonSchemaValidator(new MockServerLogger(), schemaJson);
+            return new CompiledSchema(built.schema, built.schemaJsonNode, built.validator);
+        });
+        // wrap a fresh, thread-confined instance around the shared immutable compilation, carrying the
+        // caller's logger so error-log routing is identical to constructing a validator per request
+        return new JsonSchemaValidator(mockServerLogger, compiled);
+    }
+
+    private JsonSchemaValidator(MockServerLogger mockServerLogger, CompiledSchema compiled) {
+        this.mockServerLogger = mockServerLogger;
+        this.type = null;
+        this.schema = compiled.schema;
+        this.schemaJsonNode = compiled.schemaJsonNode;
+        this.validator = compiled.validator;
+    }
 
     public JsonSchemaValidator(MockServerLogger mockServerLogger, String schema) {
         this.mockServerLogger = mockServerLogger;

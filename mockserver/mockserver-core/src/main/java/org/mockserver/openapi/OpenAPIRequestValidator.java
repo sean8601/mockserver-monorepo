@@ -151,7 +151,7 @@ public class OpenAPIRequestValidator {
 
         try {
             String schemaJson = OBJECT_MAPPER.writeValueAsString(schema);
-            JsonSchemaValidator validator = new JsonSchemaValidator(logger, schemaJson);
+            JsonSchemaValidator validator = JsonSchemaValidator.cachedJsonSchemaValidator(logger, schemaJson);
             String validationResult = validator.isValid(bodyString, false);
             if (isNotBlank(validationResult)) {
                 errors.add("request body validation error: " + validationResult);
