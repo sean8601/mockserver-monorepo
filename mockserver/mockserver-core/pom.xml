@@ -556,6 +556,8 @@
                         <exclude>**/CaptureProcessorTest.java</exclude>
                         <!-- WS7.1 OIDC authorization-code test mutates the OidcAuthorizationStore singleton -->
                         <exclude>**/OidcProviderGeneratorTest.java</exclude>
+                        <!-- OidcTokenCallback test registers providers into the OidcAuthorizationStore singleton -->
+                        <exclude>**/OidcTokenCallbackTest.java</exclude>
                         <!-- WS7.7 SAML SSO test mutates the SamlAssertionStore singleton -->
                         <exclude>**/SamlProviderGeneratorTest.java</exclude>
                         <!-- Wave4 SCIM tests mutate the ScimResourceStore singleton -->
@@ -581,6 +583,8 @@
                         <exclude>**/LlmBackendResolverTest.java</exclude>
                         <exclude>**/LlmProviderSnifferTest.java</exclude>
                         <exclude>**/ForwardPathGenAiSpansTest.java</exclude>
+                        <!-- Installs/removes the process-wide tracer in GenAiSpans/RequestSpans + mutates otelTracesEnabled -->
+                        <exclude>**/GenAiSpanExporterTest.java</exclude>
                         <exclude>**/BreakpointConfigurationTest.java</exclude>
                         <!-- Mutate shared static singleton registries (StreamFrameBreakpointRegistry, BreakpointMatcherRegistry, BreakpointCallbackDispatcher) -->
                         <exclude>**/HttpActionHandlerBreakpointTest.java</exclude>
@@ -687,6 +691,7 @@
                                 <include>**/GrpcStreamMessageScenarioTemplateTest.java</include>
                                 <include>**/CaptureProcessorTest.java</include>
                                 <include>**/OidcProviderGeneratorTest.java</include>
+                                <include>**/OidcTokenCallbackTest.java</include>
                                 <include>**/SamlProviderGeneratorTest.java</include>
                                 <include>**/ScimProviderGeneratorTest.java</include>
                                 <include>**/ScimResourceStoreTest.java</include>
@@ -703,6 +708,7 @@
                                 <include>**/LlmBackendResolverTest.java</include>
                                 <include>**/LlmProviderSnifferTest.java</include>
                                 <include>**/ForwardPathGenAiSpansTest.java</include>
+                                <include>**/GenAiSpanExporterTest.java</include>
                                 <include>**/BreakpointConfigurationTest.java</include>
                                 <include>**/HttpActionHandlerBreakpointTest.java</include>
                                 <include>**/BreakpointMatcherRegistryTest.java</include>
