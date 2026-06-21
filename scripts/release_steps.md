@@ -59,8 +59,8 @@
     1. find and replace previous MockServer release version to new release
     2. cd helm
     3. helm package ./mockserver/
-    4. cd ~/git/mockserver/mockserver/helm/charts
-    5. mv /Users/jamesbloom/git/mockserver/mockserver/helm/mockserver-5.16.0.tgz .
+    4. cd <path-to-repo>/mockserver/helm/charts
+    5. mv <path-to-repo>/mockserver/helm/mockserver-5.16.0.tgz .
     6. helm repo index .
     7. open . && open S3 console for main website bucket (see ~/mockserver-aws-ids.md)
     8. upload new chart and index.yaml to main website S3 bucket
@@ -68,7 +68,7 @@
 9. add javaDoc
     1. git checkout mockserver-5.16.0
     2. export JAVA_HOME=`/usr/libexec/java_home -v 17`
-    3. cd mockserver && ./mvnw javadoc:aggregate -P release -DreportOutputDirectory='/Users/jamesbloom/git/mockserver/javadoc/5.16.0'
+    3. cd mockserver && ./mvnw javadoc:aggregate -P release -DreportOutputDirectory='<path-to-repo>/javadoc/5.16.0'
     4. open javadoc output dir && open S3 console for main website bucket /versions/ (see ~/mockserver-aws-ids.md)
     5. upload as public to main website S3 bucket /versions/
     6. git checkout master

@@ -474,7 +474,7 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
     it('should create expectation with open api request', async function () {
         await client.mockAnyResponse({
             'httpRequest': {
-                'specUrlOrPayload': 'https://raw.githubusercontent.com/mock-server/mockserver/master/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+                'specUrlOrPayload': 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
                 'operationId': 'listPets'
             },
             'httpResponse': { 'statusCode': 200, 'body': "open_api_response" }
@@ -489,7 +489,7 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
 
     it('should create open api expectation', async function () {
         await client.openAPIExpectation({
-            'specUrlOrPayload': 'https://raw.githubusercontent.com/mock-server/mockserver/master/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
+            'specUrlOrPayload': 'https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json',
             'operationsAndResponses': { 'showPetById': '200', 'listPets': '200' }
         });
 

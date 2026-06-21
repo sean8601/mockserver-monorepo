@@ -63,6 +63,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Portable example code: remove stale URLs / hardcoded developer paths repo-wide -->
+- **Portable example code across the repo** (`jekyll-www.mock-server.com`, `mockserver-client-node`,
+  `mockserver-node`, dev scripts). Removed a stale OpenAPI spec URL (`mock-server/mockserver` → `404`; now the
+  `mockserver-monorepo` URL) and hardcoded `/Users/...` developer file paths that made example snippets fail
+  on any other machine. The `using_openapi.html` and OpenAPI request-matcher doc snippets now use portable
+  placeholders / classpath forms; the Node client packages' bundled OpenAPI examples now load a co-located
+  spec via `file://__dirname` (spec bundled alongside each example) and drop an undeclared `js-string-escape`
+  use; developer build/test scripts derive paths from `$HOME` / the git root instead of a hardcoded home.
+
 <!-- Examples index page + more runnable examples + example accuracy fixes -->
 - **Website examples index, more runnable examples, and example-accuracy fixes** (`jekyll-www.mock-server.com`,
   `examples`, `mockserver-core`, `mockserver-client-python`, `mockserver-client-ruby`). A new
