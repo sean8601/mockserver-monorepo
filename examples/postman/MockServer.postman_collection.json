@@ -2340,7 +2340,7 @@
                 "loadScenario"
               ]
             },
-            "description": "Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time, current virtual users, request counts and latency percentiles. When no scenario has ever run the state is \"none\".\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
+            "description": "Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time, current virtual users, request counts and latency percentiles. When a scenario exists the response also echoes its full \"definition\" (the LoadScenario it was started with), so any client or dashboard \u2014 not just the one that started the run \u2014 can load it back and re-submit it as a PUT body. When no scenario has ever run the state is \"none\".\n\nFull API reference: https://www.mock-server.com/mock_server/mockserver_clients.html"
           }
         },
         {

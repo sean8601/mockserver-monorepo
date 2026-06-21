@@ -11,7 +11,7 @@ get {
 }
 
 docs {
-  Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time, current virtual users, request counts and latency percentiles. When no scenario has ever run the state is "none".
+  Returns the status of the current (or most recent) load scenario: lifecycle state, elapsed time, current virtual users, request counts and latency percentiles. When a scenario exists the response also echoes its full "definition" (the LoadScenario it was started with), so any client or dashboard — not just the one that started the run — can load it back and re-submit it as a PUT body. When no scenario has ever run the state is "none".
   
   Full API reference: https://www.mock-server.com/mock_server/mockserver_clients.html
 }
