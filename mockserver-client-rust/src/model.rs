@@ -1737,66 +1737,193 @@ impl SocketAddress {
 // Load scenario (PUT/GET/DELETE /mockserver/loadScenario)
 // ---------------------------------------------------------------------------
 
-/// Ramp profile describing the target concurrency over the life of a load
-/// scenario. Maps to the `LoadProfile` schema.
+/// The interpolation curve used to ramp a value (virtual users or arrival
+/// rate) from a start setpoint to an end setpoint across a ramp [`LoadStage`].
+/// Maps to the `RampCurve` schema. Only meaningful for ramp stages; ignored for
+/// holds and pauses.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RampCurve {
+    /// Constant slope.
+    Linear,
+    /// Ease-in: slow then fast.
+    Quadratic,
+    /// A steeper ease-in.
+    Exponential,
+}
+
+/// The kind of a [`LoadStage`].
 ///
-/// Use [`LoadProfile::constant`] to hold a fixed number of virtual users, or
-/// [`LoadProfile::linear`] to ramp from `startVus` to `endVus`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// - `Vu` — closed model: hold or ramp the number of concurrent virtual users.
+/// - `Rate` — open model: hold or ramp an arrival rate in iterations/second.
+/// - `Pause` — drive no load for the duration.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum LoadStageType {
+    /// Closed model — hold or ramp concurrent virtual users.
+    Vu,
+    /// Open model — hold or ramp an arrival rate in iterations/second.
+    Rate,
+    /// Drive no load for the duration.
+    Pause,
+}
+
+/// One stage of a [`LoadProfile`]: a contiguous slice of the run holding or
+/// ramping a setpoint for `duration_millis`. Stages run in sequence. Maps to the
+/// `LoadStage` schema.
+///
+/// Use the constructors [`LoadStage::vu_hold`], [`LoadStage::vu_ramp`],
+/// [`LoadStage::rate_hold`], [`LoadStage::rate_ramp`] and [`LoadStage::pause`]
+/// rather than building the struct directly so only the relevant fields are set
+/// (and therefore serialized).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct LoadProfile {
-    /// Ramp shape — `"CONSTANT"` (default) or `"LINEAR"`.
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub profile_type: Option<String>,
+pub struct LoadStage {
+    /// The kind of stage — `VU`, `RATE` or `PAUSE`.
+    #[serde(rename = "type")]
+    pub stage_type: LoadStageType,
 
-    /// How long the scenario runs in milliseconds (max 3_600_000 = 1h).
+    /// How long this stage runs in milliseconds (> 0).
+    pub duration_millis: u64,
+
+    /// Ramp shape (ramp stages only); omitted for holds and pauses.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration_millis: Option<u64>,
+    pub curve: Option<RampCurve>,
 
-    /// CONSTANT: number of virtual users to hold (max 50).
+    /// VU hold: the number of virtual users to hold for the stage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vus: Option<u32>,
 
-    /// LINEAR: virtual users at the start of the ramp.
+    /// VU ramp: virtual users at the start of the ramp.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_vus: Option<u32>,
 
-    /// LINEAR: virtual users at the end of the ramp (max 50).
+    /// VU ramp: virtual users at the end of the ramp.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_vus: Option<u32>,
 
-    /// Optional minimum delay in milliseconds between successive iterations of
-    /// a virtual user.
+    /// RATE hold: arrival rate to hold, in iterations per second.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub iteration_pacing_millis: Option<u64>,
+    pub rate: Option<f64>,
+
+    /// RATE ramp: arrival rate at the start of the ramp, in iterations/second.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_rate: Option<f64>,
+
+    /// RATE ramp: arrival rate at the end of the ramp, in iterations/second.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_rate: Option<f64>,
+
+    /// RATE stage only: optional cap on the auto-scaling virtual-user pool.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_vus: Option<u32>,
+}
+
+impl LoadStage {
+    fn base(stage_type: LoadStageType, duration_millis: u64) -> Self {
+        Self {
+            stage_type,
+            duration_millis,
+            curve: None,
+            vus: None,
+            start_vus: None,
+            end_vus: None,
+            rate: None,
+            start_rate: None,
+            end_rate: None,
+            max_vus: None,
+        }
+    }
+
+    /// A VU stage holding `vus` virtual users for `duration_millis`.
+    pub fn vu_hold(vus: u32, duration_millis: u64) -> Self {
+        let mut stage = Self::base(LoadStageType::Vu, duration_millis);
+        stage.vus = Some(vus);
+        stage
+    }
+
+    /// A VU stage ramping from `start_vus` to `end_vus` over `duration_millis`
+    /// along `curve`.
+    pub fn vu_ramp(start_vus: u32, end_vus: u32, duration_millis: u64, curve: RampCurve) -> Self {
+        let mut stage = Self::base(LoadStageType::Vu, duration_millis);
+        stage.start_vus = Some(start_vus);
+        stage.end_vus = Some(end_vus);
+        stage.curve = Some(curve);
+        stage
+    }
+
+    /// A RATE stage holding `rate` iterations/second for `duration_millis`.
+    pub fn rate_hold(rate: f64, duration_millis: u64) -> Self {
+        let mut stage = Self::base(LoadStageType::Rate, duration_millis);
+        stage.rate = Some(rate);
+        stage
+    }
+
+    /// A RATE stage ramping from `start_rate` to `end_rate` iterations/second
+    /// over `duration_millis` along `curve`.
+    pub fn rate_ramp(
+        start_rate: f64,
+        end_rate: f64,
+        duration_millis: u64,
+        curve: RampCurve,
+    ) -> Self {
+        let mut stage = Self::base(LoadStageType::Rate, duration_millis);
+        stage.start_rate = Some(start_rate);
+        stage.end_rate = Some(end_rate);
+        stage.curve = Some(curve);
+        stage
+    }
+
+    /// A PAUSE stage that drives no load for `duration_millis`.
+    pub fn pause(duration_millis: u64) -> Self {
+        Self::base(LoadStageType::Pause, duration_millis)
+    }
+
+    /// Cap the auto-scaling virtual-user pool for this RATE stage.
+    pub fn max_vus(mut self, max_vus: u32) -> Self {
+        self.max_vus = Some(max_vus);
+        self
+    }
+}
+
+/// The load profile of a load scenario: an ordered list of [`LoadStage`]s run
+/// in sequence. Maps to the `LoadProfile` schema.
+///
+/// Use [`LoadProfile::of`] to build from a list of stages, or the convenience
+/// constructors [`LoadProfile::constant`] / [`LoadProfile::linear`] for a single
+/// VU stage.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadProfile {
+    /// Ordered stages run one after another.
+    pub stages: Vec<LoadStage>,
 }
 
 impl LoadProfile {
-    /// A CONSTANT profile holding `vus` virtual users for `duration_millis`.
-    pub fn constant(vus: u32, duration_millis: u64) -> Self {
-        Self {
-            profile_type: Some("CONSTANT".to_string()),
-            duration_millis: Some(duration_millis),
-            vus: Some(vus),
-            ..Default::default()
-        }
+    /// A profile from an explicit list of stages.
+    pub fn of(stages: Vec<LoadStage>) -> Self {
+        Self { stages }
     }
 
-    /// A LINEAR profile ramping from `start_vus` to `end_vus` over
+    /// A single VU stage holding `vus` virtual users for `duration_millis`.
+    pub fn constant(vus: u32, duration_millis: u64) -> Self {
+        Self::of(vec![LoadStage::vu_hold(vus, duration_millis)])
+    }
+
+    /// A single linear VU ramp from `start_vus` to `end_vus` over
     /// `duration_millis`.
     pub fn linear(start_vus: u32, end_vus: u32, duration_millis: u64) -> Self {
-        Self {
-            profile_type: Some("LINEAR".to_string()),
-            duration_millis: Some(duration_millis),
-            start_vus: Some(start_vus),
-            end_vus: Some(end_vus),
-            ..Default::default()
-        }
+        Self::of(vec![LoadStage::vu_ramp(
+            start_vus,
+            end_vus,
+            duration_millis,
+            RampCurve::Linear,
+        )])
     }
 
-    /// Set the minimum delay between successive iterations of a virtual user.
-    pub fn iteration_pacing_millis(mut self, millis: u64) -> Self {
-        self.iteration_pacing_millis = Some(millis);
+    /// Append a stage and return the profile.
+    pub fn add_stage(mut self, stage: LoadStage) -> Self {
+        self.stages.push(stage);
         self
     }
 }

@@ -158,12 +158,17 @@ gated behind a server start-up flag and raise `FeatureNotEnabledException`
 ```php
 use MockServer\LoadScenario;
 use MockServer\LoadProfile;
+use MockServer\LoadStage;
 
 // Load generation (requires loadGenerationEnabled=true; SLI producer for SLOs)
 $client->loadScenario(
     LoadScenario::scenario('checkout-load')
         ->maxRequests(5000)
-        ->profile(LoadProfile::constant(10, 30000)->iterationPacingMillis(50))
+        ->profile(LoadProfile::of(
+            LoadStage::vuRamp(1, 10, 10000),   // warm up
+            LoadStage::vuHold(10, 30000),      // steady state
+            LoadStage::pause(5000),            // cool down
+        ))
         ->addStep(
             HttpRequest::request()->method('GET')->path('/api/item/$iteration.index'),
             Delay::milliseconds(20),

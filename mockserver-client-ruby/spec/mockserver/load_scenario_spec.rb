@@ -15,11 +15,11 @@ RSpec.describe MockServer::Client do
       labels: { 'team' => 'payments' },
       max_requests: 1000,
       profile: MockServer::LoadProfile.new(
-        type: 'LINEAR',
-        start_vus: 1,
-        end_vus: 50,
-        duration_millis: 60_000,
-        iteration_pacing_millis: 200
+        stages: [
+          MockServer::LoadStage.vu(60_000, start_vus: 1, end_vus: 50, curve: 'LINEAR'),
+          MockServer::LoadStage.rate(30_000, rate: 50.0, max_vus: 20),
+          MockServer::LoadStage.pause(5_000)
+        ]
       ),
       steps: [
         MockServer::LoadStep.new(
@@ -49,14 +49,24 @@ RSpec.describe MockServer::Client do
       expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/loadScenario")
         .with { |r|
           parsed = JSON.parse(r.body)
+          stages = parsed['profile']['stages']
           parsed['name'] == 'checkout-spike' &&
             parsed['templateType'] == 'VELOCITY' &&
             parsed['maxRequests'] == 1000 &&
-            parsed['profile']['type'] == 'LINEAR' &&
-            parsed['profile']['startVus'] == 1 &&
-            parsed['profile']['endVus'] == 50 &&
-            parsed['profile']['durationMillis'] == 60_000 &&
-            parsed['profile']['iterationPacingMillis'] == 200 &&
+            stages.length == 3 &&
+            stages[0]['type'] == 'VU' &&
+            stages[0]['startVus'] == 1 &&
+            stages[0]['endVus'] == 50 &&
+            stages[0]['durationMillis'] == 60_000 &&
+            stages[0]['curve'] == 'LINEAR' &&
+            !stages[0].key?('vus') &&
+            stages[1]['type'] == 'RATE' &&
+            stages[1]['rate'] == 50.0 &&
+            stages[1]['maxVus'] == 20 &&
+            stages[2]['type'] == 'PAUSE' &&
+            stages[2]['durationMillis'] == 5_000 &&
+            !stages[2].key?('vus') &&
+            !stages[2].key?('curve') &&
             parsed['steps'][0]['name'] == 'place-order' &&
             parsed['steps'][0]['thinkTime']['value'] == 500 &&
             parsed['steps'][0]['request']['method'] == 'POST' &&
@@ -71,10 +81,10 @@ RSpec.describe MockServer::Client do
       stub_request(:put, "#{base_url}/mockserver/loadScenario")
         .to_return(status: 200, body: JSON.generate({ 'status' => 'RUNNING' }))
 
-      client.load_scenario({ 'name' => 'raw', 'profile' => { 'type' => 'CONSTANT', 'vus' => 5 } })
+      client.load_scenario({ 'name' => 'raw', 'profile' => { 'stages' => [{ 'type' => 'VU', 'vus' => 5, 'durationMillis' => 1000 }] } })
 
       expect(WebMock).to have_requested(:put, "#{base_url}/mockserver/loadScenario")
-        .with { |r| JSON.parse(r.body)['profile']['vus'] == 5 }
+        .with { |r| JSON.parse(r.body)['profile']['stages'][0]['vus'] == 5 }
     end
 
     it 'raises a clear error on 403 (load generation disabled)' do
@@ -155,7 +165,8 @@ RSpec.describe MockServer::Client do
     it 'serialises to the LoadScenario JSON contract' do
       hash = sample_scenario.to_h
       expect(hash['name']).to eq('checkout-spike')
-      expect(hash['profile']['type']).to eq('LINEAR')
+      expect(hash['profile']['stages'][0]['type']).to eq('VU')
+      expect(hash['profile']['stages'][0]['curve']).to eq('LINEAR')
       expect(hash['steps'][0]['request']['path']).to eq('/orders')
       expect(hash['steps'][0]['thinkTime']).to eq({ 'timeUnit' => 'MILLISECONDS', 'value' => 500 })
     end
@@ -169,14 +180,15 @@ RSpec.describe MockServer::Client do
     it 'omits nil fields' do
       scenario = MockServer::LoadScenario.new(
         name: 'minimal',
-        profile: MockServer::LoadProfile.new(type: 'CONSTANT', vus: 3, duration_millis: 1000),
+        profile: MockServer::LoadProfile.new(stages: [MockServer::LoadStage.vu(1000, vus: 3)]),
         steps: [MockServer::LoadStep.new(request: MockServer::HttpRequest.new(method: 'GET', path: '/'))]
       )
       hash = scenario.to_h
       expect(hash).not_to have_key('templateType')
       expect(hash).not_to have_key('labels')
       expect(hash).not_to have_key('maxRequests')
-      expect(hash['profile']).not_to have_key('startVus')
+      expect(hash['profile']['stages'][0]).not_to have_key('startVus')
+      expect(hash['profile']['stages'][0]).not_to have_key('curve')
       expect(hash['steps'][0]).not_to have_key('thinkTime')
     end
   end

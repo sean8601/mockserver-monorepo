@@ -12,7 +12,9 @@ import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.httpclient.SocketConnectionException;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
+import org.mockserver.load.LoadStage;
 import org.mockserver.load.LoadStep;
+import org.mockserver.load.RampCurve;
 import org.mockserver.matchers.TimeToLive;
 import org.mockserver.matchers.Times;
 import org.mockserver.mock.Expectation;
@@ -1840,7 +1842,12 @@ public class MockServerClientTest {
 
     private static LoadScenario sampleLoadScenario() {
         return LoadScenario.loadScenario("smoke")
-            .withProfile(LoadProfile.constant(5, 10000L))
+            .withProfile(LoadProfile.of(
+                LoadStage.rampVus(0, 5, 5000L, RampCurve.LINEAR),
+                LoadStage.constantVus(5, 10000L),
+                LoadStage.pause(1000L),
+                LoadStage.constantRate(2.0, 5000L)
+            ))
             .withSteps(java.util.Collections.singletonList(
                 LoadStep.loadStep(request().withMethod("GET").withPath("/api/health"))
             ));

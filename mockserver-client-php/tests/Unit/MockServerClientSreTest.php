@@ -16,6 +16,7 @@ use MockServer\Exception\VerificationException;
 use MockServer\HttpRequest;
 use MockServer\LoadProfile;
 use MockServer\LoadScenario;
+use MockServer\LoadStage;
 use MockServer\MockServerClient;
 use PHPUnit\Framework\TestCase;
 
@@ -64,7 +65,11 @@ class MockServerClientSreTest extends TestCase
             ->templateType('velocity')
             ->maxRequests(5000)
             ->labels(['team' => 'checkout'])
-            ->profile(LoadProfile::constant(10, 30000)->iterationPacingMillis(50))
+            ->profile(LoadProfile::of(
+                LoadStage::vuRamp(1, 10, 10000),
+                LoadStage::vuHold(10, 30000),
+                LoadStage::pause(5000),
+            ))
             ->addStep(
                 HttpRequest::request()->method('GET')->path('/api/item/$iteration.index'),
                 Delay::milliseconds(20),
@@ -84,11 +89,22 @@ class MockServerClientSreTest extends TestCase
         $this->assertSame(5000, $body['maxRequests']);
         $this->assertSame(['team' => 'checkout'], $body['labels']);
 
-        // profile
-        $this->assertSame('CONSTANT', $body['profile']['type']);
-        $this->assertSame(10, $body['profile']['vus']);
-        $this->assertSame(30000, $body['profile']['durationMillis']);
-        $this->assertSame(50, $body['profile']['iterationPacingMillis']);
+        // profile — staged (Load Profile v2)
+        $stages = $body['profile']['stages'];
+        $this->assertCount(3, $stages);
+        $this->assertSame('VU', $stages[0]['type']);
+        $this->assertSame(1, $stages[0]['startVus']);
+        $this->assertSame(10, $stages[0]['endVus']);
+        $this->assertSame(10000, $stages[0]['durationMillis']);
+        $this->assertSame('LINEAR', $stages[0]['curve']);
+        $this->assertSame('VU', $stages[1]['type']);
+        $this->assertSame(10, $stages[1]['vus']);
+        $this->assertSame(30000, $stages[1]['durationMillis']);
+        $this->assertArrayNotHasKey('curve', $stages[1]);
+        $this->assertArrayNotHasKey('startVus', $stages[1]);
+        $this->assertSame('PAUSE', $stages[2]['type']);
+        $this->assertSame(5000, $stages[2]['durationMillis']);
+        $this->assertArrayNotHasKey('vus', $stages[2]);
 
         // steps
         $this->assertCount(1, $body['steps']);
@@ -118,11 +134,48 @@ class MockServerClientSreTest extends TestCase
         );
 
         $body = json_decode((string) $history[0]['request']->getBody(), true);
-        $this->assertSame('LINEAR', $body['profile']['type']);
-        $this->assertSame(1, $body['profile']['startVus']);
-        $this->assertSame(20, $body['profile']['endVus']);
-        $this->assertSame(60000, $body['profile']['durationMillis']);
-        $this->assertArrayNotHasKey('vus', $body['profile']);
+        $stage = $body['profile']['stages'][0];
+        $this->assertSame('VU', $stage['type']);
+        $this->assertSame('LINEAR', $stage['curve']);
+        $this->assertSame(1, $stage['startVus']);
+        $this->assertSame(20, $stage['endVus']);
+        $this->assertSame(60000, $stage['durationMillis']);
+        $this->assertArrayNotHasKey('vus', $stage);
+        $this->assertArrayNotHasKey('rate', $stage);
+    }
+
+    public function testRateLoadStageShape(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->loadScenario(
+            LoadScenario::scenario('rate')
+                ->profile(LoadProfile::of(
+                    LoadStage::rateHold(100.0, 30000)->maxVus(20),
+                    LoadStage::rateRamp(10.0, 200.0, 60000, 'EXPONENTIAL'),
+                ))
+                ->addStep(HttpRequest::request()->path('/x'))
+        );
+
+        $body = json_decode((string) $history[0]['request']->getBody(), true);
+        $hold = $body['profile']['stages'][0];
+        $this->assertSame('RATE', $hold['type']);
+        $this->assertEquals(100.0, $hold['rate']);
+        $this->assertSame(30000, $hold['durationMillis']);
+        $this->assertSame(20, $hold['maxVus']);
+        $this->assertArrayNotHasKey('curve', $hold);
+        $this->assertArrayNotHasKey('vus', $hold);
+
+        $ramp = $body['profile']['stages'][1];
+        $this->assertSame('RATE', $ramp['type']);
+        $this->assertSame('EXPONENTIAL', $ramp['curve']);
+        $this->assertEquals(10.0, $ramp['startRate']);
+        $this->assertEquals(200.0, $ramp['endRate']);
+        $this->assertArrayNotHasKey('rate', $ramp);
+        $this->assertArrayNotHasKey('maxVus', $ramp);
     }
 
     public function testLoadScenarioAcceptsPlainArray(): void

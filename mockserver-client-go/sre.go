@@ -36,23 +36,105 @@ func (e *FeatureDisabledError) Error() string {
 //    schemas LoadScenario (4427), LoadProfile (4375), LoadStep (4402).
 // -----------------------------------------------------------------------------
 
-// LoadProfile is the ramp profile describing target concurrency over time.
-// Wire keys match schema LoadProfile (OpenAPI line 4375).
-type LoadProfile struct {
-	// Type is the ramp shape: "CONSTANT" (hold Vus for the whole duration) or
-	// "LINEAR" (ramp from StartVus to EndVus). Defaults to CONSTANT on the server.
-	Type string `json:"type,omitempty"`
-	// Vus is the number of virtual users to hold for a CONSTANT profile.
-	Vus int `json:"vus,omitempty"`
-	// StartVus is the number of virtual users at the start of a LINEAR ramp.
-	StartVus int `json:"startVus,omitempty"`
-	// EndVus is the number of virtual users at the end of a LINEAR ramp.
-	EndVus int `json:"endVus,omitempty"`
-	// DurationMillis is how long the scenario runs in milliseconds.
+// LoadStageType is the kind of a LoadStage. Wire values match schema
+// LoadStageType (OpenAPI).
+type LoadStageType string
+
+const (
+	// LoadStageVU is a closed-model stage: hold or ramp the number of concurrent
+	// virtual users.
+	LoadStageVU LoadStageType = "VU"
+	// LoadStageRate is an open-model stage: hold or ramp a target arrival rate in
+	// iterations per second.
+	LoadStageRate LoadStageType = "RATE"
+	// LoadStagePause drives no load for the stage duration.
+	LoadStagePause LoadStageType = "PAUSE"
+)
+
+// RampCurve is the interpolation curve used to ramp a value across a stage.
+// Wire values match schema RampCurve (OpenAPI). Only meaningful for ramp stages.
+type RampCurve string
+
+const (
+	// RampLinear ramps with a constant slope.
+	RampLinear RampCurve = "LINEAR"
+	// RampExponential ramps with a steeper ease-in.
+	RampExponential RampCurve = "EXPONENTIAL"
+	// RampQuadratic ramps with an ease-in (slow then fast).
+	RampQuadratic RampCurve = "QUADRATIC"
+)
+
+// LoadStage is one stage of a LoadProfile, run in sequence: it holds or ramps a
+// setpoint for its DurationMillis. Wire keys match schema LoadStage (OpenAPI).
+//
+// A stage is one of three types:
+//   - VU (closed model): hold Vus, or ramp from StartVus to EndVus along Curve.
+//   - RATE (open model): hold Rate, or ramp from StartRate to EndRate
+//     (iterations/second) along Curve, optionally capped at MaxVus virtual users.
+//   - PAUSE: drive no load for DurationMillis.
+//
+// Pointer types are used for the optional numeric setpoints so that a meaningful
+// zero (e.g. StartVus=0 at the bottom of a ramp, or Rate=0) is still emitted on
+// the wire; omitempty drops them only when the pointer itself is nil.
+type LoadStage struct {
+	// Type is the stage kind: "VU", "RATE" or "PAUSE" (required).
+	Type LoadStageType `json:"type,omitempty"`
+	// DurationMillis is how long this stage runs in milliseconds (> 0, required).
 	DurationMillis int64 `json:"durationMillis,omitempty"`
-	// IterationPacingMillis is an optional minimum delay between successive
-	// iterations of a virtual user.
-	IterationPacingMillis int64 `json:"iterationPacingMillis,omitempty"`
+	// Curve is the ramp interpolation curve ("LINEAR", "EXPONENTIAL" or
+	// "QUADRATIC"); only meaningful for ramp stages.
+	Curve RampCurve `json:"curve,omitempty"`
+	// Vus is the number of virtual users to hold for a VU hold stage.
+	Vus *int `json:"vus,omitempty"`
+	// StartVus is the virtual users at the start of a VU ramp.
+	StartVus *int `json:"startVus,omitempty"`
+	// EndVus is the virtual users at the end of a VU ramp.
+	EndVus *int `json:"endVus,omitempty"`
+	// Rate is the arrival rate (iterations/second) to hold for a RATE hold stage.
+	Rate *float64 `json:"rate,omitempty"`
+	// StartRate is the arrival rate at the start of a RATE ramp.
+	StartRate *float64 `json:"startRate,omitempty"`
+	// EndRate is the arrival rate at the end of a RATE ramp.
+	EndRate *float64 `json:"endRate,omitempty"`
+	// MaxVus optionally caps the auto-scaling VU pool that runs the started
+	// iterations of a RATE stage (defaults to the global VU cap).
+	MaxVus *int `json:"maxVus,omitempty"`
+}
+
+// LoadProfile is an ordered list of stages run in sequence, describing the load
+// over time. Wire keys match schema LoadProfile (OpenAPI).
+type LoadProfile struct {
+	// Stages are the ordered stages run one after another (required).
+	Stages []LoadStage `json:"stages"`
+}
+
+// ConstantVusStage builds a VU hold stage holding vus virtual users for
+// durationMillis.
+func ConstantVusStage(vus int, durationMillis int64) LoadStage {
+	return LoadStage{Type: LoadStageVU, Vus: &vus, DurationMillis: durationMillis}
+}
+
+// RampVusStage builds a VU ramp stage ramping from startVus to endVus over
+// durationMillis along curve.
+func RampVusStage(startVus, endVus int, durationMillis int64, curve RampCurve) LoadStage {
+	return LoadStage{Type: LoadStageVU, StartVus: &startVus, EndVus: &endVus, DurationMillis: durationMillis, Curve: curve}
+}
+
+// ConstantRateStage builds a RATE hold stage holding rate iterations/second for
+// durationMillis.
+func ConstantRateStage(rate float64, durationMillis int64) LoadStage {
+	return LoadStage{Type: LoadStageRate, Rate: &rate, DurationMillis: durationMillis}
+}
+
+// RampRateStage builds a RATE ramp stage ramping from startRate to endRate
+// (iterations/second) over durationMillis along curve.
+func RampRateStage(startRate, endRate float64, durationMillis int64, curve RampCurve) LoadStage {
+	return LoadStage{Type: LoadStageRate, StartRate: &startRate, EndRate: &endRate, DurationMillis: durationMillis, Curve: curve}
+}
+
+// PauseStage builds a PAUSE stage driving no load for durationMillis.
+func PauseStage(durationMillis int64) LoadStage {
+	return LoadStage{Type: LoadStagePause, DurationMillis: durationMillis}
 }
 
 // LoadStep is a single templated request step in a load scenario.

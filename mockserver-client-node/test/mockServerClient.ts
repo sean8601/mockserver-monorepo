@@ -299,11 +299,12 @@ async function test() {
         labels: {team: "node"},
         maxRequests: 100,
         profile: {
-            type: "LINEAR",
-            startVus: 1,
-            endVus: 10,
-            durationMillis: 5000,
-            iterationPacingMillis: 50
+            stages: [
+                {type: "VU", startVus: 1, endVus: 10, durationMillis: 5000, curve: "LINEAR"},
+                {type: "VU", vus: 10, durationMillis: 10000},
+                {type: "PAUSE", durationMillis: 1000},
+                {type: "RATE", rate: 5, durationMillis: 5000, maxVus: 20}
+            ]
         },
         steps: [
             {

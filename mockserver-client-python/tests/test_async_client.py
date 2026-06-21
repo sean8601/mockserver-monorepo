@@ -23,6 +23,7 @@ from mockserver.models import (
     HttpResponse,
     LoadProfile,
     LoadScenario,
+    LoadStage,
     LoadStep,
     OpenAPIExpectation,
     Ports,
@@ -612,7 +613,7 @@ class TestAsyncLoadScenario:
     def _scenario(self) -> LoadScenario:
         return LoadScenario(
             name="checkout-flow",
-            profile=LoadProfile(type="CONSTANT", vus=5, duration_millis=30000),
+            profile=LoadProfile(stages=[LoadStage.vu_stage(30000, vus=5)]),
             steps=[
                 LoadStep(request=HttpRequest(method="GET", path="/health")),
             ],
@@ -627,7 +628,7 @@ class TestAsyncLoadScenario:
         assert MockHandler.last_path == "/mockserver/loadScenario"
         sent = json.loads(MockHandler.last_request_body)
         assert sent["name"] == "checkout-flow"
-        assert sent["profile"]["vus"] == 5
+        assert sent["profile"]["stages"][0]["vus"] == 5
         assert result["status"] == "running"
 
     @pytest.mark.asyncio

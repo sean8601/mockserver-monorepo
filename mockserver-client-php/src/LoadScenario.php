@@ -9,7 +9,7 @@ namespace MockServer;
  * {@see MockServerClient::loadScenario()}.
  *
  * A scenario is an ordered list of templated request steps fired at a target
- * concurrency described by a ramp {@see LoadProfile}, with per-iteration data
+ * load described by a staged {@see LoadProfile}, with per-iteration data
  * variation. It is a pure SLI producer: each completed request records a
  * latency/error sample that {@see MockServerClient::verifySlo()} can read.
  *
@@ -20,7 +20,10 @@ namespace MockServer;
  * @example
  *   $scenario = LoadScenario::scenario('checkout-load')
  *       ->maxRequests(5000)
- *       ->profile(LoadProfile::constant(10, 30000)->iterationPacingMillis(50))
+ *       ->profile(LoadProfile::of(
+ *           LoadStage::vuRamp(1, 10, 10000),
+ *           LoadStage::vuHold(10, 30000),
+ *       ))
  *       ->addStep(
  *           HttpRequest::request()->method('GET')->path('/api/item/$iteration.index'),
  *           Delay::milliseconds(20),
@@ -74,7 +77,7 @@ class LoadScenario implements \JsonSerializable
     }
 
     /**
-     * Set the ramp profile describing target concurrency over time.
+     * Set the staged load profile describing the load over time.
      */
     public function profile(LoadProfile $profile): self
     {

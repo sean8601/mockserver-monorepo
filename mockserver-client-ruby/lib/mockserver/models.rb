@@ -2083,30 +2083,66 @@ module MockServer
     end
   end
 
-  # The traffic-shaping profile of a load scenario. A +CONSTANT+ profile drives a
-  # fixed number of virtual users (+vus+); a +LINEAR+ profile ramps from +start_vus+
-  # to +end_vus+ over +duration_millis+.
-  class LoadProfile
-    attr_accessor :type, :vus, :start_vus, :end_vus, :duration_millis, :iteration_pacing_millis
+  # One stage of a {LoadProfile}, run in sequence. Each stage holds or ramps a
+  # setpoint for +duration_millis+:
+  #
+  # * +VU+ (closed model) - hold +vus+ virtual users, or ramp +start_vus+ to
+  #   +end_vus+ along +curve+.
+  # * +RATE+ (open model) - hold +rate+ iterations/second, or ramp +start_rate+
+  #   to +end_rate+ along +curve+, optionally capping the auto-scaling
+  #   virtual-user pool at +max_vus+.
+  # * +PAUSE+ - drive no load for +duration_millis+.
+  #
+  # Prefer the {.vu}, {.rate} and {.pause} factories, which emit only the fields
+  # relevant to the stage type and mode.
+  class LoadStage
+    attr_accessor :type, :duration_millis, :curve, :vus, :start_vus, :end_vus,
+                  :rate, :start_rate, :end_rate, :max_vus
 
-    def initialize(type:, vus: nil, start_vus: nil, end_vus: nil,
-                   duration_millis: nil, iteration_pacing_millis: nil)
+    def initialize(type:, duration_millis:, curve: nil, vus: nil, start_vus: nil,
+                   end_vus: nil, rate: nil, start_rate: nil, end_rate: nil, max_vus: nil)
       @type = type
+      @duration_millis = duration_millis
+      @curve = curve
       @vus = vus
       @start_vus = start_vus
       @end_vus = end_vus
-      @duration_millis = duration_millis
-      @iteration_pacing_millis = iteration_pacing_millis
+      @rate = rate
+      @start_rate = start_rate
+      @end_rate = end_rate
+      @max_vus = max_vus
+    end
+
+    # A +VU+ (closed-model) stage - hold +vus+ or ramp +start_vus+ to +end_vus+.
+    def self.vu(duration_millis, vus: nil, start_vus: nil, end_vus: nil, curve: nil)
+      new(type: 'VU', duration_millis: duration_millis, vus: vus,
+          start_vus: start_vus, end_vus: end_vus, curve: curve)
+    end
+
+    # A +RATE+ (open-model) stage - hold +rate+ or ramp +start_rate+ to
+    # +end_rate+ (iterations/second).
+    def self.rate(duration_millis, rate: nil, start_rate: nil, end_rate: nil, max_vus: nil, curve: nil)
+      new(type: 'RATE', duration_millis: duration_millis, rate: rate,
+          start_rate: start_rate, end_rate: end_rate, max_vus: max_vus, curve: curve)
+    end
+
+    # A +PAUSE+ stage - drive no load for +duration_millis+.
+    def self.pause(duration_millis)
+      new(type: 'PAUSE', duration_millis: duration_millis)
     end
 
     def to_h
       MockServer.strip_none({
-        'type'                  => @type,
-        'vus'                   => @vus,
-        'startVus'              => @start_vus,
-        'endVus'                => @end_vus,
-        'durationMillis'        => @duration_millis,
-        'iterationPacingMillis' => @iteration_pacing_millis
+        'type'           => @type,
+        'durationMillis' => @duration_millis,
+        'curve'          => @curve,
+        'vus'            => @vus,
+        'startVus'       => @start_vus,
+        'endVus'         => @end_vus,
+        'rate'           => @rate,
+        'startRate'      => @start_rate,
+        'endRate'        => @end_rate,
+        'maxVus'         => @max_vus
       })
     end
 
@@ -2114,13 +2150,40 @@ module MockServer
       return nil if data.nil?
 
       new(
-        type:                    data['type'],
-        vus:                     data['vus'],
-        start_vus:               data['startVus'],
-        end_vus:                 data['endVus'],
-        duration_millis:         data['durationMillis'],
-        iteration_pacing_millis: data['iterationPacingMillis']
+        type:            data['type'],
+        duration_millis: data['durationMillis'],
+        curve:           data['curve'],
+        vus:             data['vus'],
+        start_vus:       data['startVus'],
+        end_vus:         data['endVus'],
+        rate:            data['rate'],
+        start_rate:      data['startRate'],
+        end_rate:        data['endRate'],
+        max_vus:         data['maxVus']
       )
+    end
+  end
+
+  # The traffic-shaping profile of a load scenario: an ordered list of {LoadStage}
+  # objects run in sequence, each holding or ramping a setpoint (virtual users, an
+  # arrival rate, or a pause) for its duration. The total run length is the sum of
+  # the stage durations.
+  class LoadProfile
+    attr_accessor :stages
+
+    def initialize(stages: [])
+      @stages = stages || []
+    end
+
+    def to_h
+      { 'stages' => @stages.map(&:to_h) }
+    end
+
+    def self.from_hash(data)
+      return nil if data.nil?
+
+      stages_data = data['stages'] || []
+      new(stages: stages_data.map { |s| LoadStage.from_hash(s) })
     end
   end
 

@@ -5,58 +5,67 @@ declare(strict_types=1);
 namespace MockServer;
 
 /**
- * The ramp profile describing the target concurrency of a {@see LoadScenario}
- * over time.
+ * The load profile of a {@see LoadScenario}: an ordered list of
+ * {@see LoadStage}s the orchestrator runs in sequence. Each stage holds or ramps
+ * a setpoint — concurrent virtual users (VU, closed model), an arrival rate in
+ * iterations/second (RATE, open model), or no load at all (PAUSE) — for its
+ * duration.
  *
- * Use {@see LoadProfile::constant()} to hold a fixed number of virtual users for
- * the whole duration, or {@see LoadProfile::linear()} to ramp linearly from
- * {@code startVus} to {@code endVus}.
+ * Use {@see LoadProfile::of()} to build from a list of stages, or the
+ * convenience constructors {@see LoadProfile::constant()} /
+ * {@see LoadProfile::linear()} for a single VU stage.
+ *
+ * @example
+ *   LoadProfile::of(
+ *       LoadStage::vuRamp(1, 10, 10000),
+ *       LoadStage::vuHold(10, 30000),
+ *       LoadStage::pause(5000),
+ *   );
  */
 class LoadProfile implements \JsonSerializable
 {
-    private string $type;
-    private int $durationMillis;
-    private ?int $vus = null;
-    private ?int $startVus = null;
-    private ?int $endVus = null;
-    private ?int $iterationPacingMillis = null;
+    /** @var array<int, LoadStage> */
+    private array $stages = [];
 
-    private function __construct(string $type, int $durationMillis)
+    public function __construct()
     {
-        $this->type = $type;
-        $this->durationMillis = $durationMillis;
     }
 
     /**
-     * Hold {@code $vus} virtual users for the whole {@code $durationMillis}.
+     * Build a profile from an ordered list of stages.
      */
-    public static function constant(int $vus, int $durationMillis): self
+    public static function of(LoadStage ...$stages): self
     {
-        $profile = new self('CONSTANT', $durationMillis);
-        $profile->vus = $vus;
+        $profile = new self();
+        $profile->stages = $stages;
 
         return $profile;
     }
 
     /**
-     * Ramp linearly from {@code $startVus} to {@code $endVus} over
+     * A single VU stage holding {@code $vus} virtual users for the whole
+     * {@code $durationMillis}.
+     */
+    public static function constant(int $vus, int $durationMillis): self
+    {
+        return self::of(LoadStage::vuHold($vus, $durationMillis));
+    }
+
+    /**
+     * A single linear VU ramp from {@code $startVus} to {@code $endVus} over
      * {@code $durationMillis}.
      */
     public static function linear(int $startVus, int $endVus, int $durationMillis): self
     {
-        $profile = new self('LINEAR', $durationMillis);
-        $profile->startVus = $startVus;
-        $profile->endVus = $endVus;
-
-        return $profile;
+        return self::of(LoadStage::vuRamp($startVus, $endVus, $durationMillis, 'LINEAR'));
     }
 
     /**
-     * Set an optional minimum delay between successive iterations of a virtual user.
+     * Append a stage and return this profile.
      */
-    public function iterationPacingMillis(int $iterationPacingMillis): self
+    public function addStage(LoadStage $stage): self
     {
-        $this->iterationPacingMillis = $iterationPacingMillis;
+        $this->stages[] = $stage;
 
         return $this;
     }
@@ -74,23 +83,11 @@ class LoadProfile implements \JsonSerializable
      */
     public function toArray(): array
     {
-        $result = [
-            'type' => $this->type,
-            'durationMillis' => $this->durationMillis,
+        return [
+            'stages' => array_map(
+                static fn (LoadStage $stage): array => $stage->toArray(),
+                $this->stages,
+            ),
         ];
-        if ($this->vus !== null) {
-            $result['vus'] = $this->vus;
-        }
-        if ($this->startVus !== null) {
-            $result['startVus'] = $this->startVus;
-        }
-        if ($this->endVus !== null) {
-            $result['endVus'] = $this->endVus;
-        }
-        if ($this->iterationPacingMillis !== null) {
-            $result['iterationPacingMillis'] = $this->iterationPacingMillis;
-        }
-
-        return $result;
     }
 }

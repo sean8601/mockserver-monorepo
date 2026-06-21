@@ -50,10 +50,11 @@ func TestClient_SetLoadScenario(t *testing.T) {
 		MaxRequests:  5000,
 		Labels:       map[string]string{"team": "checkout"},
 		Profile: &LoadProfile{
-			Type:                  "CONSTANT",
-			Vus:                   10,
-			DurationMillis:        30000,
-			IterationPacingMillis: 50,
+			Stages: []LoadStage{
+				RampVusStage(0, 10, 30000, RampLinear),
+				ConstantVusStage(10, 60000),
+				PauseStage(5000),
+			},
 		},
 		Steps: []LoadStep{
 			{
@@ -89,11 +90,41 @@ func TestClient_SetLoadScenario(t *testing.T) {
 		t.Errorf("expected maxRequests 5000, got %v", m["maxRequests"])
 	}
 	profile := m["profile"].(map[string]interface{})
-	if profile["durationMillis"].(float64) != 30000 {
-		t.Errorf("expected durationMillis 30000, got %v", profile["durationMillis"])
+	stages := profile["stages"].([]interface{})
+	if len(stages) != 3 {
+		t.Fatalf("expected 3 stages, got %d", len(stages))
 	}
-	if profile["iterationPacingMillis"].(float64) != 50 {
-		t.Errorf("expected iterationPacingMillis 50, got %v", profile["iterationPacingMillis"])
+	stage0 := stages[0].(map[string]interface{})
+	if stage0["type"] != "VU" {
+		t.Errorf("expected stage 0 type VU, got %v", stage0["type"])
+	}
+	// A meaningful zero (startVus=0) must still be serialised (pointer + omitempty).
+	if v, ok := stage0["startVus"]; !ok || v.(float64) != 0 {
+		t.Errorf("expected stage 0 startVus 0 present, got %v (present=%v)", v, ok)
+	}
+	if stage0["endVus"].(float64) != 10 {
+		t.Errorf("expected stage 0 endVus 10, got %v", stage0["endVus"])
+	}
+	if stage0["curve"] != "LINEAR" {
+		t.Errorf("expected stage 0 curve LINEAR, got %v", stage0["curve"])
+	}
+	if stage0["durationMillis"].(float64) != 30000 {
+		t.Errorf("expected stage 0 durationMillis 30000, got %v", stage0["durationMillis"])
+	}
+	// VU-ramp stage must not leak RATE fields.
+	if _, ok := stage0["rate"]; ok {
+		t.Errorf("did not expect rate on a VU stage, got %v", stage0["rate"])
+	}
+	stage1 := stages[1].(map[string]interface{})
+	if stage1["type"] != "VU" || stage1["vus"].(float64) != 10 {
+		t.Errorf("expected stage 1 VU hold vus 10, got %v", stage1)
+	}
+	if _, ok := stage1["startVus"]; ok {
+		t.Errorf("did not expect startVus on a VU hold stage, got %v", stage1["startVus"])
+	}
+	stage2 := stages[2].(map[string]interface{})
+	if stage2["type"] != "PAUSE" || stage2["durationMillis"].(float64) != 5000 {
+		t.Errorf("expected stage 2 PAUSE durationMillis 5000, got %v", stage2)
 	}
 	steps := m["steps"].([]interface{})
 	step0 := steps[0].(map[string]interface{})

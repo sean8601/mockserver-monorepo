@@ -16,16 +16,36 @@ namespace MockServer.Client.Models;
 // ===========================================================================
 
 /// <summary>
-/// The ramp shape of a <see cref="LoadProfile"/>.
+/// The kind of a <see cref="LoadStage"/>.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum LoadProfileType
+public enum LoadStageType
 {
-    /// <summary>Hold <see cref="LoadProfile.Vus"/> for the whole duration.</summary>
-    CONSTANT,
+    /// <summary>Closed model: hold or ramp the number of concurrent virtual users.</summary>
+    VU,
 
-    /// <summary>Ramp linearly from <see cref="LoadProfile.StartVus"/> to <see cref="LoadProfile.EndVus"/>.</summary>
-    LINEAR
+    /// <summary>Open model: hold or ramp a target arrival rate in iterations/second.</summary>
+    RATE,
+
+    /// <summary>Drive no load for the stage duration.</summary>
+    PAUSE
+}
+
+/// <summary>
+/// The interpolation curve used to ramp a value across a <see cref="LoadStage"/>.
+/// Only meaningful for ramp stages; ignored for holds and pauses.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RampCurve
+{
+    /// <summary>Constant slope.</summary>
+    LINEAR,
+
+    /// <summary>Steeper ease-in.</summary>
+    EXPONENTIAL,
+
+    /// <summary>Ease-in (slow then fast).</summary>
+    QUADRATIC
 }
 
 /// <summary>
@@ -39,39 +59,99 @@ public enum LoadTemplateType
 }
 
 /// <summary>
-/// Ramp profile describing the target concurrency over time for a <see cref="LoadScenario"/>.
+/// One stage of a <see cref="LoadProfile"/>, run in sequence: it holds or ramps a setpoint for its
+/// <see cref="DurationMillis"/>. A stage is one of three kinds (<see cref="LoadStageType"/>):
+/// VU (closed model — hold <see cref="Vus"/> or ramp <see cref="StartVus"/> to <see cref="EndVus"/>),
+/// RATE (open model — hold <see cref="Rate"/> or ramp <see cref="StartRate"/> to <see cref="EndRate"/>
+/// in iterations/second, optionally capped at <see cref="MaxVus"/>), or PAUSE (no load).
 /// </summary>
-public sealed class LoadProfile
+/// <remarks>
+/// The numeric setpoints are nullable so a meaningful zero (e.g. <c>StartVus = 0</c> at the bottom of a
+/// ramp, or <c>Rate = 0</c>) is still emitted; <see cref="JsonIgnoreCondition.WhenWritingNull"/> drops a
+/// field only when it is null.
+/// </remarks>
+public sealed class LoadStage
 {
-    /// <summary>Ramp shape: CONSTANT holds <see cref="Vus"/>; LINEAR ramps from <see cref="StartVus"/> to <see cref="EndVus"/>.</summary>
+    /// <summary>The stage kind: VU, RATE or PAUSE (required).</summary>
     [JsonPropertyName("type")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public LoadProfileType? Type { get; set; }
+    public LoadStageType? Type { get; set; }
 
-    /// <summary>CONSTANT: number of virtual users to hold (max 50).</summary>
-    [JsonPropertyName("vus")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? Vus { get; set; }
-
-    /// <summary>LINEAR: virtual users at the start of the ramp.</summary>
-    [JsonPropertyName("startVus")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? StartVus { get; set; }
-
-    /// <summary>LINEAR: virtual users at the end of the ramp (max 50).</summary>
-    [JsonPropertyName("endVus")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? EndVus { get; set; }
-
-    /// <summary>How long the scenario runs in milliseconds (max 3600000 = 1h).</summary>
+    /// <summary>How long this stage runs in milliseconds (&gt; 0, required); the sum across stages is the total run length (max 3600000 = 1h).</summary>
     [JsonPropertyName("durationMillis")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? DurationMillis { get; set; }
 
-    /// <summary>Optional minimum delay in milliseconds between successive iterations of a virtual user.</summary>
-    [JsonPropertyName("iterationPacingMillis")]
+    /// <summary>Ramp interpolation curve; only meaningful for ramp stages.</summary>
+    [JsonPropertyName("curve")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public long? IterationPacingMillis { get; set; }
+    public RampCurve? Curve { get; set; }
+
+    /// <summary>VU hold: number of virtual users to hold (max 50).</summary>
+    [JsonPropertyName("vus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Vus { get; set; }
+
+    /// <summary>VU ramp: virtual users at the start of the ramp.</summary>
+    [JsonPropertyName("startVus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StartVus { get; set; }
+
+    /// <summary>VU ramp: virtual users at the end of the ramp (max 50).</summary>
+    [JsonPropertyName("endVus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EndVus { get; set; }
+
+    /// <summary>RATE hold: arrival rate to hold, in iterations/second (max 5000).</summary>
+    [JsonPropertyName("rate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Rate { get; set; }
+
+    /// <summary>RATE ramp: arrival rate at the start of the ramp, in iterations/second.</summary>
+    [JsonPropertyName("startRate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? StartRate { get; set; }
+
+    /// <summary>RATE ramp: arrival rate at the end of the ramp, in iterations/second (max 5000).</summary>
+    [JsonPropertyName("endRate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? EndRate { get; set; }
+
+    /// <summary>RATE stage only: optional cap on the auto-scaling virtual-user pool (defaults to the global VU cap).</summary>
+    [JsonPropertyName("maxVus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxVus { get; set; }
+
+    /// <summary>Build a VU hold stage holding <paramref name="vus"/> virtual users for <paramref name="durationMillis"/>.</summary>
+    public static LoadStage ConstantVus(int vus, long durationMillis)
+        => new() { Type = LoadStageType.VU, Vus = vus, DurationMillis = durationMillis };
+
+    /// <summary>Build a VU ramp stage ramping from <paramref name="startVus"/> to <paramref name="endVus"/> over <paramref name="durationMillis"/>.</summary>
+    public static LoadStage RampVus(int startVus, int endVus, long durationMillis, RampCurve curve = RampCurve.LINEAR)
+        => new() { Type = LoadStageType.VU, StartVus = startVus, EndVus = endVus, DurationMillis = durationMillis, Curve = curve };
+
+    /// <summary>Build a RATE hold stage holding <paramref name="rate"/> iterations/second for <paramref name="durationMillis"/>.</summary>
+    public static LoadStage ConstantRate(double rate, long durationMillis)
+        => new() { Type = LoadStageType.RATE, Rate = rate, DurationMillis = durationMillis };
+
+    /// <summary>Build a RATE ramp stage ramping from <paramref name="startRate"/> to <paramref name="endRate"/> (iterations/second) over <paramref name="durationMillis"/>.</summary>
+    public static LoadStage RampRate(double startRate, double endRate, long durationMillis, RampCurve curve = RampCurve.LINEAR)
+        => new() { Type = LoadStageType.RATE, StartRate = startRate, EndRate = endRate, DurationMillis = durationMillis, Curve = curve };
+
+    /// <summary>Build a PAUSE stage driving no load for <paramref name="durationMillis"/>.</summary>
+    public static LoadStage Pause(long durationMillis)
+        => new() { Type = LoadStageType.PAUSE, DurationMillis = durationMillis };
+}
+
+/// <summary>
+/// An ordered list of stages run in sequence, describing the load over time for a
+/// <see cref="LoadScenario"/>.
+/// </summary>
+public sealed class LoadProfile
+{
+    /// <summary>Ordered stages run one after another (required, max 20).</summary>
+    [JsonPropertyName("stages")]
+    public List<LoadStage> Stages { get; set; } = new();
 }
 
 /// <summary>

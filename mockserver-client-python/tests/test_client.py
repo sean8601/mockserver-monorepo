@@ -18,6 +18,7 @@ from mockserver.models import (
     HttpResponse,
     LoadProfile,
     LoadScenario,
+    LoadStage,
     LoadStep,
     OpenAPIExpectation,
     Times,
@@ -523,11 +524,11 @@ class TestSyncLoadScenario:
             max_requests=1000,
             labels={"team": "payments"},
             profile=LoadProfile(
-                type="LINEAR",
-                start_vus=1,
-                end_vus=10,
-                duration_millis=60000,
-                iteration_pacing_millis=500,
+                stages=[
+                    LoadStage.vu_stage(60000, start_vus=1, end_vus=10, curve="LINEAR"),
+                    LoadStage.rate_stage(30000, rate=50.0, max_vus=20),
+                    LoadStage.pause_stage(5000),
+                ],
             ),
             steps=[
                 LoadStep(
@@ -547,12 +548,29 @@ class TestSyncLoadScenario:
         assert sent["templateType"] == "VELOCITY"
         assert sent["maxRequests"] == 1000
         assert sent["labels"] == {"team": "payments"}
-        assert sent["profile"]["type"] == "LINEAR"
-        assert sent["profile"]["startVus"] == 1
-        assert sent["profile"]["endVus"] == 10
-        assert sent["profile"]["durationMillis"] == 60000
-        assert sent["profile"]["iterationPacingMillis"] == 500
-        assert "vus" not in sent["profile"]
+        stages = sent["profile"]["stages"]
+        assert len(stages) == 3
+        # VU ramp stage
+        assert stages[0]["type"] == "VU"
+        assert stages[0]["startVus"] == 1
+        assert stages[0]["endVus"] == 10
+        assert stages[0]["durationMillis"] == 60000
+        assert stages[0]["curve"] == "LINEAR"
+        assert "vus" not in stages[0]
+        assert "rate" not in stages[0]
+        # RATE hold stage
+        assert stages[1]["type"] == "RATE"
+        assert stages[1]["rate"] == 50.0
+        assert stages[1]["maxVus"] == 20
+        assert stages[1]["durationMillis"] == 30000
+        assert "vus" not in stages[1]
+        assert "startRate" not in stages[1]
+        # PAUSE stage
+        assert stages[2]["type"] == "PAUSE"
+        assert stages[2]["durationMillis"] == 5000
+        assert "vus" not in stages[2]
+        assert "rate" not in stages[2]
+        assert "curve" not in stages[2]
         assert len(sent["steps"]) == 2
         assert sent["steps"][0]["name"] == "login"
         assert sent["steps"][0]["request"]["method"] == "POST"
@@ -572,17 +590,17 @@ class TestSyncLoadScenario:
             assert SyncMockHandler.last_method == "PUT"
             sent = json.loads(SyncMockHandler.last_request_body)
             assert sent["name"] == "checkout-flow"
-            assert sent["profile"]["type"] == "LINEAR"
+            assert sent["profile"]["stages"][0]["type"] == "VU"
             assert sent["steps"][0]["request"]["path"] == "/login"
             assert result["status"] == "running"
 
     def test_load_scenario_accepts_dict(self, sync_mock_server):
         SyncMockHandler.response_body = json.dumps({"status": "running"})
         with MockServerClient("127.0.0.1", sync_mock_server) as client:
-            client.load_scenario({"name": "raw", "profile": {"type": "CONSTANT", "vus": 5, "durationMillis": 1000}, "steps": []})
+            client.load_scenario({"name": "raw", "profile": {"stages": [{"type": "VU", "vus": 5, "durationMillis": 1000}]}, "steps": []})
             sent = json.loads(SyncMockHandler.last_request_body)
             assert sent["name"] == "raw"
-            assert sent["profile"]["vus"] == 5
+            assert sent["profile"]["stages"][0]["vus"] == 5
 
     def test_load_scenario_status(self, sync_mock_server):
         SyncMockHandler.response_body = json.dumps({"status": "running", "completedRequests": 42})

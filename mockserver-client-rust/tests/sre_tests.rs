@@ -62,7 +62,11 @@ fn stub(status: u16, resp_body: &'static str) -> (MockServerClient, mpsc::Receiv
 fn test_load_scenario_serializes_to_spec_shape() {
     let scenario = LoadScenario::new(
         "checkout-load",
-        LoadProfile::constant(10, 30_000).iteration_pacing_millis(50),
+        LoadProfile::of(vec![
+            LoadStage::vu_ramp(1, 10, 10_000, RampCurve::Linear),
+            LoadStage::vu_hold(10, 30_000),
+            LoadStage::pause(5_000),
+        ]),
         vec![LoadStep::new(
             HttpRequest::new()
                 .method("GET")
@@ -80,10 +84,20 @@ fn test_load_scenario_serializes_to_spec_shape() {
     assert_eq!(json["name"], "checkout-load");
     assert_eq!(json["templateType"], "VELOCITY");
     assert_eq!(json["maxRequests"], 5000);
-    assert_eq!(json["profile"]["type"], "CONSTANT");
-    assert_eq!(json["profile"]["vus"], 10);
-    assert_eq!(json["profile"]["durationMillis"], 30000);
-    assert_eq!(json["profile"]["iterationPacingMillis"], 50);
+    let stages = &json["profile"]["stages"];
+    assert_eq!(stages[0]["type"], "VU");
+    assert_eq!(stages[0]["startVus"], 1);
+    assert_eq!(stages[0]["endVus"], 10);
+    assert_eq!(stages[0]["durationMillis"], 10000);
+    assert_eq!(stages[0]["curve"], "LINEAR");
+    assert_eq!(stages[1]["type"], "VU");
+    assert_eq!(stages[1]["vus"], 10);
+    assert_eq!(stages[1]["durationMillis"], 30000);
+    assert!(stages[1].get("curve").is_none());
+    assert!(stages[1].get("startVus").is_none());
+    assert_eq!(stages[2]["type"], "PAUSE");
+    assert_eq!(stages[2]["durationMillis"], 5000);
+    assert!(stages[2].get("vus").is_none());
 
     let step = &json["steps"][0];
     assert_eq!(step["request"]["method"], "GET");
@@ -99,13 +113,41 @@ fn test_load_scenario_serializes_to_spec_shape() {
 fn test_load_profile_linear_shape() {
     let profile = LoadProfile::linear(1, 50, 60_000);
     let json = serde_json::to_value(&profile).unwrap();
-    assert_eq!(json["type"], "LINEAR");
-    assert_eq!(json["startVus"], 1);
-    assert_eq!(json["endVus"], 50);
-    assert_eq!(json["durationMillis"], 60000);
-    // Optional fields absent.
-    assert!(json.get("vus").is_none());
-    assert!(json.get("iterationPacingMillis").is_none());
+    let stage = &json["stages"][0];
+    assert_eq!(stage["type"], "VU");
+    assert_eq!(stage["curve"], "LINEAR");
+    assert_eq!(stage["startVus"], 1);
+    assert_eq!(stage["endVus"], 50);
+    assert_eq!(stage["durationMillis"], 60000);
+    // Irrelevant fields absent.
+    assert!(stage.get("vus").is_none());
+    assert!(stage.get("rate").is_none());
+    assert!(stage.get("maxVus").is_none());
+}
+
+#[test]
+fn test_load_profile_rate_stage_shape() {
+    let profile = LoadProfile::of(vec![
+        LoadStage::rate_hold(100.0, 30_000).max_vus(20),
+        LoadStage::rate_ramp(10.0, 200.0, 60_000, RampCurve::Exponential),
+    ]);
+    let json = serde_json::to_value(&profile).unwrap();
+
+    let hold = &json["stages"][0];
+    assert_eq!(hold["type"], "RATE");
+    assert_eq!(hold["rate"], 100.0);
+    assert_eq!(hold["durationMillis"], 30000);
+    assert_eq!(hold["maxVus"], 20);
+    assert!(hold.get("curve").is_none());
+    assert!(hold.get("vus").is_none());
+
+    let ramp = &json["stages"][1];
+    assert_eq!(ramp["type"], "RATE");
+    assert_eq!(ramp["curve"], "EXPONENTIAL");
+    assert_eq!(ramp["startRate"], 10.0);
+    assert_eq!(ramp["endRate"], 200.0);
+    assert!(ramp.get("rate").is_none());
+    assert!(ramp.get("maxVus").is_none());
 }
 
 #[test]
@@ -125,7 +167,8 @@ fn test_set_load_scenario_sends_put_to_load_scenario() {
     assert_eq!(cap.url, "/mockserver/loadScenario");
     let sent: serde_json::Value = serde_json::from_str(&cap.body).unwrap();
     assert_eq!(sent["name"], "s");
-    assert_eq!(sent["profile"]["vus"], 1);
+    assert_eq!(sent["profile"]["stages"][0]["type"], "VU");
+    assert_eq!(sent["profile"]["stages"][0]["vus"], 1);
 }
 
 #[test]

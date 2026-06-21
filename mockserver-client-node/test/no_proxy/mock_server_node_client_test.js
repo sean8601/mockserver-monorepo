@@ -1330,10 +1330,11 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         labels: { team: "node-client" },
         maxRequests: 10,
         profile: {
-            type: "CONSTANT",
-            vus: 2,
-            durationMillis: 1000,
-            iterationPacingMillis: 100
+            stages: [
+                { type: "VU", vus: 2, durationMillis: 1000 },
+                { type: "PAUSE", durationMillis: 200 },
+                { type: "RATE", rate: 5, durationMillis: 1000 }
+            ]
         },
         steps: [
             {

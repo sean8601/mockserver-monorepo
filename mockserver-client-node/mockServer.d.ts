@@ -447,21 +447,58 @@ export interface HttpChaosProfile {
 }
 
 /**
- * Traffic profile that shapes a {@link LoadScenario}'s virtual-user concurrency
- * over time. `CONSTANT` holds `vus` for `durationMillis`; `LINEAR` ramps from
- * `startVus` to `endVus` across `durationMillis`.
+ * The kind of a {@link LoadStage} in a {@link LoadProfile}.
+ *
+ * - `VU` — closed model: hold or ramp the number of concurrent virtual users.
+ * - `RATE` — open model: hold or ramp a target arrival rate (iterations/second).
+ * - `PAUSE` — drive no load for the stage's `durationMillis`.
+ */
+export type LoadStageType = "VU" | "RATE" | "PAUSE";
+
+/**
+ * The interpolation curve used to ramp a value (virtual users or arrival rate)
+ * from a start setpoint to an end setpoint across a ramping {@link LoadStage}.
+ */
+export type RampCurve = "LINEAR" | "EXPONENTIAL" | "QUADRATIC";
+
+/**
+ * One stage of a {@link LoadProfile}: a contiguous slice of the run holding or
+ * ramping a setpoint for `durationMillis`. Stages run in sequence.
+ *
+ * - `VU` stages hold `vus`, or ramp from `startVus` to `endVus` along `curve`.
+ * - `RATE` stages hold `rate`, or ramp from `startRate` to `endRate`
+ *   (iterations/second) along `curve`, optionally capped at `maxVus`.
+ * - `PAUSE` stages drive no load and use only `durationMillis`.
+ */
+export interface LoadStage {
+  type: LoadStageType;
+  /** length of this stage in milliseconds (> 0) */
+  durationMillis: number;
+  /** ramp curve for ramping VU/RATE stages (defaults to LINEAR) */
+  curve?: RampCurve;
+  /** VU hold: the fixed number of virtual users */
+  vus?: number;
+  /** VU ramp: virtual users at the start of the ramp */
+  startVus?: number;
+  /** VU ramp: virtual users at the end of the ramp */
+  endVus?: number;
+  /** RATE hold: the fixed arrival rate in iterations/second */
+  rate?: number;
+  /** RATE ramp: arrival rate at the start of the ramp (iterations/second) */
+  startRate?: number;
+  /** RATE ramp: arrival rate at the end of the ramp (iterations/second) */
+  endRate?: number;
+  /** RATE only: optional cap on virtual users used to drive the rate */
+  maxVus?: number;
+}
+
+/**
+ * Traffic profile that shapes a {@link LoadScenario} over time as an ordered
+ * list of {@link LoadStage}s run in sequence. Each stage holds or ramps virtual
+ * users (`VU`), an arrival rate (`RATE`), or drives no load (`PAUSE`).
  */
 export interface LoadProfile {
-  type: "CONSTANT" | "LINEAR";
-  durationMillis: number;
-  /** CONSTANT only: the fixed number of virtual users */
-  vus?: number;
-  /** LINEAR only: virtual users at the start of the ramp */
-  startVus?: number;
-  /** LINEAR only: virtual users at the end of the ramp */
-  endVus?: number;
-  /** optional minimum time between iterations per virtual user */
-  iterationPacingMillis?: number;
+  stages: LoadStage[];
 }
 
 /**

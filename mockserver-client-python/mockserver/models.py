@@ -1934,43 +1934,135 @@ class CrudExpectationsDefinition:
 
 
 @dataclass
-class LoadProfile:
-    """The shape of load injected by a :class:`LoadScenario`.
+class LoadStage:
+    """One stage of a :class:`LoadProfile`, run in sequence.
 
-    For a ``CONSTANT`` profile set ``vus`` (virtual users). For a ``LINEAR``
-    profile set ``start_vus`` and ``end_vus`` to ramp between them over
-    ``duration_millis``. ``iteration_pacing_millis`` caps how often each
-    virtual user starts a fresh iteration.
+    Each stage holds or ramps a setpoint for ``duration_millis``:
+
+    * ``VU`` (closed model) — hold ``vus`` virtual users, or ramp from
+      ``start_vus`` to ``end_vus`` along ``curve``.
+    * ``RATE`` (open model) — hold ``rate`` iterations/second, or ramp from
+      ``start_rate`` to ``end_rate`` along ``curve``, optionally capping the
+      auto-scaling virtual-user pool at ``max_vus``.
+    * ``PAUSE`` — drive no load for ``duration_millis``.
+
+    Prefer the :meth:`vu_stage`, :meth:`rate_stage` and :meth:`pause_stage`
+    factories, which emit only the fields relevant to the stage type and mode.
     """
 
-    type: str = "CONSTANT"
+    type: str = "VU"
     duration_millis: int = 0
+    curve: str | None = None
     vus: int | None = None
     start_vus: int | None = None
     end_vus: int | None = None
-    iteration_pacing_millis: int | None = None
+    rate: float | None = None
+    start_rate: float | None = None
+    end_rate: float | None = None
+    max_vus: int | None = None
+
+    @classmethod
+    def vu_stage(
+        cls,
+        duration_millis: int,
+        *,
+        vus: int | None = None,
+        start_vus: int | None = None,
+        end_vus: int | None = None,
+        curve: str | None = None,
+    ) -> LoadStage:
+        """A ``VU`` (closed-model) stage — hold ``vus`` or ramp ``start_vus``→``end_vus``."""
+        return cls(
+            type="VU",
+            duration_millis=duration_millis,
+            vus=vus,
+            start_vus=start_vus,
+            end_vus=end_vus,
+            curve=curve,
+        )
+
+    @classmethod
+    def rate_stage(
+        cls,
+        duration_millis: int,
+        *,
+        rate: float | None = None,
+        start_rate: float | None = None,
+        end_rate: float | None = None,
+        max_vus: int | None = None,
+        curve: str | None = None,
+    ) -> LoadStage:
+        """A ``RATE`` (open-model) stage — hold ``rate`` or ramp ``start_rate``→``end_rate`` (iterations/second)."""
+        return cls(
+            type="RATE",
+            duration_millis=duration_millis,
+            rate=rate,
+            start_rate=start_rate,
+            end_rate=end_rate,
+            max_vus=max_vus,
+            curve=curve,
+        )
+
+    @classmethod
+    def pause_stage(cls, duration_millis: int) -> LoadStage:
+        """A ``PAUSE`` stage — drive no load for ``duration_millis``."""
+        return cls(type="PAUSE", duration_millis=duration_millis)
 
     def to_dict(self) -> dict:
         return _strip_none({
             "type": self.type,
             "durationMillis": self.duration_millis,
+            "curve": self.curve,
             "vus": self.vus,
             "startVus": self.start_vus,
             "endVus": self.end_vus,
-            "iterationPacingMillis": self.iteration_pacing_millis,
+            "rate": self.rate,
+            "startRate": self.start_rate,
+            "endRate": self.end_rate,
+            "maxVus": self.max_vus,
         })
+
+    @classmethod
+    def from_dict(cls, data: dict) -> LoadStage:
+        if data is None:
+            return None
+        return cls(
+            type=data.get("type", "VU"),
+            duration_millis=data.get("durationMillis", 0),
+            curve=data.get("curve"),
+            vus=data.get("vus"),
+            start_vus=data.get("startVus"),
+            end_vus=data.get("endVus"),
+            rate=data.get("rate"),
+            start_rate=data.get("startRate"),
+            end_rate=data.get("endRate"),
+            max_vus=data.get("maxVus"),
+        )
+
+
+@dataclass
+class LoadProfile:
+    """The shape of load injected by a :class:`LoadScenario`.
+
+    A profile is an ordered list of :class:`LoadStage` objects run in sequence;
+    each stage holds or ramps a setpoint (virtual users, an arrival rate, or a
+    pause) for its duration. The total run length is the sum of stage durations.
+    """
+
+    stages: list[LoadStage] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "stages": [s.to_dict() for s in self.stages],
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> LoadProfile:
         if data is None:
             return None
+        stages = data.get("stages") or []
         return cls(
-            type=data.get("type", "CONSTANT"),
-            duration_millis=data.get("durationMillis", 0),
-            vus=data.get("vus"),
-            start_vus=data.get("startVus"),
-            end_vus=data.get("endVus"),
-            iteration_pacing_millis=data.get("iterationPacingMillis"),
+            stages=[LoadStage.from_dict(s) for s in stages],
         )
 
 

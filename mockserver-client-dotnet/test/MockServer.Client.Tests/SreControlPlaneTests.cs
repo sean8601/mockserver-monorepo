@@ -62,10 +62,12 @@ public class SreControlPlaneTests
             Labels = new Dictionary<string, string> { ["team"] = "checkout" },
             Profile = new LoadProfile
             {
-                Type = LoadProfileType.CONSTANT,
-                Vus = 10,
-                DurationMillis = 30000,
-                IterationPacingMillis = 50
+                Stages = new List<LoadStage>
+                {
+                    LoadStage.RampVus(0, 10, 30000, RampCurve.LINEAR),
+                    LoadStage.ConstantVus(10, 60000),
+                    LoadStage.Pause(5000)
+                }
             },
             Steps = new List<LoadStep>
             {
@@ -86,10 +88,18 @@ public class SreControlPlaneTests
         handler.LastRequestBody.Should().Contain("\"templateType\":\"VELOCITY\"");
         handler.LastRequestBody.Should().Contain("\"maxRequests\":5000");
         handler.LastRequestBody.Should().Contain("\"profile\"");
-        handler.LastRequestBody.Should().Contain("\"type\":\"CONSTANT\"");
-        handler.LastRequestBody.Should().Contain("\"vus\":10");
+        handler.LastRequestBody.Should().Contain("\"stages\"");
+        handler.LastRequestBody.Should().Contain("\"type\":\"VU\"");
+        handler.LastRequestBody.Should().Contain("\"type\":\"PAUSE\"");
+        handler.LastRequestBody.Should().Contain("\"curve\":\"LINEAR\"");
+        // A meaningful zero (startVus=0) must still be serialised.
+        handler.LastRequestBody.Should().Contain("\"startVus\":0");
+        handler.LastRequestBody.Should().Contain("\"endVus\":10");
         handler.LastRequestBody.Should().Contain("\"durationMillis\":30000");
-        handler.LastRequestBody.Should().Contain("\"iterationPacingMillis\":50");
+        handler.LastRequestBody.Should().Contain("\"vus\":10");
+        handler.LastRequestBody.Should().Contain("\"durationMillis\":5000");
+        // Old v1 scalar profile fields must be gone.
+        handler.LastRequestBody.Should().NotContain("iterationPacingMillis");
         handler.LastRequestBody.Should().Contain("\"steps\"");
         handler.LastRequestBody.Should().Contain("\"thinkTime\"");
     }
