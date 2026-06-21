@@ -214,6 +214,18 @@ as the request body for MockServer's REST API (e.g. `PUT /mockserver/expectation
 | `expectation_for_operation.json` | Create expectation for a specific OpenAPI operation |
 | `expectation_from_classpath.json` | Create expectation from a classpath OpenAPI spec |
 
+### contract/
+
+| File | Description |
+|------|-------------|
+| `contract_test.json` | Request body for running an OpenAPI spec as a contract test against a live service (`PUT /mockserver/contractTest`) |
+
+### pact/
+
+| File | Description |
+|------|-------------|
+| `pact_with_provider_state.json` | A Pact v3 contract with a provider-state-gated interaction (`PUT /mockserver/pact/import`) |
+
 ### llm/
 
 | File | Description |

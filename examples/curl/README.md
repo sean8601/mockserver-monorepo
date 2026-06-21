@@ -244,6 +244,18 @@ These runnable shell scripts were extracted from the original reference markdown
 | `expectation_for_operation.sh` | Create expectation for a specific OpenAPI operation |
 | `expectation_from_classpath.sh` | Create expectation from a classpath OpenAPI spec |
 
+### contract/
+
+| File | Description |
+|------|-------------|
+| `contract_test.sh` | Run an OpenAPI spec as a contract test against a live service (`PUT /mockserver/contractTest`) |
+
+### pact/
+
+| File | Description |
+|------|-------------|
+| `import_pact_with_provider_state.sh` | Import a Pact v3 contract gated by a provider state, then activate the state so it matches |
+
 ### llm/
 
 | File | Description |

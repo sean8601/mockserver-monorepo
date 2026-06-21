@@ -2560,3 +2560,45 @@ curl -X PUT "http://localhost:1080/mockserver/verify" \
   }
 }'
 ```
+
+#### Contract Test An OpenAPI Spec Against A Live Service
+
+```bash
+curl -X PUT "http://localhost:1080/mockserver/contractTest" \
+-H "Content-Type: application/json" \
+-d '{
+  "spec": "https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json",
+  "baseUrl": "https://example.com",
+  "operationId": "listPets"
+}'
+```
+
+#### Import A Pact Contract With A Provider State
+
+```bash
+curl -X PUT "http://localhost:1080/mockserver/pact/import" \
+-H "Content-Type: application/json" \
+-d '{
+  "consumer": {"name": "frontend"},
+  "provider": {"name": "users-service"},
+  "interactions": [
+    {
+      "description": "get user 1 when it exists",
+      "providerStates": [
+        {"name": "a user with id 1 exists", "params": {"id": 1}}
+      ],
+      "request": {"method": "GET", "path": "/api/users/1"},
+      "response": {
+        "status": 200,
+        "headers": {"content-type": ["application/json"]},
+        "body": {"id": 1, "name": "Alice"}
+      }
+    }
+  ],
+  "metadata": {"pactSpecification": {"version": "3.0.0"}}
+}'
+
+curl -X PUT "http://localhost:1080/mockserver/scenario/pact-provider-state" \
+-H "Content-Type: application/json" \
+-d '{"state": "a user with id 1 exists"}'
+```

@@ -2886,4 +2886,27 @@ RSpec.describe 'MockServer models' do
       expect(result).to eq({ 'a' => false, 'b' => '' })
     end
   end
+
+  # -------------------------------------------------------------------
+  # Cookie serialization (object map, not the header/query array form)
+  # -------------------------------------------------------------------
+  describe 'cookie serialization' do
+    it 'serializes request cookies as a {name => value} object map' do
+      req = MockServer::HttpRequest.new(path: '/c')
+      req.with_cookie('session', 'abc123')
+      expect(req.to_h['cookies']).to eq({ 'session' => 'abc123' })
+    end
+
+    it 'serializes response cookies as a {name => value} object map' do
+      resp = MockServer::HttpResponse.new
+      resp.with_cookie('set', 'v1')
+      expect(resp.to_h['cookies']).to eq({ 'set' => 'v1' })
+    end
+
+    it 'deserializes request cookies from an object map' do
+      req = MockServer::HttpRequest.from_hash({ 'path' => '/c', 'cookies' => { 'session' => 'abc123' } })
+      expect(req.cookies[0].name).to eq('session')
+      expect(req.cookies[0].values).to eq(['abc123'])
+    end
+  end
 end

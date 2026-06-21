@@ -189,6 +189,29 @@ module MockServer
     end
   end
 
+  # @api private
+  # Unlike headers / query parameters, MockServer represents cookies as a
+  # single-value {name => value} object map, not a [{name, values}] array.
+  def self.serialize_cookies(items)
+    return nil if items.nil?
+
+    items.each_with_object({}) do |item, map|
+      map[item.name] = item.values.is_a?(Array) ? item.values.first : item.values
+    end
+  end
+
+  # @api private
+  def self.deserialize_cookies(data)
+    return nil if data.nil?
+
+    if data.is_a?(Hash)
+      return data.map { |k, v| KeyToMultiValue.new(name: k, values: v.is_a?(Array) ? v : [v]) }
+    end
+
+    # tolerate the legacy array form on read
+    deserialize_key_multi_values(data)
+  end
+
   # -------------------------------------------------------------------
   # Model classes
   # -------------------------------------------------------------------
@@ -565,7 +588,7 @@ module MockServer
         'path'                  => @path,
         'queryStringParameters' => MockServer.serialize_key_multi_values(@query_string_parameters),
         'headers'               => MockServer.serialize_key_multi_values(@headers),
-        'cookies'               => MockServer.serialize_key_multi_values(@cookies),
+        'cookies'               => MockServer.serialize_cookies(@cookies),
         'body'                  => MockServer.serialize_body(@body),
         'secure'                => @secure,
         'keepAlive'             => @keep_alive,
@@ -583,7 +606,7 @@ module MockServer
         path:                    data['path'],
         query_string_parameters: MockServer.deserialize_key_multi_values(data['queryStringParameters']),
         headers:                 MockServer.deserialize_key_multi_values(data['headers']),
-        cookies:                 MockServer.deserialize_key_multi_values(data['cookies']),
+        cookies:                 MockServer.deserialize_cookies(data['cookies']),
         body:                    MockServer.deserialize_body(data['body']),
         secure:                  data['secure'],
         keep_alive:              data['keepAlive'],
@@ -715,7 +738,7 @@ module MockServer
         'statusCode'       => @status_code,
         'reasonPhrase'     => @reason_phrase,
         'headers'          => MockServer.serialize_key_multi_values(@headers),
-        'cookies'          => MockServer.serialize_key_multi_values(@cookies),
+        'cookies'          => MockServer.serialize_cookies(@cookies),
         'body'             => MockServer.serialize_body(@body),
         'delay'            => @delay&.to_h,
         'connectionOptions' => @connection_options&.to_h,
@@ -730,7 +753,7 @@ module MockServer
         status_code:       data['statusCode'],
         reason_phrase:     data['reasonPhrase'],
         headers:           MockServer.deserialize_key_multi_values(data['headers']),
-        cookies:           MockServer.deserialize_key_multi_values(data['cookies']),
+        cookies:           MockServer.deserialize_cookies(data['cookies']),
         body:              MockServer.deserialize_body(data['body']),
         delay:             Delay.from_hash(data['delay']),
         connection_options: ConnectionOptions.from_hash(data['connectionOptions']),

@@ -664,7 +664,8 @@ class TestHttpRequest:
     def test_to_dict_with_cookies(self):
         r = HttpRequest.request().with_cookie("sid", "abc")
         result = r.to_dict()
-        assert result["cookies"] == [{"name": "sid", "values": ["abc"]}]
+        # cookies serialize as a {name: value} object map (not the header/query array form)
+        assert result["cookies"] == {"sid": "abc"}
 
     def test_to_dict_camel_case_keys(self):
         r = HttpRequest(
@@ -3434,3 +3435,20 @@ class TestBodyFileType:
         assert _to_camel("file_path") == "filePath"
         assert _from_camel("templateFile") == "template_file"
         assert _from_camel("filePath") == "file_path"
+
+
+class TestCookieSerialization:
+    # MockServer represents cookies as a {name: value} object map, not the
+    # [{name, values}] array used for headers / query parameters.
+    def test_request_cookie_serialized_as_object_map(self):
+        req = HttpRequest().with_path("/c").with_cookie("session", "abc123")
+        assert req.to_dict()["cookies"] == {"session": "abc123"}
+
+    def test_response_cookie_serialized_as_object_map(self):
+        resp = HttpResponse().with_cookie("set", "v1")
+        assert resp.to_dict()["cookies"] == {"set": "v1"}
+
+    def test_request_cookie_round_trip_from_object_map(self):
+        req = HttpRequest.from_dict({"path": "/c", "cookies": {"session": "abc123"}})
+        assert req.cookies[0].name == "session"
+        assert req.cookies[0].values == ["abc123"]

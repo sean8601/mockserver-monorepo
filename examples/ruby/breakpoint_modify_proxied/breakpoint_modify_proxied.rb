@@ -35,7 +35,7 @@ client.reset
 # Step 1: Create a mock "upstream" endpoint
 # ------------------------------------------------------------------
 client.when(
-  HttpRequest.request(method: 'GET', path: '/upstream/greeting')
+  HttpRequest.new(method: 'GET', path: '/upstream/greeting')
 ).respond(
   HttpResponse.new(
     status_code: 200,
@@ -54,7 +54,7 @@ puts '1. Created upstream mock: GET /upstream/greeting -> 200 JSON'
 # Step 2: Create a loopback forward expectation
 # ------------------------------------------------------------------
 client.when(
-  HttpRequest.request(method: 'GET', path: '/service/greeting')
+  HttpRequest.new(method: 'GET', path: '/service/greeting')
 ).forward(
   HttpOverrideForwardedRequest.new(
     http_request: HttpRequest.new(
@@ -73,23 +73,34 @@ puts '2. Created forward expectation: GET /service/greeting -> loopback to /upst
 # Step 3: Register a RESPONSE-phase breakpoint
 # ------------------------------------------------------------------
 response_handler = lambda { |request, response|
-  puts "3. Breakpoint fired! Original response body: #{response['body']}"
+  # The handler receives the request and response as HttpRequest / HttpResponse
+  # objects and must return an HttpResponse (return nil to auto-continue).
+  raw_body = response.body
+  raw_body = raw_body.json || raw_body.string if raw_body.is_a?(MockServer::Body)
+  puts "3. Breakpoint fired! Original response body: #{raw_body}"
 
-  original_body = begin
-    JSON.parse(response['body'] || '{}')
-  rescue JSON::ParserError
-    {}
-  end
+  # The forwarded JSON body may arrive already parsed (a Hash) or as a String.
+  original_body =
+    case raw_body
+    when Hash then raw_body
+    when String
+      begin
+        JSON.parse(raw_body)
+      rescue JSON::ParserError
+        {}
+      end
+    else {}
+    end
 
   # Modify the response
   original_body['source'] = 'modified-by-breakpoint'
   original_body['injectedField'] = 'this was added by the breakpoint handler'
 
-  {
-    'statusCode' => response.fetch('statusCode', 200),
-    'headers' => response.fetch('headers', {}),
-    'body' => JSON.generate(original_body)
-  }
+  HttpResponse.new(
+    status_code: response.status_code || 200,
+    headers: response.headers,
+    body: JSON.generate(original_body)
+  )
 }
 
 bp_id = client.add_breakpoint(

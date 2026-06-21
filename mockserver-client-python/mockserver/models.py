@@ -196,6 +196,26 @@ def _deserialize_key_multi_values(data: list | dict | None) -> list[KeyToMultiVa
     return result
 
 
+def _serialize_cookies(items: list[KeyToMultiValue] | None) -> dict | None:
+    # Unlike headers / query parameters, MockServer represents cookies as a
+    # single-value {name: value} object map, not a [{name, values}] array.
+    if items is None:
+        return None
+    return {item.name: (item.values[0] if item.values else "") for item in items}
+
+
+def _deserialize_cookies(data: dict | list | None) -> list[KeyToMultiValue] | None:
+    if data is None:
+        return None
+    if isinstance(data, dict):
+        return [
+            KeyToMultiValue(name=k, values=v if isinstance(v, list) else [v])
+            for k, v in data.items()
+        ]
+    # tolerate the legacy array form on read
+    return _deserialize_key_multi_values(data)
+
+
 @dataclass
 class DelayDistribution:
     type: str | None = None
@@ -618,7 +638,7 @@ class HttpRequest:
             "path": self.path,
             "queryStringParameters": _serialize_key_multi_values(self.query_string_parameters),
             "headers": _serialize_key_multi_values(self.headers),
-            "cookies": _serialize_key_multi_values(self.cookies),
+            "cookies": _serialize_cookies(self.cookies),
             "body": _serialize_body(self.body),
             "secure": self.secure,
             "keepAlive": self.keep_alive,
@@ -636,7 +656,7 @@ class HttpRequest:
             path=data.get("path"),
             query_string_parameters=_deserialize_key_multi_values(data.get("queryStringParameters")),
             headers=_deserialize_key_multi_values(data.get("headers")),
-            cookies=_deserialize_key_multi_values(data.get("cookies")),
+            cookies=_deserialize_cookies(data.get("cookies")),
             body=_deserialize_body(data.get("body")),
             secure=data.get("secure"),
             keep_alive=data.get("keepAlive"),
@@ -747,7 +767,7 @@ class HttpResponse:
             "statusCode": self.status_code,
             "reasonPhrase": self.reason_phrase,
             "headers": _serialize_key_multi_values(self.headers),
-            "cookies": _serialize_key_multi_values(self.cookies),
+            "cookies": _serialize_cookies(self.cookies),
             "body": _serialize_body(self.body),
             "delay": self.delay.to_dict() if self.delay else None,
             "connectionOptions": self.connection_options.to_dict() if self.connection_options else None,
@@ -762,7 +782,7 @@ class HttpResponse:
             status_code=data.get("statusCode"),
             reason_phrase=data.get("reasonPhrase"),
             headers=_deserialize_key_multi_values(data.get("headers")),
-            cookies=_deserialize_key_multi_values(data.get("cookies")),
+            cookies=_deserialize_cookies(data.get("cookies")),
             body=_deserialize_body(data.get("body")),
             delay=Delay.from_dict(data.get("delay")),
             connection_options=ConnectionOptions.from_dict(data.get("connectionOptions")),

@@ -2306,3 +2306,44 @@ Verify a forwarded/proxied response was received by matching on `httpResponse` (
   }
 }
 ```
+
+#### Contract Test An OpenAPI Spec Against A Live Service
+
+Body for `PUT /mockserver/contractTest` — runs each operation of the spec
+against `baseUrl` and returns a per-operation pass/fail report.
+
+```json
+{
+  "spec": "https://raw.githubusercontent.com/mock-server/mockserver-monorepo/master/mockserver/mockserver-integration-testing/src/main/resources/org/mockserver/openapi/openapi_petstore_example.json",
+  "baseUrl": "https://example.com",
+  "operationId": "listPets"
+}
+```
+
+#### Import A Pact Contract With A Provider State
+
+Body for `PUT /mockserver/pact/import` — the interaction is gated by a provider
+state, so the generated expectation only matches once the
+`pact-provider-state` scenario is set to that state.
+
+```json
+{
+  "consumer": {"name": "frontend"},
+  "provider": {"name": "users-service"},
+  "interactions": [
+    {
+      "description": "get user 1 when it exists",
+      "providerStates": [
+        {"name": "a user with id 1 exists", "params": {"id": 1}}
+      ],
+      "request": {"method": "GET", "path": "/api/users/1"},
+      "response": {
+        "status": 200,
+        "headers": {"content-type": ["application/json"]},
+        "body": {"id": 1, "name": "Alice"}
+      }
+    }
+  ],
+  "metadata": {"pactSpecification": {"version": "3.0.0"}}
+}
+```

@@ -63,6 +63,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- Examples index page + more runnable examples + example accuracy fixes -->
+- **Website examples index, more runnable examples, and example-accuracy fixes** (`jekyll-www.mock-server.com`,
+  `examples`, `mockserver-core`, `mockserver-client-python`, `mockserver-client-ruby`). A new
+  `examples.html` page lists every example folder (by language/interface plus the curl/json feature
+  categories) with a one-line description and a link to its GitHub folder; the site's "Examples" nav link
+  now points to it. New examples: a Java-client LLM mock (`LlmMockExamples`) and curl + json examples for
+  OpenAPI contract testing (`/mockserver/contractTest`) and Pact provider-states. Every example in the
+  `examples/` tree (curl, json, java, node, python, ruby, go, dotnet, rust) was run against a live MockServer
+  built from current source; the bugs that surfaced were fixed:
+  - **Cookie serialization bug in the Python and Ruby clients** — request/response cookies were serialized as
+    a `[{name, values}]` array (the form used for headers/query parameters) instead of the `{name: value}`
+    object map MockServer requires, so the server rejected any client-built cookie matcher with `400`. Both
+    clients now serialize cookies as a map (and still tolerate the legacy array form on read); headers and
+    query parameters are unchanged. Regression tests added.
+  - **`httpWebSocketResponse` JSON Schema** now accepts the `matchers` array (per-incoming-frame response
+    rules: `frameType`/`textMatcher`/`responses`) — already supported by the model but missing from the
+    schema, so it was wrongly rejected on validation / flagged by IDEs.
+  - Example fixes: `verify_sequence` (curl + json) used a bare array but `/verifySequence` requires
+    `{"httpRequests": [...]}`; several OpenAPI examples used a stale `mock-server/mockserver` spec URL (now
+    the monorepo URL) and hardcoded developer file paths (now a bundled local spec / classpath resource);
+    a Node example dropped an undeclared `js-string-escape` dependency.
+
 <!-- Documentation & example coverage for recently-shipped features -->
 - **Documentation and example coverage for recently-added features** (`jekyll-www.mock-server.com`, `examples`,
   OpenAPI spec). Closed the gap between shipped features and the consumer docs/examples. New consumer pages
