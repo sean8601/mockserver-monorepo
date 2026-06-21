@@ -539,7 +539,6 @@ public class HttpState {
                         .setArguments(ie.getMessage())
                         .setThrowable(ie)
                 );
-                ie.printStackTrace();
             }
         });
     }

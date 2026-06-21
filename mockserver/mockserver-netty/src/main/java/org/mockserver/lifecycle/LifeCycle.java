@@ -305,8 +305,16 @@ public abstract class LifeCycle implements Stoppable {
                         try {
                             return Stream.of(channelFuture.get());
                         } catch (Throwable throwable) {
-                            // ignore
-                            throwable.printStackTrace();
+                            // best-effort cleanup during shutdown - log and continue
+                            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
+                                mockServerLogger.logEvent(
+                                    new LogEntry()
+                                        .setType(SERVER_CONFIGURATION)
+                                        .setLogLevel(DEBUG)
+                                        .setMessageFormat("exception while resolving server channel during shutdown - " + throwable.getMessage())
+                                        .setThrowable(throwable)
+                                );
+                            }
                             return Stream.empty();
                         }
                     })
@@ -317,8 +325,16 @@ public abstract class LifeCycle implements Stoppable {
                         channelFuture.get();
                     }
                 } catch (Throwable throwable) {
-                    // ignore
-                    throwable.printStackTrace();
+                    // best-effort cleanup during shutdown - log and continue
+                    if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setType(SERVER_CONFIGURATION)
+                                .setLogLevel(DEBUG)
+                                .setMessageFormat("exception while disconnecting server channel during shutdown - " + throwable.getMessage())
+                                .setThrowable(throwable)
+                        );
+                    }
                 }
 
                 // Server channels are now disconnected so no new requests are accepted; wait for any

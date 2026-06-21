@@ -4582,7 +4582,6 @@ public class ConfigurationProperties {
                     try {
                         properties.load(inputStream);
                     } catch (IOException e) {
-                        e.printStackTrace();
                         if (LoggerHolder.LOGGER != null) {
                             LoggerHolder.LOGGER.logEvent(
                                 new LogEntry()
@@ -4614,7 +4613,6 @@ public class ConfigurationProperties {
                             );
                         }
                     } catch (IOException e) {
-                        e.printStackTrace();
                         if (LoggerHolder.LOGGER != null) {
                             LoggerHolder.LOGGER.logEvent(
                                 new LogEntry()
@@ -4696,7 +4694,6 @@ public class ConfigurationProperties {
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
             if (LoggerHolder.LOGGER != null) {
                 LoggerHolder.LOGGER.logEvent(
                     new LogEntry()

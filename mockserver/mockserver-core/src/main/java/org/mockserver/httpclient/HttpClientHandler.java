@@ -6,8 +6,11 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.ssl.NotSslRecordException;
+import org.mockserver.log.model.LogEntry;
+import org.mockserver.logging.MockServerLogger;
 import org.mockserver.model.HttpResponse;
 import org.mockserver.model.Message;
+import org.slf4j.event.Level;
 
 import javax.net.ssl.SSLException;
 import java.util.Arrays;
@@ -27,8 +30,15 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
         "Connection reset"
     );
 
+    private final MockServerLogger mockServerLogger;
+
     HttpClientHandler() {
+        this(new MockServerLogger(HttpClientHandler.class));
+    }
+
+    HttpClientHandler(MockServerLogger mockServerLogger) {
         super(false);
+        this.mockServerLogger = mockServerLogger;
     }
 
     @Override
@@ -110,7 +120,14 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         if (isNotSslException(cause) && isNotConnectionReset(cause)) {
-            cause.printStackTrace();
+            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.WARN)
+                        .setMessageFormat("exception caught by HTTP client handler - " + cause.getMessage())
+                        .setThrowable(cause)
+                );
+            }
         }
         java.util.concurrent.CompletableFuture<Message> responseFuture = ctx.channel().attr(RESPONSE_FUTURE).get();
         if (responseFuture != null) {

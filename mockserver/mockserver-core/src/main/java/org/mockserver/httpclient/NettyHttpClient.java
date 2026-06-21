@@ -312,7 +312,14 @@ public class NettyHttpClient {
                     if (throwable == null) {
                         binaryResponseFuture.complete((BinaryMessage) message);
                     } else {
-                        throwable.printStackTrace();
+                        if (mockServerLogger.isEnabledForInstance(Level.WARN)) {
+                            mockServerLogger.logEvent(
+                                new LogEntry()
+                                    .setLogLevel(Level.WARN)
+                                    .setMessageFormat("exception while sending binary request - " + throwable.getMessage())
+                                    .setThrowable(throwable)
+                            );
+                        }
                         binaryResponseFuture.completeExceptionally(throwable);
                     }
                 });
