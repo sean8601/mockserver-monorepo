@@ -30,9 +30,33 @@ Located at `mockserver-core/src/main/java/org/mockserver/llm/client/LlmProviderS
 
 ### Metrics Export (`OtelMetricsExporter`)
 
-Pushes MockServer's explicitly-defined metrics (request counts, expectation-match counts, action counts) to OTLP as observable gauges. Controlled by `mockserver.otelMetricsEnabled`.
+Pushes MockServer's explicitly-defined metrics to OTLP. Controlled by `mockserver.otelMetricsEnabled`.
 
 Located in `mockserver-core/src/main/java/org/mockserver/metrics/OtelMetricsExporter.java`.
+
+**What is exported:**
+- All `Metrics.Name` enum gauges (request counts, action counts, WebSocket counts) as OTLP observable gauges.
+- JVM memory, thread, and GC gauges (`jvm_memory_used_bytes`, `jvm_threads_current`, etc.).
+- Chaos-related counters and gauges.
+- The full `mock_server_load_*` family — **load-run metrics are exported via OTLP** (this is the first metric family produced by MockServer that is also pushed over OTLP in addition to the Prometheus scrape endpoint).
+
+**Load-run OTLP instruments:**
+
+| OTEL instrument name | OTEL type | Unit |
+|----------------------|-----------|------|
+| `mock_server_load_request_duration_seconds` | DoubleHistogram | `s` |
+| `mock_server_load_requests` | LongCounter | — |
+| `mock_server_load_request_bytes` | LongCounter | `By` |
+| `mock_server_load_response_bytes` | LongCounter | `By` |
+| `mock_server_load_iterations` | LongCounter | — |
+| `mock_server_load_throttled` | LongCounter | — |
+| `mock_server_load_errors` | LongCounter | — |
+| `mock_server_load_active_vus` | Observable gauge | — |
+| `mock_server_load_inflight_requests` | Observable gauge | — |
+
+Custom labels from scenario/step `labels` maps are passed as OTEL `Attributes` on every instrument record call. Unlike Prometheus, the OTEL path does not require an allowlist — all key/value pairs are forwarded.
+
+**Exemplars on the load histogram:** `mock_server_load_request_duration_seconds` attaches a `trace_id` exemplar to each histogram observation when the upstream response carries a W3C `traceparent` header. This allows a latency spike in an OTEL-connected backend (e.g. Grafana Tempo) to be pivoted directly to the trace that produced it.
 
 ### OTLP Endpoint Resolution (`OtelEndpoints`)
 

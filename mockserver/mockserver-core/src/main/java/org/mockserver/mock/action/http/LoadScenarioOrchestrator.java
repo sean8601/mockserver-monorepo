@@ -5,6 +5,7 @@ import org.mockserver.load.IterationContext;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
 import org.mockserver.load.LoadStep;
+import org.mockserver.metrics.MetricLabels;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.Delay;
 import org.mockserver.model.HttpRequest;
@@ -12,6 +13,7 @@ import org.mockserver.model.HttpResponse;
 import org.mockserver.model.HttpTemplate;
 import org.mockserver.slo.Scope;
 import org.mockserver.slo.SloSampleStore;
+import org.mockserver.telemetry.W3CTraceContext;
 import org.mockserver.templates.engine.TemplateEngine;
 import org.mockserver.templates.engine.mustache.MustacheTemplateEngine;
 import org.mockserver.templates.engine.velocity.VelocityTemplateEngine;
@@ -19,7 +21,11 @@ import org.mockserver.time.TimeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -81,6 +87,12 @@ public class LoadScenarioOrchestrator {
     private final AtomicReference<RunningScenario> current = new AtomicReference<>(null);
     /** Most recently started run, retained for test assertions on slot accounting after termination. */
     private volatile RunningScenario lastRun;
+    /**
+     * The {@code run_id} of the previous (now-completed or replaced) run, whose durable
+     * {@code mock_server_load_*} series are retained until the next run starts and then evicted. Bounds
+     * the accumulation of per-run series to at most one completed run (see {@link Metrics#evictLoadRun}).
+     */
+    private volatile String previousRunId;
     private volatile LoadScenarioStatus lastTerminatedStatus;
     /** Sender installed by the runtime; null in unit tests until start() supplies one. */
     private volatile Function<HttpRequest, CompletableFuture<HttpResponse>> installedSender;
@@ -135,6 +147,34 @@ public class LoadScenarioOrchestrator {
         lastRun = running;
         current.set(running);
 
+        // Bound durable-metric accumulation: evict the PREVIOUS run's mock_server_load_* series now
+        // that a new run is starting. The just-completed (or replaced) run's final totals stayed
+        // scrapeable until this point; from here only the new run's series accumulate, so at most one
+        // completed run's series are ever retained (the prior run's UUID run_id labels would otherwise
+        // persist in the Prometheus registry forever). Roll previous forward to the new run.
+        if (previousRunId != null && !previousRunId.equals(running.runId)) {
+            Metrics.evictLoadRun(previousRunId);
+        }
+        previousRunId = running.runId;
+
+        // Install live readers for the active-VU and in-flight load gauges (scrape-time, mirrors the
+        // chaos GaugeWithCallback). A run that has ended reports nothing because current is cleared.
+        Metrics.setLoadGaugeReaders(
+            () -> {
+                RunningScenario run = current.get();
+                if (run == null) {
+                    return Collections.emptyMap();
+                }
+                return Collections.singletonMap(run.gaugeKey, Math.max(0, run.activeVUs.get()));
+            },
+            () -> {
+                RunningScenario run = current.get();
+                if (run == null) {
+                    return Collections.emptyMap();
+                }
+                return Collections.singletonMap(run.gaugeKey, Math.max(0, run.inFlightCount.get()));
+            });
+
         // Schedule the periodic control tick on the scheduler thread (no I/O on that thread).
         ScheduledFuture<?> tick = scheduler.scheduleAtFixedRate(
             () -> tick(running), CONTROL_TICK_MILLIS, CONTROL_TICK_MILLIS, TimeUnit.MILLISECONDS);
@@ -158,6 +198,7 @@ public class LoadScenarioOrchestrator {
         stopInternal("stopped");
         lastTerminatedStatus = null;
         lastRun = null;
+        previousRunId = null;
     }
 
     /**
@@ -182,6 +223,7 @@ public class LoadScenarioOrchestrator {
                 tick.cancel(false);
             }
             lastTerminatedStatus = run.snapshot(terminalState, clock.getAsLong());
+            Metrics.setLoadGaugeReaders(null, null);
             LOG.info("load scenario '{}' {} ({} requests sent)", run.scenario.getName(), terminalState, run.requestsSent.get());
         }
     }
@@ -232,6 +274,7 @@ public class LoadScenarioOrchestrator {
                 tick.cancel(false);
             }
             lastTerminatedStatus = run.snapshot("completed", clock.getAsLong());
+            Metrics.setLoadGaugeReaders(null, null);
             LOG.info("load scenario '{}' completed ({} requests sent)", run.scenario.getName(), run.requestsSent.get());
         }
     }
@@ -305,6 +348,7 @@ public class LoadScenarioOrchestrator {
         List<LoadStep> steps = run.scenario.getSteps();
         if (stepIndex >= steps.size()) {
             // Iteration finished: account it and schedule the next iteration (respect pacing).
+            Metrics.incrementLoadIteration(run.scenario.getName(), run.runId);
             long nextIteration = vuIteration + 1;
             Long pacing = run.scenario.getProfile().getIterationPacingMillis();
             long pacingMillis = pacing != null ? Math.max(0, pacing) : 0;
@@ -323,6 +367,8 @@ public class LoadScenarioOrchestrator {
         long count = run.requestsSent.get();
         long elapsed = clock.getAsLong() - run.startedAt;
         IterationContext iteration = new IterationContext(globalIndex, vuId, vuIteration, elapsed, count);
+        final String stepLabel = run.stepLabel(step, stepIndex);
+        final Map<String, String> stepCustomLabels = run.customLabelsFor(step);
 
         HttpRequest rendered;
         try {
@@ -332,47 +378,84 @@ public class LoadScenarioOrchestrator {
                 run.scenario.getName(), stepIndex, vuId, vuIteration, e.getMessage());
             run.failed.incrementAndGet();
             run.requestsSent.incrementAndGet();
+            Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
             return;
         }
 
-        // Self-load guard at dispatch: acquire an in-flight permit and an RPS token.
+        // Self-load guard at dispatch: acquire an in-flight permit and an RPS token. Each skip is a
+        // distinct throttle reason so an operator can see why a scenario could not reach its setpoint.
         if (!run.inFlight.tryAcquire()) {
-            // Too many in flight: skip this dispatch this round and try the next step after pacing.
+            Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
+            Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
             return;
         }
 
         run.requestsSent.incrementAndGet();
+        run.inFlightCount.incrementAndGet();
         final long startNanos = TimeService.nanoTime();
         final String host = hostOf(rendered);
+        final String route = run.routeLabel(step, rendered);
+        final String method = methodOf(rendered);
+        final long requestBytes = bodyBytes(rendered != null ? rendered.getBodyAsRawBytes() : null);
+        final String traceId = traceIdOf(rendered);
         CompletableFuture<HttpResponse> future;
         try {
             future = run.sender.apply(rendered);
         } catch (Exception e) {
             run.inFlight.release();
-            recordResult(run, host, null, startNanos, true);
+            run.inFlightCount.decrementAndGet();
+            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, startNanos, true, "connection");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
             return;
         }
         if (future == null) {
             run.inFlight.release();
-            recordResult(run, host, null, startNanos, true);
+            run.inFlightCount.decrementAndGet();
+            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, startNanos, true, "null_response");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
             return;
         }
         future.whenComplete((response, throwable) -> {
             run.inFlight.release();
+            run.inFlightCount.decrementAndGet();
             boolean error = throwable != null || response == null
                 || (response.getStatusCode() != null && response.getStatusCode() >= 500);
-            recordResult(run, host, response, startNanos, error);
+            String errorKind = classifyError(throwable, response);
+            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, response, startNanos, error, errorKind);
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step);
         });
+    }
+
+    /**
+     * Classify the error branch of a completed dispatch into one of the kind labels, or null when
+     * the request succeeded. A {@code TimeoutException} (or a cause/message naming a timeout) maps to
+     * {@code timeout}; any other throwable to {@code connection}; a null response to
+     * {@code null_response}; an HTTP 5xx to {@code http_5xx}.
+     */
+    private static String classifyError(Throwable throwable, HttpResponse response) {
+        if (throwable != null) {
+            Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
+            String name = cause.getClass().getSimpleName().toLowerCase();
+            String message = cause.getMessage() != null ? cause.getMessage().toLowerCase() : "";
+            if (name.contains("timeout") || message.contains("timeout") || message.contains("timed out")) {
+                return "timeout";
+            }
+            return "connection";
+        }
+        if (response == null) {
+            return "null_response";
+        }
+        if (response.getStatusCode() != null && response.getStatusCode() >= 500) {
+            return "http_5xx";
+        }
+        return null;
     }
 
     private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step) {
@@ -387,17 +470,32 @@ public class LoadScenarioOrchestrator {
         scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1), thinkMillis, TimeUnit.MILLISECONDS);
     }
 
-    private void recordResult(RunningScenario run, String host, HttpResponse response, long startNanos, boolean error) {
+    private void recordResult(RunningScenario run, String host, String stepLabel, String route, String method,
+                              long requestBytes, String traceId, Map<String, String> customLabels,
+                              HttpResponse response, long startNanos, boolean error, String errorKind) {
         long latencyMillis = Math.max(0, (TimeService.nanoTime() - startNanos) / 1_000_000L);
         if (error) {
             run.failed.incrementAndGet();
         } else {
             run.succeeded.incrementAndGet();
         }
-        run.recordLatency(latencyMillis);
         Integer statusCode = response != null ? response.getStatusCode() : null;
-        // Mirror the forward-path observability so load traffic shows up on the same metrics.
-        Metrics.observeForwardRequest(host, statusCode, latencyMillis / 1000.0);
+        double latencySeconds = latencyMillis / 1000.0;
+        long responseBytes = bodyBytes(response != null ? response.getBodyAsRawBytes() : null);
+        // Mirror the forward-path observability so load traffic still shows up on the same metrics
+        // (unchanged behaviour — the load family is purely additive).
+        Metrics.observeForwardRequest(host, statusCode, latencySeconds);
+        // New first-class load family: scenario/run/step/route/method/status-class dimensioned.
+        // Only emit while this run is still the current run: a run replaced by a new PUT has already had
+        // its load series evicted, so a late-draining in-flight request must NOT resurrect them (those
+        // resurrected series would otherwise be orphaned, since eviction only ever targets the prior run).
+        if (current.get() == run) {
+            Metrics.observeLoadRequest(run.scenario.getName(), run.runId, stepLabel, route, method, statusCode,
+                latencySeconds, requestBytes, responseBytes, traceId, customLabels);
+            if (error && errorKind != null) {
+                Metrics.incrementLoadError(run.scenario.getName(), run.runId, errorKind);
+            }
+        }
         // Feed the SLO sample store so the SLO verdict feature can read load-driven SLIs.
         SloSampleStore.getInstance().record(TimeService.currentTimeMillis(), latencyMillis, error, Scope.FORWARD, host);
     }
@@ -412,6 +510,38 @@ public class LoadScenarioOrchestrator {
             return colon > 0 ? hostHeader.substring(0, colon) : hostHeader;
         }
         return request.getRemoteAddress();
+    }
+
+    private static String methodOf(HttpRequest request) {
+        if (request == null || request.getMethod() == null) {
+            return "unknown";
+        }
+        String method = request.getMethod().getValue();
+        return method != null && !method.isEmpty() ? method : "unknown";
+    }
+
+    private static long bodyBytes(byte[] body) {
+        return body != null ? body.length : 0L;
+    }
+
+    /**
+     * Extract the request's trace id (for the histogram exemplar) from a W3C {@code traceparent}
+     * header on the rendered request, or null when absent/invalid.
+     */
+    private static String traceIdOf(HttpRequest request) {
+        if (request == null) {
+            return null;
+        }
+        String traceparent = request.getFirstHeader("traceparent");
+        if (traceparent == null || traceparent.isEmpty()) {
+            return null;
+        }
+        try {
+            W3CTraceContext context = W3CTraceContext.parse(traceparent, null);
+            return context != null && context.isValid() ? context.getTraceId() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -509,9 +639,14 @@ public class LoadScenarioOrchestrator {
         final Function<HttpRequest, CompletableFuture<HttpResponse>> sender;
         final long startedAt;
         final long startedAtEpoch = TimeService.currentTimeMillis();
+        /** Stable per-run id (UUID) used as the {@code run_id} metric label and exposed in the status DTO. */
+        final String runId = UUID.randomUUID().toString();
+        final Metrics.LoadGaugeKey gaugeKey;
         final AtomicBoolean stopped = new AtomicBoolean(false);
         /** Live VU population: incremented once per launch, decremented exactly once when a loop ends. */
         final AtomicInteger activeVUs = new AtomicInteger(0);
+        /** Live in-flight (dispatched, not-yet-completed) request count, backing the inflight gauge. */
+        final AtomicInteger inFlightCount = new AtomicInteger(0);
         /** Monotonic VU-id allocator, kept separate from the live population counter. */
         final AtomicInteger vuIdSequence = new AtomicInteger(0);
         final AtomicInteger targetVUs = new AtomicInteger(0);
@@ -527,11 +662,6 @@ public class LoadScenarioOrchestrator {
         private long rpsWindowStart;
         private int rpsTokensUsed;
 
-        // Latency reservoir for percentile snapshots (bounded).
-        private static final int LATENCY_CAP = 10_000;
-        private final long[] latencies = new long[LATENCY_CAP];
-        private int latencyCount;
-
         // Engines built lazily for rendering (Velocity/Mustache only).
         private volatile TemplateEngine velocity;
         private volatile TemplateEngine mustache;
@@ -540,6 +670,7 @@ public class LoadScenarioOrchestrator {
             this.scenario = scenario;
             this.sender = sender;
             this.startedAt = startedAt;
+            this.gaugeKey = new Metrics.LoadGaugeKey(scenario.getName(), runId);
             this.inFlight = new Semaphore(Math.max(1, configuration.loadGenerationMaxInFlightRequests()));
             this.maxRps = Math.max(1, configuration.loadGenerationMaxRequestsPerSecond());
             this.rpsWindowStart = startedAt;
@@ -562,24 +693,47 @@ public class LoadScenarioOrchestrator {
             return false;
         }
 
-        synchronized void recordLatency(long latencyMillis) {
-            if (latencyCount < LATENCY_CAP) {
-                latencies[latencyCount++] = latencyMillis;
-            } else {
-                // Reservoir wrap: overwrite a deterministic slot so the snapshot stays bounded.
-                latencies[(int) (requestsSent.get() % LATENCY_CAP)] = latencyMillis;
+        /** The {@code step} metric label: the step's explicit name if set, else its 0-based index. */
+        String stepLabel(LoadStep step, int stepIndex) {
+            if (step != null && step.getName() != null && !step.getName().isBlank()) {
+                return step.getName();
             }
+            return Integer.toString(stepIndex);
         }
 
-        synchronized long percentile(int pct) {
-            if (latencyCount == 0) {
-                return 0;
+        /**
+         * The low-cardinality {@code route} label. When the step has an explicit name, the name is
+         * used (operator override); otherwise the rendered request path is templatised via
+         * {@link MetricLabels#routeOf(String)} so id-shaped segments collapse to {@code {id}}.
+         */
+        String routeLabel(LoadStep step, HttpRequest rendered) {
+            if (step != null && step.getName() != null && !step.getName().isBlank()) {
+                return step.getName();
             }
-            long[] copy = new long[latencyCount];
-            System.arraycopy(latencies, 0, copy, 0, latencyCount);
-            java.util.Arrays.sort(copy);
-            int idx = (int) Math.ceil((pct / 100.0) * latencyCount) - 1;
-            return copy[Math.max(0, Math.min(idx, latencyCount - 1))];
+            String path = rendered != null && rendered.getPath() != null ? rendered.getPath().getValue() : null;
+            return MetricLabels.routeOf(path);
+        }
+
+        /**
+         * Merge scenario-level and step-level custom labels (step keys win on conflict), or null when
+         * neither is present. These become OTEL attributes and allowlisted Prometheus labels.
+         */
+        Map<String, String> customLabelsFor(LoadStep step) {
+            Map<String, String> scenarioLabels = scenario.getLabels();
+            Map<String, String> stepLabels = step != null ? step.getLabels() : null;
+            boolean hasScenario = scenarioLabels != null && !scenarioLabels.isEmpty();
+            boolean hasStep = stepLabels != null && !stepLabels.isEmpty();
+            if (!hasScenario && !hasStep) {
+                return null;
+            }
+            Map<String, String> merged = new LinkedHashMap<>();
+            if (hasScenario) {
+                merged.putAll(scenarioLabels);
+            }
+            if (hasStep) {
+                merged.putAll(stepLabels);
+            }
+            return merged;
         }
 
         HttpRequest render(HttpRequest request, IterationContext iteration) {
@@ -619,6 +773,9 @@ public class LoadScenarioOrchestrator {
         LoadScenarioStatus snapshot(String state, long now) {
             long elapsed = now - startedAt;
             int currentVus = "running".equals(state) ? targetVUs.get() : 0;
+            // Percentiles are derived from the load histogram's buckets (bounded memory, no
+            // reservoir). Any percentile is also directly queryable from the histogram in Prometheus
+            // via histogram_quantile(); these DTO fields keep their identical shape.
             return new LoadScenarioStatus(
                 scenario.getName(),
                 state,
@@ -627,12 +784,15 @@ public class LoadScenarioOrchestrator {
                 requestsSent.get(),
                 succeeded.get(),
                 failed.get(),
-                percentile(50),
-                percentile(95),
-                percentile(99),
-                Integer.toHexString(System.identityHashCode(this)),
+                Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 50),
+                Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 95),
+                Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 99),
+                runId,
                 startedAtEpoch,
-                "running".equals(state) ? null : now
+                "running".equals(state) ? null : now,
+                scenario.getLabels() != null && !scenario.getLabels().isEmpty()
+                    ? Collections.unmodifiableMap(new LinkedHashMap<>(scenario.getLabels()))
+                    : null
             );
         }
     }
@@ -652,11 +812,14 @@ public class LoadScenarioOrchestrator {
         public final String runId;
         public final long startedAtEpochMillis;
         public final Long endedAtEpochMillis;
+        /** Scenario-level custom annotation labels (null when none), echoed for dashboards/clients. */
+        public final Map<String, String> labels;
 
         public LoadScenarioStatus(String name, String state, long elapsedMillis, int currentVus,
                                   long requestsSent, long succeeded, long failed,
                                   long p50Millis, long p95Millis, long p99Millis,
-                                  String runId, long startedAtEpochMillis, Long endedAtEpochMillis) {
+                                  String runId, long startedAtEpochMillis, Long endedAtEpochMillis,
+                                  Map<String, String> labels) {
             this.name = name;
             this.state = state;
             this.elapsedMillis = elapsedMillis;
@@ -670,6 +833,7 @@ public class LoadScenarioOrchestrator {
             this.runId = runId;
             this.startedAtEpochMillis = startedAtEpochMillis;
             this.endedAtEpochMillis = endedAtEpochMillis;
+            this.labels = labels;
         }
     }
 }

@@ -135,6 +135,12 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
             <td>No</td>
             <td>Stop the scenario once this many requests have been dispatched, even if the duration has not elapsed. Useful for budget-bounded runs.</td>
         </tr>
+        <tr>
+            <td><code class="inline code">labels</code></td>
+            <td>object</td>
+            <td>No</td>
+            <td>Scenario-level custom metric labels (string key/value pairs). Keys must be listed in <code class="inline code">mockserver.loadGenerationMetricLabels</code> to appear in Prometheus; all keys appear in OpenTelemetry automatically. See <a href="#observability">Observability &amp; Metrics</a>.</td>
+        </tr>
     </tbody>
 </table>
 
@@ -162,6 +168,16 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
             <td><code class="inline code">thinkTime</code></td>
             <td>Delay</td>
             <td>Optional pause between this step and the next (a <code class="inline code">{ "timeUnit": "MILLISECONDS", "value": 100 }</code> object). Implemented with a non-blocking scheduler — no thread is blocked during think time.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">name</code></td>
+            <td>string</td>
+            <td>Optional step name. When set, it is used as the <code class="inline code">route</code> metric label for this step instead of the auto-templatized request path. Use this to group requests to multiple paths under one label, or to give a step a human-readable name in metric charts.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">labels</code></td>
+            <td>object</td>
+            <td>Optional step-level custom metric labels (string key/value pairs). Override the scenario-level <code class="inline code">labels</code> for this step. Same Prometheus allowlist requirement applies.</td>
         </tr>
     </tbody>
 </table>
@@ -362,44 +378,51 @@ curl -s -X DELETE http://localhost:1080/mockserver/loadScenario</code></pre>
 
 <h2>Safety Caps</h2>
 
-<p>Load generation is bounded by hard caps to prevent the feature from self-DoS-ing the server. Requests that exceed a cap are rejected with <code class="inline code">400 Bad Request</code> and a JSON error message.</p>
+<p>Load generation is bounded by configurable caps to prevent the feature from self-DoS-ing the server. Requests that exceed a cap are rejected with <code class="inline code">400 Bad Request</code> and a JSON error message. All caps can be raised via the corresponding configuration property.</p>
 
 <table class="table-standard">
     <thead>
         <tr>
             <th>Control</th>
-            <th>Default cap</th>
+            <th>Property</th>
+            <th>Default</th>
             <th>Enforced at</th>
         </tr>
     </thead>
     <tbody>
         <tr>
-            <td>Feature flag (<code class="inline code">loadGenerationEnabled</code>)</td>
-            <td><code class="inline code">false</code> (disabled)</td>
+            <td>Feature flag</td>
+            <td><code class="inline code">mockserver.loadGenerationEnabled</code></td>
+            <td><code class="inline code">false</code></td>
             <td>PUT returns <code class="inline code">403</code> when off</td>
         </tr>
         <tr>
             <td>Maximum virtual users</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxVirtualUsers</code></td>
             <td>50</td>
             <td>Scenario validation (rejected at PUT)</td>
         </tr>
         <tr>
             <td>Maximum in-flight requests</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxInFlightRequests</code></td>
             <td>200</td>
             <td>Live in-flight semaphore at dispatch</td>
         </tr>
         <tr>
             <td>Maximum requests per second</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxRequestsPerSecond</code></td>
             <td>500</td>
             <td>Live token bucket at dispatch</td>
         </tr>
         <tr>
             <td>Maximum duration</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxDurationMillis</code></td>
             <td>3 600 000 ms (1 hour)</td>
             <td>Scenario validation (rejected at PUT)</td>
         </tr>
         <tr>
             <td>Maximum steps per scenario</td>
+            <td><code class="inline code">mockserver.loadGenerationMaxSteps</code></td>
             <td>50</td>
             <td>Scenario validation (rejected at PUT)</td>
         </tr>
@@ -456,6 +479,159 @@ curl -s -w "\n%{http_code}" -X PUT http://localhost:1080/mockserver/verifySLO \
 
 <p><strong>Scope note:</strong> the SLO sample store records load-scenario traffic and real proxied traffic under the same <code class="inline code">FORWARD</code> scope, keyed by target host. When asserting SLOs over a load run, use a narrow <code class="inline code">window</code> that covers only the load period to avoid mixing in unrelated traffic.</p>
 
+<a id="observability" class="anchor" href="#observability">&nbsp;</a>
+
+<h2>Observability &amp; Metrics</h2>
+
+<p>Every completed load-scenario dispatch is recorded into a dedicated <code class="inline code">mock_server_load_*</code> Prometheus metric family and mirrored over OpenTelemetry (OTLP). This lets you chart the injector's latency, throughput, and error rate alongside your system-under-test in Grafana, Datadog, or any OTEL-compatible backend — without a separate load tool.</p>
+
+<p>All per-request metrics carry six fixed labels so you can slice and dice without extra queries:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Label</th>
+            <th>Value</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">scenario</code></td>
+            <td>The scenario <code class="inline code">name</code></td>
+        </tr>
+        <tr>
+            <td><code class="inline code">run_id</code></td>
+            <td>A UUID generated at scenario start — stable for one run, resets on each PUT. Use it to filter metrics to exactly one execution.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">step</code></td>
+            <td>Step index (0-based) or the step <code class="inline code">name</code> when set</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">route</code></td>
+            <td>Auto-templatized path (numeric and UUID segments become <code class="inline code">{id}</code>, e.g. <code class="inline code">/api/orders/{id}</code>) or the step <code class="inline code">name</code> when set</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">method</code></td>
+            <td>HTTP method (<code class="inline code">GET</code>, <code class="inline code">POST</code>, …)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">status_class</code></td>
+            <td>Response status class: <code class="inline code">2xx</code>, <code class="inline code">3xx</code>, <code class="inline code">4xx</code>, <code class="inline code">5xx</code>, or <code class="inline code">unknown</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<p>The full metric catalogue:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Metric</th>
+            <th>Type</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code class="inline code">mock_server_load_request_duration_seconds</code></td>
+            <td>Histogram</td>
+            <td>Round-trip latency per dispatch. Query any percentile with <code class="inline code">histogram_quantile</code> in Prometheus or the equivalent in your OTEL backend.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_requests</code></td>
+            <td>Counter</td>
+            <td>Completed dispatches</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_request_bytes</code></td>
+            <td>Counter</td>
+            <td>Outbound request bytes</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_response_bytes</code></td>
+            <td>Counter</td>
+            <td>Inbound response bytes</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_iterations</code></td>
+            <td>Counter</td>
+            <td>Full VU iteration completions (labelled by <code class="inline code">scenario</code> + <code class="inline code">run_id</code> only)</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_throttled</code></td>
+            <td>Counter</td>
+            <td>Dispatches skipped by the self-load guard. Label <code class="inline code">reason</code> = <code class="inline code">inflight_cap</code> or <code class="inline code">rate_limit</code>. A rising value means the scenario could not reach its setpoint.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_errors</code></td>
+            <td>Counter</td>
+            <td>Failed dispatches. Label <code class="inline code">kind</code> = <code class="inline code">render</code>, <code class="inline code">connection</code>, <code class="inline code">timeout</code>, <code class="inline code">null_response</code>, or <code class="inline code">http_5xx</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_active_vus</code></td>
+            <td>Gauge</td>
+            <td>Virtual users currently running</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mock_server_load_inflight_requests</code></td>
+            <td>Gauge</td>
+            <td>Dispatches currently in flight</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Adding custom labels</h3>
+
+<p>Attach domain dimensions (environment, region, team) to metric series using the <code class="inline code">labels</code> field on the scenario or step:</p>
+
+<pre class="prettyprint code"><code class="code"># Enable load generation with a custom label allowlist (Prometheus requires this at startup)
+docker run \
+  -e MOCKSERVER_LOAD_GENERATION_ENABLED=true \
+  -e MOCKSERVER_LOAD_GENERATION_METRIC_LABELS=env,region \
+  mockserver/mockserver
+
+# Scenario with custom labels
+curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "checkout-load",
+    "labels": { "env": "staging", "region": "eu-west-1" },
+    "profile": { "type": "CONSTANT", "vus": 10, "durationMillis": 30000 },
+    "steps": [
+      {
+        "name": "get-order",
+        "labels": { "team": "orders" },
+        "request": { "method": "GET", "path": "/api/orders/$iteration.index",
+                     "socketAddress": { "host": "orders.svc", "port": 8080 } }
+      }
+    ]
+  }'</code></pre>
+
+<p><strong>Prometheus:</strong> Only label keys listed in <code class="inline code">mockserver.loadGenerationMetricLabels</code> (set at startup) appear as Prometheus labels. This is a Prometheus requirement — the schema is fixed at registration time.<br>
+<strong>OpenTelemetry:</strong> All custom label keys are forwarded as OTEL attributes with no allowlist needed.</p>
+
+<h3>Exemplars / trace pivoting</h3>
+
+<p>When your system under test propagates W3C Trace Context, the load-scenario latency histogram (<code class="inline code">mock_server_load_request_duration_seconds</code>) attaches the upstream <code class="inline code">trace_id</code> from the response's <code class="inline code">traceparent</code> header as a Prometheus exemplar. In Grafana, this lets you click a latency spike and jump directly to the trace that caused it.</p>
+
+<h3>Example PromQL</h3>
+
+<pre class="prettyprint code"><code class="code"># p95 request latency for a specific run
+histogram_quantile(0.95,
+  sum by (le, scenario, run_id) (
+    rate(mock_server_load_request_duration_seconds_bucket[1m])
+  )
+)
+
+# Error rate by kind
+sum by (kind) (rate(mock_server_load_errors_total[1m]))
+
+# Is the scenario being throttled?
+rate(mock_server_load_throttled_total[1m])</code></pre>
+
+<p>Metrics require <code class="inline code">metricsEnabled=true</code>. See <a href="/mock_server/observability.html">Observability</a> for the full Prometheus and OTEL configuration reference.</p>
+
 <a id="configuration" class="anchor" href="#configuration">&nbsp;</a>
 
 <h2>Configuration</h2>
@@ -476,6 +652,42 @@ curl -s -w "\n%{http_code}" -X PUT http://localhost:1080/mockserver/verifySLO \
             <td><code class="inline code">false</code></td>
             <td>Master switch. Must be <code class="inline code">true</code> for <code class="inline code">PUT /mockserver/loadScenario</code> to succeed. Set at startup to avoid a restart.</td>
         </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxVirtualUsers</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_VIRTUAL_USERS</code></td>
+            <td>50</td>
+            <td>Maximum concurrent virtual users allowed in a scenario. Raise for higher-concurrency load runs.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxInFlightRequests</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_IN_FLIGHT_REQUESTS</code></td>
+            <td>200</td>
+            <td>Maximum dispatches allowed in flight simultaneously. Acts as a semaphore — dispatches that would exceed this are counted in <code class="inline code">mock_server_load_throttled</code> with reason <code class="inline code">inflight_cap</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxRequestsPerSecond</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND</code></td>
+            <td>500</td>
+            <td>Maximum dispatches per second (token bucket). Dispatches that would exceed this are counted in <code class="inline code">mock_server_load_throttled</code> with reason <code class="inline code">rate_limit</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxDurationMillis</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS</code></td>
+            <td>3 600 000 (1 hour)</td>
+            <td>Maximum scenario duration in milliseconds. Scenarios with a longer duration are rejected at PUT.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxSteps</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_STEPS</code></td>
+            <td>50</td>
+            <td>Maximum number of steps per scenario. Scenarios with more steps are rejected at PUT.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMetricLabels</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_METRIC_LABELS</code></td>
+            <td><code class="inline code">""</code></td>
+            <td>Comma-separated list of custom label keys to register in Prometheus (e.g. <code class="inline code">env,region,team</code>). Must be set before the first scenario runs. OpenTelemetry always receives all custom labels regardless of this setting.</td>
+        </tr>
     </tbody>
 </table>
 
@@ -487,5 +699,6 @@ curl -s -w "\n%{http_code}" -X PUT http://localhost:1080/mockserver/verifySLO \
     <li><a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> &mdash; inject faults alongside load to verify resilience under stress</li>
     <li><a href="/mock_server/chaos_testing.html#slo_resilience_verdicts">SLO Resilience Verdicts</a> &mdash; assert that latency and error-rate objectives held during the load run</li>
     <li><a href="/mock_server/response_templates.html">Response Templates</a> &mdash; the Velocity / Mustache template engines used for <code class="inline code">path</code> and <code class="inline code">body</code> rendering in steps</li>
-    <li><a href="/mock_server/observability.html">Observability</a> &mdash; Prometheus metrics for latency histograms and request counters fed by load scenario traffic</li>
+    <li><a href="/mock_server/observability.html">Observability</a> &mdash; Prometheus and OpenTelemetry configuration; the <code class="inline code">mock_server_load_*</code> family feeds into the same pipeline</li>
+    <li><a href="#observability">Observability &amp; Metrics</a> &mdash; load-specific metrics, custom labels, exemplars, and PromQL examples (this page)</li>
 </ul>

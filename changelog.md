@@ -63,6 +63,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+<!-- First-class load-injection metrics (Prometheus + OTEL) -->
+- **First-class metrics for load injection (load scenarios)** (`mockserver-core`). A load run now exposes a
+  dedicated `mock_server_load_*` metric family over **both Prometheus and OTEL** (previously a load run was
+  indistinguishable from real proxy traffic on `mock_server_forward_*` and emitted nothing to OTEL), so you can
+  chart the load injector alongside your system-under-test. Metrics: `mock_server_load_request_duration_seconds`
+  (histogram, with a `trace_id` exemplar for metric→trace pivot), `..._requests`, `..._request_bytes`,
+  `..._response_bytes`, `..._iterations`, `..._throttled{reason}` (`inflight_cap`/`rate_limit`),
+  `..._errors{kind}` (`timeout`/`connection`/`render`/`http_5xx`/`null_response`), and `..._active_vus` /
+  `..._inflight_requests` (live gauges). All carry structured labels `scenario, run_id, step, route, method,
+  status_class`, where `route` is an auto-templatized low-cardinality path (numeric/UUID/long-hex segments →
+  `{id}`) and `run_id` is a stable per-run UUID correlating the metrics with the `GET /mockserver/loadScenario`
+  status. **Custom labels:** a `LoadScenario` and each `LoadStep` may carry `labels` (and a step `name`) —
+  attached as arbitrary OTEL attributes, and as Prometheus labels for any key named in the new
+  `mockserver.loadGenerationMetricLabels` allowlist (env `MOCKSERVER_LOAD_GENERATION_METRIC_LABELS`). Status-DTO
+  percentiles now derive from the histogram buckets (bounded memory; any percentile is queryable via
+  `histogram_quantile()`), replacing a sample reservoir. Completed-run series stay scrapeable until the next run
+  starts, then are evicted (at most one completed run retained — bounded). Off-path and zero-cost when
+  `metricsEnabled=false` or no run is active; the existing `mock_server_forward_*` behaviour is unchanged.
+
 <!-- Portable example code: remove stale URLs / hardcoded developer paths repo-wide -->
 - **Portable example code across the repo** (`jekyll-www.mock-server.com`, `mockserver-client-node`,
   `mockserver-node`, dev scripts). Removed a stale OpenAPI spec URL (`mock-server/mockserver` → `404`; now the

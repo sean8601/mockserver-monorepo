@@ -279,6 +279,45 @@ A single Prometheus `Counter` makes the event-log ring-buffer saturation cliff o
 
 Under sustained load the event-log ring buffer can saturate and drop events. Previously only WARN/ERROR drops were logged, so INFO/DEBUG drops were silent and the cliff was undetectable. `MockServerEventLog.add(...)` now counts every drop on an always-available `AtomicLong` (readable via `getDroppedLogEventCount()` regardless of whether metrics are enabled), mirrors it to this Prometheus counter via the null-safe static `Metrics.incrementDroppedLogEvents()` (a no-op when metrics are off), and logs a single WARN on the first drop pointing at `ringBufferSize` / log verbosity as the remedy. A non-zero, growing value means the event log cannot keep up — raise `ringBufferSize` (derived from `maxLogEntries`) or reduce log verbosity.
 
+### Load Injection Metrics (`mock_server_load_*`)
+
+The `mock_server_load_*` family is registered by `Metrics.registerLoadMetrics()` when `metricsEnabled` is `true` (there is no `loadGenerationEnabled` check in `Metrics` registration — that flag only gates the PUT endpoint). All metrics in this family are also mirrored to OTLP by `OtelMetricsExporter` — see [telemetry.md](telemetry.md).
+
+**Per-run series retention.** Each run uses a fresh UUID `run_id` label, so without eviction the Prometheus client would retain every completed run's datapoints in the registry forever (unbounded memory growth, slower scrapes). The orchestrator calls `Metrics.evictLoadRun(previousRunId)` when a *new* run starts, so a completed (or replaced) run's durable series stay scrapeable until the next run begins and are then evicted — at most one completed run's series are retained (bounded). The two observable gauges (`mock_server_load_active_vus`, `mock_server_load_inflight_requests`) are not evicted because they self-clear via the orchestrator's empty-callback readers. On the OTLP side the per-run attribute sets are managed by the OTEL SDK's own aggregation/cardinality handling (the load counters are direct `LongCounter.add`, not callbacks), so they are not manually evicted.
+
+Fixed structured label set for per-request metrics (`LOAD_FIXED_LABELS`):
+`scenario`, `run_id`, `step`, `route`, `method`, `status_class`
+
+Optional custom labels (appended after fixed labels) are declared via the `mockserver.loadGenerationMetricLabels` allowlist. The allowlist is captured at registration time because Prometheus requires a fixed schema.
+
+| Metric Name | Type | Labels | Description |
+|-------------|------|--------|-------------|
+| `mock_server_load_request_duration_seconds` | Histogram | fixed + custom | Round-trip latency per dispatch. Carries a `trace_id` exemplar from the upstream response `traceparent` header when present. |
+| `mock_server_load_requests` | Counter | fixed + custom | Completed dispatches |
+| `mock_server_load_request_bytes` | Counter (unit: bytes) | fixed + custom | Outbound request bytes |
+| `mock_server_load_response_bytes` | Counter (unit: bytes) | fixed + custom | Inbound response bytes |
+| `mock_server_load_iterations` | Counter | `scenario`, `run_id` | Full VU iteration completions |
+| `mock_server_load_throttled` | Counter | `scenario`, `run_id`, `reason` | Dispatches skipped by the self-load guard (`reason` = `inflight_cap` or `rate_limit`) |
+| `mock_server_load_errors` | Counter | `scenario`, `run_id`, `kind` | Failed dispatches (`kind` = `render`, `connection`, `timeout`, `null_response`, `http_5xx`) |
+| `mock_server_load_active_vus` | GaugeWithCallback | `scenario`, `run_id` | Virtual users currently running |
+| `mock_server_load_inflight_requests` | GaugeWithCallback | `scenario`, `run_id` | Dispatches currently in flight |
+
+The `route` label is auto-templatized by `MetricLabels.routeOf()` (numeric and UUID path segments become `{id}`) to keep cardinality bounded. A step with an explicit `name` field uses that name as `route` directly. See [load-generation.md](load-generation.md) for the full model and custom-label details.
+
+Example PromQL (p95 latency per scenario):
+```promql
+histogram_quantile(0.95,
+  sum by (le, scenario) (
+    rate(mock_server_load_request_duration_seconds_bucket[1m])
+  )
+)
+```
+
+Example PromQL (throttle rate — did the scenario reach its setpoint?):
+```promql
+rate(mock_server_load_throttled_total[1m])
+```
+
 ### SLO Sample Tracking
 
 Independent of the Prometheus metrics feature, MockServer can record a windowed
@@ -357,6 +396,9 @@ on server reset. A sample's error flag is set when the upstream status is `null`
 | `JvmMetricsCollector` | mockserver-core | `org.mockserver.metrics.JvmMetricsCollector` |
 | `ChaosAutoHaltMonitor` | mockserver-core | `org.mockserver.mock.action.http.ChaosAutoHaltMonitor` |
 | `LlmCostBudgetMonitor` | mockserver-core | `org.mockserver.mock.action.http.LlmCostBudgetMonitor` |
+| `MetricLabels` | mockserver-core | `org.mockserver.metrics.MetricLabels` (route templatizing for load metrics) |
+| `OtelMetricsExporter` | mockserver-core | `org.mockserver.metrics.OtelMetricsExporter` (OTLP mirror of load metrics) |
+| `LoadScenarioOrchestrator` | mockserver-core | `org.mockserver.mock.action.http.LoadScenarioOrchestrator` (records load metric samples) |
 | `SloSampleStore` | mockserver-core | `org.mockserver.slo.SloSampleStore` (see [slo-verdicts.md](slo-verdicts.md)) |
 | `MemoryMonitoring` | mockserver-core | `org.mockserver.memory.MemoryMonitoring` |
 | `Summary` | mockserver-core | `org.mockserver.memory.Summary` |

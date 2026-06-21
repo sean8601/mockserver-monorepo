@@ -3497,6 +3497,10 @@ public class HttpState {
                 if (status.endedAtEpochMillis != null) {
                     result.put("endedAt", status.endedAtEpochMillis);
                 }
+                if (status.labels != null && !status.labels.isEmpty()) {
+                    com.fasterxml.jackson.databind.node.ObjectNode labelsNode = result.putObject("labels");
+                    status.labels.forEach(labelsNode::put);
+                }
             }
             return response().withStatusCode(OK.code())
                 .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);

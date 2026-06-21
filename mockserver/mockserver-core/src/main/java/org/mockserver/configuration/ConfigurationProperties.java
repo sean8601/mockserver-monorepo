@@ -76,6 +76,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND = "mockserver.loadGenerationMaxRequestsPerSecond";
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_DURATION_MILLIS = "mockserver.loadGenerationMaxDurationMillis";
     private static final String MOCKSERVER_LOAD_GENERATION_MAX_STEPS = "mockserver.loadGenerationMaxSteps";
+    private static final String MOCKSERVER_LOAD_GENERATION_METRIC_LABELS = "mockserver.loadGenerationMetricLabels";
     private static final String MOCKSERVER_MCP_ENABLED = "mockserver.mcpEnabled";
     private static final String MOCKSERVER_STOP_DRAIN_MILLIS = "mockserver.stopDrainMillis";
     private static final String MOCKSERVER_BREAKPOINT_TIMEOUT_MILLIS = "mockserver.breakpointTimeoutMillis";
@@ -900,6 +901,35 @@ public class ConfigurationProperties {
      */
     public static void loadGenerationMaxSteps(int maxSteps) {
         setProperty(MOCKSERVER_LOAD_GENERATION_MAX_STEPS, "" + maxSteps);
+    }
+
+    public static java.util.List<String> loadGenerationMetricLabels() {
+        String value = readPropertyHierarchically(PROPERTIES, MOCKSERVER_LOAD_GENERATION_METRIC_LABELS, "MOCKSERVER_LOAD_GENERATION_METRIC_LABELS", "");
+        if (value == null || value.isBlank()) {
+            return java.util.Collections.emptyList();
+        }
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        for (String name : value.split(",")) {
+            String trimmed = name.trim();
+            if (!trimmed.isEmpty()) {
+                labels.add(trimmed);
+            }
+        }
+        return labels;
+    }
+
+    /**
+     * Allowlist of custom load-scenario label names that are added as extra <em>fixed</em>
+     * Prometheus labels on the {@code mock_server_load_*} metrics (comma-separated, default empty).
+     * Prometheus requires a fixed label-name set, so only the keys named here are carried as
+     * Prometheus labels; every custom label is always attached as an OpenTelemetry attribute
+     * regardless. When empty, the Prometheus load metrics carry only the fixed structured labels
+     * ({@code scenario, run_id, step, route, method, status_class}).
+     *
+     * @param labels comma-separated custom label names to expose as Prometheus labels
+     */
+    public static void loadGenerationMetricLabels(String labels) {
+        setProperty(MOCKSERVER_LOAD_GENERATION_METRIC_LABELS, labels == null ? "" : labels);
     }
 
     public static boolean mcpEnabled() {

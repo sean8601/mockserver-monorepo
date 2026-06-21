@@ -6,7 +6,9 @@ import org.mockserver.model.HttpTemplate;
 import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author jamesdbloom
@@ -18,6 +20,7 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private LoadProfileDTO profile;
     private HttpTemplate.TemplateType templateType;
     private Integer maxRequests;
+    private Map<String, String> labels;
 
     public LoadScenarioDTO(LoadScenario scenario) {
         if (scenario != null) {
@@ -32,6 +35,9 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             }
             templateType = scenario.getTemplateType();
             maxRequests = scenario.getMaxRequests();
+            if (scenario.getLabels() != null && !scenario.getLabels().isEmpty()) {
+                labels = new LinkedHashMap<>(scenario.getLabels());
+            }
         }
     }
 
@@ -45,12 +51,16 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
                 builtSteps.add(step.buildObject());
             }
         }
-        return new LoadScenario()
+        LoadScenario scenario = new LoadScenario()
             .withName(name)
             .withSteps(builtSteps)
             .withProfile(profile != null ? profile.buildObject() : null)
             .withTemplateType(templateType != null ? templateType : HttpTemplate.TemplateType.VELOCITY)
             .withMaxRequests(maxRequests);
+        if (labels != null && !labels.isEmpty()) {
+            scenario.withLabels(labels);
+        }
+        return scenario;
     }
 
     public String getName() {
@@ -95,6 +105,15 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public LoadScenarioDTO setMaxRequests(Integer maxRequests) {
         this.maxRequests = maxRequests;
+        return this;
+    }
+
+    public Map<String, String> getLabels() {
+        return labels;
+    }
+
+    public LoadScenarioDTO setLabels(Map<String, String> labels) {
+        this.labels = labels;
         return this;
     }
 }

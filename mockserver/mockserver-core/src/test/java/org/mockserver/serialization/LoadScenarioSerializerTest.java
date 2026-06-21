@@ -82,6 +82,43 @@ public class LoadScenarioSerializerTest {
         assertThat(parsed.getTemplateType(), is(HttpTemplate.TemplateType.VELOCITY));
     }
 
+    @Test
+    public void roundTripsScenarioAndStepLabelsAndStepName() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("annotated")
+            .withLabel("team", "payments")
+            .withLabel("env", "staging")
+            .withProfile(LoadProfile.constant(3, 5_000L))
+            .withSteps(new LoadStep()
+                .withName("create-order")
+                .withLabel("critical", "true")
+                .withRequest(request().withPath("/api/orders")));
+
+        LoadScenario parsed = serializer.deserialize(serializer.serialize(scenario));
+
+        assertThat(parsed.getLabels(), allOf(hasEntry("team", "payments"), hasEntry("env", "staging")));
+        LoadStep step = parsed.getSteps().get(0);
+        assertThat(step.getName(), is("create-order"));
+        assertThat(step.getLabels(), hasEntry("critical", "true"));
+    }
+
+    @Test
+    public void omitsLabelsAndNameWhenAbsent() {
+        // backward compatible: a scenario with no labels/name serialises without those keys.
+        LoadScenario scenario = new LoadScenario()
+            .withName("plain")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String json = serializer.serialize(scenario);
+        assertThat(json, not(containsString("\"labels\"")));
+        assertThat(json, not(containsString("\"name\" : \"create")));
+
+        LoadScenario parsed = serializer.deserialize(json);
+        assertThat(parsed.getLabels(), is(nullValue()));
+        assertThat(parsed.getSteps().get(0).getName(), is(nullValue()));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankBody() {
         serializer.deserialize("  ");

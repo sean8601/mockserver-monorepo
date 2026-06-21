@@ -5,7 +5,9 @@ import org.mockserver.model.ObjectWithJsonToString;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * An API-driven load scenario: an ordered list of templated request {@link LoadStep}s
@@ -28,6 +30,15 @@ public class LoadScenario extends ObjectWithJsonToString {
     private LoadProfile profile;
     private HttpTemplate.TemplateType templateType = HttpTemplate.TemplateType.VELOCITY;
     private Integer maxRequests;
+    /**
+     * Scenario-level custom annotation labels. Attached as OpenTelemetry attributes on every
+     * load measurement (arbitrary keys — this is the flexible, k6-beating annotation surface) and
+     * surfaced in the status DTO. For the Prometheus side, only the keys named in the
+     * {@code mockserver.loadGenerationMetricLabels} allowlist are added as extra fixed labels
+     * (Prometheus requires a fixed label-name set). Step labels (see {@link LoadStep#getLabels()})
+     * are merged on top of these for a given step, with step keys winning on conflict.
+     */
+    private Map<String, String> labels;
 
     public static LoadScenario loadScenario() {
         return new LoadScenario();
@@ -84,6 +95,26 @@ public class LoadScenario extends ObjectWithJsonToString {
 
     public LoadScenario withMaxRequests(Integer maxRequests) {
         this.maxRequests = maxRequests;
+        return this;
+    }
+
+    /**
+     * Scenario-level custom labels (may be null/empty). See {@link #labels}.
+     */
+    public Map<String, String> getLabels() {
+        return labels;
+    }
+
+    public LoadScenario withLabels(Map<String, String> labels) {
+        this.labels = labels != null ? new LinkedHashMap<>(labels) : null;
+        return this;
+    }
+
+    public LoadScenario withLabel(String name, String value) {
+        if (this.labels == null) {
+            this.labels = new LinkedHashMap<>();
+        }
+        this.labels.put(name, value);
         return this;
     }
 }

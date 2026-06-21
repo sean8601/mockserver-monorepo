@@ -4408,6 +4408,14 @@ components:
               type: string
             value:
               type: integer
+        name:
+          type: string
+          description: "optional human label for this step; used as the 'step' metric label (otherwise the step index is used) and may be used as the low-cardinality 'route' metric label in place of the templatised request path"
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "optional step-level custom annotation labels, merged over the scenario labels (step keys win); exported as OpenTelemetry attributes on every load measurement and as allowlisted Prometheus labels"
     LoadScenario:
       description: "an API-driven load scenario: ordered templated steps driven at a target concurrency"
       type: object
@@ -4428,6 +4436,11 @@ components:
         maxRequests:
           type: integer
           description: "optional hard cap on the total number of requests dispatched"
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "optional scenario-level custom annotation labels; exported as OpenTelemetry attributes on every load measurement and (for keys named in the loadGenerationMetricLabels allowlist) as extra Prometheus labels"
         profile:
           $ref: "#/components/schemas/LoadProfile"
         steps:

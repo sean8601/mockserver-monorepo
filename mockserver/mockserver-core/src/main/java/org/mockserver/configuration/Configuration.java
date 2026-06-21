@@ -59,6 +59,7 @@ public class Configuration {
     private Integer loadGenerationMaxRequestsPerSecond;
     private Long loadGenerationMaxDurationMillis;
     private Integer loadGenerationMaxSteps;
+    private java.util.List<String> loadGenerationMetricLabels;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
@@ -931,6 +932,25 @@ public class Configuration {
      */
     public Configuration loadGenerationMaxSteps(Integer loadGenerationMaxSteps) {
         this.loadGenerationMaxSteps = loadGenerationMaxSteps;
+        return this;
+    }
+
+    public java.util.List<String> loadGenerationMetricLabels() {
+        if (loadGenerationMetricLabels == null) {
+            return ConfigurationProperties.loadGenerationMetricLabels();
+        }
+        return loadGenerationMetricLabels;
+    }
+
+    /**
+     * Allowlist of custom load-scenario label names exposed as extra fixed Prometheus labels on
+     * the {@code mock_server_load_*} metrics. See
+     * {@link ConfigurationProperties#loadGenerationMetricLabels(String)}.
+     *
+     * @param loadGenerationMetricLabels custom label names to expose as Prometheus labels
+     */
+    public Configuration loadGenerationMetricLabels(java.util.List<String> loadGenerationMetricLabels) {
+        this.loadGenerationMetricLabels = loadGenerationMetricLabels;
         return this;
     }
 

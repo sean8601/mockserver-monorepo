@@ -606,6 +606,7 @@
                         <exclude>**/HttpStateVerifySloEndpointTest.java</exclude>
                         <!-- Mutate the LoadScenarioOrchestrator singleton, Metrics, the SloSampleStore singleton and global loadGeneration* ConfigurationProperties -->
                         <exclude>**/LoadScenarioOrchestratorTest.java</exclude>
+                        <exclude>**/LoadMetricsTest.java</exclude>
                         <exclude>**/HttpStateLoadScenarioEndpointTest.java</exclude>
                         <!-- Mutates the DriftAlertNotifier singleton (configure/setSender/reset/setClock) -->
                         <exclude>**/DriftAlertNotifierTest.java</exclude>
@@ -726,6 +727,7 @@
                                 <include>**/SloEvaluatorTest.java</include>
                                 <include>**/HttpStateVerifySloEndpointTest.java</include>
                                 <include>**/LoadScenarioOrchestratorTest.java</include>
+                                <include>**/LoadMetricsTest.java</include>
                                 <include>**/HttpStateLoadScenarioEndpointTest.java</include>
                                 <include>**/DriftAlertNotifierTest.java</include>
                                 <include>**/MaxLlmConversationBodySizeTest.java</include>
