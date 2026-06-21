@@ -1281,6 +1281,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Performance
+- **WASM custom-rule modules are parsed once and cached** (`mockserver-core`) instead of re-parsing and
+  re-validating the module binary on every request, the most expensive step of evaluating a WASM rule.
+  A fresh execution instance is still created per call, so thread-safety is unchanged; the cache is
+  cleared when a module is removed or the server is reset.
+
 #### AI, LLM & agent protocols (LLM / MCP / A2A)
 - **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
   support-agent run (mocked OpenAI Chat Completions with realistic token usage) designed to fire all

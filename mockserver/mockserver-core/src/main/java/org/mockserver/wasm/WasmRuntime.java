@@ -11,15 +11,22 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Thin wrapper around a compiled chicory WASM instance.
  * <p>
- * Thread-safety: chicory {@link Instance} is NOT thread-safe, so the stored WASM
- * bytes are parsed into a {@link WasmModule} and a fresh {@link Instance} is
- * created for each invocation.
+ * Thread-safety: chicory {@link Instance} is NOT thread-safe, so a fresh
+ * {@link Instance} is created for each invocation. The parsed {@link WasmModule},
+ * by contrast, is immutable and freely reusable across threads, so it is
+ * <strong>cached</strong> (see {@link #MODULE_CACHE}) keyed by a content hash of
+ * the module bytes — parsing/validating the binary is chicory's most expensive
+ * step and is pure given the bytes, so it is done at most once per distinct module.
  * <p>
  * <strong>ABI.</strong> Two export shapes are supported, both returning non-zero
  * for a match:
@@ -46,6 +53,35 @@ public class WasmRuntime {
     static final String MATCH_REQUEST = "match_request";
 
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
+
+    /**
+     * Maximum number of distinct parsed modules retained in {@link #MODULE_CACHE}. Distinct
+     * modules are bounded in practice by how many WASM modules a user loads, but this cap keeps
+     * memory bounded even if a client uploads an unbounded stream of distinct modules. Eviction is
+     * least-recently-inserted (access-ordered) and never affects correctness — entries are keyed by
+     * a content hash, so the worst case of eviction is a re-parse, not a wrong result.
+     */
+    static final int MODULE_CACHE_MAX = 256;
+
+    /**
+     * Cache of parsed {@link WasmModule}s keyed by a hex SHA-256 of the module bytes. The parsed
+     * module is immutable and reusable, so the same bytes are parsed/validated at most once. A
+     * content hash (rather than the user-chosen module name) is the key so that re-uploading
+     * identical bytes — or two names pointing at the same module — share a single parsed entry, and
+     * so a stale entry can never be wrong (the same hash always means the same bytes). Wrapped in a
+     * synchronized access-ordered LRU bounded at {@link #MODULE_CACHE_MAX}.
+     * <p>
+     * The cache is keyed by content, so correctness does not depend on invalidation; it is cleared
+     * via {@link #invalidate(byte[])}/{@link #invalidateAll()} from {@link WasmStore} remove/reset
+     * purely to release memory promptly when modules are unloaded.
+     */
+    static final Map<String, WasmModule> MODULE_CACHE = Collections.synchronizedMap(
+        new LinkedHashMap<String, WasmModule>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, WasmModule> eldest) {
+                return size() > MODULE_CACHE_MAX;
+            }
+        });
 
     private final byte[] wasmBytes;
     private final int maxMemoryPages;
@@ -93,7 +129,7 @@ public class WasmRuntime {
      */
     public boolean callMatch(WasmRequest request) {
         try {
-            WasmModule module = Parser.parse(wasmBytes);
+            WasmModule module = parseModule(wasmBytes);
             Instance.Builder builder = Instance.builder(module);
 
             // Cap the WASM module's linear memory at maxMemoryPages while preserving
@@ -167,5 +203,63 @@ public class WasmRuntime {
             root.put("body", request.getBody());
         }
         return root.toString();
+    }
+
+    /**
+     * Return the parsed {@link WasmModule} for the given bytes, parsing/validating at most once per
+     * distinct module. Parsing is pure given the bytes and is chicory's most expensive step, so the
+     * result is cached in {@link #MODULE_CACHE} keyed by a content hash. The returned module is
+     * immutable and is shared across calls/threads; each call still builds its own {@link Instance}.
+     */
+    private static WasmModule parseModule(byte[] wasmBytes) {
+        String key = contentKey(wasmBytes);
+        if (key == null) {
+            // hashing unavailable (should not happen for SHA-256) — fall back to parsing every call
+            return Parser.parse(wasmBytes);
+        }
+        // computeIfAbsent on a synchronizedMap holds the map lock for the whole parse; modules are
+        // few and parsed at most once each, so the brief contention is acceptable and far cheaper
+        // than re-parsing on every request.
+        return MODULE_CACHE.computeIfAbsent(key, k -> Parser.parse(wasmBytes));
+    }
+
+    /**
+     * Compute the cache key for a module: a lowercase hex SHA-256 of its bytes, or {@code null} if
+     * SHA-256 is unavailable (in which case the caller parses without caching).
+     */
+    private static String contentKey(byte[] wasmBytes) {
+        if (wasmBytes == null) {
+            return null;
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(wasmBytes);
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
+                hex.append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Drop the cached parsed module for the given bytes, if present. Called when a module is unloaded
+     * so its parsed form is released promptly. A no-op when the bytes were never cached. Correctness
+     * never depends on this (the cache is content-keyed); it only bounds memory.
+     */
+    public static void invalidate(byte[] wasmBytes) {
+        String key = contentKey(wasmBytes);
+        if (key != null) {
+            MODULE_CACHE.remove(key);
+        }
+    }
+
+    /**
+     * Clear all cached parsed modules. Called on a full WASM store reset.
+     */
+    public static void invalidateAll() {
+        MODULE_CACHE.clear();
     }
 }
