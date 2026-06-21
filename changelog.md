@@ -1543,6 +1543,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carrying a `model` no longer fails schema validation on `PUT /mockserver/expectation`.
 
 #### Dashboard UI
+- **Dashboard UI efficiency & consistency fixes** (code-quality review):
+  - The live data store reconciles rows by serializing each item at most once per update (was serializing
+    every row twice on every WebSocket push), reducing CPU on busy dashboards while preserving object
+    identity so unchanged rows don't re-render.
+  - The traffic inspector memoizes its rows and caches per-row search text, so typing in the filter and
+    incoming traffic no longer re-render the whole list.
+  - The service-chaos panel's one-second countdown timer only runs when a registration actually has a TTL.
+  - gRPC-health, cassette and file-store API errors now use the same actionable error shape as the rest of
+    the dashboard, and a few call sites now humanize errors consistently.
+  - Filter-panel icon buttons have accessible labels/tooltips.
 - **Dashboard UI correctness fixes** (from an adversarial review):
   - The dashboard no longer crashes to a blank white screen when a view fails to load (e.g. the Metrics
     chunk after a redeploy) — views are wrapped in an error boundary that offers a reload/retry and

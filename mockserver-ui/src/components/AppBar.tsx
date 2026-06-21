@@ -66,6 +66,7 @@ import {
   type MockServerMode,
 } from '../lib/mockServerMode';
 import { fetchHttp3Status, type Http3Status } from '../lib/http3Status';
+import { humanizeError } from '../lib/errorMessage';
 import WsdlImportDialog from './WsdlImportDialog';
 import OpenApiImportDialog from './OpenApiImportDialog';
 import PactExportDialog from './PactExportDialog';
@@ -356,7 +357,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       })
       .catch((e) => {
         setModeState(previous); // revert on failure
-        setNotification({ message: e instanceof Error ? e.message : 'Failed to change mode', severity: 'error' });
+        setNotification({ message: humanizeError(e).message, severity: 'error' });
       });
   };
 

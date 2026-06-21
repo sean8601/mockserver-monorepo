@@ -776,6 +776,71 @@ const simpleRequest = {
   },
 };
 
+describe('TrafficInspector — search filtering', () => {
+  beforeEach(() => {
+    useDashboardStore.setState({
+      proxiedRequests: [],
+      recordedRequests: [
+        {
+          key: 'req-users',
+          value: {
+            httpRequest: { method: 'GET', path: '/api/users', headers: [{ name: 'host', values: ['example.com'] }] },
+            httpResponse: { statusCode: 200 },
+          },
+        },
+        {
+          key: 'req-orders',
+          value: {
+            httpRequest: { method: 'POST', path: '/api/orders', headers: [{ name: 'host', values: ['shop.example.com'] }] },
+            httpResponse: { statusCode: 201, body: { type: 'JSON', json: '{"sku":"WIDGET-42"}' } },
+          },
+        },
+      ],
+      activeExpectations: [],
+      trafficSearch: '',
+      selectedTrafficKey: null,
+    });
+  });
+
+  it('filters rows by a field match (path) as the user types', async () => {
+    const user = userEvent.setup();
+    renderTrafficInspector();
+
+    // Both rows visible initially.
+    expect(screen.getByText(/\/api\/users/)).toBeInTheDocument();
+    expect(screen.getByText(/\/api\/orders/)).toBeInTheDocument();
+
+    const search = screen.getByPlaceholderText('Search...');
+    await user.type(search, 'orders');
+
+    expect(screen.queryByText(/\/api\/users/)).not.toBeInTheDocument();
+    expect(screen.getByText(/\/api\/orders/)).toBeInTheDocument();
+  });
+
+  it('filters rows by a full-text body match (the cached fallback path)', async () => {
+    const user = userEvent.setup();
+    renderTrafficInspector();
+
+    const search = screen.getByPlaceholderText('Search...');
+    // "WIDGET-42" only appears inside the response body, exercising the cached
+    // JSON.stringify fallback rather than the field-level match.
+    await user.type(search, 'widget-42');
+
+    expect(screen.getByText(/\/api\/orders/)).toBeInTheDocument();
+    expect(screen.queryByText(/\/api\/users/)).not.toBeInTheDocument();
+  });
+
+  it('shows the empty-state message when nothing matches', async () => {
+    const user = userEvent.setup();
+    renderTrafficInspector();
+
+    const search = screen.getByPlaceholderText('Search...');
+    await user.type(search, 'nonexistent-term-xyz');
+
+    expect(screen.getByText('No matching requests')).toBeInTheDocument();
+  });
+});
+
 describe('TrafficInspector — master/detail resize divider', () => {
   beforeEach(() => {
     useDashboardStore.setState({

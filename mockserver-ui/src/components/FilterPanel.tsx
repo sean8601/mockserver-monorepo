@@ -9,6 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutlined';
@@ -131,26 +132,34 @@ export function MultiValueField({ label, items, onChange, disabled }: MultiValue
                   sx={{ width: { xs: '100%', sm: 120 } }}
                 />
                 {vi > 0 && (
-                  <IconButton size="small" disabled={disabled} onClick={() => removeValue(i, vi)}>
-                    <RemoveCircleOutlineIcon fontSize="small" />
-                  </IconButton>
+                  <Tooltip title="Remove value">
+                    <IconButton size="small" disabled={disabled} onClick={() => removeValue(i, vi)} aria-label="Remove value">
+                      <RemoveCircleOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 )}
               </Box>
             ))}
-            <IconButton size="small" disabled={disabled} onClick={() => addValue(i)}>
-              <AddCircleOutlineIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Add value">
+              <IconButton size="small" disabled={disabled} onClick={() => addValue(i)} aria-label="Add value">
+                <AddCircleOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
           {i > 0 && (
-            <IconButton size="small" disabled={disabled} onClick={() => removeRow(i)}>
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Remove filter row">
+              <IconButton size="small" disabled={disabled} onClick={() => removeRow(i)} aria-label="Remove filter row">
+                <RemoveCircleOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           )}
         </Box>
       ))}
-      <IconButton size="small" disabled={disabled} onClick={addRow}>
-        <AddCircleOutlineIcon fontSize="small" />
-      </IconButton>
+      <Tooltip title="Add filter row">
+        <IconButton size="small" disabled={disabled} onClick={addRow} aria-label="Add filter row">
+          <AddCircleOutlineIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 }
@@ -192,15 +201,19 @@ export function SingleValueField({ label, items, onChange, disabled }: SingleVal
             sx={{ width: { xs: '100%', sm: 180 } }}
           />
           {i > 0 && (
-            <IconButton size="small" disabled={disabled} onClick={() => removeRow(i)}>
-              <RemoveCircleOutlineIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Remove filter row">
+              <IconButton size="small" disabled={disabled} onClick={() => removeRow(i)} aria-label="Remove filter row">
+                <RemoveCircleOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           )}
         </Box>
       ))}
-      <IconButton size="small" disabled={disabled} onClick={addRow}>
-        <AddCircleOutlineIcon fontSize="small" />
-      </IconButton>
+      <Tooltip title="Add filter row">
+        <IconButton size="small" disabled={disabled} onClick={addRow} aria-label="Add filter row">
+          <AddCircleOutlineIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 }

@@ -57,6 +57,27 @@ describe('McpToolsPanel', () => {
     await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument());
   });
 
+  it('humanizes a thrown server-shaped error instead of dumping the raw message', async () => {
+    vi.mocked(callMcpTool).mockRejectedValue(
+      new Error('MockServer returned 404: not found'),
+    );
+    renderPanel();
+    // humanizeServerError maps 404 to the "feature isn't available" guidance,
+    // so the raw "MockServer returned 404" string must NOT be shown verbatim.
+    await waitFor(() =>
+      expect(screen.getByText(/isn.t available on the connected MockServer/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/MockServer returned 404/)).not.toBeInTheDocument();
+  });
+
+  it('humanizes a network failure (TypeError) into a reachability hint', async () => {
+    vi.mocked(callMcpTool).mockRejectedValue(new TypeError('Failed to fetch'));
+    renderPanel();
+    await waitFor(() =>
+      expect(screen.getByText(/Couldn.t reach the MockServer/i)).toBeInTheDocument(),
+    );
+  });
+
   it('auto-refreshes the tool list on an interval without a manual click', async () => {
     vi.useFakeTimers();
     try {

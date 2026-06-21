@@ -18,6 +18,24 @@ const VIEW_MIGRATION: Record<string, ViewMode> = {
 };
 
 /**
+ * Per-panel cache mapping each `key` to the reference currently held for it and
+ * that reference's serialized form. Lets {@link reconcileByKey} compare a
+ * freshly-parsed entry against the previous one with a single `JSON.stringify`
+ * of the *new* entry, instead of re-serializing both sides on every push.
+ *
+ * One cache instance is passed per entity array (the four panels never collide).
+ * The stored `str` is trusted only when the stored `ref` is identical to the
+ * previous entry being compared, so a stale cache (e.g. after a direct
+ * `setState` that bypasses this function) can never cause a wrong comparison.
+ */
+type ReconcileCache = Map<string, { ref: unknown; str: string }>;
+
+const logMessagesCache: ReconcileCache = new Map();
+const activeExpectationsCache: ReconcileCache = new Map();
+const recordedRequestsCache: ReconcileCache = new Map();
+const proxiedRequestsCache: ReconcileCache = new Map();
+
+/**
  * Reconcile a freshly-parsed array against the previous one, preserving object
  * identity for entries whose content is unchanged.
  *
@@ -28,14 +46,58 @@ const VIEW_MIGRATION: Record<string, ViewMode> = {
  * previous reference, which keeps memoized rows and their `useMemo([item.value])`
  * hooks valid across pushes. The reused reference is the whole entry, so nested
  * children (e.g. a log group's entries) are preserved for free.
+ *
+ * Equality semantics are identical to a deep JSON compare, but each entry is
+ * serialized at most once per lifetime: the previous reference's string is read
+ * from {@link cache}, and only the new entry is stringified per push (the
+ * previous code stringified both sides for every matched row, ~100 rows × 4
+ * panels × ~1/sec). The cache stores both the kept reference and its string and
+ * the cached string is only trusted when its `ref` is *identical* to the
+ * previous entry — so a stale cache (e.g. after a direct `setState`) is detected
+ * and the previous entry is re-serialized rather than mis-compared. When an
+ * entry is unchanged we return — and keep cached — the previous reference and
+ * its string; when it changes we cache the new string. Keys absent from `next`
+ * are pruned so the cache cannot grow unbounded.
  */
-function reconcileByKey<T extends { key: string }>(prev: T[], next: T[]): T[] {
-  if (prev.length === 0 || next.length === 0) return next;
+function reconcileByKey<T extends { key: string }>(prev: T[], next: T[], cache: ReconcileCache): T[] {
+  if (next.length === 0) {
+    cache.clear();
+    return next;
+  }
+  if (prev.length === 0) {
+    cache.clear();
+    for (const n of next) cache.set(n.key, { ref: n, str: JSON.stringify(n) });
+    return next;
+  }
   const prevByKey = new Map(prev.map((p) => [p.key, p] as const));
-  return next.map((n) => {
+  const nextCache: ReconcileCache = new Map();
+  const result = next.map((n) => {
     const p = prevByKey.get(n.key);
-    return p && p !== n && JSON.stringify(p) === JSON.stringify(n) ? p : n;
+    if (!p) {
+      nextCache.set(n.key, { ref: n, str: JSON.stringify(n) });
+      return n;
+    }
+    const nStr = JSON.stringify(n);
+    if (p === n) {
+      // Same reference already held; no identity to preserve, but keep it cached.
+      nextCache.set(n.key, { ref: n, str: nStr });
+      return n;
+    }
+    // Trust the cached string only when it was recorded for *this* reference;
+    // otherwise (cold/stale cache after a direct setState) re-serialize `p`.
+    const cached = cache.get(n.key);
+    const pStr = cached && cached.ref === p ? cached.str : JSON.stringify(p);
+    if (pStr === nStr) {
+      // Semantically unchanged — preserve the previous reference and its string.
+      nextCache.set(n.key, { ref: p, str: pStr });
+      return p;
+    }
+    nextCache.set(n.key, { ref: n, str: nStr });
+    return n;
   });
+  cache.clear();
+  for (const [k, v] of nextCache) cache.set(k, v);
+  return result;
 }
 
 interface DashboardState {
@@ -212,14 +274,18 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
     // We deliberately do NOT auto-advance to the dashboard when the first data
     // arrives — landing on Get Started should be sticky.
     set((s) => ({
-      logMessages: reconcileByKey(s.logMessages, message.logMessages ?? []),
-      activeExpectations: reconcileByKey(s.activeExpectations, message.activeExpectations ?? []),
-      recordedRequests: reconcileByKey(s.recordedRequests, message.recordedRequests ?? []),
-      proxiedRequests: reconcileByKey(s.proxiedRequests, message.proxiedRequests ?? []),
+      logMessages: reconcileByKey(s.logMessages, message.logMessages ?? [], logMessagesCache),
+      activeExpectations: reconcileByKey(s.activeExpectations, message.activeExpectations ?? [], activeExpectationsCache),
+      recordedRequests: reconcileByKey(s.recordedRequests, message.recordedRequests ?? [], recordedRequestsCache),
+      proxiedRequests: reconcileByKey(s.proxiedRequests, message.proxiedRequests ?? [], proxiedRequestsCache),
       error: message.error ?? null,
     })),
 
-  clearUI: () =>
+  clearUI: () => {
+    logMessagesCache.clear();
+    activeExpectationsCache.clear();
+    recordedRequestsCache.clear();
+    proxiedRequestsCache.clear();
     set({
       logMessages: [],
       activeExpectations: [],
@@ -242,7 +308,8 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       generateStubSuggestions: [],
       generateStubConfidence: 0,
       generateStubError: null,
-    }),
+    });
+  },
 
   setView: (view) => {
     const resolved = VIEW_MIGRATION[view as string] ?? view;

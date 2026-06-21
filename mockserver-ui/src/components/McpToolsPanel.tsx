@@ -13,6 +13,7 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { buildBaseUrl, callMcpTool } from '../lib/mcpClient';
+import { humanizeError } from '../lib/errorMessage';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
@@ -62,7 +63,7 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
       setError(null);
     } catch (e) {
       if (signal?.aborted) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e).message);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

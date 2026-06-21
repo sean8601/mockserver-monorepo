@@ -575,11 +575,31 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     };
   }, [connectionParams, refreshTick]);
 
-  // Tick once a second so TTL countdowns update between polls.
+  // Whether any active registration (HTTP service, TCP host, or gRPC service)
+  // actually carries a TTL/expiry to count down. The `ttlRemainingMillis` maps
+  // are populated by the backend only for registrations that were given a TTL;
+  // a registration with no TTL has no entry. When none exist there is nothing to
+  // tick down, so the 1s interval below stays off and the panel does not
+  // re-render every second.
+  const hasAnyTtl = useMemo(() => {
+    const anyEntry = (map: Record<string, number> | undefined) =>
+      map != null && Object.keys(map).length > 0;
+    return (
+      anyEntry(data.ttlRemainingMillis) ||
+      anyEntry(tcpData.ttlRemainingMillis) ||
+      anyEntry(grpcChaosData.ttlRemainingMillis)
+    );
+  }, [data.ttlRemainingMillis, tcpData.ttlRemainingMillis, grpcChaosData.ttlRemainingMillis]);
+
+  // Tick once a second so TTL countdowns update between polls — but only while at
+  // least one registration has a TTL to count down. With zero TTL-bearing
+  // registrations the interval would otherwise re-render the whole panel every
+  // second for no visible change.
   useEffect(() => {
+    if (!hasAnyTtl) return;
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasAnyTtl]);
 
   // Fetch gRPC health on mount (so the collapsed header chip shows the real count),
   // then keep polling only while the gRPC panel + health sub-section are expanded.
@@ -888,7 +908,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const grpcServices = useMemo(() => Object.keys(grpcHealth ?? {}).sort(), [grpcHealth]);
 
   // TCP chaos helpers
-  const tcpHosts = useMemo(() => Object.keys(tcpData?.hosts ?? {}).sort(), [tcpData?.hosts]);
+  const tcpHosts = useMemo(() => Object.keys(tcpData?.hosts ?? {}).sort(), [tcpData]);
 
   const tcpRemainingTtl = (host: string): number | undefined => {
     const atPoll = tcpData.ttlRemainingMillis?.[host];
@@ -918,7 +938,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   }, [connectionParams, tcpForm, runAction]);
 
   // gRPC fault injection chaos helpers
-  const grpcChaosServices = useMemo(() => Object.keys(grpcChaosData?.services ?? {}).sort(), [grpcChaosData?.services]);
+  const grpcChaosServices = useMemo(() => Object.keys(grpcChaosData?.services ?? {}).sort(), [grpcChaosData]);
 
   const grpcChaosRemainingTtl = (service: string): number | undefined => {
     const atPoll = grpcChaosData.ttlRemainingMillis?.[service];

@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, memo } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -200,6 +200,22 @@ function cachedSummarize(value: Record<string, unknown>): TrafficSummary {
   return summary;
 }
 
+// Per-item lowercased full-text search index. The fallback branch of
+// `matchesSearch` previously re-ran `JSON.stringify(item.value).toLowerCase()`
+// for every non-field-matching row on every search keystroke. Caching the
+// stringified+lowercased text on the item's `value` reference (preserved across
+// WebSocket pushes by reconcileByKey, like `summaryCache`) means each item is
+// stringified at most once regardless of how many keystrokes the user types.
+const searchTextCache = new WeakMap<Record<string, unknown>, string>();
+
+function cachedSearchText(value: Record<string, unknown>): string {
+  const hit = searchTextCache.get(value);
+  if (hit !== undefined) return hit;
+  const text = JSON.stringify(value).toLowerCase();
+  searchTextCache.set(value, text);
+  return text;
+}
+
 function matchesSearch(item: JsonListItem, summary: TrafficSummary, term: string): boolean {
   const lower = term.toLowerCase();
   const parts = [
@@ -211,7 +227,7 @@ function matchesSearch(item: JsonListItem, summary: TrafficSummary, term: string
     kindLabel(summary.parsed),
   ].filter(Boolean);
   if (parts.some((p) => p!.toLowerCase().includes(lower))) return true;
-  return JSON.stringify(item.value).toLowerCase().includes(lower);
+  return cachedSearchText(item.value).includes(lower);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,21 +236,34 @@ function matchesSearch(item: JsonListItem, summary: TrafficSummary, term: string
 
 interface TrafficRowProps {
   summary: TrafficSummary;
+  /** Stable identity of the request this row renders; passed back to the handlers. */
+  itemKey: string;
   index: number;
   selected: boolean;
-  onClick: () => void;
+  /** Stable handler — receives this row's `itemKey`. */
+  onSelect: (key: string) => void;
   /** When set, a comparison checkbox is rendered and reflects this checked state. */
   compareMode?: boolean;
   compareChecked?: boolean;
   compareDisabled?: boolean;
-  onCompareToggle?: () => void;
+  /** Stable handler — receives this row's `itemKey`. */
+  onCompareToggle?: (key: string) => void;
 }
 
-function TrafficRow({
+// `TrafficRow` is wrapped in `React.memo` (see the `export`/assignment below) so
+// that re-rendering the parent (e.g. a search keystroke, a selection change, or a
+// WebSocket-driven list refresh) only re-renders the rows whose props actually
+// changed. For that to hold, the parent passes STABLE handlers that take the
+// row's key (`onSelect`/`onCompareToggle`) rather than fresh per-row arrow
+// closures; the per-row DOM callbacks are re-derived here with `useCallback`
+// keyed on `itemKey`, mirroring the `entryKey`/`onToggleExpand` pattern used by
+// the memoized `LogEntry`.
+function TrafficRowImpl({
   summary,
+  itemKey,
   index,
   selected,
-  onClick,
+  onSelect,
   compareMode,
   compareChecked,
   compareDisabled,
@@ -244,9 +273,15 @@ function TrafficRow({
   const tokens = getTokenSummary(summary.parsed);
   const timingLabel = getTimingLabel(summary.timing);
 
+  const handleClick = useCallback(() => onSelect(itemKey), [onSelect, itemKey]);
+  const handleCompareToggle = useCallback(
+    () => onCompareToggle?.(itemKey),
+    [onCompareToggle, itemKey],
+  );
+
   return (
     <Box
-      onClick={onClick}
+      onClick={handleClick}
       sx={{
         display: 'flex',
         alignItems: 'center',
@@ -269,7 +304,7 @@ function TrafficRow({
           checked={!!compareChecked}
           disabled={!compareChecked && compareDisabled}
           onClick={(e) => e.stopPropagation()}
-          onChange={() => onCompareToggle?.()}
+          onChange={handleCompareToggle}
           slotProps={{ input: { 'aria-label': `Select request ${index} to compare` } }}
           sx={{ p: 0.25, flexShrink: 0 }}
         />
@@ -346,6 +381,8 @@ function TrafficRow({
     </Box>
   );
 }
+
+const TrafficRow = memo(TrafficRowImpl);
 
 // ---------------------------------------------------------------------------
 // Messages panel: Anthropic
@@ -1119,6 +1156,21 @@ export default function TrafficInspector() {
     [selectedKey, setSelectedKey],
   );
 
+  // Single stable per-row select handler passed to the memoized TrafficRow. In
+  // compare mode a click toggles the comparison selection; otherwise it selects
+  // the row for the detail pane. Keeping this stable (rather than a fresh arrow
+  // per row in the map below) is what lets React.memo skip unchanged rows.
+  const handleRowSelect = useCallback(
+    (key: string) => {
+      if (compareMode) {
+        toggleCompareKey(key);
+      } else {
+        handleRowClick(key);
+      }
+    },
+    [compareMode, toggleCompareKey, handleRowClick],
+  );
+
   // Resolve the two selected requests to the JSON the diff endpoint expects (the request
   // definition — `httpRequest` if present, otherwise the whole captured value). Preserve the
   // user's pick order: the first selected is "expected", the second "actual".
@@ -1269,16 +1321,15 @@ export default function TrafficInspector() {
             filtered.map(({ item, summary }, index) => (
               <TrafficRow
                 key={item.key}
+                itemKey={item.key}
                 summary={summary}
                 index={filtered.length - index}
                 selected={compareMode ? validCompareKeys.includes(item.key) : selectedKey === item.key}
-                onClick={() =>
-                  compareMode ? toggleCompareKey(item.key) : handleRowClick(item.key)
-                }
+                onSelect={handleRowSelect}
                 compareMode={compareMode}
                 compareChecked={validCompareKeys.includes(item.key)}
                 compareDisabled={validCompareKeys.length >= 2}
-                onCompareToggle={() => toggleCompareKey(item.key)}
+                onCompareToggle={toggleCompareKey}
               />
             ))
           )}

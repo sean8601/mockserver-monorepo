@@ -93,6 +93,35 @@ describe('ServiceChaosPanel', () => {
     expect(screen.getByText(/auto-revert in 1m/)).toBeInTheDocument();
   });
 
+  it('does NOT start the 1s TTL tick when no registration has a TTL', async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    // A registration with a fault but no entry in ttlRemainingMillis.
+    stubServiceChaos({ services: { 'a.svc': { errorStatus: 500 } } });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText('a.svc')).toBeInTheDocument());
+
+    // No 1s countdown interval should have been created — there is nothing to
+    // count down, so the panel must not re-render every second.
+    const oneSecondTicks = setIntervalSpy.mock.calls.filter(([, ms]) => ms === 1000);
+    expect(oneSecondTicks).toHaveLength(0);
+    // And no countdown chip is shown.
+    expect(screen.queryByText(/auto-revert in/)).not.toBeInTheDocument();
+  });
+
+  it('starts the 1s TTL tick only when a TTL-bearing registration exists', async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    stubServiceChaos({
+      services: { 'a.svc': { errorStatus: 500 } },
+      ttlRemainingMillis: { 'a.svc': 65_000 },
+    });
+    render(<ServiceChaosPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByText(/auto-revert in/)).toBeInTheDocument());
+
+    // Exactly the TTL countdown interval should be created.
+    const oneSecondTicks = setIntervalSpy.mock.calls.filter(([, ms]) => ms === 1000);
+    expect(oneSecondTicks.length).toBeGreaterThanOrEqual(1);
+  });
+
   it('shows an empty state when nothing is registered', async () => {
     stubServiceChaos({ services: {} });
     render(<ServiceChaosPanel connectionParams={params} />);
