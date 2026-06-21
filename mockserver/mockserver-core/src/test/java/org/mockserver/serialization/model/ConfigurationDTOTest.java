@@ -95,6 +95,22 @@ public class ConfigurationDTOTest {
         assertThat(rebuilt.validateProxyEnforce(), is(original.validateProxyEnforce()));
     }
 
+    @Test
+    public void shouldRoundTripLoadGenerationMetricLabelsThroughJson() {
+        // a List<String> property must survive a full serialize -> JSON -> deserialize cycle as a JSON array
+        Configuration original = configuration()
+            .loadGenerationMetricLabels(Arrays.asList("scenario", "region", "tier"));
+
+        String json = new org.mockserver.serialization.ConfigurationSerializer(new org.mockserver.logging.MockServerLogger())
+            .serialize(original);
+        assertThat(json, containsString("loadGenerationMetricLabels"));
+
+        Configuration rebuilt = new org.mockserver.serialization.ConfigurationSerializer(new org.mockserver.logging.MockServerLogger())
+            .deserialize(json);
+
+        assertThat(rebuilt.loadGenerationMetricLabels(), is(Arrays.asList("scenario", "region", "tier")));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void shouldRejectInvalidLogLevel() {
         ConfigurationDTO dto = new ConfigurationDTO();
@@ -546,6 +562,9 @@ public class ConfigurationDTOTest {
         }
         if (type.equals(String.class)) {
             return "distinctive-value-" + name + "-" + n;
+        }
+        if (List.class.isAssignableFrom(type)) {
+            return new ArrayList<>(Arrays.asList("list-value-" + name + "-a-" + n, "list-value-" + name + "-b-" + n));
         }
         if (Set.class.isAssignableFrom(type)) {
             return new LinkedHashSet<>(Arrays.asList("set-value-" + name + "-a-" + n, "set-value-" + name + "-b-" + n));

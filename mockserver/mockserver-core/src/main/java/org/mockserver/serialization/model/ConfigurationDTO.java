@@ -155,6 +155,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Integer loadGenerationMaxRequestsPerSecond;
     private Long loadGenerationMaxDurationMillis;
     private Integer loadGenerationMaxSteps;
+    private java.util.List<String> loadGenerationMetricLabels;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
     private Boolean deduplicateRecordedExpectations;
@@ -408,6 +409,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.loadGenerationMaxRequestsPerSecond = configuration.loadGenerationMaxRequestsPerSecond();
             this.loadGenerationMaxDurationMillis = configuration.loadGenerationMaxDurationMillis();
             this.loadGenerationMaxSteps = configuration.loadGenerationMaxSteps();
+            this.loadGenerationMetricLabels = configuration.loadGenerationMetricLabels();
             this.llmMetricsEnabled = configuration.llmMetricsEnabled();
             this.perExpectationMetricsEnabled = configuration.perExpectationMetricsEnabled();
             this.deduplicateRecordedExpectations = configuration.deduplicateRecordedExpectations();
@@ -699,6 +701,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.loadGenerationMaxRequestsPerSecond(loadGenerationMaxRequestsPerSecond);
         configuration.loadGenerationMaxDurationMillis(loadGenerationMaxDurationMillis);
         configuration.loadGenerationMaxSteps(loadGenerationMaxSteps);
+        configuration.loadGenerationMetricLabels(loadGenerationMetricLabels);
         configuration.llmMetricsEnabled(llmMetricsEnabled);
         configuration.perExpectationMetricsEnabled(perExpectationMetricsEnabled);
         configuration.deduplicateRecordedExpectations(deduplicateRecordedExpectations);
@@ -1163,6 +1166,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (loadGenerationMaxSteps != null) {
             target.loadGenerationMaxSteps(loadGenerationMaxSteps);
+        }
+        if (loadGenerationMetricLabels != null) {
+            target.loadGenerationMetricLabels(loadGenerationMetricLabels);
         }
         if (llmMetricsEnabled != null) {
             target.llmMetricsEnabled(llmMetricsEnabled);
@@ -2544,6 +2550,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setLoadGenerationMaxSteps(Integer loadGenerationMaxSteps) {
         this.loadGenerationMaxSteps = loadGenerationMaxSteps;
+        return this;
+    }
+
+    public java.util.List<String> getLoadGenerationMetricLabels() {
+        return loadGenerationMetricLabels;
+    }
+
+    public ConfigurationDTO setLoadGenerationMetricLabels(java.util.List<String> loadGenerationMetricLabels) {
+        this.loadGenerationMetricLabels = loadGenerationMetricLabels;
         return this;
     }
 
