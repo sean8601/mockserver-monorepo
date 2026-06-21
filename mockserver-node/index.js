@@ -12,7 +12,7 @@ module.exports = (function () {
     var logLevel;
     var artifactoryHost = 'repo1.maven.org';
     var artifactoryPath = '/maven2/org/mock-server/mockserver-netty/';
-    var mockServerVersion = '6.0.0';
+    var mockServerVersion = require('./package.json').version;
     var Q = require('q');
     var http = require('http');
   
