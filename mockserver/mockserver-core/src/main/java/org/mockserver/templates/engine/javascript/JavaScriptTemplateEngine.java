@@ -45,6 +45,12 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
     private final HttpTemplateOutputDeserializer httpTemplateOutputDeserializer;
     private final Configuration configuration;
     private final Predicate<String> classFilter;
+    // Held as Object (not PolyglotRunner) and created only when POLYGLOT_AVAILABLE so the JVM does not
+    // resolve PolyglotRunner's org.graalvm.polyglot.* field types when GraalVM is absent — preserving the
+    // graceful-degradation guarantee on the standard distribution. Cast to PolyglotRunner only inside the
+    // POLYGLOT_AVAILABLE branch in executeTemplateInternal. The runner owns the shared Engine, the parsed-
+    // Source cache and the per-thread Context, so it is created once per engine instance and reused.
+    private final Object polyglotRunner;
 
     public JavaScriptTemplateEngine(MockServerLogger mockServerLogger, Configuration configuration) {
         this.configuration = (configuration == null) ? configuration() : configuration;
@@ -52,6 +58,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         this.httpTemplateOutputDeserializer = new HttpTemplateOutputDeserializer(mockServerLogger);
         this.objectMapper = ObjectMapperFactory.createObjectMapper();
         this.classFilter = className -> isClassAllowed(className, this.configuration);
+        this.polyglotRunner = POLYGLOT_AVAILABLE ? new PolyglotRunner(this.classFilter) : null;
         if (mockServerLogger != null
             && mockServerLogger.isEnabledForInstance(Level.WARN)
             && !isNotBlank(this.configuration.javascriptDisallowedClasses())) {
@@ -76,13 +83,17 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         return true;
     }
 
+    // NOTE: these were previously synchronized, which serialised every JavaScript render across the whole
+    // server on one lock. The lock is gone: each request thread now renders on its own GraalVM Context
+    // (a ThreadLocal owned by the shared PolyglotRunner), so independent renders run concurrently. The only
+    // cross-thread shared object is the thread-safe GraalVM Engine; the Source cache is a synchronized LRU.
     @Override
-    public synchronized <T> T executeTemplate(String template, HttpRequest request, Class<? extends DTO<T>> dtoClass) {
+    public <T> T executeTemplate(String template, HttpRequest request, Class<? extends DTO<T>> dtoClass) {
         return executeTemplateInternal(template, request, null, null, dtoClass, false);
     }
 
     @Override
-    public synchronized <T> T executeTemplate(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass) {
+    public <T> T executeTemplate(String template, HttpRequest request, HttpResponse response, Class<? extends DTO<T>> dtoClass) {
         return executeTemplateInternal(template, request, response, null, dtoClass, true);
     }
 
@@ -92,7 +103,7 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
      * load-scenario step can vary its output per iteration. Identical to
      * {@link #executeTemplate(String, HttpRequest, Class)} when {@code iteration} is null.
      */
-    public synchronized <T> T executeTemplate(String template, HttpRequest request, org.mockserver.load.IterationContext iteration, Class<? extends DTO<T>> dtoClass) {
+    public <T> T executeTemplate(String template, HttpRequest request, org.mockserver.load.IterationContext iteration, Class<? extends DTO<T>> dtoClass) {
         return executeTemplateInternal(template, request, null, iteration, dtoClass, false);
     }
 
@@ -109,17 +120,17 @@ public class JavaScriptTemplateEngine implements TemplateEngine {
         try {
             validateTemplate(template);
             if (POLYGLOT_AVAILABLE) {
-                // Delegate to PolyglotRunner (nested holder class). The JVM only resolves the
-                // org.graalvm.polyglot.* references inside PolyglotRunner when this branch is
-                // taken, so the standard distribution (no GraalVM on classpath) loads this class
-                // and degrades gracefully via the else branch instead of failing with NoClassDefFoundError.
-                return PolyglotRunner.run(
+                // Delegate to the shared PolyglotRunner (nested holder class). The JVM only resolves the
+                // org.graalvm.polyglot.* references inside PolyglotRunner when this branch is taken (and
+                // when the runner was created in the constructor under the same POLYGLOT_AVAILABLE guard),
+                // so the standard distribution (no GraalVM on classpath) loads this class and degrades
+                // gracefully via the else branch instead of failing with NoClassDefFoundError.
+                return ((PolyglotRunner) polyglotRunner).run(
                     script,
                     includeResponse,
                     request,
                     response,
                     iteration,
-                    classFilter,
                     objectMapper,
                     mockServerLogger,
                     httpTemplateOutputDeserializer,

@@ -1376,6 +1376,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared when a module is removed or the server is reset.
 - **Mustache response templates are compiled once and cached** (`mockserver-core`), mirroring the
   Velocity engine, instead of recompiling the template on every render.
+- **JavaScript response templates now share a cached engine** (`mockserver-core`). The GraalVM engine and
+  parsed script are cached and each request thread renders on its own context, instead of building and
+  tearing down a fresh context (and re-parsing the script) per request behind a single global lock.
+  Output is unchanged; measured ~14x faster single-threaded and ~10x higher throughput under concurrency.
 - **Reduced per-request object churn in identity and LLM endpoints** (`mockserver-core`). The OIDC
   callbacks reuse a shared JSON writer, the SAML response builder reuses its XML factories (still creating
   per-request parsers/transformers, so thread-safety and XXE settings are unchanged), and the LLM

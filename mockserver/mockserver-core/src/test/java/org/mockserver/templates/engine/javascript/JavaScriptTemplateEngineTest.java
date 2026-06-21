@@ -1172,6 +1172,77 @@ public class JavaScriptTemplateEngineTest {
     }
 
     @Test
+    public void shouldIsolateConcurrentRendersOfDifferentTemplatesWithPerRequestData() throws InterruptedException, ExecutionException {
+        // given a SINGLE shared engine rendering TWO different templates concurrently, each reading
+        // per-request data (one reads request.body, the other reads jsonPath of a JSON body). This
+        // exercises the cached-Source + per-thread-Context design: every thread must get its own
+        // isolated result, no cross-template bleed (the eval re-defines handle()/serialise() each render)
+        // and no cross-request bleed (jsonPath/xPath/body are rebound per render).
+        graalJsAvailable();
+        final JavaScriptTemplateEngine engine = new JavaScriptTemplateEngine(mockServerLogger, configuration);
+
+        final String echoBodyTemplate = "return { 'statusCode': 200, 'body': 'echo:' + request.body };";
+        final String jsonPathTemplate = "return { 'statusCode': 200, 'body': 'name:' + jsonPath('$.name') };";
+
+        ExecutorService pool = Executors.newFixedThreadPool(16);
+        List<Future<Boolean>> futures = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            final int n = i;
+            futures.add(pool.submit(() -> {
+                HttpRequest request = request().withPath("/echo/" + n).withBody("payload-" + n);
+                assertThat(
+                    engine.executeTemplate(echoBodyTemplate, request, HttpResponseDTO.class),
+                    is(response().withStatusCode(200).withBody("echo:payload-" + n))
+                );
+                return true;
+            }));
+            futures.add(pool.submit(() -> {
+                HttpRequest request = request().withPath("/json/" + n).withBody(json("{\"name\":\"user-" + n + "\"}"));
+                assertThat(
+                    engine.executeTemplate(jsonPathTemplate, request, HttpResponseDTO.class),
+                    is(response().withStatusCode(200).withBody("name:user-" + n))
+                );
+                return true;
+            }));
+        }
+        for (Future<Boolean> future : futures) {
+            future.get();
+        }
+        pool.shutdown();
+    }
+
+    @Test
+    public void shouldNotLeakIterationBindingBetweenRendersOnSameThread() {
+        // given a load render (iteration bound) followed by a normal render (iteration absent) on the
+        // SAME thread+engine: because the Context is reused, the normal render must NOT see a stale
+        // "iteration" global (it is explicitly removed). A template that references iteration when none
+        // is bound must throw, proving the binding was cleared rather than reused from the prior render.
+        graalJsAvailable();
+        final JavaScriptTemplateEngine engine = new JavaScriptTemplateEngine(mockServerLogger, configuration);
+
+        String loadTemplate = "return { 'statusCode': 200, 'body': 'idx=' + iteration.getIndex() };";
+        HttpRequest request = request().withPath("/somePath").withMethod("GET");
+
+        // load render binds iteration
+        assertThat(
+            engine.executeTemplate(loadTemplate, request, new org.mockserver.load.IterationContext(5, 1, 1, 0, 0), HttpResponseDTO.class),
+            is(response().withStatusCode(200).withBody("idx=5"))
+        );
+
+        // a subsequent NON-load render that references iteration must fail because iteration was removed
+        // (not left over from the prior load render) — proving no stale-binding leak via the reused Context
+        assertThrows(RuntimeException.class, () ->
+            engine.executeTemplate(loadTemplate, request, HttpResponseDTO.class)
+        );
+
+        // and a normal template that does not reference iteration renders fine afterwards
+        assertThat(
+            engine.executeTemplate("return { 'statusCode': 200, 'body': 'ok' };", request, HttpResponseDTO.class),
+            is(response().withStatusCode(200).withBody("ok"))
+        );
+    }
+
+    @Test
     public void shouldHandleJavaScriptResponseTemplateWithJsonPath() {
         // given
         graalJsAvailable();
