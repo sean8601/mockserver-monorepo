@@ -7,8 +7,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import org.mockserver.model.*;
 import org.mockserver.version.Version;
 
-import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -215,11 +215,7 @@ public class HarConverter {
     }
 
     private static String urlEncode(String value) {
-        try {
-            return URLEncoder.encode(value, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            return value;
-        }
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String convertProtocol(Protocol protocol) {

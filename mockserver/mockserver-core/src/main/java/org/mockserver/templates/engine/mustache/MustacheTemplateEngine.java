@@ -23,6 +23,8 @@ import org.slf4j.event.Level;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -45,6 +47,32 @@ public class MustacheTemplateEngine implements TemplateEngine {
     private final Mustache.Compiler compiler;
     private HttpTemplateOutputDeserializer httpTemplateOutputDeserializer;
 
+    // ----- parsed-template cache (compile once, render many) -----
+    // Templates are mostly static for the lifetime of a mock — the same template string is rendered on
+    // every matching request. The original path re-compiled the template string into a fresh parsed
+    // Template on every render via compiler.compile(template), which dominated render cost. We instead
+    // compile each distinct template string at most once and reuse the resulting jmustache Template
+    // across renders. A jmustache Template is immutable once compiled and is rendered (Template.execute)
+    // concurrently with a fresh per-render data map, so a single shared compiled Template is safe to
+    // reuse across request threads — mirroring how the Velocity engine reuses its parsed Templates.
+    //
+    // The cache is keyed by the template content string itself, so distinct templates can never collide
+    // onto the same compiled Template. Bound rationale: distinct template strings are bounded by the
+    // number of expectations/actions a user configures, but a misbehaving client (e.g. unique generated
+    // templates per request) could otherwise grow the cache without limit. We cap the number of cached
+    // templates at PARSED_TEMPLATE_CACHE_MAX (matching the Velocity engine's bound) so memory stays
+    // bounded; 1000 comfortably covers realistic mock configurations while remaining cheap. The bound is
+    // enforced by compiledTemplates, an access-ordered LRU wrapped in Collections.synchronizedMap so
+    // concurrent renders read and insert safely (the same concurrency approach Velocity uses for its
+    // registeredTemplates LRU).
+    static final int PARSED_TEMPLATE_CACHE_MAX = 1000;
+    private final Map<String, Template> compiledTemplates = Collections.synchronizedMap(new LinkedHashMap<String, Template>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Template> eldest) {
+            return size() > PARSED_TEMPLATE_CACHE_MAX;
+        }
+    });
+
     public MustacheTemplateEngine(MockServerLogger mockServerLogger, Configuration configuration) {
         this.mockServerLogger = mockServerLogger;
         this.configuration = configuration;
@@ -59,6 +87,26 @@ public class MustacheTemplateEngine implements TemplateEngine {
             .strictSections(false)
             .defaultValue("")
             .withCollector(new ExtendedCollector());
+    }
+
+    /**
+     * Return the jmustache {@link Template} for the given template string, compiling it at most once per
+     * distinct string and reusing the cached compiled Template on subsequent renders. The compiled
+     * Template is immutable and rendered concurrently with a fresh per-render data map, so a single
+     * shared instance is safe across request threads. A compilation failure (malformed template) is not
+     * cached — it propagates to the caller exactly as {@code compiler.compile(template)} would, so error
+     * handling is unchanged.
+     */
+    private Template compiledTemplate(String template) {
+        Template cached = compiledTemplates.get(template);
+        if (cached == null) {
+            // compile outside the map mutation so a malformed template throws (and is never cached);
+            // a benign race where two threads compile the same string concurrently just discards one
+            // identical compiled Template, which is harmless.
+            cached = compiler.compile(template);
+            compiledTemplates.put(template, cached);
+        }
+        return cached;
     }
 
     @Override
@@ -81,7 +129,7 @@ public class MustacheTemplateEngine implements TemplateEngine {
         try {
             validateTemplate(template);
             Writer writer = new StringWriter();
-            Template compiledTemplate = compiler.compile(template);
+            Template compiledTemplate = compiledTemplate(template);
             Map<String, Object> data = new ConcurrentHashMap<>();
             data.put("request", new HttpRequestTemplateObject(request));
             if (iteration != null) {
@@ -103,7 +151,7 @@ public class MustacheTemplateEngine implements TemplateEngine {
         try {
             validateTemplate(template);
             Writer writer = new StringWriter();
-            Template compiledTemplate = compiler.compile(template);
+            Template compiledTemplate = compiledTemplate(template);
             Map<String, Object> data = new ConcurrentHashMap<>();
             data.put("request", new HttpRequestTemplateObject(request));
             if (response != null) {

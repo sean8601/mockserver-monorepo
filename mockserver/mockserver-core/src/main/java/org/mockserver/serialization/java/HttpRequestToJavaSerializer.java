@@ -36,11 +36,11 @@ public class HttpRequestToJavaSerializer implements ToJavaSerializer<HttpRequest
             output.append("request()");
             if (isNotBlank(request.getMethod().getValue())) {
                 appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
-                output.append(".withMethod(\"").append(request.getMethod().getValue()).append("\")");
+                output.append(".withMethod(\"").append(StringEscapeUtils.escapeJava(request.getMethod().getValue())).append("\")");
             }
             if (isNotBlank(request.getPath().getValue())) {
                 appendNewLineAndIndent((numberOfSpacesToIndent + 1) * INDENT_SIZE, output);
-                output.append(".withPath(\"").append(request.getPath().getValue()).append("\")");
+                output.append(".withPath(\"").append(StringEscapeUtils.escapeJava(request.getPath().getValue())).append("\")");
             }
             outputHeaders(numberOfSpacesToIndent + 1, output, request.getHeaderList());
             outputCookies(numberOfSpacesToIndent + 1, output, request.getCookieList());

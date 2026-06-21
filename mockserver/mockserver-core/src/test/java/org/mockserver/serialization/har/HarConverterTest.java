@@ -214,6 +214,21 @@ public class HarConverterTest {
     }
 
     @Test
+    public void shouldUrlEncodeQueryParameterReservedAndNonAsciiCharacters() {
+        // given - characters that MUST be percent-encoded (the previous silent-catch bug
+        // returned them unencoded, producing an invalid/injectable URL)
+        HttpRequest httpRequest = request("/search")
+            .withHeader("host", "example.com")
+            .withQueryStringParameter("q", "a#b'c");
+
+        // when
+        String url = harConverter.reconstructUrl(httpRequest);
+
+        // then
+        assertThat(url, is("http://example.com/search?q=a%23b%27c"));
+    }
+
+    @Test
     public void shouldHandleHttp2Protocol() throws Exception {
         // given
         LogEventRequestAndResponse entry = new LogEventRequestAndResponse()

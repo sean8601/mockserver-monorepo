@@ -1309,6 +1309,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-validating the module binary on every request, the most expensive step of evaluating a WASM rule.
   A fresh execution instance is still created per call, so thread-safety is unchanged; the cache is
   cleared when a module is removed or the server is reset.
+- **Mustache response templates are compiled once and cached** (`mockserver-core`), mirroring the
+  Velocity engine, instead of recompiling the template on every render.
 
 #### AI, LLM & agent protocols (LLM / MCP / A2A)
 - **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
@@ -1457,6 +1459,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Correctness & reliability (code-quality review)
+- **Configuration round-trip no longer drops properties** (`mockserver-core`). `ConfigurationDTO`
+  mirrored only about half of the configuration properties, so many settings (SLO tracking, load
+  generation, drift alerting, HTTP/3, gRPC, DNS, WASM, clustering, blob store, transparent proxy,
+  async messaging, control-plane OIDC, forward connection-pool/retry/circuit-breaker, body-size limits,
+  redaction, OpenTelemetry, audit, and more) were silently lost when configuration was serialized and
+  reloaded via `/mockserver/configuration`. All properties are now mirrored, with a reflection-driven
+  test that fails if a future property is added without being mapped.
+- **Generated curl / Java / HAR output is now correctly escaped** (`mockserver-core`). `curl` snippets
+  use the POSIX `'\''` idiom for header names, values and bodies (previously breakable/injectable);
+  generated Java escapes the method and path like other literals; HAR query parameters are now actually
+  URL-encoded.
+- **Expectation persistence writes atomically** (`mockserver-core`). The file blob store now writes to a
+  temporary file and atomically renames it into place, so a concurrent reader (including the file watcher
+  when the initialization and persistence paths are the same file) can never observe a truncated file
+  mid-write. The file watcher also no longer treats a transient read error as a content change.
 - **Callback WebSocket registry is now thread-safe** (`mockserver-core`). The response, forward and
   stream-frame callback registries backing `mockWithCallback`/forward callbacks and breakpoints were
   unsynchronized maps shared between request-handling threads and the Netty I/O thread; under concurrent
