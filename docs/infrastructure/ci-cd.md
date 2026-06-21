@@ -118,7 +118,7 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 
 A single commit can trigger multiple child pipelines if it changes files in multiple areas. For example, a commit touching both `mockserver/` and `mockserver-ui/` triggers both `mockserver-java` and `mockserver-ui` pipelines.
 
-All pipelines have `cancel_intermediate_builds` and `skip_intermediate_builds` enabled. When a new build arrives for the same branch (e.g. Dependabot rebases a PR), Buildkite automatically cancels any running builds and skips queued builds for that branch. Native trigger steps automatically cancel child builds when the parent build is cancelled.
+All pipelines have `cancel_intermediate_builds` and `skip_intermediate_builds` enabled, but cancellation of **running** builds is scoped to non-master branches via `cancel_intermediate_builds_branch_filter = "!master"` (set uniformly in `terraform/buildkite-pipelines/pipelines.tf`). When a new build arrives for the same **feature/PR** branch (e.g. Dependabot rebases a PR), Buildkite cancels the running build to save agent VMs, and native trigger steps cancel the child builds too. On **master**, running builds are never cancelled: they always run to completion and report true pass/fail. Cancelling a master build mid-run would (a) leave that commit untested and (b) surface as a misleading failure on the parent pipeline whose trigger step was waiting on the cancelled child. Queued (not-yet-started) builds are still skipped on all branches — those report as "skipped" (neutral), not red.
 
 ### Closed PR Build Cleanup
 
@@ -558,7 +558,7 @@ When multiple commits land on `master` in quick succession (e.g. from concurrent
 | 2 | ~12 | 0 of 10 (starvation) |
 | 3 | ~18 | 0 of 10 (starvation, queued jobs can't start) |
 
-Cancel/skip intermediate builds is set to `!master` (disabled on master) because enabling it on master would cause legitimate builds to be dropped. Child pipelines (`mockserver-infra`, `mockserver-container-tests`) have empty filters (cancel/skip enabled on all branches), but the parent pipeline's trigger jobs still hold agents.
+Cancel intermediate (running) builds is set to `!master` (disabled on master) on **every** pipeline because cancelling on master drops legitimate builds and shows misleading failures. This filter is now applied uniformly in Terraform (`terraform/buildkite-pipelines/pipelines.tf`). Previously several child pipelines (`mockserver-container-tests`, `mockserver-performance-test`, `mockserver-infra`, the per-client and release pipelines) had empty filters — so a fresh master commit cancelled the previous still-running build before it could report, which was especially disruptive for the long-running container-tests (~20m) and performance-test pipelines. The parent pipeline's trigger jobs still hold a (cheap, `trigger`-queue) agent while waiting on children.
 
 ### Why Not Native Trigger Steps
 
