@@ -155,6 +155,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Integer loadGenerationMaxRequestsPerSecond;
     private Long loadGenerationMaxDurationMillis;
     private Integer loadGenerationMaxSteps;
+    private Double loadGenerationMaxRate;
+    private Integer loadGenerationMaxStages;
+    private Integer loadGenerationMaxConcurrentScenarios;
+    private String loadScenarioInitializationJsonPath;
     private java.util.List<String> loadGenerationMetricLabels;
     private Boolean llmMetricsEnabled;
     private Boolean perExpectationMetricsEnabled;
@@ -409,6 +413,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.loadGenerationMaxRequestsPerSecond = configuration.loadGenerationMaxRequestsPerSecond();
             this.loadGenerationMaxDurationMillis = configuration.loadGenerationMaxDurationMillis();
             this.loadGenerationMaxSteps = configuration.loadGenerationMaxSteps();
+            this.loadGenerationMaxRate = configuration.loadGenerationMaxRate();
+            this.loadGenerationMaxStages = configuration.loadGenerationMaxStages();
+            this.loadGenerationMaxConcurrentScenarios = configuration.loadGenerationMaxConcurrentScenarios();
+            this.loadScenarioInitializationJsonPath = configuration.loadScenarioInitializationJsonPath();
             this.loadGenerationMetricLabels = configuration.loadGenerationMetricLabels();
             this.llmMetricsEnabled = configuration.llmMetricsEnabled();
             this.perExpectationMetricsEnabled = configuration.perExpectationMetricsEnabled();
@@ -701,6 +709,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.loadGenerationMaxRequestsPerSecond(loadGenerationMaxRequestsPerSecond);
         configuration.loadGenerationMaxDurationMillis(loadGenerationMaxDurationMillis);
         configuration.loadGenerationMaxSteps(loadGenerationMaxSteps);
+        configuration.loadGenerationMaxRate(loadGenerationMaxRate);
+        configuration.loadGenerationMaxStages(loadGenerationMaxStages);
+        configuration.loadGenerationMaxConcurrentScenarios(loadGenerationMaxConcurrentScenarios);
+        configuration.loadScenarioInitializationJsonPath(loadScenarioInitializationJsonPath);
         configuration.loadGenerationMetricLabels(loadGenerationMetricLabels);
         configuration.llmMetricsEnabled(llmMetricsEnabled);
         configuration.perExpectationMetricsEnabled(perExpectationMetricsEnabled);
@@ -1166,6 +1178,18 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (loadGenerationMaxSteps != null) {
             target.loadGenerationMaxSteps(loadGenerationMaxSteps);
+        }
+        if (loadGenerationMaxRate != null) {
+            target.loadGenerationMaxRate(loadGenerationMaxRate);
+        }
+        if (loadGenerationMaxStages != null) {
+            target.loadGenerationMaxStages(loadGenerationMaxStages);
+        }
+        if (loadGenerationMaxConcurrentScenarios != null) {
+            target.loadGenerationMaxConcurrentScenarios(loadGenerationMaxConcurrentScenarios);
+        }
+        if (loadScenarioInitializationJsonPath != null) {
+            target.loadScenarioInitializationJsonPath(loadScenarioInitializationJsonPath);
         }
         if (loadGenerationMetricLabels != null) {
             target.loadGenerationMetricLabels(loadGenerationMetricLabels);
@@ -2550,6 +2574,42 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setLoadGenerationMaxSteps(Integer loadGenerationMaxSteps) {
         this.loadGenerationMaxSteps = loadGenerationMaxSteps;
+        return this;
+    }
+
+    public Double getLoadGenerationMaxRate() {
+        return loadGenerationMaxRate;
+    }
+
+    public ConfigurationDTO setLoadGenerationMaxRate(Double loadGenerationMaxRate) {
+        this.loadGenerationMaxRate = loadGenerationMaxRate;
+        return this;
+    }
+
+    public Integer getLoadGenerationMaxStages() {
+        return loadGenerationMaxStages;
+    }
+
+    public ConfigurationDTO setLoadGenerationMaxStages(Integer loadGenerationMaxStages) {
+        this.loadGenerationMaxStages = loadGenerationMaxStages;
+        return this;
+    }
+
+    public Integer getLoadGenerationMaxConcurrentScenarios() {
+        return loadGenerationMaxConcurrentScenarios;
+    }
+
+    public ConfigurationDTO setLoadGenerationMaxConcurrentScenarios(Integer loadGenerationMaxConcurrentScenarios) {
+        this.loadGenerationMaxConcurrentScenarios = loadGenerationMaxConcurrentScenarios;
+        return this;
+    }
+
+    public String getLoadScenarioInitializationJsonPath() {
+        return loadScenarioInitializationJsonPath;
+    }
+
+    public ConfigurationDTO setLoadScenarioInitializationJsonPath(String loadScenarioInitializationJsonPath) {
+        this.loadScenarioInitializationJsonPath = loadScenarioInitializationJsonPath;
         return this;
     }
 

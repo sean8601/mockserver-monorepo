@@ -1607,6 +1607,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Correctness & reliability
+- **Load-generation cap properties are now serialized through the configuration DTO** (`mockserver-core`). The
+  `loadGenerationMaxRate`, `loadGenerationMaxStages`, `loadGenerationMaxConcurrentScenarios` and
+  `loadScenarioInitializationJsonPath` properties were read from system properties but missing from
+  `ConfigurationDTO`, so they were dropped by `GET`/`PUT /mockserver/configuration` round-trips and by
+  `applyTo()`. They are now mirrored like the other `loadGeneration*` properties.
+
 #### Documentation site & dashboard
 - **Docs left-nav showed "Examples" twice and re-ordered between pages** (`jekyll-www.mock-server.com`). Removed a
   leftover hardcoded "Examples" nav link that duplicated the auto-listed `examples.html` page, and made every
