@@ -570,16 +570,17 @@ public class ConfigurationTest {
     public void shouldSetAndGetForwardConnectionPoolEnabled() {
         boolean original = ConfigurationProperties.forwardConnectionPoolEnabled();
         try {
-            // then - default value (pooling is now on by default)
-            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(true));
+            // then - default value (pooling is OFF by default: it is unsafe for upstreams that
+            // can return raw/non-HTTP error() responses, which poison a pooled keep-alive channel)
+            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(false));
 
-            // when - system property setter disables it
-            ConfigurationProperties.forwardConnectionPoolEnabled(false);
+            // when - system property setter enables it
+            ConfigurationProperties.forwardConnectionPoolEnabled(true);
 
             // then - system property getter
-            assertThat(ConfigurationProperties.forwardConnectionPoolEnabled(), equalTo(false));
-            assertThat(System.getProperty("mockserver.forwardConnectionPoolEnabled"), equalTo("false"));
-            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(false));
+            assertThat(ConfigurationProperties.forwardConnectionPoolEnabled(), equalTo(true));
+            assertThat(System.getProperty("mockserver.forwardConnectionPoolEnabled"), equalTo("true"));
+            assertThat(configuration.forwardConnectionPoolEnabled(), equalTo(true));
             ConfigurationProperties.forwardConnectionPoolEnabled(original);
 
             // when - setter

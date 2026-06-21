@@ -56,6 +56,7 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
      * <p>
      * A channel is never reused when: pooling is off, the upstream signalled {@code Connection:
      * close}, the channel is no longer active, the message is not a complete {@link HttpResponse},
+     * the response did not go through clean HTTP framing (see {@link #isCleanlyFramedHttpResponse}),
      * or the pool is saturated for the key.
      */
     private boolean tryReturnToPool(Channel channel, Message response) {
@@ -64,13 +65,36 @@ public class HttpClientHandler extends SimpleChannelInboundHandler<Message> {
         if (pool == null || key == null || !channel.isActive() || !(response instanceof HttpResponse)) {
             return false;
         }
-        if (!permitsKeepAlive((HttpResponse) response)) {
+        HttpResponse httpResponse = (HttpResponse) response;
+        if (!isCleanlyFramedHttpResponse(httpResponse) || !permitsKeepAlive(httpResponse)) {
             return false;
         }
         // Detach the completed future so a stale reference cannot be completed again, and so the
         // connection-error handler does not error on a clean idle close.
         channel.attr(RESPONSE_FUTURE).set(null);
         return pool.release(key, channel);
+    }
+
+    /**
+     * A channel is only safe to reuse when the response that just completed on it went through
+     * clean HTTP/1.1 request/response framing, leaving the channel's {@code HttpClientCodec}
+     * decoder in a pristine state ready for the next exchange.
+     * <p>
+     * MockServer's {@code error()} action (HttpError) deliberately writes raw, non-HTTP bytes
+     * and/or drops the connection. When such a reply is parsed by the client codec it surfaces here
+     * as an {@link HttpResponse} whose status code is outside the valid HTTP range (the decoder
+     * marks the message as a failure and the mapper assigns a sentinel code, e.g. {@code 999}). Such
+     * a channel must never be pooled. Only a status code in the valid HTTP range [100, 599] indicates
+     * a cleanly-framed response, so only those channels are eligible for reuse.
+     * <p>
+     * Note: this guard is necessary but not sufficient to make pooling safe for all workloads — a
+     * non-HTTP/raw upstream reply can also leave undelivered bytes that desynchronise a later reuse.
+     * That is why {@code forwardConnectionPoolEnabled} is off by default (opt-in for plain forward
+     * workloads); this guard hardens the opt-in path against the most common corruption.
+     */
+    private boolean isCleanlyFramedHttpResponse(HttpResponse response) {
+        Integer statusCode = response.getStatusCode();
+        return statusCode != null && statusCode >= 100 && statusCode <= 599;
     }
 
     /**

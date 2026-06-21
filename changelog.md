@@ -1406,18 +1406,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-request allocations and CPU when matching against large expectation sets.
 
 #### Forwarding & proxying
-- **Upstream forward connection pooling is now on by default** (`forwardConnectionPoolEnabled` defaults
-  to `true`, was `false`). MockServer now pools and reuses idle HTTP/1.1 keep-alive upstream connections
-  (keyed by host, port and scheme) for forwarded and proxied requests instead of opening a fresh upstream
-  connection per request. This is a **behaviour change**, not an API change. It was made because the
-  per-request-connection default exhausted the operating system's ephemeral local ports under sustained
-  forward load — a k6 baseline measured 21% request errors at 750 rps and 68% at 1500 rps (212k
-  `BindException`s from local port exhaustion), which enabling pooling drove to ~0% errors with no latency
-  regression in a controlled A/B. Only plain HTTP/1.1 keep-alive upstreams are pooled — HTTP/2, HTTP/3,
-  binary forwarding, streaming (SSE) responses, proxy-tunnelled connections, and any upstream that closed
-  the connection or returned `Connection: close` still use a fresh connection. Set
-  `mockserver.forwardConnectionPoolEnabled=false` (env `MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED=false`)
-  to restore the historical behaviour of a fresh upstream connection per request.
+- **Upstream forward connection pooling remains opt-in (`forwardConnectionPoolEnabled`, default `false`).**
+  MockServer can pool and reuse idle HTTP/1.1 keep-alive upstream connections (keyed by host, port and
+  scheme) for forwarded and proxied requests instead of opening a fresh upstream connection per request,
+  which avoids exhausting the operating system's ephemeral local ports under sustained forward load — a k6
+  baseline measured 21% request errors at 750 rps and 68% at 1500 rps (212k `BindException`s from local
+  port exhaustion), which enabling pooling drove to ~0% errors with no latency regression in a controlled
+  A/B. Pooling is **off by default** because it is only safe for upstreams that always return well-formed
+  HTTP responses: MockServer's `error()` action (HttpError) deliberately returns raw, non-HTTP bytes
+  and/or drops the connection, which can leave a pooled keep-alive channel's HTTP decoder corrupted or
+  holding undelivered bytes — a later request reusing that channel then loses or receives the wrong
+  response (it blocks until the forward timeout). Enable pooling with
+  `mockserver.forwardConnectionPoolEnabled=true` (env `MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED=true`)
+  only when forwarding to upstreams that always speak clean HTTP/1.1. As a hardening, a reply that does not
+  parse as a valid HTTP response (status outside 100–599) is never returned to the pool even when pooling
+  is enabled. Only plain HTTP/1.1 keep-alive upstreams are pooled — HTTP/2, HTTP/3, binary forwarding,
+  streaming (SSE) responses, proxy-tunnelled connections, and any upstream that closed the connection or
+  returned `Connection: close` always use a fresh connection.
 
 
 ### Fixed

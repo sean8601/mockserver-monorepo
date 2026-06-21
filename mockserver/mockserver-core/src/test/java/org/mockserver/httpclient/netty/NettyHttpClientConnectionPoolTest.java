@@ -1,6 +1,7 @@
 package org.mockserver.httpclient.netty;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
@@ -271,6 +272,112 @@ public class NettyHttpClientConnectionPoolTest {
         assertThat("no corrupted/cross-talked responses", failures.get(), is(0));
         // and reuse actually happened: fewer connections were opened than total requests
         assertThat(upstream.acceptedConnections(), lessThan(threads * requestsPerThread));
+    }
+
+    /**
+     * Regression for the connection-pool default-on forward callback/error desync: a malformed,
+     * non-HTTP upstream reply (as produced by MockServer's {@code error()} / HttpError action —
+     * raw bytes, not a valid HTTP response) must NEVER be returned to the pool. Such a channel's
+     * decoder is left corrupted; reusing it silently swallows the next request's response, so the
+     * caller blocks until the forward timeout. The fix keeps {@code forwardConnectionPoolEnabled}
+     * off by default and, when it IS enabled, refuses to pool a channel whose reply did not parse as
+     * a valid HTTP response (status outside 100–599). Here the upstream replies with a single garbage
+     * line on its first connection; the SECOND request must therefore open a FRESH connection (the
+     * poisoned channel was not reused) and complete normally on the upstream's now-clean responses.
+     */
+    @Test
+    public void shouldNotReuseChannelAfterMalformedNonHttpResponse() throws Exception {
+        // given - the upstream returns a non-HTTP garbage line on its first connection only
+        MalformedThenValidUpstreamServer rawUpstream = new MalformedThenValidUpstreamServer();
+        try {
+            NettyHttpClient client = pooledClient();
+
+            // when - first request receives the malformed reply (surfaces as an out-of-range status)
+            HttpResponse first = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + rawUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+            // the malformed reply is not a clean HTTP response - its status is outside the valid range
+            assertThat(first.getStatusCode() == null || first.getStatusCode() < 100 || first.getStatusCode() > 599, is(true));
+
+            // and - a SECOND request must succeed; if the poisoned channel had been pooled and reused
+            // this would hang and time out (the regression). A fresh connection is opened instead.
+            HttpResponse second = client.sendRequest(request().withHeader("Host", "127.0.0.1:" + rawUpstream.port()))
+                .get(10, TimeUnit.SECONDS);
+
+            // then - the second exchange completed cleanly on a fresh connection
+            assertThat(second.getStatusCode(), is(200));
+            // the malformed channel was never reused, so at least two connections were opened
+            assertThat(rawUpstream.acceptedConnections(), is(greaterThanOrEqualTo(2)));
+        } finally {
+            rawUpstream.stop();
+        }
+    }
+
+    /**
+     * A minimal raw TCP upstream that, on its FIRST accepted connection, replies with a single
+     * non-HTTP garbage line and keeps the socket open (mimicking an {@code error()} raw-bytes reply
+     * on a keep-alive connection); on every subsequent connection it speaks valid HTTP/1.1. Counts
+     * accepted connections so the test can assert the poisoned channel was not reused.
+     */
+    private static final class MalformedThenValidUpstreamServer {
+
+        private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        private final EventLoopGroup workerGroup = new NioEventLoopGroup(2);
+        private final AtomicInteger accepted = new AtomicInteger();
+        private final Channel serverChannel;
+
+        MalformedThenValidUpstreamServer() {
+            ServerBootstrap bootstrap = new ServerBootstrap()
+                .group(bossGroup, workerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        boolean firstConnection = accepted.incrementAndGet() == 1;
+                        if (firstConnection) {
+                            // Raw, non-HTTP reply: a single garbage line, no HTTP framing, socket
+                            // stays open. This is the shape of an HttpError raw-bytes response.
+                            ch.pipeline().addLast(new SimpleChannelInboundHandler<io.netty.buffer.ByteBuf>() {
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, io.netty.buffer.ByteBuf msg) {
+                                    ctx.writeAndFlush(Unpooled.copiedBuffer("some_random_bytes\r\n", StandardCharsets.UTF_8));
+                                }
+                            });
+                        } else {
+                            ch.pipeline().addLast(new HttpServerCodec());
+                            ch.pipeline().addLast(new HttpObjectAggregator(64 * 1024));
+                            ch.pipeline().addLast(new SimpleChannelInboundHandler<FullHttpRequest>() {
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest msg) {
+                                    byte[] body = "OK".getBytes(StandardCharsets.UTF_8);
+                                    FullHttpResponse response = new DefaultFullHttpResponse(
+                                        HttpVersion.HTTP_1_1,
+                                        io.netty.handler.codec.http.HttpResponseStatus.OK,
+                                        ctx.alloc().buffer().writeBytes(body)
+                                    );
+                                    response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length);
+                                    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+                                    ctx.writeAndFlush(response);
+                                }
+                            });
+                        }
+                    }
+                });
+            serverChannel = bootstrap.bind(new InetSocketAddress("127.0.0.1", 0)).syncUninterruptibly().channel();
+        }
+
+        int port() {
+            return ((InetSocketAddress) serverChannel.localAddress()).getPort();
+        }
+
+        int acceptedConnections() {
+            return accepted.get();
+        }
+
+        void stop() {
+            serverChannel.close().syncUninterruptibly();
+            bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+            workerGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+        }
     }
 
     /**

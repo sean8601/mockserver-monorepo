@@ -1635,21 +1635,28 @@ public class ConfigurationProperties {
     }
 
     public static boolean forwardConnectionPoolEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + true));
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED, "MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED", "" + false));
     }
 
     /**
-     * If true (the default) idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host,
+     * If true idle keep-alive HTTP/1.1 upstream connections are pooled (keyed by host,
      * port and scheme) and reused for subsequent requests to the same upstream, eliminating repeated
      * connection and TLS handshakes for proxy-heavy workloads and avoiding ephemeral-port exhaustion
-     * under sustained forward load. If false every forwarded or proxied request opens a fresh upstream
-     * TCP (and TLS) connection that is closed once the response is received, restoring the historical
-     * behaviour of a fresh upstream connection per request.
+     * under sustained forward load. If false (the default) every forwarded or proxied request opens a
+     * fresh upstream TCP (and TLS) connection that is closed once the response is received, restoring
+     * the historical behaviour of a fresh upstream connection per request.
+     * <p>
+     * Pooling is off by default because it is only safe for workloads where every upstream reply is a
+     * cleanly-framed HTTP response. MockServer's {@code error()} action (HttpError) deliberately
+     * writes raw, non-HTTP bytes and/or drops the connection; such a reply can leave a pooled
+     * keep-alive channel's decoder corrupted or with undelivered bytes, desynchronising a later
+     * request that reuses it (the reused request's response is then lost or mismatched). Enable
+     * pooling only when forwarding to upstreams that always return well-formed HTTP responses.
      * <p>
      * Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2 and HTTP/3 (which multiplex
-     * differently), binary forwarding, streaming responses, proxy-tunnelled connections, and any
-     * connection the upstream closed or that returned "Connection: close" are never pooled and fall
-     * back to a fresh connection.
+     * differently), binary forwarding, streaming responses, proxy-tunnelled connections, any
+     * connection the upstream closed or that returned "Connection: close", and any reply that did not
+     * parse as a valid HTTP response are never pooled and fall back to a fresh connection.
      *
      * @param enable enable pooling and reuse of idle keep-alive upstream HTTP/1.1 connections
      */
