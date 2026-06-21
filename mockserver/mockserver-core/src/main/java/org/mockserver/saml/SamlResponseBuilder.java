@@ -50,6 +50,24 @@ public class SamlResponseBuilder {
     static final String NS_PROTOCOL = "urn:oasis:names:tc:SAML:2.0:protocol";
     static final String NS_ASSERTION = "urn:oasis:names:tc:SAML:2.0:assertion";
 
+    // Constructing DocumentBuilderFactory / TransformerFactory / XMLSignatureFactory is expensive
+    // (service-loader lookups + provider instantiation), so the FACTORIES are created once and shared.
+    // CRITICAL: only the factories are shared — DocumentBuilderFactory, TransformerFactory and the
+    // DocumentBuilder/Transformer they produce are NOT thread-safe, so every call still creates a
+    // fresh DocumentBuilder/Transformer via newDocumentBuilder()/newTransformer(). The exact factory
+    // configuration applied per-request before (only setNamespaceAware(true); no other security
+    // feature was ever set) is replicated here verbatim so behaviour — including XML namespace
+    // handling — is identical. XMLSignatureFactory.getInstance("DOM") is reusable/thread-safe.
+    private static final DocumentBuilderFactory DOCUMENT_BUILDER_FACTORY = newDocumentBuilderFactory();
+    private static final TransformerFactory TRANSFORMER_FACTORY = TransformerFactory.newInstance();
+    private static final XMLSignatureFactory XML_SIGNATURE_FACTORY = XMLSignatureFactory.getInstance("DOM");
+
+    private static DocumentBuilderFactory newDocumentBuilderFactory() {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true);
+        return dbf;
+    }
+
     /**
      * Builds a signed SAML Response and returns its serialized XML string.
      *
@@ -59,9 +77,7 @@ public class SamlResponseBuilder {
      */
     public String buildSignedResponse(SamlAssertionStore.Provider provider, String inResponseTo) {
         try {
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setNamespaceAware(true);
-            DocumentBuilder builder = dbf.newDocumentBuilder();
+            DocumentBuilder builder = DOCUMENT_BUILDER_FACTORY.newDocumentBuilder();
             Document doc = builder.newDocument();
 
             String now = DateTimeFormatter.ISO_INSTANT.format(Instant.now().with(java.time.temporal.ChronoField.NANO_OF_SECOND, 0));
@@ -211,7 +227,7 @@ public class SamlResponseBuilder {
      */
     private void signAssertion(Element assertion, PrivateKey privateKey, X509Certificate certificate,
                                AsymmetricKeyPairAlgorithm algorithm) throws Exception {
-        XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
+        XMLSignatureFactory fac = XML_SIGNATURE_FACTORY;
         String assertionId = assertion.getAttribute("ID");
 
         // The SignatureMethod + DigestMethod are derived from the configured signing algorithm
@@ -272,15 +288,12 @@ public class SamlResponseBuilder {
     }
 
     private Document reparse(String xml) throws Exception {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true);
-        return dbf.newDocumentBuilder().parse(
+        return DOCUMENT_BUILDER_FACTORY.newDocumentBuilder().parse(
             new java.io.ByteArrayInputStream(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 
     private String serialize(Document doc) throws Exception {
-        TransformerFactory tf = TransformerFactory.newInstance();
-        Transformer transformer = tf.newTransformer();
+        Transformer transformer = TRANSFORMER_FACTORY.newTransformer();
         transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
         StringWriter writer = new StringWriter();
         transformer.transform(new DOMSource(doc), new StreamResult(writer));

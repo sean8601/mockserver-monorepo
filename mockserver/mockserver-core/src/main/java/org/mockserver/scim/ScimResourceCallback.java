@@ -59,10 +59,6 @@ public class ScimResourceCallback extends ScimResourceCallbackBase {
 
     private HttpResponse put(HttpRequest request, Provider provider, ScimShaper.ResourceType type,
                              CrudDataStore store, String id) {
-        ObjectNode existing = store.getById(id);
-        if (existing == null) {
-            return notFound(type, id);
-        }
         ObjectNode payload = parseObject(request.getBodyAsString());
         if (payload == null) {
             return scimError(400, "request body must be a JSON object", "invalidSyntax");
@@ -71,14 +67,17 @@ public class ScimResourceCallback extends ScimResourceCallbackBase {
         if (!payload.hasNonNull(requiredAttribute) || payload.get(requiredAttribute).asText().isEmpty()) {
             return scimError(400, requiredAttribute + " is required", "invalidValue");
         }
-        // preserve the original created timestamp through the replace
-        if (existing.has("meta") && existing.get("meta").isObject() && existing.get("meta").has("created")) {
-            ObjectNode meta = payload.has("meta") && payload.get("meta").isObject()
-                ? (ObjectNode) payload.get("meta")
-                : payload.putObject("meta");
-            meta.put("created", existing.get("meta").get("created").asText());
-        }
-        ObjectNode updated = store.update(id, payload);
+        // read-modify-write must be atomic so a concurrent update is not lost; the created-timestamp
+        // is preserved against the resource state observed inside the critical section
+        ObjectNode updated = updateAtomically(store, id, existing -> {
+            if (existing.has("meta") && existing.get("meta").isObject() && existing.get("meta").has("created")) {
+                ObjectNode meta = payload.has("meta") && payload.get("meta").isObject()
+                    ? (ObjectNode) payload.get("meta")
+                    : payload.putObject("meta");
+                meta.put("created", existing.get("meta").get("created").asText());
+            }
+            return payload;
+        });
         if (updated == null) {
             return notFound(type, id);
         }
@@ -90,21 +89,19 @@ public class ScimResourceCallback extends ScimResourceCallbackBase {
         if (!provider.isEnforcePatch()) {
             return scimError(501, "PATCH is not supported", null);
         }
-        ObjectNode existing = store.getById(id);
-        if (existing == null) {
-            return notFound(type, id);
-        }
         ObjectNode patchOp = parseObject(request.getBodyAsString());
         if (patchOp == null) {
             return scimError(400, "request body must be a JSON object", "invalidSyntax");
         }
-        ObjectNode patched;
+        // the PatchOp is applied against the resource state observed inside the critical section, so
+        // concurrent PATCHes serialise and no increment is lost (read-modify-write is atomic)
+        ObjectNode updated;
         try {
-            patched = new ScimPatchApplier().apply(existing, patchOp);
+            ScimPatchApplier applier = new ScimPatchApplier();
+            updated = updateAtomically(store, id, existing -> applier.apply(existing, patchOp));
         } catch (ScimPatchApplier.ScimPatchException e) {
             return scimError(400, e.getMessage(), e.getScimType());
         }
-        ObjectNode updated = store.update(id, patched);
         if (updated == null) {
             return notFound(type, id);
         }

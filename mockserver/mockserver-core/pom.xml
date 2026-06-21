@@ -563,6 +563,7 @@
                         <!-- Wave4 SCIM tests mutate the ScimResourceStore singleton -->
                         <exclude>**/ScimProviderGeneratorTest.java</exclude>
                         <exclude>**/ScimResourceStoreTest.java</exclude>
+                        <exclude>**/ScimConcurrentUpdateTest.java</exclude>
                         <!-- Mutates global ConfigurationProperties.generateRealisticExampleValues -->
                         <exclude>**/ExampleBuilderRealisticValuesTest.java</exclude>
                         <!-- Mutate shared static PrometheusRegistry / Metrics / ConfigurationProperties -->
@@ -695,6 +696,7 @@
                                 <include>**/SamlProviderGeneratorTest.java</include>
                                 <include>**/ScimProviderGeneratorTest.java</include>
                                 <include>**/ScimResourceStoreTest.java</include>
+                                <include>**/ScimConcurrentUpdateTest.java</include>
                                 <include>**/ExampleBuilderRealisticValuesTest.java</include>
                                 <include>**/HttpActionHandlerGraphQLChaosTest.java</include>
                                 <include>**/ChaosAutoHaltMonitorTest.java</include>

@@ -19,6 +19,8 @@ import org.mockserver.validator.jsonschema.JsonSchemaValidator;
 import org.slf4j.event.Level;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +32,26 @@ public class HttpLlmResponseActionHandler {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final MockServerLogger mockServerLogger;
+
+    // Compiled structured-output validators, keyed by the schema string. Building a
+    // JsonSchemaValidator parses and compiles the schema (relatively expensive); the same
+    // fixed schema is otherwise re-compiled on every matched LLM response. The distinct-schema
+    // count is bounded by the number of configured expectations, but a misbehaving client could
+    // otherwise grow the cache without limit, so it is an access-ordered LRU bounded at
+    // STRUCTURED_OUTPUT_VALIDATOR_CACHE_MAX, wrapped in Collections.synchronizedMap for safe
+    // concurrent get/put. A cached JsonSchemaValidator is NOT safe for concurrent isValid() —
+    // isValid() reassigns its internal validator field on the rare "Unknown MetaSchema" recovery
+    // path — so callers synchronize on the cached instance for the duration of the validate call
+    // (see validateAgainstSchema). Validation is cheap relative to compilation, so the brief
+    // per-schema serialization is a good trade for never re-parsing the schema.
+    static final int STRUCTURED_OUTPUT_VALIDATOR_CACHE_MAX = 256;
+    private final Map<String, JsonSchemaValidator> structuredOutputValidatorCache =
+        Collections.synchronizedMap(new LinkedHashMap<String, JsonSchemaValidator>(64, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, JsonSchemaValidator> eldest) {
+                return size() > STRUCTURED_OUTPUT_VALIDATOR_CACHE_MAX;
+            }
+        });
 
     public HttpLlmResponseActionHandler(MockServerLogger mockServerLogger) {
         this.mockServerLogger = mockServerLogger;
@@ -202,7 +224,7 @@ public class HttpLlmResponseActionHandler {
             return null;
         }
         try {
-            String error = new JsonSchemaValidator(mockServerLogger, schema).isValid(text, false);
+            String error = validateAgainstSchema(schema, text);
             return (error != null && !error.isEmpty()) ? error : null;
         } catch (Exception e) {
             // a malformed schema must never break the response — treat it as a no-op
@@ -219,6 +241,29 @@ public class HttpLlmResponseActionHandler {
             }
             return null;
         }
+    }
+
+    /**
+     * Validate {@code text} against {@code schema} using a {@link JsonSchemaValidator} cached by
+     * schema string, so the fixed structured-output schema is parsed/compiled once rather than on
+     * every matched LLM response. Returns the validator's error message (empty/blank when valid).
+     * <p>
+     * A {@link JsonSchemaValidator} is not safe for concurrent {@link JsonSchemaValidator#isValid}
+     * (it reassigns its internal validator on the rare meta-schema recovery path), so the validate
+     * call is synchronized on the cached instance. Compilation dominates cost, so the brief
+     * per-schema serialization of the cheap validate call is an acceptable trade.
+     */
+    private String validateAgainstSchema(String schema, String text) {
+        JsonSchemaValidator validator = structuredOutputValidatorCache.computeIfAbsent(
+            schema, s -> new JsonSchemaValidator(mockServerLogger, s));
+        synchronized (validator) {
+            return validator.isValid(text, false);
+        }
+    }
+
+    /** Test seam: the currently-cached structured-output validator for a schema string, or {@code null}. */
+    JsonSchemaValidator cachedStructuredOutputValidator(String schema) {
+        return structuredOutputValidatorCache.get(schema);
     }
 
     static final int STRUCTURED_OUTPUT_ENFORCEMENT_STATUS = 502;

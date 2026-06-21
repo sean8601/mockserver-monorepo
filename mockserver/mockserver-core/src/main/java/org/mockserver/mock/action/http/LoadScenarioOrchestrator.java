@@ -80,6 +80,8 @@ public class LoadScenarioOrchestrator {
     private final LongSupplier clock;
     private final ScheduledExecutorService scheduler;
     private final AtomicReference<RunningScenario> current = new AtomicReference<>(null);
+    /** Most recently started run, retained for test assertions on slot accounting after termination. */
+    private volatile RunningScenario lastRun;
     private volatile LoadScenarioStatus lastTerminatedStatus;
     /** Sender installed by the runtime; null in unit tests until start() supplies one. */
     private volatile Function<HttpRequest, CompletableFuture<HttpResponse>> installedSender;
@@ -131,6 +133,7 @@ public class LoadScenarioOrchestrator {
 
         long startedAt = clock.getAsLong();
         RunningScenario running = new RunningScenario(scenario, effectiveSender, startedAt);
+        lastRun = running;
         current.set(running);
 
         // Schedule the periodic control tick on the scheduler thread (no I/O on that thread).
@@ -155,6 +158,7 @@ public class LoadScenarioOrchestrator {
     public void reset() {
         stopInternal("stopped");
         lastTerminatedStatus = null;
+        lastRun = null;
     }
 
     /**
@@ -202,19 +206,23 @@ public class LoadScenarioOrchestrator {
         }
 
         int target = Math.max(0, profile.targetVusAt(elapsed));
+        // activeVUs is the LIVE population (incremented once per launch below, decremented exactly
+        // once when a VU loop ends via endVu). VU ids are allocated from a separate monotonic
+        // sequence so id-allocation is never conflated with the live count.
+        run.targetVUs.set(target);
         int active = run.activeVUs.get();
         if (active < target) {
-            // Grow: launch VU loops up to the target, bounded by the in-flight semaphore being available.
+            // Grow: launch VU loops up to the target. Increment the live population BEFORE launching
+            // so the slot is owned for the whole loop; the loop releases it exactly once via endVu.
             int toLaunch = target - active;
             for (int i = 0; i < toLaunch; i++) {
-                int vuId = run.activeVUs.getAndIncrement();
+                int vuId = run.vuIdSequence.getAndIncrement();
+                run.activeVUs.incrementAndGet();
                 launchIteration(run, vuId, 0);
             }
-        } else if (active > target) {
-            // Retire surplus: mark them so they stop after their current iteration.
-            run.targetVUs.set(target);
         }
-        run.targetVUs.set(target);
+        // Surplus VUs retire themselves at their next iteration boundary (see launchIteration),
+        // driven by the targetVUs setpoint above; no eager decrement here.
     }
 
     private void completeInternal(RunningScenario run) {
@@ -238,26 +246,60 @@ public class LoadScenarioOrchestrator {
      */
     private void launchIteration(RunningScenario run, int vuId, long vuIteration) {
         if (run.stopped.get() || current.get() != run) {
-            run.activeVUs.decrementAndGet();
+            endVu(run);
             return;
         }
-        // Retire this VU if it is now above the target concurrency.
-        if (vuId >= run.targetVUs.get() && vuIteration > 0) {
-            run.activeVUs.decrementAndGet();
+        // Retire surplus VUs at the iteration boundary: if the live population currently exceeds the
+        // target concurrency, this VU's loop ends here. The retire decision is based on the live
+        // population (not the VU id, since ids come from a monotonic sequence) and is applied as a
+        // single atomic conditional decrement so that, when several surplus VUs reach the boundary
+        // concurrently, exactly (active - target) of them retire rather than all of them collapsing
+        // the population below the target.
+        if (vuIteration > 0 && tryRetireSurplus(run)) {
             return;
         }
         fireStep(run, vuId, vuIteration, 0);
     }
 
+    /**
+     * Atomically retire this VU iff the live population currently exceeds the target concurrency,
+     * decrementing the active-population counter exactly once on success. Returns {@code true} when
+     * the VU was retired (its loop must end), {@code false} when it should continue. The
+     * compare-and-set loop guarantees concurrent surplus VUs never over-retire below the target.
+     */
+    private boolean tryRetireSurplus(RunningScenario run) {
+        while (true) {
+            int active = run.activeVUs.get();
+            if (active <= run.targetVUs.get()) {
+                return false;
+            }
+            if (run.activeVUs.compareAndSet(active, active - 1)) {
+                return true;
+            }
+        }
+    }
+
+    /**
+     * End a virtual user's loop, releasing the single active-population slot it owned. Called from
+     * exactly one of the loop's terminal exit points so the live counter decrements exactly once per
+     * launched VU (never zero, never twice). VU-id allocation is tracked separately and is never
+     * touched here.
+     */
+    private void endVu(RunningScenario run) {
+        run.activeVUs.decrementAndGet();
+    }
+
     private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex) {
         if (run.stopped.get() || current.get() != run) {
-            run.activeVUs.decrementAndGet();
+            endVu(run);
             return;
         }
         // Stop dispatching once the request cap is reached; the control tick then transitions the
         // scenario to "completed". Enforcing this here (not only on the tick) bounds the overshoot
-        // to roughly the active VU count rather than a full control interval of firing.
+        // to roughly the active VU count rather than a full control interval of firing. This VU's
+        // loop ends here, so release its slot exactly once.
         if (run.maxRequestsReached()) {
+            endVu(run);
             completeInternal(run);
             return;
         }
@@ -336,7 +378,10 @@ public class LoadScenarioOrchestrator {
 
     private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step) {
         if (run.stopped.get() || current.get() != run) {
-            // The VU loop ends; only decrement once per loop (the loop "owns" one active slot until it ends).
+            // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
+            // genuine loop-exit point, so release the slot exactly once — previously this path
+            // returned without decrementing, leaking the active-population slot.
+            endVu(run);
             return;
         }
         long thinkMillis = step.getThinkTime() != null ? Math.max(0, step.getThinkTime().sampleValueMillis()) : 0;
@@ -387,6 +432,31 @@ public class LoadScenarioOrchestrator {
      */
     void advanceNow(long ignoredMillis) {
         tickNow();
+    }
+
+    /**
+     * Test hook: the live virtual-user population of the current run (the value the active-slot
+     * accounting maintains), or {@code 0} when no scenario is running. Used to assert that the
+     * active-VU count is decremented exactly once per VU and returns to zero after a scenario stops
+     * or completes.
+     */
+    int activeVuCount() {
+        RunningScenario run = current.get();
+        if (run != null) {
+            return run.activeVUs.get();
+        }
+        return 0;
+    }
+
+    /**
+     * Test hook: the live virtual-user population of the most recently started run, even after it has
+     * stopped or completed (so a test can verify the active-slot counter drains back to zero once all
+     * scheduled VU continuations have observed the terminal state). Returns {@code 0} when no scenario
+     * has ever run.
+     */
+    int lastRunActiveVuCount() {
+        RunningScenario run = lastRun;
+        return run != null ? run.activeVUs.get() : 0;
     }
 
     String validate(LoadScenario scenario) {
@@ -441,7 +511,10 @@ public class LoadScenarioOrchestrator {
         final long startedAt;
         final long startedAtEpoch = TimeService.currentTimeMillis();
         final AtomicBoolean stopped = new AtomicBoolean(false);
+        /** Live VU population: incremented once per launch, decremented exactly once when a loop ends. */
         final AtomicInteger activeVUs = new AtomicInteger(0);
+        /** Monotonic VU-id allocator, kept separate from the live population counter. */
+        final AtomicInteger vuIdSequence = new AtomicInteger(0);
         final AtomicInteger targetVUs = new AtomicInteger(0);
         final AtomicLong iterationIndex = new AtomicLong(0);
         final AtomicLong requestsSent = new AtomicLong(0);

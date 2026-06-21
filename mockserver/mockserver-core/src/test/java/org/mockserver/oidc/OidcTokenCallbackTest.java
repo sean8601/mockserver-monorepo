@@ -13,6 +13,11 @@ import org.mockserver.model.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -331,6 +336,75 @@ public class OidcTokenCallbackTest {
             "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=dev-1"));
         assertThat("an approved device code is consumed (single-use)", second.getStatusCode(), is(400));
         assertThat(second.getBodyAsString(), containsString("expired_token"));
+    }
+
+    @Test
+    public void concurrentDeviceCodePollsDecrementCounterWithoutLostUpdates() throws Exception {
+        // Regression guard for the non-atomic pendingPolls-- bug: when many polls of the same device
+        // code race, a plain volatile read-then-write loses decrements, so MORE than `pendingPolls`
+        // requests would observe authorization_pending. With an AtomicInteger getAndDecrement each
+        // poll claims a distinct slot, so EXACTLY `pendingPolls` requests see authorization_pending
+        // and EXACTLY one sees the approved (200) transition.
+        registerProvider(null);
+        final int pendingPolls = 20;
+        final int pollers = 64; // far more concurrent polls than pending slots
+        store.putDeviceCode("dev-concurrent",
+            new OidcAuthorizationStore.DeviceCode("USER-CODE", "openid", pendingPolls));
+
+        // One thread per poller so that EVERY task can reach the start barrier simultaneously — a
+        // smaller pool would deadlock (queued tasks can never reach the barrier the running tasks
+        // are blocked on), which is a test-harness artefact, not a product property.
+        final ExecutorService pool = Executors.newFixedThreadPool(pollers);
+        final CountDownLatch ready = new CountDownLatch(pollers);
+        final CountDownLatch go = new CountDownLatch(1);
+        final AtomicInteger pendingResponses = new AtomicInteger();
+        final AtomicInteger successResponses = new AtomicInteger();
+        final AtomicInteger expiredResponses = new AtomicInteger();
+        final AtomicInteger otherResponses = new AtomicInteger();
+
+        try {
+            for (int i = 0; i < pollers; i++) {
+                pool.submit(() -> {
+                    ready.countDown();
+                    try {
+                        go.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    HttpResponse response = callback.handle(tokenRequest(
+                        "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=dev-concurrent"));
+                    String body = response.getBodyAsString();
+                    if (response.getStatusCode() == 200) {
+                        successResponses.incrementAndGet();
+                    } else if (body != null && body.contains("authorization_pending")) {
+                        pendingResponses.incrementAndGet();
+                    } else if (body != null && body.contains("expired_token")) {
+                        expiredResponses.incrementAndGet();
+                    } else {
+                        otherResponses.incrementAndGet();
+                    }
+                });
+            }
+
+            assertThat("all pollers started", ready.await(10, TimeUnit.SECONDS), is(true));
+            go.countDown(); // release them all at once to maximise contention
+            pool.shutdown();
+            assertThat("all polls completed", pool.awaitTermination(30, TimeUnit.SECONDS), is(true));
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // No decrement is lost: exactly `pendingPolls` requests saw authorization_pending.
+        assertThat("each pending slot is claimed by exactly one poll (no lost decrements)",
+            pendingResponses.get(), is(pendingPolls));
+        // The pending->approved transition is consistent: exactly one poll mints tokens (single-use).
+        assertThat("exactly one poll observes the approved transition and mints tokens",
+            successResponses.get(), is(1));
+        // Every remaining poll arrives after the code is consumed -> expired_token.
+        assertThat("every other poll sees the consumed single-use code as expired_token",
+            expiredResponses.get(), is(pollers - pendingPolls - 1));
+        assertThat("no unexpected responses", otherResponses.get(), is(0));
     }
 
     @Test

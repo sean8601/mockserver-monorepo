@@ -59,10 +59,17 @@ public class MockServerEventLogEvictionTest {
     /**
      * The backing deque reads {@code maxLogEntries} once at construction, so each test sets the
      * bound first and then builds the event log.
+     *
+     * <p>Synchronous event processing ({@code asynchronousEventProcessing=false}) is used so each
+     * {@code add} (and the resulting FIFO eviction) is applied inline on the calling thread before
+     * the next statement runs. This makes the size/window assertions deterministic — with async
+     * processing a {@code retrieve} could snapshot the deque before the final {@code add} had been
+     * drained from the ring buffer, which is flaky under parallel load. Eviction behaviour is
+     * identical in both modes.
      */
     private void buildEventLogWithMaxLogEntries(int maxLogEntries) {
         configuration.maxLogEntries(maxLogEntries);
-        mockServerEventLog = new MockServerEventLog(configuration, new MockServerLogger(configuration, MockServerLogger.class), scheduler, true);
+        mockServerEventLog = new MockServerEventLog(configuration, new MockServerLogger(configuration, MockServerLogger.class), scheduler, false);
     }
 
     @After

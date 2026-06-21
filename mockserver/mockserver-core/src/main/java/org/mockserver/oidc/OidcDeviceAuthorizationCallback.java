@@ -39,7 +39,10 @@ public class OidcDeviceAuthorizationCallback implements ExpectationResponseCallb
     private static final String USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ"; // unambiguous, no vowels
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final ObjectWriter objectWriter = ObjectMapperFactory.createObjectMapper(true, false);
+    // ObjectWriter is immutable and thread-safe once configured, and the configuration here is
+    // stateless (pretty=true, serialiseDefaultValues=false), so a single shared instance is reused
+    // across all requests rather than re-created per callback construction.
+    private static final ObjectWriter OBJECT_WRITER = ObjectMapperFactory.createObjectMapper(true, false);
 
     @Override
     public HttpResponse handle(HttpRequest request) {
@@ -92,7 +95,7 @@ public class OidcDeviceAuthorizationCallback implements ExpectationResponseCallb
 
     private String serializeToJson(Object value) {
         try {
-            return objectWriter.writeValueAsString(value);
+            return OBJECT_WRITER.writeValueAsString(value);
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize OIDC device-authorization response to JSON", e);
         }

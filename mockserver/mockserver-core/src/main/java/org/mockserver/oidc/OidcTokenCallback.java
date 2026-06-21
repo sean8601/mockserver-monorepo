@@ -116,9 +116,11 @@ public class OidcTokenCallback implements ExpectationResponseCallback {
             // Unknown, already-redeemed, or past its TTL.
             return tokenError("expired_token", "device_code is unknown, expired, or already redeemed", 400);
         }
-        if (pending.pendingPolls > 0) {
-            // The user has not yet approved — decrement and tell the client to keep polling.
-            pending.pendingPolls--;
+        // Atomically claim one of the remaining "pending" polls. getAndDecrement returns the value
+        // BEFORE decrementing, so a positive prior value means this poll must still answer
+        // authorization_pending. Concurrent polls each claim a distinct slot (no lost decrements).
+        if (pending.pendingPolls.getAndDecrement() > 0) {
+            // The user has not yet approved — tell the client to keep polling.
             return tokenError("authorization_pending", "the user has not yet approved the device", 400);
         }
         // Approved: consume the device code (single-use) and mint tokens honouring the requested scope.

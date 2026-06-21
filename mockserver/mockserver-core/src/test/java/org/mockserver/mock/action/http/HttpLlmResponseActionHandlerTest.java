@@ -19,6 +19,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.hamcrest.core.Is.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -351,6 +352,118 @@ public class HttpLlmResponseActionHandlerTest {
         // then
         assertThat(response.getStatusCode(), is(200));
         assertThat(response.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), is(""));
+    }
+
+    // --- structured-output validator caching (efficiency) ---
+
+    @Test
+    public void shouldReuseCompiledValidatorAcrossRepeatedCallsWithSameSchema() {
+        // given — a handler and a completion declaring a fixed outputSchema
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        HttpLlmResponse llmResponse = llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion()
+                .withText("{\"name\":\"Ada\",\"age\":36}")
+                .withOutputSchema(PERSON_SCHEMA));
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // before any request, nothing is cached for the schema
+        assertThat(handler.cachedStructuredOutputValidator(PERSON_SCHEMA), is(nullValue()));
+
+        // when — first request compiles and caches the validator
+        handler.handle(llmResponse, request);
+        org.mockserver.validator.jsonschema.JsonSchemaValidator first =
+            handler.cachedStructuredOutputValidator(PERSON_SCHEMA);
+        assertThat(first, is(notNullValue()));
+
+        // and — repeated requests with the same schema reuse the very same validator instance
+        handler.handle(llmResponse, request);
+        handler.handle(llmResponse, request);
+        org.mockserver.validator.jsonschema.JsonSchemaValidator afterRepeats =
+            handler.cachedStructuredOutputValidator(PERSON_SCHEMA);
+        assertThat("validator is reused, not recompiled", afterRepeats, is(sameInstance(first)));
+    }
+
+    @Test
+    public void shouldCacheDistinctValidatorsPerDistinctSchemaAndKeepResultsCorrect() {
+        // given — two distinct schemas; one match conforms, the other does not
+        HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        String nameOnlySchema =
+            "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}";
+
+        HttpRequest request = request().withPath("/v1/messages");
+
+        // when — conforms to PERSON_SCHEMA
+        HttpResponse personResponse = handler.handle(llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion().withText("{\"name\":\"Ada\",\"age\":36}").withOutputSchema(PERSON_SCHEMA)), request);
+        // and — conforms to the name-only schema (missing age is fine here)
+        HttpResponse nameResponse = handler.handle(llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion().withText("{\"name\":\"Ada\"}").withOutputSchema(nameOnlySchema)), request);
+
+        // then — both validate cleanly (no diagnostic header), and two distinct validators are cached
+        assertThat(personResponse.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), is(""));
+        assertThat(nameResponse.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), is(""));
+        assertThat(handler.cachedStructuredOutputValidator(PERSON_SCHEMA), is(notNullValue()));
+        assertThat(handler.cachedStructuredOutputValidator(nameOnlySchema), is(notNullValue()));
+        assertThat(handler.cachedStructuredOutputValidator(PERSON_SCHEMA),
+            is(not(sameInstance(handler.cachedStructuredOutputValidator(nameOnlySchema)))));
+
+        // and — the cached validator still produces a correct *failure* when text violates the schema
+        HttpResponse violatingResponse = handler.handle(llmResponse()
+            .withProvider(Provider.ANTHROPIC)
+            .withModel("claude-sonnet-4-20250514")
+            .withCompletion(completion().withText("{\"age\":36}").withOutputSchema(PERSON_SCHEMA)), request);
+        assertThat(violatingResponse.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER), not(is("")));
+        // reused the same PERSON_SCHEMA validator
+        assertThat(handler.cachedStructuredOutputValidator(PERSON_SCHEMA), is(sameInstance(handler.cachedStructuredOutputValidator(PERSON_SCHEMA))));
+    }
+
+    @Test
+    public void shouldValidateConcurrentlyAgainstSharedCachedValidatorWithoutErrorAndConsistentResults() throws Exception {
+        // given — a single handler shared across threads, all using the same schema (so they all
+        // hit the same cached, synchronized validator)
+        final HttpLlmResponseActionHandler handler = new HttpLlmResponseActionHandler(new MockServerLogger());
+        final HttpRequest request = request().withPath("/v1/messages");
+
+        final int threads = 8;
+        final int iterations = 40;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<Boolean>> futures = new java.util.ArrayList<>();
+
+        for (int t = 0; t < threads; t++) {
+            final boolean conforming = (t % 2 == 0);
+            futures.add(pool.submit(() -> {
+                start.await();
+                for (int i = 0; i < iterations; i++) {
+                    String text = conforming ? "{\"name\":\"Ada\",\"age\":36}" : "{\"name\":\"Ada\"}";
+                    HttpResponse response = handler.handle(llmResponse()
+                        .withProvider(Provider.ANTHROPIC)
+                        .withModel("claude-sonnet-4-20250514")
+                        .withCompletion(completion().withText(text).withOutputSchema(PERSON_SCHEMA)), request);
+                    boolean flagged = !"".equals(response.getFirstHeader(HttpLlmResponseActionHandler.STRUCTURED_OUTPUT_INVALID_HEADER));
+                    // conforming text must never be flagged; non-conforming must always be flagged
+                    if (flagged == conforming) {
+                        return false;
+                    }
+                }
+                return true;
+            }));
+        }
+        start.countDown();
+
+        // then — every thread observed consistent, correct results with no exception
+        for (java.util.concurrent.Future<Boolean> f : futures) {
+            assertThat(f.get(30, java.util.concurrent.TimeUnit.SECONDS), is(true));
+        }
+        pool.shutdownNow();
+        // and — only a single validator instance was ever compiled for the shared schema
+        assertThat(handler.cachedStructuredOutputValidator(PERSON_SCHEMA), is(notNullValue()));
     }
 
     // --- strict structured-output enforcement (opt-in) ---

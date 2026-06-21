@@ -100,6 +100,18 @@ public class LoadScenarioOrchestratorTest {
         return sender.sent.size() >= n;
     }
 
+    /** Poll until the most recent run's live active-VU count reaches the expected value (or timeout). */
+    private boolean awaitLastRunActiveVus(int expected, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (orchestrator.lastRunActiveVuCount() == expected) {
+                return true;
+            }
+            Thread.sleep(5);
+        }
+        return orchestrator.lastRunActiveVuCount() == expected;
+    }
+
     @Test
     public void constantProfileDrivesRequestsUntilMaxRequests() throws Exception {
         RecordingSender sender = new RecordingSender();
@@ -232,6 +244,79 @@ public class LoadScenarioOrchestratorTest {
         assertThat(orchestrator.start(new LoadScenario().withName("x")
                 .withSteps(new LoadStep().withRequest(request().withPath("/a"))),
             new RecordingSender()), containsString("profile"));
+    }
+
+    @Test
+    public void activeVuCountReturnsToZeroAfterStop() throws Exception {
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("drain-on-stop")
+            .withProfile(LoadProfile.constant(4, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // Let the VUs spin up and issue some traffic so loops are genuinely in flight.
+        assertThat("scenario should produce traffic", awaitAtLeast(sender, 20, 5_000L), is(true));
+        assertThat("active VUs should have ramped up", orchestrator.activeVuCount(), is(greaterThan(0)));
+
+        orchestrator.stop();
+
+        // Every launched VU loop must release its slot exactly once as it observes the stopped state,
+        // so the live active-VU count drains back to zero (no leak, no double-count to a negative).
+        assertThat("active VU count should drain to zero after stop",
+            awaitLastRunActiveVus(0, 5_000L), is(true));
+        assertThat(orchestrator.lastRunActiveVuCount(), is(0));
+    }
+
+    @Test
+    public void activeVuCountReturnsToZeroAfterCompletion() throws Exception {
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("drain-on-complete")
+            .withMaxRequests(30)
+            .withProfile(LoadProfile.constant(4, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat("scenario should reach maxRequests", awaitAtLeast(sender, 30, 5_000L), is(true));
+
+        // Drive ticks so completion is observed, then the in-flight VU loops drain their slots.
+        long deadline = System.currentTimeMillis() + 2_000L;
+        while (orchestrator.getStatus() != null && "running".equals(orchestrator.getStatus().state)
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        assertThat(orchestrator.getStatus().state, is("completed"));
+        assertThat("active VU count should drain to zero after completion",
+            awaitLastRunActiveVus(0, 5_000L), is(true));
+        assertThat(orchestrator.lastRunActiveVuCount(), is(0));
+    }
+
+    @Test
+    public void activeVuCountRampsDownToTargetWithoutUnderflow() throws Exception {
+        // Ramp up to a high concurrency, then drop the target and assert the live population settles
+        // exactly at the new target (surplus VUs retire exactly once each; concurrent retirement
+        // never collapses below the target).
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("ramp-down")
+            .withProfile(LoadProfile.linear(6, 2, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // At t=0 the linear profile starts at 6 VUs.
+        assertThat("active VUs should ramp up to the start target",
+            awaitLastRunActiveVus(6, 5_000L), is(true));
+
+        // Advance the clock so the linear ramp's target falls to 2, then tick to apply the setpoint
+        // and let surplus VUs retire at their iteration boundaries.
+        clock.set(10_000L + 1_000L - 1L);
+        orchestrator.tickNow();
+        assertThat("surplus VUs should retire down to exactly the target",
+            awaitLastRunActiveVus(2, 5_000L), is(true));
+        assertThat("retirement must not underflow below the target",
+            orchestrator.lastRunActiveVuCount(), is(2));
     }
 
     @Test

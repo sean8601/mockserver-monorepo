@@ -14,8 +14,15 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -204,5 +211,49 @@ public class SamlResponseBuilderTest {
         Document doc = parse(builder.buildSignedResponse(provider, null));
         assertTrue("an ES256-signed assertion must validate against its EC certificate",
             signatureValidates(doc, publicKeyOf(provider)));
+    }
+
+    // --- thread-safety of the shared factories ----------------------------------------------
+
+    @Test
+    public void concurrentBuildsEachProduceAValidSignedAssertion() throws Exception {
+        // SamlResponseBuilder shares the DocumentBuilderFactory / TransformerFactory /
+        // XMLSignatureFactory as static singletons but must create a fresh DocumentBuilder /
+        // Transformer per call. If a non-thread-safe instance leaked across threads, parsing or
+        // signing would corrupt the digest and one or more concurrent responses would fail to
+        // validate (or the build would throw). Drive many concurrent builds — each with a distinct
+        // InResponseTo so the signed content differs — and require every result to verify.
+        SamlAssertionStore.Provider provider = provider(false, false, false);
+        PublicKey publicKey = publicKeyOf(provider);
+        int threads = 8;
+        int buildsPerThread = 25;
+
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            List<Callable<Boolean>> tasks = new ArrayList<>();
+            for (int t = 0; t < threads; t++) {
+                final int threadId = t;
+                tasks.add(() -> {
+                    for (int i = 0; i < buildsPerThread; i++) {
+                        String inResponseTo = "_req-" + threadId + "-" + i;
+                        Document doc = parse(builder.buildSignedResponse(provider, inResponseTo));
+                        if (!inResponseTo.equals(doc.getDocumentElement().getAttribute("InResponseTo"))) {
+                            return false;
+                        }
+                        if (!signatureValidates(doc, publicKey)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            }
+            List<Future<Boolean>> results = pool.invokeAll(tasks, 60, TimeUnit.SECONDS);
+            for (Future<Boolean> result : results) {
+                assertTrue("every concurrently-built assertion must verify and carry its own InResponseTo",
+                    result.get());
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 }

@@ -1325,6 +1325,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared when a module is removed or the server is reset.
 - **Mustache response templates are compiled once and cached** (`mockserver-core`), mirroring the
   Velocity engine, instead of recompiling the template on every render.
+- **Reduced per-request object churn in identity and LLM endpoints** (`mockserver-core`). The OIDC
+  callbacks reuse a shared JSON writer, the SAML response builder reuses its XML factories (still creating
+  per-request parsers/transformers, so thread-safety and XXE settings are unchanged), and the LLM
+  structured-output JSON-schema validator is compiled once and cached instead of per response.
 
 #### AI, LLM & agent protocols (LLM / MCP / A2A)
 - **Demo now showcases LLM cost optimisation**: `npm run demo` seeds a crafted seven-call
@@ -1473,6 +1477,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Correctness & reliability (code-quality review)
+- **gRPC chaos injection now honours its configured probability** (`mockserver-core`). The decision used
+  a fresh seeded `Random` per request, so a probability behaved as all-or-nothing; it now samples through
+  the shared chaos-probability helper like the HTTP/TCP paths.
+- **Load-scenario virtual-user accounting is now exact** (`mockserver-core`). Active-VU slots are
+  decremented exactly once per VU at every loop-exit (a stop mid-iteration previously leaked a slot), and
+  virtual-user id allocation is separated from the live-population counter.
+- **OIDC device-code poll counter is race-free** (`mockserver-core`). Concurrent device-code polls now
+  decrement an atomic counter instead of a plain field, so no decrements are lost.
+- **SCIM resource updates are atomic** (`mockserver-core`). Concurrent PATCH/PUT of the same SCIM resource
+  no longer lose writes — the read-modify-write is serialized per store.
+- **LLM conversation matching is safely published across threads** (`mockserver-core`). Lazily-built
+  conversation matchers/patterns on shared expectations are now `volatile`, fixing an unsafe-publication
+  data race on the concurrent match path.
 - **Configuration round-trip no longer drops properties** (`mockserver-core`). `ConfigurationDTO`
   mirrored only about half of the configuration properties, so many settings (SLO tracking, load
   generation, drift alerting, HTTP/3, gRPC, DNS, WASM, clustering, blob store, transparent proxy,

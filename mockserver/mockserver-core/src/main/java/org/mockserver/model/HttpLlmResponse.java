@@ -14,8 +14,12 @@ public class HttpLlmResponse extends Action<HttpLlmResponse> {
     private RerankResponse rerank;
     private ConversationPredicates conversationPredicates;
     private LlmChaosProfile chaos;
+    // volatile: lazily reconstructed (see getConversationMatcher) on the concurrent
+    // match path from a shared expectation object. The value is effectively immutable
+    // once set, so volatile guarantees safe publication under the Java Memory Model — a
+    // thread that observes a non-null reference also observes a fully-constructed matcher.
     @JsonIgnore
-    private transient LlmConversationMatcher conversationMatcher;
+    private transient volatile LlmConversationMatcher conversationMatcher;
 
     public static HttpLlmResponse llmResponse() {
         return new HttpLlmResponse();

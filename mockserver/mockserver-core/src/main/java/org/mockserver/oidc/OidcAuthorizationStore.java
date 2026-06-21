@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 
 /**
@@ -360,15 +361,19 @@ public class OidcAuthorizationStore {
     public static class DeviceCode implements Serializable {
         final String userCode;
         final String scope;
-        /** Remaining polls to answer with {@code authorization_pending} before approval. */
-        volatile int pendingPolls;
+        /**
+         * Remaining polls to answer with {@code authorization_pending} before approval. An
+         * {@link AtomicInteger} so concurrent polls of the same device code decrement atomically — a
+         * plain {@code volatile int} read-then-write loses decrements when polls race.
+         */
+        final AtomicInteger pendingPolls;
         /** Wall-clock time the code was stored ({@link #putDeviceCode}); drives TTL expiry. */
         volatile long issuedAtMillis;
 
         public DeviceCode(String userCode, String scope, int pendingPolls) {
             this.userCode = userCode;
             this.scope = scope;
-            this.pendingPolls = pendingPolls;
+            this.pendingPolls = new AtomicInteger(pendingPolls);
         }
     }
 
