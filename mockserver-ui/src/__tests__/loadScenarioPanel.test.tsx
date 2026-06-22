@@ -34,6 +34,26 @@ function stubFetch(getBody: unknown, status = 200) {
   return { calls, fetchMock };
 }
 
+/**
+ * A fetch mock that distinguishes the registry-list GET (returns `{scenarios}`) from
+ * the legacy status GET (returns `{state:'none'}`). Both hit `/mockserver/loadScenario`,
+ * so the stub returns the registry shape for plain GETs; PUT/DELETE are recorded.
+ */
+function stubRegistry(scenarios: unknown[]) {
+  const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    const body = init?.body ? JSON.parse(init.body as string) : undefined;
+    calls.push({ url: String(url), method, body });
+    if (method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ state: 'none', scenarios }) } as unknown as Response;
+    }
+    return { ok: true, status: 200, json: async () => ({ status: 'ok' }) } as unknown as Response;
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return { calls, fetchMock };
+}
+
 describe('LoadScenarioPanel', () => {
   it('renders the author form with VELOCITY/MUSTACHE template options', async () => {
     stubFetch({ state: 'none' });
@@ -61,7 +81,7 @@ describe('LoadScenarioPanel', () => {
     fireEvent.change(within(step0).getByLabelText('Target port'), { target: { value: '8080' } });
     fireEvent.change(within(step0).getByLabelText('Path'), { target: { value: '/api/item' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /Start load scenario/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Load$/i }));
 
     await waitFor(() => {
       const put = calls.find((c) => c.method === 'PUT');
@@ -122,7 +142,7 @@ describe('LoadScenarioPanel', () => {
     fireEvent.change(within(step0).getByLabelText('Target port'), { target: { value: '8080' } });
     fireEvent.change(within(step0).getByLabelText('Path'), { target: { value: '/api/item' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /Start load scenario/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Load$/i }));
 
     await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
     const put = calls.find((c) => c.method === 'PUT')!;
@@ -150,7 +170,7 @@ describe('LoadScenarioPanel', () => {
     fireEvent.change(within(step0).getByLabelText('Target port'), { target: { value: '8080' } });
     fireEvent.change(within(step0).getByLabelText('Path'), { target: { value: '/api/item' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /Start load scenario/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Load$/i }));
     await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
     const put = calls.find((c) => c.method === 'PUT')!;
     const stages = (put.body as { profile: { stages: Array<Record<string, unknown>> } }).profile.stages;
@@ -176,7 +196,7 @@ describe('LoadScenarioPanel', () => {
     fireEvent.change(within(step0).getByLabelText('Header name'), { target: { value: 'Authorization' } });
     fireEvent.change(within(step0).getByLabelText('Header value'), { target: { value: 'Bearer xyz' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /Start load scenario/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Load$/i }));
 
     await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
     const put = calls.find((c) => c.method === 'PUT')!;
@@ -366,5 +386,178 @@ describe('LoadScenarioPanel', () => {
     await waitFor(() => expect(screen.getByTestId('load-disabled-alert')).toBeInTheDocument());
     expect(screen.getByText(/loadGenerationEnabled=true/)).toBeInTheDocument();
     expect(screen.getByText(/MOCKSERVER_LOAD_GENERATION_ENABLED/)).toBeInTheDocument();
+  });
+
+  // --- Wave C: registry UX ---
+
+  /** Fill the seeded form's first step so buildScenario succeeds. */
+  function fillValidStep(name = 'reg-load') {
+    fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: name } });
+    const step0 = screen.getByTestId('load-step-0');
+    fireEvent.change(within(step0).getByLabelText('Target host'), { target: { value: 'target.svc' } });
+    fireEvent.change(within(step0).getByLabelText('Target port'), { target: { value: '8080' } });
+    fireEvent.change(within(step0).getByLabelText('Path'), { target: { value: '/api/item' } });
+  }
+
+  it('lists registered scenarios with their state badges', async () => {
+    // The server emits live fields FLAT on each node; the lib parser synthesises `status`.
+    stubRegistry([
+      { name: 'alpha', state: 'LOADED' },
+      { name: 'beta', state: 'RUNNING', requestsSent: 100, succeeded: 100, failed: 0, currentVus: 3 },
+      { name: 'gamma', state: 'COMPLETED', requestsSent: 50, succeeded: 50, failed: 0 },
+    ]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-registry-row-alpha')).toBeInTheDocument());
+    expect(screen.getByTestId('load-registry-state-alpha')).toHaveTextContent('LOADED');
+    expect(screen.getByTestId('load-registry-state-beta')).toHaveTextContent('RUNNING');
+    expect(screen.getByTestId('load-registry-state-gamma')).toHaveTextContent('COMPLETED');
+  });
+
+  it('multi-selects scenarios and starts them with PUT /loadScenario/start {names}', async () => {
+    const { calls } = stubRegistry([
+      { name: 'alpha', state: 'LOADED' },
+      { name: 'beta', state: 'LOADED' },
+    ]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-registry-row-alpha')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Select alpha'));
+    fireEvent.click(screen.getByLabelText('Select beta'));
+    fireEvent.click(screen.getByTestId('load-start-selected'));
+
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/start'))).toBeTruthy());
+    const start = calls.find((c) => c.method === 'PUT' && c.url.endsWith('/start'))!;
+    expect(start.body).toEqual({ names: ['alpha', 'beta'] });
+  });
+
+  it('starts a single selected scenario with {name} (not {names})', async () => {
+    const { calls } = stubRegistry([{ name: 'solo', state: 'LOADED' }]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-registry-row-solo')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Select solo'));
+    fireEvent.click(screen.getByTestId('load-start-selected'));
+
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/start'))).toBeTruthy());
+    const start = calls.find((c) => c.method === 'PUT' && c.url.endsWith('/start'))!;
+    expect(start.body).toEqual({ name: 'solo' });
+  });
+
+  it('stops an individual running scenario with PUT /stop {names:[name]}', async () => {
+    const { calls } = stubRegistry([
+      { name: 'runner', state: 'RUNNING', requestsSent: 10, succeeded: 10, failed: 0, currentVus: 2 },
+    ]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-running-runner')).toBeInTheDocument());
+
+    const running = screen.getByTestId('load-running-runner');
+    fireEvent.click(within(running).getByRole('button', { name: /Stop/i }));
+
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/stop'))).toBeTruthy());
+    const stop = calls.find((c) => c.method === 'PUT' && c.url.endsWith('/stop'))!;
+    expect(stop.body).toEqual({ names: ['runner'] });
+  });
+
+  it('shows multiple running scenarios concurrently', async () => {
+    // Live metrics arrive FLAT on each node (the real server shape) and flow through the
+    // lib parser into the nested status the panel reads — proving the flat→nested mapping.
+    stubRegistry([
+      { name: 'r1', state: 'RUNNING', requestsSent: 100, succeeded: 100, failed: 0, currentVus: 3, p95Millis: 40 },
+      { name: 'r2', state: 'RUNNING', requestsSent: 200, succeeded: 200, failed: 0, currentVus: 6, p95Millis: 60 },
+    ]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-running-r1')).toBeInTheDocument());
+    expect(screen.getByTestId('load-running-r2')).toBeInTheDocument();
+    expect(screen.getByTestId('load-running-scenarios')).toHaveTextContent('Running now (2)');
+    // The flat live fields rendered through into the running card (Active VUs = 3 is unique to r1).
+    const r1 = screen.getByTestId('load-running-r1');
+    expect(within(r1).getByText('3')).toBeInTheDocument();
+  });
+
+  it('deletes one registered scenario via DELETE /loadScenario/{name}', async () => {
+    const { calls } = stubRegistry([{ name: 'gone', state: 'LOADED' }]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-registry-row-gone')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete gone' }));
+    await waitFor(() => expect(calls.find((c) => c.method === 'DELETE' && c.url.endsWith('/loadScenario/gone'))).toBeTruthy());
+  });
+
+  it('clears all registered scenarios via DELETE /loadScenario', async () => {
+    const { calls } = stubRegistry([{ name: 'a', state: 'LOADED' }, { name: 'b', state: 'LOADED' }]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-clear-all')).not.toBeDisabled());
+
+    fireEvent.click(screen.getByTestId('load-clear-all'));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'DELETE' && c.url.endsWith('/mockserver/loadScenario'))).toBeTruthy(),
+    );
+  });
+
+  it('"Load" registers without starting (no /start call)', async () => {
+    const { calls } = stubRegistry([]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    fillValidStep('register-only');
+
+    fireEvent.click(screen.getByTestId('load-register'));
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
+
+    const puts = calls.filter((c) => c.method === 'PUT');
+    expect(puts.some((p) => p.url.endsWith('/mockserver/loadScenario'))).toBe(true);
+    expect(puts.some((p) => p.url.endsWith('/start'))).toBe(false);
+  });
+
+  it('"Load & Run" registers then starts the authored scenario by name', async () => {
+    const { calls } = stubRegistry([]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    fillValidStep('run-now');
+
+    fireEvent.click(screen.getByTestId('load-register-run'));
+
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/start'))).toBeTruthy());
+    const register = calls.find((c) => c.method === 'PUT' && c.url.endsWith('/mockserver/loadScenario'))!;
+    expect((register.body as { name: string }).name).toBe('run-now');
+    const start = calls.find((c) => c.method === 'PUT' && c.url.endsWith('/start'))!;
+    expect(start.body).toEqual({ name: 'run-now' });
+  });
+
+  it('binds the Start delay field to startDelayMillis in the registered body', async () => {
+    const { calls } = stubRegistry([]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    fillValidStep('delayed');
+    fireEvent.change(screen.getByLabelText(/Start delay/), { target: { value: '5000' } });
+
+    fireEvent.click(screen.getByTestId('load-register'));
+    await waitFor(() => expect(calls.find((c) => c.method === 'PUT')).toBeTruthy());
+    const put = calls.find((c) => c.method === 'PUT')!;
+    expect((put.body as { startDelayMillis?: number }).startDelayMillis).toBe(5000);
+  });
+
+  // --- Wave B: Code view ---
+
+  it('renders the Code tab with generated register & start snippets', async () => {
+    stubRegistry([]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    fillValidStep('code-scenario');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
+    await waitFor(() => expect(screen.getByTestId('load-code-review')).toBeInTheDocument());
+    // Default tab is Java; the snippet hits both endpoints and names the scenario.
+    const review = screen.getByTestId('load-code-review');
+    expect(review).toHaveTextContent('/mockserver/loadScenario');
+    expect(review).toHaveTextContent('code-scenario');
+  });
+
+  it('Code tab explains when the scenario is incomplete', async () => {
+    stubRegistry([]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    // No name / host filled — buildScenario fails, so the Code tab shows the guidance alert.
+    fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
+    await waitFor(() => expect(screen.getByTestId('load-code-incomplete')).toBeInTheDocument());
   });
 });

@@ -15,24 +15,35 @@ import Tooltip from '@mui/material/Tooltip';
 import LinearProgress from '@mui/material/LinearProgress';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SaveIcon from '@mui/icons-material/Save';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import {
   fetchLoadScenario,
-  startLoadScenario,
+  registerLoadScenario,
+  startScenariosByName,
+  stopScenariosByName,
+  listLoadScenarios,
+  deleteLoadScenario,
+  clearLoadScenarios,
   stopLoadScenario,
   errorRate,
   formatElapsed,
   LoadScenarioError,
   type LoadScenarioDTO,
   type LoadScenarioStatus,
+  type LoadScenarioState,
+  type RegisteredScenario,
   type LoadStepDTO,
   type LoadStageDTO,
   type LoadStageType,
@@ -40,10 +51,12 @@ import {
   type LoadRequestDTO,
   type SocketAddressDTO,
 } from '../lib/loadScenario';
+import { buildBaseUrl } from '../lib/mcpClient';
 import { useDashboardStore } from '../store';
 import HumanErrorAlert from './HumanErrorAlert';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import MetricsLineChart from './MetricsLineChart';
+import LoadScenarioReview from './LoadScenarioReview';
 
 interface LoadScenarioPanelProps {
   connectionParams: ConnectionParams;
@@ -118,6 +131,7 @@ interface FormState {
   name: string;
   templateType: 'VELOCITY' | 'MUSTACHE';
   maxRequests: string;
+  startDelayMillis: string;
   stages: StageFormState[];
   labels: KeyValueRow[];
   steps: StepFormState[];
@@ -145,6 +159,7 @@ const EMPTY_FORM: FormState = {
   name: '',
   templateType: 'VELOCITY',
   maxRequests: '',
+  startDelayMillis: '',
   // Sensible default: ramp 1→10 VUs over 30s, then hold 10 VUs for 60s (mirrors the OpenAPI example).
   stages: [
     { ...emptyStage('VU', 'RAMP'), startVus: '1', endVus: '10', durationMillis: '30000', curve: 'LINEAR' },
@@ -257,6 +272,11 @@ function buildScenario(form: FormState): { scenario: LoadScenarioDTO } | { error
     if (maxRequests < 1) return { error: 'Max requests must be at least 1 (or leave blank for unlimited)' };
     scenario.maxRequests = maxRequests;
   }
+  const startDelayMillis = num(form.startDelayMillis);
+  if (startDelayMillis != null) {
+    if (startDelayMillis < 0) return { error: 'Start delay (ms) must be 0 or greater (or leave blank for none)' };
+    scenario.startDelayMillis = startDelayMillis;
+  }
   const labels = labelRowsToObject(form.labels);
   if (labels) scenario.labels = labels;
 
@@ -345,6 +365,7 @@ function scenarioToForm(scenario: LoadScenarioDTO): FormState {
     name: scenario.name,
     templateType: scenario.templateType ?? 'VELOCITY',
     maxRequests: scenario.maxRequests != null ? String(scenario.maxRequests) : '',
+    startDelayMillis: scenario.startDelayMillis != null ? String(scenario.startDelayMillis) : '',
     stages,
     labels: Object.entries(scenario.labels ?? {}).map(([key, value]) => ({ id: nextId(), key, value })),
     steps: (scenario.steps.length > 0 ? scenario.steps : [{ request: {} }]).map((step) => ({
@@ -414,12 +435,18 @@ const DEFAULT_VISIBLE: SeriesKey[] = ['rps', 'p95', 'vus'];
 export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPanelProps) {
   const setView = useDashboardStore((s) => s.setView);
 
+  const [view, setPanelView] = useState<'author' | 'code'>('author');
+
   const [status, setStatus] = useState<LoadScenarioStatus | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<HumanError | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+
+  // Registry (Wave C): all scenarios registered on the server + the user's selection.
+  const [registry, setRegistry] = useState<RegisteredScenario[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -491,6 +518,44 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     // status?.state intentionally drives the poll cadence (running → 1s).
   }, [connectionParams, refreshTick, status?.state]);
 
+  // Poll the registry listing. Faster while any scenario is RUNNING/PENDING so the
+  // concurrent-running view and state badges stay live.
+  const anyActive = registry.some((s) => s.state === 'RUNNING' || s.state === 'PENDING');
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll(): Promise<void> {
+      try {
+        const list = await listLoadScenarios(connectionParams, controller.signal);
+        if (cancelled) return;
+        setRegistry(list);
+        // Drop selections for scenarios that no longer exist.
+        setSelected((prev) => {
+          const names = new Set(list.map((s) => s.name));
+          const next = new Set([...prev].filter((n) => names.has(n)));
+          return next.size === prev.size ? prev : next;
+        });
+      } catch {
+        // Registry listing failures are non-fatal — the legacy status poll surfaces
+        // the disabled/error states. Leave the last-known registry in place.
+        if (cancelled || controller.signal.aborted) return;
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => void poll(), anyActive ? RUNNING_POLL_MS : IDLE_POLL_MS);
+        }
+      }
+    }
+
+    void poll();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [connectionParams, refreshTick, anyActive]);
+
   const running = status?.state === 'running';
   const showSummary = status != null && (status.state === 'completed' || status.state === 'stopped');
 
@@ -532,20 +597,93 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     setActionError(null);
   }, [status?.definition]);
 
-  // Validate + start, recording the submitted scenario so "Edit running" can reload it.
-  const handleStartAndRemember = useCallback(() => {
+  // (Author flow below registers/runs explicitly via handleLoad / handleLoadAndRun.)
+
+  // "Load" — validate + REGISTER the scenario (does not run it). Allowed even when
+  // load generation is disabled. Records the submitted scenario so "Edit running"
+  // can reload it. Returns the registered scenario (or null on validation error).
+  const registerForm = useCallback(async (): Promise<LoadScenarioDTO | null> => {
     const built = buildScenario(form);
     if ('error' in built) {
       setActionError({ message: built.error });
-      return;
+      return null;
     }
     lastSubmitted.current = built.scenario;
-    void runAction(async () => {
-      await startLoadScenario(connectionParams, built.scenario);
-      setSamples([]);
-      sampleRunId.current = null;
+    let ok = false;
+    await runAction(async () => {
+      await registerLoadScenario(connectionParams, built.scenario);
+      ok = true;
     });
+    return ok ? built.scenario : null;
   }, [connectionParams, form, runAction]);
+
+  const handleLoad = useCallback(() => {
+    void registerForm();
+  }, [registerForm]);
+
+  // "Load & Run" — register, then start it by name (requires loadGenerationEnabled).
+  const handleLoadAndRun = useCallback(() => {
+    void (async () => {
+      const scenario = await registerForm();
+      if (!scenario) return;
+      await runAction(async () => {
+        await startScenariosByName(connectionParams, [scenario.name]);
+        setSamples([]);
+        sampleRunId.current = null;
+      });
+    })();
+  }, [connectionParams, registerForm, runAction]);
+
+  // --- registry (Wave C) handlers ---
+  const toggleSelected = useCallback((name: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const startSelected = useCallback(() => {
+    const names = [...selected];
+    if (names.length === 0) return;
+    void runAction(async () => {
+      await startScenariosByName(connectionParams, names);
+    });
+  }, [connectionParams, runAction, selected]);
+
+  const startSelectedOne = useCallback((name: string) => {
+    void runAction(async () => {
+      await startScenariosByName(connectionParams, [name]);
+    });
+  }, [connectionParams, runAction]);
+
+  const stopOne = useCallback((name: string) => {
+    void runAction(async () => {
+      await stopScenariosByName(connectionParams, [name]);
+    });
+  }, [connectionParams, runAction]);
+
+  const deleteOne = useCallback((name: string) => {
+    void runAction(async () => {
+      await deleteLoadScenario(connectionParams, name);
+    });
+  }, [connectionParams, runAction]);
+
+  const clearAll = useCallback(() => {
+    void runAction(async () => {
+      await clearLoadScenarios(connectionParams);
+    });
+  }, [connectionParams, runAction]);
+
+  // Load a registered scenario's definition back into the author form for tweaking.
+  const editRegistered = useCallback((entry: RegisteredScenario) => {
+    if (entry.definition) {
+      setForm(scenarioToForm(entry.definition));
+      setPanelView('author');
+      setActionError(null);
+    }
+  }, []);
 
   // --- form field setters ---
   const setField = <K extends keyof FormState>(field: K) => (e: ChangeEvent<HTMLInputElement>) =>
@@ -606,6 +744,20 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   );
   const chartTimestamps = useMemo(() => samples.map((s) => s.at), [samples]);
 
+  const baseUrl = useMemo(() => buildBaseUrl(connectionParams), [connectionParams]);
+
+  // Every registered scenario that is currently RUNNING — drives the concurrent-running view.
+  const runningEntries = useMemo(
+    () => registry.filter((s) => s.state === 'RUNNING' && s.status),
+    [registry],
+  );
+
+  // The current authored scenario built from the form — drives the Code view. When the
+  // form is incomplete this carries the validation message so the Code tab can explain why.
+  const built = useMemo(() => buildScenario(form), [form]);
+  const codeScenario = 'scenario' in built ? built.scenario : null;
+  const codeError = 'error' in built ? built.error : null;
+
   const statusColor = running ? 'success' : status?.state === 'completed' ? 'info' : status?.state === 'stopped' ? 'warning' : 'default';
 
   return (
@@ -620,6 +772,15 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
           </IconButton>
         </Tooltip>
       </Box>
+
+      <Tabs
+        value={view === 'code' ? 1 : 0}
+        onChange={(_, v: number) => setPanelView(v === 1 ? 'code' : 'author')}
+        sx={{ mb: 1.5, minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}
+      >
+        <Tab label="Author" />
+        <Tab label="Code" />
+      </Tabs>
 
       {disabled && (
         <Alert severity="info" sx={{ mb: 1.5 }} data-testid="load-disabled-alert">
@@ -651,6 +812,147 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
 
       {actionError && (
         <HumanErrorAlert error={actionError} onClose={() => setActionError(null)} sx={{ mb: 1.5 }} data-testid="load-action-error" />
+      )}
+
+      {view === 'code' ? (
+        codeScenario ? (
+          <LoadScenarioReview scenario={codeScenario} baseUrl={baseUrl} />
+        ) : (
+          <Alert severity="info" sx={{ mb: 1.5 }} data-testid="load-code-incomplete">
+            <AlertTitle>Complete the scenario to generate code</AlertTitle>
+            {codeError ?? 'Fill in the author form to preview register & start client code.'}
+          </Alert>
+        )
+      ) : (
+      <>
+
+      {/* Registered scenarios (Wave C) */}
+      <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-registry">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Registered scenarios</Typography>
+          <Chip size="small" label={registry.length} variant="outlined" />
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small" variant="contained" startIcon={<PlayArrowIcon />}
+            disabled={busy || disabled || selected.size === 0} onClick={startSelected}
+            data-testid="load-start-selected"
+          >
+            Start selected{selected.size > 0 ? ` (${selected.size})` : ''}
+          </Button>
+          <Button
+            size="small" color="error" variant="outlined" startIcon={<DeleteSweepIcon />}
+            disabled={busy || registry.length === 0} onClick={clearAll}
+            data-testid="load-clear-all"
+          >
+            Clear all
+          </Button>
+        </Box>
+        {registry.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No scenarios registered yet. Use <strong>Load</strong> below to register one without running it,
+            or <strong>Load &amp; Run</strong> to register and start it.
+          </Typography>
+        ) : (
+          registry.map((entry) => (
+            <Box
+              key={entry.name}
+              data-testid={`load-registry-row-${entry.name}`}
+              sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, borderTop: 1, borderColor: 'divider', flexWrap: 'wrap' }}
+            >
+              <Checkbox
+                size="small"
+                checked={selected.has(entry.name)}
+                onChange={() => toggleSelected(entry.name)}
+                slotProps={{ input: { 'aria-label': `Select ${entry.name}` } }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{entry.name}</Typography>
+              <Chip
+                size="small" variant="outlined"
+                color={registryStateColor(entry.state)}
+                label={entry.state}
+                data-testid={`load-registry-state-${entry.name}`}
+              />
+              {entry.status && (entry.state === 'RUNNING' || entry.state === 'COMPLETED' || entry.state === 'STOPPED') && (
+                <Typography variant="caption" color="text.secondary">
+                  {(entry.status.requestsSent ?? 0).toLocaleString()} sent · {(errorRate(entry.status) * 100).toFixed(1)}% err
+                  {entry.status.currentVus != null ? ` · ${entry.status.currentVus} VUs` : ''}
+                </Typography>
+              )}
+              <Box sx={{ flex: 1 }} />
+              {entry.definition && (
+                <Tooltip title="Load into author form">
+                  <span>
+                    <IconButton size="small" onClick={() => editRegistered(entry)} aria-label={`Edit ${entry.name}`}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+              {(entry.state === 'RUNNING' || entry.state === 'PENDING') ? (
+                <Tooltip title="Stop">
+                  <span>
+                    <IconButton size="small" color="error" disabled={busy} onClick={() => stopOne(entry.name)} aria-label={`Stop ${entry.name}`}>
+                      <StopIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Tooltip title={disabled ? 'Load generation disabled' : 'Start'}>
+                  <span>
+                    <IconButton size="small" color="primary" disabled={busy || disabled} onClick={() => startSelectedOne(entry.name)} aria-label={`Start ${entry.name}`}>
+                      <PlayArrowIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+              <Tooltip title="Remove from registry">
+                <span>
+                  <IconButton size="small" disabled={busy} onClick={() => deleteOne(entry.name)} aria-label={`Delete ${entry.name}`}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Box>
+          ))
+        )}
+      </Paper>
+
+      {/* Concurrent running view (Wave C): every actively-running registered scenario. */}
+      {runningEntries.length > 0 && (
+        <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-running-scenarios">
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+            Running now ({runningEntries.length})
+          </Typography>
+          {runningEntries.map((entry) => {
+            const st = entry.status;
+            return (
+              <Box key={entry.name} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1, mb: 1 }} data-testid={`load-running-${entry.name}`}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>{entry.name}</Typography>
+                  {st?.elapsedMillis != null && (
+                    <Chip size="small" variant="outlined" label={`${formatElapsed(st.elapsedMillis)} elapsed`} />
+                  )}
+                  {st && stageReadout(st) && (
+                    <Chip size="small" color="primary" variant="outlined" label={stageReadout(st)} />
+                  )}
+                  <Box sx={{ flex: 1 }} />
+                  <Button size="small" color="error" variant="outlined" startIcon={<StopIcon />} disabled={busy} onClick={() => stopOne(entry.name)}>
+                    Stop
+                  </Button>
+                </Box>
+                <LinearProgress sx={{ mb: 1 }} />
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 1 }}>
+                  <Stat label="Active VUs" value={(st?.currentVus ?? 0).toLocaleString()} />
+                  <Stat label="Requests sent" value={(st?.requestsSent ?? 0).toLocaleString()} />
+                  <Stat label="Succeeded" value={(st?.succeeded ?? 0).toLocaleString()} />
+                  <Stat label="Failed" value={(st?.failed ?? 0).toLocaleString()} />
+                  <Stat label="Error rate" value={st ? `${(errorRate(st) * 100).toFixed(1)}%` : '—'} />
+                  <Stat label="p95" value={`${(st?.p95Millis ?? 0).toFixed(0)} ms`} />
+                </Box>
+              </Box>
+            );
+          })}
+        </Paper>
       )}
 
       {/* Live status while a run is active */}
@@ -780,6 +1082,11 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           <TextField
             label="Max requests (optional)" size="small" value={form.maxRequests}
             onChange={setField('maxRequests')} fullWidth placeholder="unlimited"
+          />
+          <TextField
+            label="Start delay (ms)" size="small" value={form.startDelayMillis}
+            onChange={setField('startDelayMillis')} fullWidth placeholder="none"
+            helperText="Wait this long after Start before driving load"
           />
         </Box>
 
@@ -932,22 +1239,46 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           </Box>
         ))}
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Button
+            variant="outlined" color="primary" startIcon={<SaveIcon />}
+            disabled={busy} onClick={handleLoad}
+            data-testid="load-register"
+          >
+            Load
+          </Button>
           <Button
             variant="contained" color="primary" startIcon={<PlayArrowIcon />}
-            disabled={busy || disabled} onClick={handleStartAndRemember}
+            disabled={busy || disabled} onClick={handleLoadAndRun}
+            data-testid="load-register-run"
           >
-            {running ? 'Replace & restart' : 'Start load scenario'}
+            Load &amp; Run
           </Button>
-          {running && (
-            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
-              Start replaces the currently-running scenario.
-            </Typography>
-          )}
+          <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
+            <strong>Load</strong> registers without running (allowed even when load generation is off).{' '}
+            <strong>Load &amp; Run</strong> registers then starts it.
+          </Typography>
         </Box>
       </Paper>
+
+      </>
+      )}
     </Box>
   );
+}
+
+/** MUI Chip colour for each registry lifecycle state. */
+function registryStateColor(
+  state: LoadScenarioState,
+): 'default' | 'success' | 'info' | 'warning' | 'primary' {
+  switch (state) {
+    case 'RUNNING': return 'success';
+    case 'PENDING': return 'primary';
+    case 'COMPLETED': return 'info';
+    case 'STOPPED': return 'warning';
+    case 'LOADED':
+    default: return 'default';
+  }
 }
 
 /** A small label/value stat cell used in the live + summary metric grids. */
