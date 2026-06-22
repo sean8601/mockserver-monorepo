@@ -144,6 +144,13 @@ type breakpointWSClient struct {
 	requestHandlers     map[string]BreakpointRequestHandler
 	responseHandlers    map[string]BreakpointResponseHandler
 	streamFrameHandlers map[string]BreakpointStreamFrameHandler
+
+	// Object/closure-callback handlers. Request frames that carry no breakpoint
+	// id are object-callback frames and route here (see handleRequest). A single
+	// handler per WS client is the common, correct case — callers narrow with the
+	// request matcher.
+	objectResponseHandler ObjectResponseCallback
+	objectForwardHandler  ObjectForwardCallback
 }
 
 func newBreakpointWSClient() *breakpointWSClient {
@@ -246,6 +253,27 @@ func (ws *breakpointWSClient) handleRequest(valueJSON string) {
 
 	correlationID := extractHeader(request, "WebSocketCorrelationId")
 	breakpointID := extractHeader(request, "X-MockServer-BreakpointId")
+
+	// A request frame with no breakpoint id is an object/closure-callback frame
+	// (the breakpoint dispatch always tags its frames with X-MockServer-BreakpointId).
+	// Route it to the registered object-callback handler rather than the
+	// breakpoint request handlers.
+	if breakpointID == "" {
+		ws.mu.RLock()
+		respHandler := ws.objectResponseHandler
+		fwdHandler := ws.objectForwardHandler
+		ws.mu.RUnlock()
+		if respHandler != nil {
+			ws.handleObjectResponseCallback(request, correlationID, respHandler)
+			return
+		}
+		if fwdHandler != nil {
+			ws.handleObjectForwardCallback(request, correlationID, fwdHandler)
+			return
+		}
+		// No object-callback handler registered; fall through to the breakpoint
+		// path which will auto-continue with the original request.
+	}
 
 	ws.mu.RLock()
 	handler := ws.requestHandlers[breakpointID]

@@ -2,30 +2,37 @@ package mockserver
 
 // Expectation represents a MockServer expectation (request matcher + action).
 type Expectation struct {
-	ID                     string                  `json:"id,omitempty"`
-	Priority               int                     `json:"priority,omitempty"`
-	HttpRequest            *HttpRequest            `json:"httpRequest,omitempty"`
-	HttpResponse           *HttpResponse           `json:"httpResponse,omitempty"`
-	HttpResponses          []*HttpResponse         `json:"httpResponses,omitempty"`
-	HttpResponseTemplate   *HttpTemplate           `json:"httpResponseTemplate,omitempty"`
-	HttpForward            *HttpForward            `json:"httpForward,omitempty"`
-	HttpForwardTemplate    *HttpTemplate           `json:"httpForwardTemplate,omitempty"`
-	HttpError              *HttpError              `json:"httpError,omitempty"`
-	HttpSseResponse        *HttpSseResponse        `json:"httpSseResponse,omitempty"`
-	HttpWebSocketResponse  *HttpWebSocketResponse  `json:"httpWebSocketResponse,omitempty"`
-	GrpcStreamResponse     *GrpcStreamResponse     `json:"grpcStreamResponse,omitempty"`
-	BinaryResponse         *BinaryResponse         `json:"binaryResponse,omitempty"`
-	DnsResponse            *DnsResponse            `json:"dnsResponse,omitempty"`
-	HttpLlmResponse        *HttpLlmResponse        `json:"httpLlmResponse,omitempty"`
-	ScenarioName           string                  `json:"scenarioName,omitempty"`
-	ScenarioState          string                  `json:"scenarioState,omitempty"`
-	NewScenarioState       string                  `json:"newScenarioState,omitempty"`
-	ResponseMode           ResponseMode            `json:"responseMode,omitempty"`
-	ResponseWeights        []int                   `json:"responseWeights,omitempty"`
-	SwitchAfter            *int                    `json:"switchAfter,omitempty"`
-	CrossProtocolScenarios []CrossProtocolScenario `json:"crossProtocolScenarios,omitempty"`
-	Times                  *Times                  `json:"times,omitempty"`
-	TimeToLive             *TimeToLive             `json:"timeToLive,omitempty"`
+	ID                   string          `json:"id,omitempty"`
+	Priority             int             `json:"priority,omitempty"`
+	HttpRequest          *HttpRequest    `json:"httpRequest,omitempty"`
+	HttpResponse         *HttpResponse   `json:"httpResponse,omitempty"`
+	HttpResponses        []*HttpResponse `json:"httpResponses,omitempty"`
+	HttpResponseTemplate *HttpTemplate   `json:"httpResponseTemplate,omitempty"`
+	HttpForward          *HttpForward    `json:"httpForward,omitempty"`
+	HttpForwardTemplate  *HttpTemplate   `json:"httpForwardTemplate,omitempty"`
+	HttpError            *HttpError      `json:"httpError,omitempty"`
+	// Class callbacks reference a server-side class (REST-only, no WebSocket).
+	HttpResponseClassCallback *HttpClassCallback `json:"httpResponseClassCallback,omitempty"`
+	HttpForwardClassCallback  *HttpClassCallback `json:"httpForwardClassCallback,omitempty"`
+	// Object/closure callbacks are driven over the callback WebSocket; ClientId
+	// identifies this client's WebSocket connection.
+	HttpResponseObjectCallback *HttpObjectCallback     `json:"httpResponseObjectCallback,omitempty"`
+	HttpForwardObjectCallback  *HttpObjectCallback     `json:"httpForwardObjectCallback,omitempty"`
+	HttpSseResponse            *HttpSseResponse        `json:"httpSseResponse,omitempty"`
+	HttpWebSocketResponse      *HttpWebSocketResponse  `json:"httpWebSocketResponse,omitempty"`
+	GrpcStreamResponse         *GrpcStreamResponse     `json:"grpcStreamResponse,omitempty"`
+	BinaryResponse             *BinaryResponse         `json:"binaryResponse,omitempty"`
+	DnsResponse                *DnsResponse            `json:"dnsResponse,omitempty"`
+	HttpLlmResponse            *HttpLlmResponse        `json:"httpLlmResponse,omitempty"`
+	ScenarioName               string                  `json:"scenarioName,omitempty"`
+	ScenarioState              string                  `json:"scenarioState,omitempty"`
+	NewScenarioState           string                  `json:"newScenarioState,omitempty"`
+	ResponseMode               ResponseMode            `json:"responseMode,omitempty"`
+	ResponseWeights            []int                   `json:"responseWeights,omitempty"`
+	SwitchAfter                *int                    `json:"switchAfter,omitempty"`
+	CrossProtocolScenarios     []CrossProtocolScenario `json:"crossProtocolScenarios,omitempty"`
+	Times                      *Times                  `json:"times,omitempty"`
+	TimeToLive                 *TimeToLive             `json:"timeToLive,omitempty"`
 }
 
 // ResponseMode selects how MockServer chooses between multiple HttpResponses

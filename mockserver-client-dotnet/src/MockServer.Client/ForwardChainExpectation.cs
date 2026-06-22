@@ -297,6 +297,71 @@ public sealed class ForwardChainExpectation
     }
 
     /// <summary>
+    /// Complete the expectation with a response class-callback action — a server-side
+    /// class (implementing <c>ExpectationResponseCallback</c>) produces the response.
+    /// REST-only; the class need not exist when the expectation is registered.
+    /// </summary>
+    public List<Expectation> RespondWithClassCallback(string callbackClass)
+        => RespondWithClassCallback(HttpClassCallback.Of(callbackClass));
+
+    /// <summary>
+    /// Complete the expectation with a response class-callback action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithClassCallbackAsync(string callbackClass)
+        => RespondWithClassCallbackAsync(HttpClassCallback.Of(callbackClass));
+
+    /// <summary>
+    /// Complete the expectation with a response class-callback action.
+    /// </summary>
+    public List<Expectation> RespondWithClassCallback(HttpClassCallback classCallback)
+    {
+        _expectation.HttpResponseClassCallback = classCallback;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a response class-callback action (async).
+    /// </summary>
+    public Task<List<Expectation>> RespondWithClassCallbackAsync(HttpClassCallback classCallback)
+    {
+        _expectation.HttpResponseClassCallback = classCallback;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a forward class-callback action — a server-side
+    /// class (implementing <c>ExpectationForwardCallback</c> /
+    /// <c>ExpectationForwardAndResponseCallback</c>) produces the request to forward.
+    /// REST-only; the class need not exist when the expectation is registered.
+    /// </summary>
+    public List<Expectation> ForwardWithClassCallback(string callbackClass)
+        => ForwardWithClassCallback(HttpClassCallback.Of(callbackClass));
+
+    /// <summary>
+    /// Complete the expectation with a forward class-callback action (async).
+    /// </summary>
+    public Task<List<Expectation>> ForwardWithClassCallbackAsync(string callbackClass)
+        => ForwardWithClassCallbackAsync(HttpClassCallback.Of(callbackClass));
+
+    /// <summary>
+    /// Complete the expectation with a forward class-callback action.
+    /// </summary>
+    public List<Expectation> ForwardWithClassCallback(HttpClassCallback classCallback)
+    {
+        _expectation.HttpForwardClassCallback = classCallback;
+        return _client.UpsertExpectation(_expectation);
+    }
+
+    /// <summary>
+    /// Complete the expectation with a forward class-callback action (async).
+    /// </summary>
+    public Task<List<Expectation>> ForwardWithClassCallbackAsync(HttpClassCallback classCallback)
+    {
+        _expectation.HttpForwardClassCallback = classCallback;
+        return _client.UpsertExpectationAsync(_expectation);
+    }
+
+    /// <summary>
     /// Complete the expectation with an error action (drops/corrupts the connection).
     /// </summary>
     public List<Expectation> Error(HttpError error)

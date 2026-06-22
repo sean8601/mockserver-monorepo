@@ -978,6 +978,67 @@ var mockServerClient;
             };
         };
         /**
+         * Normalise the class-callback argument accepted by
+         * respondWithClassCallback / forwardWithClassCallback into the wire
+         * action object { callbackClass, delay?, primary? }. The argument may be
+         * a plain class-name string or a full HttpClassCallback object.
+         */
+        var createClassCallbackAction = function (callbackClassOrAction) {
+            if (typeof callbackClassOrAction === "string") {
+                return {callbackClass: callbackClassOrAction};
+            }
+            return callbackClassOrAction;
+        };
+        /**
+         * Setup an expectation that delegates the response to a server-side
+         * class implementing the MockServer ExpectationResponseCallback
+         * interface (a "class callback"). This is a pure-JSON, REST-only
+         * mechanism - no callback WebSocket is opened. The referenced class is
+         * resolved and run inside the MockServer JVM, so it must be on the
+         * server's classpath.
+         *, for example:
+         *
+         *   client.respondWithClassCallback('/somePath', 'com.example.MyResponseCallback');
+         *
+         *   // or with delay / primary, pass the full action object:
+         *   client.respondWithClassCallback('/somePath', {
+         *       callbackClass: 'com.example.MyResponseCallback',
+         *       delay: { timeUnit: 'MILLISECONDS', value: 100 }
+         *   });
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param callbackClass  the fully-qualified server-side callback class name, or a full
+         *                       httpResponseClassCallback action object ({ callbackClass, delay?, primary? })
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var respondWithClassCallback = function (requestMatcher, callbackClass, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("httpResponseClassCallback", requestMatcher, createClassCallbackAction(callbackClass), times, priority, timeToLive, id));
+        };
+        /**
+         * Setup an expectation that delegates request forwarding to a server-side
+         * class implementing the MockServer ExpectationForwardCallback interface
+         * (a forward "class callback"). Like respondWithClassCallback this is a
+         * pure-JSON, REST-only mechanism and the referenced class must be on the
+         * MockServer classpath.
+         *, for example:
+         *
+         *   client.forwardWithClassCallback('/somePath', 'com.example.MyForwardCallback');
+         *
+         * @param requestMatcher the path to match (string) or a full request matcher object
+         * @param callbackClass  the fully-qualified server-side callback class name, or a full
+         *                       httpForwardClassCallback action object ({ callbackClass, delay?, primary? })
+         * @param times the number of times the requestMatcher should be matched (optional)
+         * @param priority the priority with which this expectation is used to match requests (optional)
+         * @param timeToLive the time this expectation should be used to match requests (optional)
+         * @param id the unique expectation id (optional)
+         */
+        var forwardWithClassCallback = function (requestMatcher, callbackClass, times, priority, timeToLive, id) {
+            return mockAnyResponse(createAdvancedResponseExpectation("httpForwardClassCallback", requestMatcher, createClassCallbackAction(callbackClass), times, priority, timeToLive, id));
+        };
+        /**
          * Setup an expectation without having to specify the full expectation object
          *, for example:
          *
@@ -2323,6 +2384,8 @@ var mockServerClient;
             mockWithCallback: mockWithCallback,
             mockWithForwardCallback: mockWithForwardCallback,
             mockWithForwardAndResponseCallback: mockWithForwardAndResponseCallback,
+            respondWithClassCallback: respondWithClassCallback,
+            forwardWithClassCallback: forwardWithClassCallback,
             mockSimpleResponse: mockSimpleResponse,
             respondWithSse: respondWithSse,
             respondWithWebSocket: respondWithWebSocket,

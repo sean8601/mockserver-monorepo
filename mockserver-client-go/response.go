@@ -115,3 +115,11 @@ func (b *ResponseBuilder) WithDelay(timeUnit string, value int) *ResponseBuilder
 func (b *ResponseBuilder) Build() HttpResponse {
 	return b.response
 }
+
+// BuildPtr returns a pointer to the constructed HttpResponse. It is a
+// convenience for object-callback handlers (see Client.MockWithCallback) which
+// return a *HttpResponse.
+func (b *ResponseBuilder) BuildPtr() *HttpResponse {
+	resp := b.response
+	return &resp
+}

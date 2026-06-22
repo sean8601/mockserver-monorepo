@@ -937,6 +937,71 @@ impl MockServerClient {
     }
 
     // ------------------------------------------------------------------
+    // Object (closure) callbacks
+    // ------------------------------------------------------------------
+
+    /// Register an expectation whose response is produced by a Rust closure
+    /// invoked over the callback WebSocket (an `httpResponseObjectCallback`).
+    ///
+    /// When a request matches `matcher`, MockServer pushes it to this client over
+    /// the shared callback WebSocket; `handler` receives the [`HttpRequest`] and
+    /// returns the [`HttpResponse`] to send back. The closure runs on the client's
+    /// background WebSocket-read thread, so it must be `Send + 'static`.
+    ///
+    /// The callback WebSocket is shared with breakpoints — only one socket is
+    /// opened per client. There is a single object-response handler per client;
+    /// calling this again replaces it. Narrow which requests reach the closure
+    /// with the `matcher`.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use mockserver_client::{ClientBuilder, HttpRequest, HttpResponse};
+    ///
+    /// let client = ClientBuilder::new("localhost", 1080).build().unwrap();
+    /// client.mock_with_callback(
+    ///     HttpRequest::new().method("GET").path("/echo"),
+    ///     |req| {
+    ///         HttpResponse::new()
+    ///             .status_code(200)
+    ///             .body(format!("you asked for {}", req.path.unwrap_or_default()))
+    ///     },
+    /// ).unwrap();
+    /// ```
+    pub fn mock_with_callback<F>(
+        &self,
+        matcher: HttpRequest,
+        handler: F,
+    ) -> Result<Vec<Expectation>>
+    where
+        F: Fn(HttpRequest) -> HttpResponse + Send + 'static,
+    {
+        // Ensure the shared callback WebSocket is connected and learn its clientId.
+        let client_id = self.ensure_breakpoint_ws()?;
+
+        // Adapt the typed closure to the JSON-level ObjectResponseHandler the WS
+        // read loop drives. The reply must echo the WebSocketCorrelationId header,
+        // which route_object_callback re-applies after the closure returns.
+        let object_handler: crate::breakpoint::ObjectResponseHandler =
+            Box::new(move |request_json: Value| {
+                let request: HttpRequest =
+                    serde_json::from_value(request_json).unwrap_or_default();
+                let response = handler(request);
+                serde_json::to_value(&response).unwrap_or_else(|_| serde_json::json!({}))
+            });
+
+        {
+            let guard = self.breakpoint_ws.lock().unwrap();
+            if let Some(ws) = guard.as_ref() {
+                ws.set_object_response_handler(object_handler);
+            }
+        }
+
+        let expectation = Expectation::new(matcher)
+            .respond_object_callback(HttpObjectCallback::new(client_id));
+        self.upsert(&[expectation])
+    }
+
+    // ------------------------------------------------------------------
     // gRPC descriptor management
     // ------------------------------------------------------------------
 

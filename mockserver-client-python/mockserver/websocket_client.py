@@ -7,8 +7,21 @@ import uuid
 from typing import Any, Callable
 
 import websockets
-import websockets.client
 import websockets.exceptions
+
+# Prefer the modern asyncio client (websockets >= 13). It accepts the
+# ``additional_headers`` kwarg used below to carry the client-registration id.
+# Fall back to the legacy client on older releases, where the equivalent kwarg
+# is ``extra_headers``. ``_CONNECT_HEADERS_KWARG`` records which name to use so
+# the registration header is sent regardless of the installed version.
+try:
+    from websockets.asyncio.client import connect as _ws_connect  # type: ignore
+
+    _CONNECT_HEADERS_KWARG = "additional_headers"
+except ImportError:  # pragma: no cover - exercised only on legacy websockets
+    from websockets.client import connect as _ws_connect  # type: ignore
+
+    _CONNECT_HEADERS_KWARG = "extra_headers"
 
 from mockserver.exceptions import MockServerCallbackError, MockServerWebSocketError
 from mockserver.models import (
@@ -90,6 +103,21 @@ def _build_error_message(error_msg: str, correlation_id: str) -> str:
     })
 
 
+def _ws_is_open(ws: Any) -> bool:
+    """Return True if *ws* is a live, open connection.
+
+    The legacy websockets client exposes a boolean ``.open`` attribute; the
+    modern asyncio client does not, but reports ``.close_code is None`` while
+    the connection is open. This bridges both so the transport works across
+    websockets versions.
+    """
+    if ws is None:
+        return False
+    if hasattr(ws, "open"):
+        return bool(ws.open)
+    return getattr(ws, "close_code", None) is None
+
+
 def _clean_context_path(context_path: str) -> str:
     if not context_path:
         return ""
@@ -100,7 +128,7 @@ def _clean_context_path(context_path: str) -> str:
 
 class MockServerWebSocketClient:
     def __init__(self) -> None:
-        self._ws: websockets.client.WebSocketClientProtocol | None = None
+        self._ws: Any = None
         self._client_id: str | None = None
         self._response_callback: Callable | None = None
         self._forward_callback: Callable | None = None
@@ -119,7 +147,7 @@ class MockServerWebSocketClient:
 
     @property
     def is_connected(self) -> bool:
-        return self._ws is not None and self._ws.open
+        return _ws_is_open(self._ws)
 
     @property
     def client_id(self) -> str | None:
@@ -159,17 +187,17 @@ class MockServerWebSocketClient:
         path = _clean_context_path(self._context_path) + WEBSOCKET_PATH
         uri = f"{scheme}://{self._host}:{self._port}{path}"
 
-        extra_headers = {CLIENT_REGISTRATION_ID_HEADER: registration_id}
+        registration_headers = {CLIENT_REGISTRATION_ID_HEADER: registration_id}
 
-        self._ws = await websockets.client.connect(
-            uri,
-            additional_headers=extra_headers,
-            ssl=self._ssl_context if self._secure else None,
-            open_timeout=10,
-            ping_interval=20,
-            ping_timeout=20,
-            close_timeout=5,
-        )
+        connect_kwargs: dict[str, Any] = {
+            _CONNECT_HEADERS_KWARG: registration_headers,
+            "ssl": self._ssl_context if self._secure else None,
+            "open_timeout": 10,
+            "ping_interval": 20,
+            "ping_timeout": 20,
+            "close_timeout": 5,
+        }
+        self._ws = await _ws_connect(uri, **connect_kwargs)
 
         registration_msg = await asyncio.wait_for(self._ws.recv(), timeout=10.0)
         parsed = json.loads(registration_msg)
@@ -457,6 +485,6 @@ class MockServerWebSocketClient:
                 await self._listen_task
             except asyncio.CancelledError:
                 pass
-        if self._ws and self._ws.open:
+        if _ws_is_open(self._ws):
             await self._ws.close()
         self._ws = None

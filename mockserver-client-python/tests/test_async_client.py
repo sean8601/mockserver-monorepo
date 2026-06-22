@@ -513,6 +513,62 @@ class TestRegisterWebSocketCallback:
             mock_ws.register_forward_callback.assert_called_once_with(fwd_fn, resp_fn)
 
 
+class TestMockWithCallback:
+    @pytest.mark.asyncio
+    async def test_mock_with_callback_registers_object_callback(self):
+        client = AsyncMockServerClient("localhost", 1080)
+        client._register_websocket_callback = AsyncMock(return_value="obj-cb-id")
+        captured: list[Expectation] = []
+
+        async def fake_upsert(*expectations):
+            captured.extend(expectations)
+            return list(expectations)
+
+        client.upsert = fake_upsert  # type: ignore[assignment]
+
+        handler = lambda req: HttpResponse(status_code=200, body="dynamic")
+        request = HttpRequest(method="GET", path="/callback")
+        await client.mock_with_callback(request, handler)
+
+        client._register_websocket_callback.assert_called_once_with(
+            "response", handler
+        )
+        assert len(captured) == 1
+        expectation = captured[0]
+        assert expectation.http_response_object_callback == HttpObjectCallback(
+            client_id="obj-cb-id"
+        )
+        # the wire payload references the WS clientId, not the closure itself
+        wire = expectation.to_dict()
+        assert wire["httpResponseObjectCallback"] == {"clientId": "obj-cb-id"}
+        assert "httpResponse" not in wire
+
+    @pytest.mark.asyncio
+    async def test_mock_with_forward_callback_sets_response_flag(self):
+        client = AsyncMockServerClient("localhost", 1080)
+        client._register_websocket_callback = AsyncMock(return_value="fwd-cb-id")
+        captured: list[Expectation] = []
+
+        async def fake_upsert(*expectations):
+            captured.extend(expectations)
+            return list(expectations)
+
+        client.upsert = fake_upsert  # type: ignore[assignment]
+
+        fwd = lambda req: req
+        resp = lambda req, resp: resp
+        request = HttpRequest(method="GET", path="/forward-callback")
+        await client.mock_with_forward_callback(request, fwd, resp)
+
+        client._register_websocket_callback.assert_called_once_with(
+            "forward", fwd, resp
+        )
+        expectation = captured[0]
+        cb = expectation.http_forward_object_callback
+        assert cb.client_id == "fwd-cb-id"
+        assert cb.response_callback is True
+
+
 class TestClose:
     @pytest.mark.asyncio
     async def test_close_cleans_up_websockets(self):

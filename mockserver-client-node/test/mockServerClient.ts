@@ -223,6 +223,12 @@ async function test() {
     requestResponse = await client.mockWithForwardAndResponseCallback(requestDefinition, (request) => request, (request, response) => response, 10);
     requestResponse = await client.mockWithForwardAndResponseCallback(requestDefinition, (request) => request, (request, response) => response, 10, 10, {unlimited: true}, "some_id");
 
+    // class callbacks (REST-only, pure JSON) -- type-checking only
+    requestResponse = await client.respondWithClassCallback('/path', 'com.example.MyResponseCallback');
+    requestResponse = await client.respondWithClassCallback(requestDefinition, {callbackClass: 'com.example.MyResponseCallback', delay: {timeUnit: 'MILLISECONDS', value: 100}, primary: true}, 10, 10, {unlimited: true}, 'cb-id');
+    requestResponse = await client.forwardWithClassCallback('/path', 'com.example.MyForwardCallback');
+    requestResponse = await client.forwardWithClassCallback(requestDefinition, {callbackClass: 'com.example.MyForwardCallback'}, 5);
+
     requestResponse = await client.mockSimpleResponse('some/path', {});
     requestResponse = await client.mockSimpleResponse('some/path', {}, 500);
 

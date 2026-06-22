@@ -192,6 +192,19 @@ pub type BreakpointResponseHandler = Box<dyn Fn(Value, Value) -> Option<Value> +
 pub type BreakpointStreamFrameHandler =
     Box<dyn Fn(&PausedStreamFrame) -> Option<StreamFrameDecision> + Send + Sync>;
 
+/// Handler for object (closure) response callbacks.
+///
+/// Receives the matched request as JSON and returns the response JSON object.
+/// Unlike breakpoint handlers this is mandatory (no auto-continue) — when a
+/// request frame without a breakpoint id arrives, the registered closure
+/// produces the response that MockServer returns to the caller.
+///
+/// Only `Send` is required (not `Sync`): the handler is stored behind a `Mutex`
+/// and only ever invoked from the single WebSocket-read thread, so access is
+/// already serialized. This keeps the public `mock_with_callback` bound to the
+/// minimal `Fn(HttpRequest) -> HttpResponse + Send + 'static`.
+pub type ObjectResponseHandler = Box<dyn Fn(Value) -> Value + Send>;
+
 // ---------------------------------------------------------------------------
 // BreakpointWebSocketClient
 // ---------------------------------------------------------------------------
@@ -203,6 +216,9 @@ pub(crate) struct BreakpointWebSocketClient {
     request_handlers: Arc<Mutex<HashMap<String, BreakpointRequestHandler>>>,
     response_handlers: Arc<Mutex<HashMap<String, BreakpointResponseHandler>>>,
     stream_frame_handlers: Arc<Mutex<HashMap<String, BreakpointStreamFrameHandler>>>,
+    /// Single object/closure response callback for this WS client (request
+    /// frames without an `X-MockServer-BreakpointId` header route here).
+    object_response_handler: Arc<Mutex<Option<ObjectResponseHandler>>>,
     dead: Arc<std::sync::atomic::AtomicBool>,
     _read_thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -261,6 +277,8 @@ impl BreakpointWebSocketClient {
             Arc::new(Mutex::new(HashMap::new()));
         let stream_frame_handlers: Arc<Mutex<HashMap<String, BreakpointStreamFrameHandler>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let object_response_handler: Arc<Mutex<Option<ObjectResponseHandler>>> =
+            Arc::new(Mutex::new(None));
 
         let socket = Arc::new(Mutex::new(socket));
         let dead = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -269,11 +287,12 @@ impl BreakpointWebSocketClient {
         let rh = Arc::clone(&request_handlers);
         let resh = Arc::clone(&response_handlers);
         let sfh = Arc::clone(&stream_frame_handlers);
+        let orh = Arc::clone(&object_response_handler);
         let sock = Arc::clone(&socket);
         let dead_flag = Arc::clone(&dead);
 
         let read_thread = std::thread::spawn(move || {
-            read_loop(sock, rh, resh, sfh, dead_flag);
+            read_loop(sock, rh, resh, sfh, orh, dead_flag);
         });
 
         Ok(Self {
@@ -282,6 +301,7 @@ impl BreakpointWebSocketClient {
             request_handlers,
             response_handlers,
             stream_frame_handlers,
+            object_response_handler,
             dead,
             _read_thread: Some(read_thread),
         })
@@ -310,6 +330,11 @@ impl BreakpointWebSocketClient {
             .lock()
             .unwrap()
             .insert(breakpoint_id.to_string(), handler);
+    }
+
+    /// Register (or replace) the single object/closure response callback.
+    pub(crate) fn set_object_response_handler(&self, handler: ObjectResponseHandler) {
+        *self.object_response_handler.lock().unwrap() = Some(handler);
     }
 
     pub(crate) fn remove_handlers(&self, breakpoint_id: &str) {
@@ -346,11 +371,13 @@ impl Drop for ReadLoopDeadGuard {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_loop(
     socket: Arc<Mutex<tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>,
     request_handlers: Arc<Mutex<HashMap<String, BreakpointRequestHandler>>>,
     response_handlers: Arc<Mutex<HashMap<String, BreakpointResponseHandler>>>,
     stream_frame_handlers: Arc<Mutex<HashMap<String, BreakpointStreamFrameHandler>>>,
+    object_response_handler: Arc<Mutex<Option<ObjectResponseHandler>>>,
     dead: Arc<std::sync::atomic::AtomicBool>,
 ) {
     let _guard = ReadLoopDeadGuard(dead);
@@ -391,6 +418,7 @@ fn read_loop(
                 handle_request(
                     &envelope.value,
                     &request_handlers,
+                    &object_response_handler,
                     &socket,
                 );
             }
@@ -419,8 +447,16 @@ fn read_loop(
 fn handle_request(
     value_json: &str,
     handlers: &Arc<Mutex<HashMap<String, BreakpointRequestHandler>>>,
+    object_response_handler: &Arc<Mutex<Option<ObjectResponseHandler>>>,
     socket: &Arc<Mutex<tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>,
 ) {
+    // A request frame WITHOUT a breakpoint id is an object-callback invocation;
+    // route it to the registered closure. A frame WITH a breakpoint id is a
+    // paused-breakpoint request and stays on the breakpoint path.
+    if let Some((type_name, result)) = route_object_callback(value_json, object_response_handler) {
+        send_envelope(socket, &type_name, &result);
+        return;
+    }
     if let Some((type_name, result)) = route_request(value_json, handlers) {
         send_envelope(socket, &type_name, &result);
     }
@@ -488,6 +524,47 @@ pub fn route_request(
     }
 
     Some((type_name.to_string(), result))
+}
+
+/// Route an object-callback request frame to the registered closure.
+///
+/// Object-callback frames are `org.mockserver.model.HttpRequest` messages that
+/// carry a `WebSocketCorrelationId` but **no** `X-MockServer-BreakpointId`
+/// header (that header marks a paused-breakpoint request, handled elsewhere).
+///
+/// Returns `None` when the frame is a breakpoint request (has a breakpoint id)
+/// or when no object handler is registered — in both cases the caller falls
+/// through to the breakpoint request path. On a match, invokes the closure
+/// (auto-continuing with a passthrough response on panic), echoes the
+/// `WebSocketCorrelationId` onto the reply, and returns
+/// `("org.mockserver.model.HttpResponse", response_json)`.
+pub fn route_object_callback(
+    value_json: &str,
+    handler: &Arc<Mutex<Option<ObjectResponseHandler>>>,
+) -> Option<(String, Value)> {
+    let request: Value = serde_json::from_str(value_json).ok()?;
+
+    // Breakpoint requests carry an explicit breakpoint id — never object-route them.
+    if extract_header(&request, "X-MockServer-BreakpointId").is_some() {
+        return None;
+    }
+
+    let correlation_id = extract_header(&request, "WebSocketCorrelationId");
+
+    // No handler registered: let the breakpoint path handle it (it auto-continues).
+    let guard = handler.lock().ok()?;
+    let handler = guard.as_ref()?;
+
+    let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        handler(request.clone())
+    }))
+    .unwrap_or_else(|_| serde_json::json!({}));
+
+    if let Some(corr) = &correlation_id {
+        set_header(&mut result, "WebSocketCorrelationId", corr);
+    }
+
+    Some(("org.mockserver.model.HttpResponse".to_string(), result))
 }
 
 /// Route a RESPONSE-phase message: dispatch to the per-breakpoint-id handler,

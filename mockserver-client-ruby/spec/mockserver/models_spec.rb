@@ -1338,6 +1338,54 @@ RSpec.describe 'MockServer models' do
       expect(h['httpOverrideForwardedRequest']['httpRequest']['path']).to eq('/override')
     end
 
+    context 'class-callback coercion' do
+      it 'serializes httpResponseClassCallback.callbackClass from an HttpClassCallback' do
+        exp = MockServer::Expectation.new(
+          http_response_class_callback: MockServer::HttpClassCallback.new(callback_class: 'com.example.MyResponseCallback')
+        )
+        expect(exp.http_response_class_callback).to be_a(MockServer::HttpClassCallback)
+        expect(exp.to_h['httpResponseClassCallback']['callbackClass']).to eq('com.example.MyResponseCallback')
+      end
+
+      it 'wraps a class-name String passed to the constructor into an HttpClassCallback' do
+        exp = MockServer::Expectation.new(http_response_class_callback: 'com.example.MyResponseCallback')
+        expect(exp.http_response_class_callback).to be_a(MockServer::HttpClassCallback)
+        expect(exp.http_response_class_callback.callback_class).to eq('com.example.MyResponseCallback')
+        expect(exp.to_h['httpResponseClassCallback']).to eq({ 'callbackClass' => 'com.example.MyResponseCallback' })
+      end
+
+      it 'wraps a class-name String assigned via the setter into an HttpClassCallback' do
+        exp = MockServer::Expectation.new
+        exp.http_response_class_callback = 'com.example.MyResponseCallback'
+        expect(exp.to_h['httpResponseClassCallback']).to eq({ 'callbackClass' => 'com.example.MyResponseCallback' })
+      end
+
+      it 'wraps a class-name String for the forward class callback' do
+        exp = MockServer::Expectation.new(http_forward_class_callback: 'com.example.MyForwardCallback')
+        expect(exp.http_forward_class_callback).to be_a(MockServer::HttpClassCallback)
+        expect(exp.to_h['httpForwardClassCallback']).to eq({ 'callbackClass' => 'com.example.MyForwardCallback' })
+      end
+
+      it 'preserves delay and primary when given a pre-built HttpClassCallback' do
+        exp = MockServer::Expectation.new(
+          http_response_class_callback: MockServer::HttpClassCallback.new(
+            callback_class: 'com.example.MyResponseCallback',
+            delay: MockServer::Delay.new(time_unit: 'SECONDS', value: 2),
+            primary: true
+          )
+        )
+        h = exp.to_h['httpResponseClassCallback']
+        expect(h['callbackClass']).to eq('com.example.MyResponseCallback')
+        expect(h['delay']).to eq({ 'timeUnit' => 'SECONDS', 'value' => 2 })
+        expect(h['primary']).to eq(true)
+      end
+
+      it 'raises TypeError for an unsupported class-callback type' do
+        expect { MockServer::Expectation.new(http_response_class_callback: 123) }
+          .to raise_error(TypeError, /class-name String or HttpClassCallback/)
+      end
+    end
+
     it 'deserializes from hash' do
       data = {
         'id' => 'exp-1',

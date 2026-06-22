@@ -41,7 +41,7 @@ pub use breakpoint::{
     phase, BreakpointMatcherRegistration, BreakpointMatcherResponse,
     BreakpointMatcherEntry, BreakpointMatcherList, PausedStreamFrame,
     StreamFrameDecision, WsEnvelope, BreakpointRequestHandler,
-    BreakpointResponseHandler, BreakpointStreamFrameHandler,
+    BreakpointResponseHandler, BreakpointStreamFrameHandler, ObjectResponseHandler,
     extract_header, set_header,
-    route_request, route_response, route_stream_frame,
+    route_request, route_object_callback, route_response, route_stream_frame,
 };

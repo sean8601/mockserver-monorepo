@@ -30,6 +30,18 @@ public delegate JsonObject? BreakpointResponseHandler(JsonObject request, JsonOb
 public delegate StreamFrameDecision? BreakpointStreamFrameHandler(PausedStreamFrame frame);
 
 /// <summary>
+/// Handler for an object (closure) response callback.
+/// Receives the matched request; returns the response to send back.
+/// </summary>
+public delegate JsonObject ObjectResponseCallbackHandler(JsonObject request);
+
+/// <summary>
+/// Handler for an object (closure) forward callback.
+/// Receives the matched request; returns the (possibly modified) request to forward.
+/// </summary>
+public delegate JsonObject ObjectForwardCallbackHandler(JsonObject request);
+
+/// <summary>
 /// Internal WebSocket client for breakpoint callback resolution.
 /// Connects to <c>/_mockserver_callback_websocket</c> and dispatches
 /// paused items to per-breakpoint-id handlers.
@@ -54,6 +66,11 @@ internal sealed class BreakpointWebSocketClient : IDisposable
     private readonly ConcurrentDictionary<string, BreakpointRequestHandler> _requestHandlers = new();
     private readonly ConcurrentDictionary<string, BreakpointResponseHandler> _responseHandlers = new();
     private readonly ConcurrentDictionary<string, BreakpointStreamFrameHandler> _streamFrameHandlers = new();
+
+    // Object/closure callbacks. A request frame without an X-MockServer-BreakpointId
+    // header is an object-callback dispatch (not a breakpoint) and is routed here.
+    private volatile ObjectResponseCallbackHandler? _objectResponseHandler;
+    private volatile ObjectForwardCallbackHandler? _objectForwardHandler;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -176,8 +193,15 @@ internal sealed class BreakpointWebSocketClient : IDisposable
         var correlationId = ExtractHeader(request, "WebSocketCorrelationId");
         var breakpointId = ExtractHeader(request, "X-MockServer-BreakpointId");
 
+        // A request frame WITHOUT a breakpoint id is an object-callback dispatch.
+        if (string.IsNullOrEmpty(breakpointId))
+        {
+            HandleObjectCallback(request, correlationId);
+            return;
+        }
+
         JsonObject? result = null;
-        if (!string.IsNullOrEmpty(breakpointId) && _requestHandlers.TryGetValue(breakpointId!, out var handler))
+        if (_requestHandlers.TryGetValue(breakpointId!, out var handler))
         {
             try { result = handler(request); }
             catch { result = null; }
@@ -193,6 +217,44 @@ internal sealed class BreakpointWebSocketClient : IDisposable
 
         SetHeader(result, "WebSocketCorrelationId", correlationId);
         SendEnvelope(typeName, result.ToJsonString());
+    }
+
+    /// <summary>
+    /// Dispatch an object-callback request frame (no breakpoint id) to the registered
+    /// response or forward closure and reply echoing the WebSocketCorrelationId header.
+    /// A response handler takes precedence over a forward handler if both are set.
+    /// </summary>
+    private void HandleObjectCallback(JsonObject request, string? correlationId)
+    {
+        var responseHandler = _objectResponseHandler;
+        if (responseHandler != null)
+        {
+            JsonObject? response = null;
+            try { response = responseHandler(request); }
+            catch { response = null; }
+            // On handler failure, fall back to a minimal 200 so the request is not left hanging.
+            response ??= new JsonObject { ["statusCode"] = 200 };
+            SetHeader(response, "WebSocketCorrelationId", correlationId);
+            SendEnvelope("org.mockserver.model.HttpResponse", response.ToJsonString());
+            return;
+        }
+
+        var forwardHandler = _objectForwardHandler;
+        if (forwardHandler != null)
+        {
+            JsonObject? forward = null;
+            try { forward = forwardHandler(request); }
+            catch { forward = null; }
+            // On handler failure, forward the request unchanged.
+            forward ??= request;
+            SetHeader(forward, "WebSocketCorrelationId", correlationId);
+            SendEnvelope("org.mockserver.model.HttpRequest", forward.ToJsonString());
+            return;
+        }
+
+        // No object-callback handler registered: echo the request back unchanged.
+        SetHeader(request, "WebSocketCorrelationId", correlationId);
+        SendEnvelope("org.mockserver.model.HttpRequest", request.ToJsonString());
     }
 
     private void HandleResponse(string valueJson)
@@ -254,6 +316,12 @@ internal sealed class BreakpointWebSocketClient : IDisposable
     internal void SetStreamFrameHandler(string breakpointId, BreakpointStreamFrameHandler handler)
         => _streamFrameHandlers[breakpointId] = handler;
 
+    internal void SetObjectResponseHandler(ObjectResponseCallbackHandler handler)
+        => _objectResponseHandler = handler;
+
+    internal void SetObjectForwardHandler(ObjectForwardCallbackHandler handler)
+        => _objectForwardHandler = handler;
+
     internal void RemoveHandlers(string breakpointId)
     {
         _requestHandlers.TryRemove(breakpointId, out _);
@@ -266,10 +334,28 @@ internal sealed class BreakpointWebSocketClient : IDisposable
         _requestHandlers.Clear();
         _responseHandlers.Clear();
         _streamFrameHandlers.Clear();
+        _objectResponseHandler = null;
+        _objectForwardHandler = null;
     }
+
+    /// <summary>
+    /// Test-only hook: when set, every outgoing envelope is delivered here instead of
+    /// being written to the socket, so unit tests can assert the reply (type, value JSON).
+    /// </summary>
+    private Action<string, string>? _sendInterceptor;
+
+    internal void SetSendInterceptorForTest(Action<string, string> interceptor)
+        => _sendInterceptor = interceptor;
 
     private void SendEnvelope(string type, string valueJson)
     {
+        var interceptor = _sendInterceptor;
+        if (interceptor != null)
+        {
+            interceptor(type, valueJson);
+            return;
+        }
+
         if (_disposed || _ws?.State != WebSocketState.Open) return;
 
         var envelope = new WsEnvelope { Type = type, Value = valueJson };

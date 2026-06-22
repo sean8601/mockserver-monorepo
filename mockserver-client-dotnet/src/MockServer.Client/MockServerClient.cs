@@ -802,6 +802,109 @@ public sealed class MockServerClient : IDisposable
     }
 
     // -------------------------------------------------------------------
+    // Object (closure) callbacks
+    //
+    // Reuses the single callback WebSocket shared with breakpoints (one socket
+    // per client). On a match the server dispatches the request over the WS; the
+    // registered closure produces the response (or request to forward).
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Register a request matcher whose response is produced by a closure (object callback).
+    /// Opens (or reuses) the shared callback WebSocket, registers <paramref name="handler"/>,
+    /// then creates an expectation with an <c>httpResponseObjectCallback</c> bound to this
+    /// client's WebSocket id. On each match the server sends the request over the WebSocket
+    /// and replies with the closure's response.
+    /// </summary>
+    /// <param name="request">The request matcher.</param>
+    /// <param name="handler">A closure mapping the matched request to a response.</param>
+    /// <param name="times">Optional number of times the expectation should match.</param>
+    /// <param name="timeToLive">Optional time-to-live for the expectation.</param>
+    /// <returns>The created expectation(s).</returns>
+    public List<Expectation> MockWithCallback(
+        HttpRequest request, Func<HttpRequest, HttpResponse> handler, Times? times = null, TimeToLive? timeToLive = null)
+        => MockWithCallbackAsync(request, handler, times, timeToLive).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Register a request matcher whose response is produced by a closure (async).
+    /// See <see cref="MockWithCallback(HttpRequest, Func{HttpRequest, HttpResponse}, Times, TimeToLive)"/>.
+    /// </summary>
+    public async Task<List<Expectation>> MockWithCallbackAsync(
+        HttpRequest request, Func<HttpRequest, HttpResponse> handler, Times? times = null, TimeToLive? timeToLive = null)
+    {
+        if (request == null) throw new ArgumentNullException(nameof(request));
+        if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+        await EnsureBreakpointWsAsync().ConfigureAwait(false);
+        var clientId = _breakpointWs!.ClientId
+            ?? throw new MockServerClientException("Callback WebSocket has no clientId");
+
+        _breakpointWs.SetObjectResponseHandler(requestNode =>
+        {
+            var req = DeserializeNode<HttpRequest>(requestNode) ?? new HttpRequest();
+            var resp = handler(req) ?? new HttpResponse { StatusCode = 200 };
+            return SerializeToNode(resp);
+        });
+
+        var expectation = new Expectation
+        {
+            HttpRequest = request,
+            HttpResponseObjectCallback = new HttpObjectCallback { ClientId = clientId },
+            Times = times,
+            TimeToLive = timeToLive
+        };
+        return await UpsertAsync(expectation).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Register a request matcher whose request-to-forward is produced by a closure
+    /// (forward object callback). Mirrors <see cref="MockWithCallback(HttpRequest, Func{HttpRequest, HttpResponse}, Times, TimeToLive)"/>
+    /// but the closure returns the (possibly modified) <see cref="HttpRequest"/> to forward.
+    /// </summary>
+    public List<Expectation> MockWithForwardCallback(
+        HttpRequest request, Func<HttpRequest, HttpRequest> handler, Times? times = null, TimeToLive? timeToLive = null)
+        => MockWithForwardCallbackAsync(request, handler, times, timeToLive).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Register a forward object callback (async). See <see cref="MockWithForwardCallback"/>.
+    /// </summary>
+    public async Task<List<Expectation>> MockWithForwardCallbackAsync(
+        HttpRequest request, Func<HttpRequest, HttpRequest> handler, Times? times = null, TimeToLive? timeToLive = null)
+    {
+        if (request == null) throw new ArgumentNullException(nameof(request));
+        if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+        await EnsureBreakpointWsAsync().ConfigureAwait(false);
+        var clientId = _breakpointWs!.ClientId
+            ?? throw new MockServerClientException("Callback WebSocket has no clientId");
+
+        _breakpointWs.SetObjectForwardHandler(requestNode =>
+        {
+            var req = DeserializeNode<HttpRequest>(requestNode) ?? new HttpRequest();
+            var forward = handler(req) ?? req;
+            return SerializeToNode(forward);
+        });
+
+        var expectation = new Expectation
+        {
+            HttpRequest = request,
+            HttpForwardObjectCallback = new HttpObjectCallback { ClientId = clientId },
+            Times = times,
+            TimeToLive = timeToLive
+        };
+        return await UpsertAsync(expectation).ConfigureAwait(false);
+    }
+
+    private static System.Text.Json.Nodes.JsonObject SerializeToNode<T>(T value)
+    {
+        var json = JsonSerializer.Serialize(value, JsonOptions);
+        return System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+    }
+
+    private static T? DeserializeNode<T>(System.Text.Json.Nodes.JsonObject node)
+        => JsonSerializer.Deserialize<T>(node.ToJsonString(), JsonOptions);
+
+    // -------------------------------------------------------------------
     // gRPC descriptor management
     // -------------------------------------------------------------------
 

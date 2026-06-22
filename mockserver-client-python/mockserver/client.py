@@ -75,6 +75,9 @@ class SyncForwardChainExpectation:
     def forward_with_template(self, template) -> list[Expectation]:
         return self._run(self._async_chain.forward_with_template(template))
 
+    def respond_with_class_callback(self, class_callback) -> list[Expectation]:
+        return self._run(self._async_chain.respond_with_class_callback(class_callback))
+
     def forward_with_class_callback(self, class_callback) -> list[Expectation]:
         return self._run(self._async_chain.forward_with_class_callback(class_callback))
 

@@ -118,12 +118,17 @@ run_client() {
   fi
 }
 
+# Which example family to run: "scenario" (default) or "callback".
+SUITE="${SUITE:-scenario}"
+
 validate_curl() {
+  [ "$SUITE" = scenario ] || { echo "(curl has no $SUITE examples; skipping)"; return 0; }
   run_client "curl" "$SH_IMAGE" "export MOCKSERVER_URL=http://$MS:1080;
     set -e; for f in examples/curl/scenario/*.sh; do echo \"--- \$f\"; bash \"\$f\"; done"
 }
 
 validate_json() {
+  [ "$SUITE" = scenario ] || { echo "(json has no $SUITE examples; skipping)"; return 0; }
   # PUT each expectation payload and assert it is accepted (2xx); the *.json that
   # are scenario-REST bodies (timed_transition/external_trigger) are exercised by
   # the curl examples, so here we just validate the expectation payloads parse.
@@ -139,29 +144,32 @@ validate_json() {
 }
 
 validate_node() {
+  local dir; [ "$SUITE" = callback ] && dir=callback_examples || dir=scenario_examples
   run_client "node" "$NODE_IMAGE" "set -e
-    cd examples/node/scenario_examples
+    cd examples/node/$dir
     npm install --no-audit --no-fund --silent
     npm install --no-audit --no-fund --silent /work/mockserver-client-node
     node scenario.js"
 }
 
 validate_python() {
+  local f; [ "$SUITE" = callback ] && f=examples/python/callback/callback.py || f=examples/python/scenario/scenario.py
   run_client "python" "$PYTHON_IMAGE" "set -e
     pip install --quiet -e /work/mockserver-client-python
-    python /work/examples/python/scenario/scenario.py"
+    python /work/$f"
 }
 
 validate_ruby() {
+  local f; [ "$SUITE" = callback ] && f=examples/ruby/callback/callback.rb || f=examples/ruby/scenario/scenario.rb
   run_client "ruby" "$RUBY_IMAGE" "set -e
     cd /work/mockserver-client-ruby
     bundle install --quiet
-    bundle exec ruby -Ilib /work/examples/ruby/scenario/scenario.rb"
+    bundle exec ruby -Ilib /work/$f"
 }
 
 validate_go() {
   run_client "go" "$GO_IMAGE" "set -e
-    cd examples/go/scenario
+    cd examples/go/$SUITE
     go run ."
 }
 
@@ -169,20 +177,21 @@ validate_dotnet() {
   # .NET on Linux uses the OS trust store, so register the CA there (not just env).
   run_client "dotnet" "$DOTNET_IMAGE" "set -e
     if [ -f /certs/ca.pem ]; then cp /certs/ca.pem /usr/local/share/ca-certificates/corp.crt && update-ca-certificates >/dev/null 2>&1 || true; fi
-    cd examples/dotnet/scenario
+    cd examples/dotnet/$SUITE
     dotnet run -v quiet"
 }
 
 validate_rust() {
   run_client "rust" "$RUST_IMAGE" "set -e
-    cd examples/rust/scenario
+    cd examples/rust/$SUITE
     cargo run --quiet"
 }
 
 validate_php() {
+  local f; [ "$SUITE" = callback ] && f=examples/php/callback/callback.php || f=examples/php/scenario/scenario.php
   run_client "php" "$PHP_IMAGE" "set -e
     cd /work/mockserver-client-php && composer install --no-interaction --quiet
-    php /work/examples/php/scenario/scenario.php"
+    php /work/$f"
 }
 
 print_summary() {

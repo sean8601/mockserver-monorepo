@@ -48,6 +48,38 @@ public sealed class Expectation
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpError? HttpError { get; set; }
 
+    /// <summary>
+    /// Response class-callback action: a server-side class produces the response.
+    /// REST-only — no WebSocket involved.
+    /// </summary>
+    [JsonPropertyName("httpResponseClassCallback")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpClassCallback? HttpResponseClassCallback { get; set; }
+
+    /// <summary>
+    /// Forward class-callback action: a server-side class produces the request to forward.
+    /// REST-only — no WebSocket involved.
+    /// </summary>
+    [JsonPropertyName("httpForwardClassCallback")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpClassCallback? HttpForwardClassCallback { get; set; }
+
+    /// <summary>
+    /// Response object-callback action: the request is dispatched over the callback
+    /// WebSocket to the client identified by <c>clientId</c>, whose closure produces the response.
+    /// </summary>
+    [JsonPropertyName("httpResponseObjectCallback")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpObjectCallback? HttpResponseObjectCallback { get; set; }
+
+    /// <summary>
+    /// Forward object-callback action: the request is dispatched over the callback
+    /// WebSocket to the client identified by <c>clientId</c>, whose closure produces the request to forward.
+    /// </summary>
+    [JsonPropertyName("httpForwardObjectCallback")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpObjectCallback? HttpForwardObjectCallback { get; set; }
+
     [JsonPropertyName("httpSseResponse")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HttpSseResponse? HttpSseResponse { get; set; }

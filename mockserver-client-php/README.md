@@ -86,6 +86,55 @@ $client->when(
 );
 ```
 
+### Class Callbacks
+
+A **class callback** references a server-side class (already on MockServer's
+classpath) that implements one of MockServer's callback interfaces, and lets
+MockServer compute the response — or the request to forward — dynamically. It is
+pure JSON over the control plane, so it works fully from the PHP client.
+
+```php
+use MockServer\Expectation;
+use MockServer\HttpClassCallback;
+use MockServer\Delay;
+
+// Respond using a server-side ExpectationResponseCallback class
+$client->upsertExpectation(
+    (new Expectation())
+        ->httpRequest(HttpRequest::request()->method('GET')->path('/dynamic'))
+        ->httpResponseClassCallback('com.example.MyResponseCallback')
+);
+
+// Optionally add a delay / mark the connection primary
+$client->upsertExpectation(
+    (new Expectation())
+        ->httpRequest(HttpRequest::request()->path('/delayed'))
+        ->httpResponseClassCallback(
+            HttpClassCallback::callback('com.example.MyResponseCallback')
+                ->delay(Delay::milliseconds(250))
+                ->primary(true)
+        )
+);
+
+// Forward using a server-side ExpectationForwardCallback class
+$client->upsertExpectation(
+    (new Expectation())
+        ->httpRequest(HttpRequest::request()->path('/proxy'))
+        ->httpForwardClassCallback('com.example.MyForwardCallback')
+);
+```
+
+> **Object / closure callbacks are not available in PHP.** MockServer also
+> supports *object* (closure) callbacks, where the callback runs in your own
+> process: the client opens a callback **WebSocket**, the server hands it a
+> `clientId`, and on each match it streams the request to your code, which
+> returns the response. The PHP client is **REST-only and does not implement
+> that callback WebSocket**, so object/closure callbacks cannot be used from
+> PHP — use a **class callback** (a class on the MockServer classpath) instead.
+> This is a transport limitation of the PHP client, not of MockServer.
+
+See [`examples/php/callback`](../examples/php/callback) for a runnable example.
+
 ### Verification
 
 ```php

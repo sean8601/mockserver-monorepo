@@ -29,6 +29,8 @@ class Expectation implements \JsonSerializable
     private ?HttpRequest $httpRequest = null;
     private ?HttpResponse $httpResponse = null;
     private ?HttpForward $httpForward = null;
+    private ?HttpClassCallback $httpResponseClassCallback = null;
+    private ?HttpClassCallback $httpForwardClassCallback = null;
     private ?HttpError $httpError = null;
     private ?HttpSseResponse $httpSseResponse = null;
     private ?HttpWebSocketResponse $httpWebSocketResponse = null;
@@ -77,6 +79,49 @@ class Expectation implements \JsonSerializable
     public function httpForward(HttpForward $forward): self
     {
         $this->httpForward = $forward;
+        return $this;
+    }
+
+    /**
+     * Respond using a server-side callback class (class callback).
+     *
+     * The argument is either the fully-qualified name of a class on the
+     * MockServer's classpath that implements {@code ExpectationResponseCallback},
+     * or a pre-built {@see HttpClassCallback} (to attach a delay or the
+     * {@code primary} flag). Serialises to {@code httpResponseClassCallback}.
+     *
+     * Note: object/closure callbacks (running the callback in *this* PHP
+     * process) require a callback WebSocket that the REST-only PHP client does
+     * not implement, so they are unavailable in PHP — use a class callback.
+     *
+     * @param string|HttpClassCallback $callback class name, or a built callback
+     */
+    public function httpResponseClassCallback(string|HttpClassCallback $callback): self
+    {
+        $this->httpResponseClassCallback = is_string($callback)
+            ? new HttpClassCallback($callback)
+            : $callback;
+        return $this;
+    }
+
+    /**
+     * Forward using a server-side callback class (class callback).
+     *
+     * The argument is either the fully-qualified name of a class on the
+     * MockServer's classpath that implements {@code ExpectationForwardCallback},
+     * or a pre-built {@see HttpClassCallback}. Serialises to
+     * {@code httpForwardClassCallback}.
+     *
+     * Note: object/closure callbacks are unavailable in the REST-only PHP
+     * client (they need a callback WebSocket) — use a class callback.
+     *
+     * @param string|HttpClassCallback $callback class name, or a built callback
+     */
+    public function httpForwardClassCallback(string|HttpClassCallback $callback): self
+    {
+        $this->httpForwardClassCallback = is_string($callback)
+            ? new HttpClassCallback($callback)
+            : $callback;
         return $this;
     }
 
@@ -254,6 +299,16 @@ class Expectation implements \JsonSerializable
         return $this->httpForward;
     }
 
+    public function getHttpResponseClassCallback(): ?HttpClassCallback
+    {
+        return $this->httpResponseClassCallback;
+    }
+
+    public function getHttpForwardClassCallback(): ?HttpClassCallback
+    {
+        return $this->httpForwardClassCallback;
+    }
+
     public function getHttpError(): ?HttpError
     {
         return $this->httpError;
@@ -302,6 +357,12 @@ class Expectation implements \JsonSerializable
         }
         if ($this->httpForward !== null) {
             $data['httpForward'] = $this->httpForward->toArray();
+        }
+        if ($this->httpResponseClassCallback !== null) {
+            $data['httpResponseClassCallback'] = $this->httpResponseClassCallback->toArray();
+        }
+        if ($this->httpForwardClassCallback !== null) {
+            $data['httpForwardClassCallback'] = $this->httpForwardClassCallback->toArray();
         }
         if ($this->httpError !== null) {
             $data['httpError'] = $this->httpError->toArray();

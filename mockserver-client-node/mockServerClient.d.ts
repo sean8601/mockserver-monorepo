@@ -8,7 +8,7 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioStatus, LoadScenarioEntry, LoadScenarioList, LoadScenarioRegistration, LoadScenarioStartResult, LoadScenarioStopResult, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
+import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpClassCallback, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioStatus, LoadScenarioEntry, LoadScenarioList, LoadScenarioRegistration, LoadScenarioStartResult, LoadScenarioStopResult, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
 import {Llm, LlmConversationBuilder, LlmFailoverBuilder, LlmMockBuilder} from './llm';
 import {McpMockBuilder} from './mcpMockBuilder';
 
@@ -160,6 +160,30 @@ export interface MockServerClient {
     mockWithForwardCallback(requestMatcher: RequestDefinition, forwardHandler: (request: HttpRequest) => HttpRequest, times?: Times | number, priority?: number, timeToLive?: TimeToLive, id?: string): Promise<RequestResponse>;
 
     mockWithForwardAndResponseCallback(requestMatcher: RequestDefinition, forwardHandler: (request: HttpRequest) => HttpRequest, responseHandler: (request: HttpRequest, response: HttpResponse) => HttpResponse, times?: Times | number, priority?: number, timeToLive?: TimeToLive, id?: string): Promise<RequestResponse>;
+
+    /**
+     * Register an expectation that delegates the response to a server-side class
+     * implementing the MockServer ExpectationResponseCallback interface (a "class
+     * callback"). Pure JSON / REST-only — no callback WebSocket is opened. The
+     * referenced class runs inside the MockServer JVM and must be on its classpath.
+     *
+     * @param requestMatcher the path to match (string) or a full request matcher object
+     * @param callbackClass  the fully-qualified server-side callback class name, or a full
+     *                       httpResponseClassCallback action object ({ callbackClass, delay?, primary? })
+     */
+    respondWithClassCallback(requestMatcher: string | RequestDefinition, callbackClass: string | HttpClassCallback, times?: Times | number, priority?: number, timeToLive?: TimeToLive, id?: string): Promise<RequestResponse>;
+
+    /**
+     * Register an expectation that delegates request forwarding to a server-side
+     * class implementing the MockServer ExpectationForwardCallback interface (a
+     * forward "class callback"). Pure JSON / REST-only; the referenced class must
+     * be on the MockServer classpath.
+     *
+     * @param requestMatcher the path to match (string) or a full request matcher object
+     * @param callbackClass  the fully-qualified server-side callback class name, or a full
+     *                       httpForwardClassCallback action object ({ callbackClass, delay?, primary? })
+     */
+    forwardWithClassCallback(requestMatcher: string | RequestDefinition, callbackClass: string | HttpClassCallback, times?: Times | number, priority?: number, timeToLive?: TimeToLive, id?: string): Promise<RequestResponse>;
 
     mockSimpleResponse<T = any>(path: string, responseBody: T, statusCode?: number): Promise<RequestResponse>;
 

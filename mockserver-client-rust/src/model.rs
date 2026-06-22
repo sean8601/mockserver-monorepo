@@ -446,6 +446,121 @@ impl HttpForward {
 }
 
 // ---------------------------------------------------------------------------
+// HttpClassCallback
+// ---------------------------------------------------------------------------
+
+/// Class callback action — delegates the response (or forward) to a server-side
+/// class that implements MockServer's callback interface.
+///
+/// This is a purely declarative (REST-only) callback: no WebSocket is involved.
+/// The named class must be on the MockServer server's classpath. Serialized as
+/// `httpResponseClassCallback` or `httpForwardClassCallback` in an expectation.
+///
+/// # Example
+/// ```
+/// use mockserver_client::HttpClassCallback;
+///
+/// let cb = HttpClassCallback::new("com.example.MyCallback").primary(true);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpClassCallback {
+    pub callback_class: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<bool>,
+}
+
+impl HttpClassCallback {
+    /// Create a class callback referencing the fully-qualified class name of a
+    /// server-side callback implementation.
+    pub fn new(callback_class: impl Into<String>) -> Self {
+        Self {
+            callback_class: callback_class.into(),
+            delay: None,
+            primary: None,
+        }
+    }
+
+    /// Set a delay applied before the callback runs.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+
+    /// Mark this callback as primary (kept on the primary event-loop thread).
+    pub fn primary(mut self, primary: bool) -> Self {
+        self.primary = Some(primary);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HttpObjectCallback
+// ---------------------------------------------------------------------------
+
+/// Object (closure) callback action — delegates the response (or forward) to a
+/// client-side closure invoked over the callback WebSocket.
+///
+/// The `client_id` is the id assigned by MockServer when the client opens the
+/// callback WebSocket (`/_mockserver_callback_websocket`). When a request
+/// matches, the server pushes it over that socket and the client's registered
+/// closure produces the response. Serialized as `httpResponseObjectCallback` or
+/// `httpForwardObjectCallback` in an expectation.
+///
+/// Most users do not construct this directly — use
+/// [`MockServerClient::mock_with_callback`](crate::MockServerClient::mock_with_callback),
+/// which opens the shared WebSocket, registers the closure, and wires up the
+/// `client_id` automatically.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpObjectCallback {
+    pub client_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_callback: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Delay>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<bool>,
+}
+
+impl HttpObjectCallback {
+    /// Create an object callback bound to the given callback-WebSocket client id.
+    pub fn new(client_id: impl Into<String>) -> Self {
+        Self {
+            client_id: client_id.into(),
+            response_callback: None,
+            delay: None,
+            primary: None,
+        }
+    }
+
+    /// Set whether the callback also receives the response (forward + response form).
+    pub fn response_callback(mut self, response_callback: bool) -> Self {
+        self.response_callback = Some(response_callback);
+        self
+    }
+
+    /// Set a delay applied before the callback runs.
+    pub fn delay(mut self, delay: Delay) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+
+    /// Mark this callback as primary (kept on the primary event-loop thread).
+    pub fn primary(mut self, primary: bool) -> Self {
+        self.primary = Some(primary);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
 // HttpError
 // ---------------------------------------------------------------------------
 
@@ -1483,6 +1598,22 @@ pub struct Expectation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_error: Option<HttpError>,
 
+    /// Class callback that produces the response (serialized as `httpResponseClassCallback`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_response_class_callback: Option<HttpClassCallback>,
+
+    /// Class callback that produces the request to forward (serialized as `httpForwardClassCallback`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_forward_class_callback: Option<HttpClassCallback>,
+
+    /// Object/closure callback that produces the response (serialized as `httpResponseObjectCallback`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_response_object_callback: Option<HttpObjectCallback>,
+
+    /// Object/closure callback that produces the request to forward (serialized as `httpForwardObjectCallback`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_forward_object_callback: Option<HttpObjectCallback>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_sse_response: Option<HttpSseResponse>,
 
@@ -1585,6 +1716,52 @@ impl Expectation {
     /// Set an error action.
     pub fn error(mut self, error: HttpError) -> Self {
         self.http_error = Some(error);
+        self
+    }
+
+    /// Respond via a server-side class callback (`httpResponseClassCallback`).
+    ///
+    /// The named class must implement MockServer's callback interface and be on
+    /// the server's classpath. Convenience over building an [`HttpClassCallback`]
+    /// directly; use [`respond_class_callback`](Self::respond_class_callback) for
+    /// the full builder (delay, primary).
+    pub fn respond_with_class_callback(mut self, callback_class: impl Into<String>) -> Self {
+        self.http_response_class_callback = Some(HttpClassCallback::new(callback_class));
+        self
+    }
+
+    /// Respond via a pre-built [`HttpClassCallback`] (`httpResponseClassCallback`).
+    pub fn respond_class_callback(mut self, callback: HttpClassCallback) -> Self {
+        self.http_response_class_callback = Some(callback);
+        self
+    }
+
+    /// Forward via a server-side class callback (`httpForwardClassCallback`).
+    pub fn forward_with_class_callback(mut self, callback_class: impl Into<String>) -> Self {
+        self.http_forward_class_callback = Some(HttpClassCallback::new(callback_class));
+        self
+    }
+
+    /// Forward via a pre-built [`HttpClassCallback`] (`httpForwardClassCallback`).
+    pub fn forward_class_callback(mut self, callback: HttpClassCallback) -> Self {
+        self.http_forward_class_callback = Some(callback);
+        self
+    }
+
+    /// Respond via an object/closure callback (`httpResponseObjectCallback`).
+    ///
+    /// Most users should call
+    /// [`MockServerClient::mock_with_callback`](crate::MockServerClient::mock_with_callback)
+    /// instead, which opens the callback WebSocket, registers the closure, and
+    /// fills in the `client_id` automatically.
+    pub fn respond_object_callback(mut self, callback: HttpObjectCallback) -> Self {
+        self.http_response_object_callback = Some(callback);
+        self
+    }
+
+    /// Forward via an object/closure callback (`httpForwardObjectCallback`).
+    pub fn forward_object_callback(mut self, callback: HttpObjectCallback) -> Self {
+        self.http_forward_object_callback = Some(callback);
         self
     }
 

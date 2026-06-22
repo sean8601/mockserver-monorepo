@@ -131,6 +131,23 @@ module MockServer
   end
 
   # @api private
+  # Coerce a class-callback value into an {HttpClassCallback}. Accepts:
+  #   * +nil+              -> +nil+
+  #   * a +String+         -> +HttpClassCallback.new(callback_class: <string>)+
+  #   * an HttpClassCallback -> returned unchanged
+  # Any other type raises a TypeError. This lets the Expectation setters and the
+  # fluent builder accept either a fully-qualified class-name String or a
+  # pre-built {HttpClassCallback} (carrying +delay+ / +primary+).
+  def self.coerce_class_callback(value)
+    return nil if value.nil?
+    return HttpClassCallback.new(callback_class: value) if value.is_a?(String)
+    return value if value.is_a?(HttpClassCallback)
+
+    raise TypeError,
+          "Expected a class-name String or HttpClassCallback, got #{value.class.name}"
+  end
+
+  # @api private
   # Percent-encode a single URL path segment (e.g. a scenario name), encoding
   # spaces as %20 (not +) so the segment is safe inside +/mockserver/scenario/{name}+.
   def self.encode_path_segment(value)
@@ -1901,11 +1918,14 @@ module MockServer
       @http_request = http_request
       @http_response = http_response
       @http_response_template = http_response_template
-      @http_response_class_callback = http_response_class_callback
+      # Route the two class-callback fields through their setters so a bare
+      # class-name String passed to the constructor is coerced to an
+      # HttpClassCallback (matching the setter / fluent-builder behaviour).
+      self.http_response_class_callback = http_response_class_callback
       @http_response_object_callback = http_response_object_callback
       @http_forward = http_forward
       @http_forward_template = http_forward_template
-      @http_forward_class_callback = http_forward_class_callback
+      self.http_forward_class_callback = http_forward_class_callback
       @http_forward_object_callback = http_forward_object_callback
       @http_override_forwarded_request = http_override_forwarded_request
       @http_error = http_error
@@ -1929,6 +1949,22 @@ module MockServer
       @scenario_name = scenario_name
       @scenario_state = scenario_state
       @new_scenario_state = new_scenario_state
+    end
+
+    # Set the response class-callback action. Accepts either a fully-qualified
+    # class-name String (e.g. "com.example.MyResponseCallback") or a pre-built
+    # {HttpClassCallback} (carrying an optional +delay+ / +primary+). A String is
+    # wrapped into an {HttpClassCallback} so +to_h+ always emits
+    # +httpResponseClassCallback.callbackClass+.
+    def http_response_class_callback=(value)
+      @http_response_class_callback = MockServer.coerce_class_callback(value)
+    end
+
+    # Set the forward class-callback action. Accepts either a fully-qualified
+    # class-name String or a pre-built {HttpClassCallback}; serialized as
+    # +httpForwardClassCallback+.
+    def http_forward_class_callback=(value)
+      @http_forward_class_callback = MockServer.coerce_class_callback(value)
     end
 
     def to_h

@@ -63,6 +63,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Callbacks across the clients.** **Class callbacks** (`httpResponseClassCallback` /
+  `httpForwardClassCallback` — reference a server-side callback class) are now available in the Go,
+  .NET, Rust, PHP, Node and Ruby clients (Python gained the missing builder). **Object/closure
+  callbacks** (write the response in your own language — the client opens MockServer's callback
+  WebSocket, the server streams each matched request to your closure, your closure returns the
+  response) are now available in the Go, .NET and Rust clients via `mockWithCallback(...)`, reusing
+  each client's existing breakpoint WebSocket transport; Python's object-callback path was completed
+  and fixed. The PHP client, being REST-only (no WebSocket), supports class callbacks only — object
+  callbacks are documented as unavailable there. Additive and backward-compatible; each client's
+  object-callback example is validated end-to-end against a live MockServer.
+- **Fixed: Python object callbacks and breakpoints were broken on `websockets` 16** (`mockserver-client-python`).
+  The callback/breakpoint WebSocket client used the deprecated `websockets.client.connect` together with
+  the modern `additional_headers` kwarg, which the current `websockets` release rejects — breaking every
+  object callback and breakpoint. It now uses `websockets.asyncio.client` with a legacy fallback.
+
 - **Control-plane auth and TLS/mTLS across every client.** The Go, .NET, Rust, PHP, Node and Python
   clients now let you connect to a secured MockServer: a **control-plane bearer token** (static or a
   per-request supplier) attached as `Authorization: Bearer <token>` to every control-plane request; a
