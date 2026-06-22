@@ -567,62 +567,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries. No behaviour change. Tip for high-throughput users: also clear the log (`?type=LOG`/`ALL` or
   `/reset`), not just expectations, or lower `maxLogEntries`.
 
-## [7.1.0] - 2026-06-16
-
-### Added
-
-### Changed
-
-### Fixed
-
-## [7.1.0] - 2026-06-16
-
-### Added
-
-### Changed
-
-### Fixed
-
-## [7.1.0] - 2026-06-16
-
-### Added
-
-### Changed
-
-### Fixed
-
-## [7.1.0] - 2026-06-16
-
-### Added
-
-### Changed
-
-### Fixed
-
-## [7.1.0] - 2026-06-16
-
-### Added
-
-### Changed
-
-### Fixed
-
-## [7.1.0] - 2026-06-15
-
-### Added
-
-### Changed
-
-### Fixed
-
-## [7.1.0] - 2026-06-15
-
-### Added
-
-### Changed
-
-### Fixed
-
 ## [7.1.0] - 2026-06-15
 
 ### Added
