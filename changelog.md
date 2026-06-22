@@ -1489,6 +1489,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Testing** tile is added. The tiles are slightly more compact so all six stay on a single row, still
   collapsing to a bulleted list when the panel is narrow.
 
+- **Stateful scenarios moved from Trace to the Mocks page**: the **Scenarios** state-machine panel is mock
+  configuration, not request debugging, so it now lives under a **Scenarios** tab on the **Mocks** page
+  (alongside **Compose**) instead of on the **Trace** page. The Trace page now has just **Traces** and
+  **Compare**, and the Compare tab's selectors now say "trace" instead of "session" (Trace A / Trace B).
+
 - **Dashboard UI visual refresh**: the dashboard now has a real design system (consistent spacing,
   shadows, typography and a dark-mode-aware log-colour palette). The Metrics view leads with KPI
   "hero" stat cards, its charts have a real time axis and area fill, and panels show skeleton
@@ -1631,6 +1636,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loadScenarioInitializationJsonPath` properties were read from system properties but missing from
   `ConfigurationDTO`, so they were dropped by `GET`/`PUT /mockserver/configuration` round-trips and by
   `applyTo()`. They are now mirrored like the other `loadGeneration*` properties.
+- **Load-injection traffic no longer floods the request log** (`mockserver-core`). A running load scenario
+  generated requests that were recorded in the bounded request event log (`maxLogEntries`), so a sustained
+  run filled the log and evicted real and LLM traffic — emptying the Traffic, Trace, and LLM Optimise views
+  (and the dashboard log) while the load ran. Load-generation requests are now marked and kept out of the
+  event log, so other traffic is preserved. Load throughput/latency metrics and SLO samples are unaffected
+  (they are recorded independently of the event log).
 - **`crossProtocolScenarios` was rejected by the expectation schema** (`mockserver-core`). The
   cross-protocol scenario-correlation field was present in the model and honoured at runtime, but it
   was missing from the expectation validation schema, so any expectation that used it was rejected with

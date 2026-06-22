@@ -8,6 +8,7 @@ import org.mockserver.load.LoadStage;
 import org.mockserver.load.LoadScenarioState;
 import org.mockserver.load.LoadStageType;
 import org.mockserver.load.LoadStep;
+import org.mockserver.log.MockServerEventLog;
 import org.mockserver.metrics.MetricLabels;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.Delay;
@@ -639,6 +640,15 @@ public class LoadScenarioOrchestrator {
             Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
+        }
+
+        // Mark every generated request so the server keeps its own load traffic out of the
+        // user-facing request event log (a bounded ring buffer). Without this, a running scenario
+        // floods the log and evicts real / LLM traffic that the Traffic, Trace and Optimise views
+        // depend on. See MockServerEventLog#LOAD_GENERATED_HEADER. Load throughput/latency/SLO are
+        // recorded client-side in recordResult(), so suppressing the log entry does not lose metrics.
+        if (rendered != null) {
+            rendered.withHeader(MockServerEventLog.LOAD_GENERATED_HEADER, run.runId);
         }
 
         // Self-load guard at dispatch: acquire an in-flight permit and an RPS token. Each skip is a
