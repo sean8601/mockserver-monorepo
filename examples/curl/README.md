@@ -214,6 +214,16 @@ These runnable shell scripts were extracted from the original reference markdown
 | `external_trigger.sh` | Force a scenario state change from a test harness (`PUT /mockserver/scenario/{name}/trigger`) |
 | `cross_protocol.sh` | `crossProtocolScenarios`: an HTTP_REQUEST event advances a second expectation's gating state |
 
+### load_scenario/
+
+The **Load Scenario registry**: register a named, server-side traffic generator, then
+start/stop it by name (requires the server started with `-Dmockserver.loadGenerationEnabled=true`).
+
+| File | Description |
+|------|-------------|
+| `register_start_list_stop.sh` | Core lifecycle: register (`PUT /mockserver/loadScenario`) → start → list (expect `RUNNING`) → stop, for a RATE ramp → VU hold → PAUSE profile |
+| `multi_stage_profile.sh` | A realistic multi-stage `checkout-load` (RATE ramp 5→50 req/s, VU hold, PAUSE; two templated steps); polls live status, stops all, then clears the registry |
+
 ### sse/
 
 | File | Description |

@@ -21,6 +21,7 @@ Runnable examples demonstrating the [MockServer Rust client](../../mockserver-cl
 | [create_expectation](create_expectation/) | Create an expectation, send a test request, and verify it was received. |
 | [modify_proxied_response](modify_proxied_response/) | Register a RESPONSE breakpoint that modifies a proxied response in-flight. |
 | [scenario](scenario/) | Run the 5 canonical stateful-scenario flows (state machine, sequential cycling, timed transition, external trigger, cross-protocol) and assert each. |
+| [load_scenario](load_scenario/) | Register, start, list, and stop a server-side load scenario (RATE ramp → VU hold → PAUSE) via the Load Scenario registry. |
 
 Each folder contains a runnable Rust binary and its own `README.md` with
 instructions.

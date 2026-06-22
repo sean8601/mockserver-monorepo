@@ -236,6 +236,20 @@ as the request body for MockServer's REST API (e.g. `PUT /mockserver/expectation
 | `timed_transition.json` | Request body for `PUT /mockserver/scenario/DeployFlow` — set state with timed auto-transition |
 | `external_trigger.json` | Request body for `PUT /mockserver/scenario/HealthFlow/trigger` — force a state change externally |
 
+### load_scenario/
+
+**Load Scenario registry** request bodies — register a named, server-side traffic generator
+(`PUT /mockserver/loadScenario`), then start/stop it by name (starting requires the server
+started with `-Dmockserver.loadGenerationEnabled=true`).
+
+| File | Description |
+|------|-------------|
+| `checkout_load.json` | A realistic multi-stage `LoadScenario` (RATE ramp 5→50 req/s capped at 50 VUs, VU hold, PAUSE; two Velocity-templated steps) |
+| `demo_soak.json` | A simpler single-step soak `LoadScenario` (RATE ramp → VU hold → PAUSE) |
+| `start_single.json` | Start one scenario by name — `{"name":"checkout-load"}` for `PUT .../start` |
+| `start_names.json` | Start several scenarios — `{"names":[...]}` for `PUT .../start` |
+| `stop_all.json` | Stop all running scenarios — `{"all":true}` body for `PUT .../stop` |
+
 ### llm/
 
 | File | Description |

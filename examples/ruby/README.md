@@ -24,6 +24,7 @@ Runnable examples demonstrating the [MockServer Ruby client](../../mockserver-cl
 |--------|-------------|
 | [response_action](response_action/) | Return a canned HTTP response (status, headers, body, delay) |
 | [scenario](scenario/) | Stateful scenarios -- state machines, sequenced responses, timed/external/cross-protocol transitions |
+| [load_scenario](load_scenario/) | Register, start, list, and stop a server-side load scenario (RATE ramp -> VU hold -> PAUSE) via the Load Scenario registry |
 | [forward_action](forward_action/) | Forward requests to another host or override the forwarded request |
 | [request_matchers](request_matchers/) | Match requests by path, method, headers, query params, cookies, and body |
 | [openapi_expectations](openapi_expectations/) | Create expectations from an OpenAPI specification |

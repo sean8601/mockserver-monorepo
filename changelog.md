@@ -142,6 +142,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chaos experiments (`/chaosExperiment`). All request bodies are camelCase-on-the-wire and were verified against
   the OpenAPI contract; the PHP `HttpRequest` builder gains a `socketAddress(host, port, scheme)` setter so a
   load step can target an upstream the typed way, matching the other clients.
+- **Load-scenario registry examples** (`examples/`) for curl, raw JSON, and all client languages (Node, Python,
+  Ruby, PHP, Java, Go, Rust, .NET). Each registers a realistic multi-stage scenario (a RATE ramp → hold → pause
+  with `startDelayMillis`), starts it, lists it as `RUNNING`, then stops — using each client's registry methods.
+  Every example was validated end-to-end against a live server started with `loadGenerationEnabled`.
 - **`scripts/verify-php-client.sh`** — a Dockerised PHP lint + Composer + PHPUnit runner so the PHP client can be
   verified locally with no PHP/Composer on the host. Auto-detects a host CA bundle (`SSL_CERT_FILE` /
   `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE`) and mounts it so it works behind a corporate TLS-inspection proxy.
