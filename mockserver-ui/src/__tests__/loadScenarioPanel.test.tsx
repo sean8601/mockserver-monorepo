@@ -395,9 +395,9 @@ describe('LoadScenarioPanel', () => {
 
   // --- Wave C: registry UX ---
 
-  /** Switch to the Author sub-tab, where the create/edit form + inline codegen live. */
+  /** Switch to the Create / Edit sub-tab, where the create/edit form + inline codegen live. */
   function gotoAuthorTab() {
-    fireEvent.click(screen.getByRole('tab', { name: 'Author' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Create / Edit' }));
   }
 
   /** Fill the seeded form's first step so buildScenario succeeds. */
@@ -523,12 +523,12 @@ describe('LoadScenarioPanel', () => {
     expect(screen.getByTestId('load-chart')).not.toHaveTextContent('total + per scenario');
   });
 
-  it('defaults to the Run & Monitor sub-tab and reveals the form only on Author', async () => {
+  it('defaults to the Run & Monitor sub-tab and reveals the form only on Create / Edit', async () => {
     stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
-    // Both sub-tabs exist; Run & Monitor is the default, so the author form is hidden.
+    // Both sub-tabs exist; Run & Monitor is the default, so the create/edit form is hidden.
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Run & Monitor' })).toBeInTheDocument());
-    expect(screen.getByRole('tab', { name: 'Author' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Create / Edit' })).toBeInTheDocument();
     expect(screen.queryByTestId('load-author-form')).not.toBeInTheDocument();
     gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
@@ -655,18 +655,23 @@ describe('LoadScenarioPanel', () => {
     fillValidStep('code-scenario');
 
     // A valid scenario renders the code review inline (no separate Code tab any more).
+    // The default tab (Java) uses the idiomatic client API, not a raw REST call.
     await waitFor(() => expect(screen.getByTestId('load-code-review')).toBeInTheDocument());
     const review = screen.getByTestId('load-code-review');
-    expect(review).toHaveTextContent('/mockserver/loadScenario');
+    expect(review).toHaveTextContent('client.loadScenario(scenario)');
+    expect(review).toHaveTextContent('client.startLoadScenarios("code-scenario")');
     expect(review).toHaveTextContent('code-scenario');
   });
 
-  it('explains inline when the scenario is incomplete', async () => {
+  it('still renders the code preview AND a non-blocking hint when the scenario is incomplete', async () => {
     stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
     gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
-    // No name / host filled — buildScenario fails, so the inline codegen shows the guidance alert.
+    // No name filled — buildScenario fails the submit gate, so the inline non-blocking hint shows...
     await waitFor(() => expect(screen.getByTestId('load-code-incomplete')).toBeInTheDocument());
+    // ...but the code preview ALWAYS renders now, from the best-effort partial scenario.
+    expect(screen.getByTestId('load-code-review')).toBeInTheDocument();
+    expect(screen.getByTestId('load-code-review')).toHaveTextContent('client.loadScenario(scenario)');
   });
 });

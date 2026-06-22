@@ -283,6 +283,87 @@ function buildScenario(form: FormState): { scenario: LoadScenarioDTO } | { error
   return { scenario };
 }
 
+/**
+ * Best-effort map of the form to a {@link LoadScenarioDTO} containing ONLY the fields the user has
+ * actually filled in — used to drive the always-on code preview so the generated builder chain grows
+ * field-by-field as the user types, never throwing on a half-filled form. Unlike {@link buildScenario}
+ * (which gates submission and rejects anything invalid), this validates nothing: empty name → placeholder
+ * handled downstream, blank stage/step values → omitted, unset optionals (templateType default, maxRequests,
+ * startDelayMillis, zero thinkTime) → omitted. The codegen emitters tolerate the resulting partial shape.
+ */
+function buildPartialScenario(form: FormState): LoadScenarioDTO {
+  const stages: LoadStageDTO[] = [];
+  for (const s of form.stages) {
+    const durationMillis = num(s.durationMillis);
+    const stage: LoadStageDTO = { type: s.type, durationMillis: durationMillis ?? 0 };
+    if (s.type === 'VU') {
+      if (s.mode === 'HOLD') {
+        const vus = num(s.vus);
+        if (vus != null) stage.vus = vus;
+      } else {
+        const startVus = num(s.startVus);
+        const endVus = num(s.endVus);
+        if (startVus != null) stage.startVus = startVus;
+        if (endVus != null) stage.endVus = endVus;
+        stage.curve = s.curve;
+      }
+    } else if (s.type === 'RATE') {
+      if (s.mode === 'HOLD') {
+        const rate = num(s.rate);
+        if (rate != null) stage.rate = rate;
+      } else {
+        const startRate = num(s.startRate);
+        const endRate = num(s.endRate);
+        if (startRate != null) stage.startRate = startRate;
+        if (endRate != null) stage.endRate = endRate;
+        stage.curve = s.curve;
+      }
+      const maxVus = num(s.maxVus);
+      if (maxVus != null) stage.maxVus = maxVus;
+    }
+    // PAUSE: only durationMillis.
+    stages.push(stage);
+  }
+
+  const steps: LoadStepDTO[] = [];
+  for (const s of form.steps) {
+    const request: LoadRequestDTO = {};
+    if (s.method.trim()) request.method = s.method.trim();
+    if (s.path.trim()) request.path = s.path.trim();
+    const host = s.host.trim();
+    const port = num(s.port);
+    if (host !== '' || port != null) {
+      const socketAddress: SocketAddressDTO = { host, port: port ?? 0, scheme: s.scheme };
+      request.socketAddress = socketAddress;
+    }
+    const headers = headerRowsToMultiValue(s.headers);
+    if (headers) request.headers = headers;
+    if (s.body.trim() !== '') request.body = s.body;
+    const step: LoadStepDTO = { request };
+    if (s.name.trim() !== '') step.name = s.name.trim();
+    const thinkTimeMs = num(s.thinkTimeMs);
+    if (thinkTimeMs != null && thinkTimeMs > 0) {
+      step.thinkTime = { timeUnit: 'MILLISECONDS', value: thinkTimeMs };
+    }
+    steps.push(step);
+  }
+
+  const scenario: LoadScenarioDTO = {
+    name: form.name.trim(),
+    profile: { stages },
+    steps,
+  };
+  if (form.templateType !== 'VELOCITY') scenario.templateType = form.templateType;
+  const maxRequests = num(form.maxRequests);
+  if (maxRequests != null) scenario.maxRequests = maxRequests;
+  const startDelayMillis = num(form.startDelayMillis);
+  if (startDelayMillis != null) scenario.startDelayMillis = startDelayMillis;
+  const labels = labelRowsToObject(form.labels);
+  if (labels) scenario.labels = labels;
+
+  return scenario;
+}
+
 function labelRowsToObject(rows: KeyValueRow[]): Record<string, string> | undefined {
   const out: Record<string, string> = {};
   for (const row of rows) {
@@ -924,11 +1005,13 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     [registry],
   );
 
-  // The current authored scenario built from the form — drives the Code view. When the
-  // form is incomplete this carries the validation message so the Code tab can explain why.
-  const built = useMemo(() => buildScenario(form), [form]);
-  const codeScenario = 'scenario' in built ? built.scenario : null;
-  const codeError = 'error' in built ? built.error : null;
+  // The code preview always renders from a best-effort PARTIAL scenario (only the filled-in fields),
+  // so the generated builder chain grows field-by-field as the user types — never blocked on full
+  // validity. The strict buildScenario still gates the Load / Load & Run submit actions above; here
+  // we only surface its message as a non-blocking inline hint about what is still needed to run.
+  const codeScenario = useMemo(() => buildPartialScenario(form), [form]);
+  const validation = useMemo(() => buildScenario(form), [form]);
+  const codeError = 'error' in validation ? validation.error : null;
 
   const statusColor = running ? 'success' : status?.state === 'completed' ? 'info' : status?.state === 'stopped' ? 'warning' : 'default';
 
@@ -1075,7 +1158,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         sx={{ mb: 1.5, minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}
       >
         <Tab label="Run & Monitor" />
-        <Tab label="Author" />
+        <Tab label="Create / Edit" />
       </Tabs>
 
       {view === 'run' ? (
@@ -1248,7 +1331,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         <Paper variant="outlined" sx={{ p: 2, mb: 1.5, textAlign: 'center' }} data-testid="load-run-empty">
           <Typography variant="body2" color="text.secondary">
             Nothing running yet. Start a scenario from the registry above, or switch to the{' '}
-            <Link component="button" type="button" onClick={() => setPanelView('author')}>Author</Link>{' '}
+            <Link component="button" type="button" onClick={() => setPanelView('author')}>Create / Edit</Link>{' '}
             tab to create one. Live throughput, latency and per-scenario charts appear here while runs are active.
           </Typography>
         </Paper>
@@ -1463,21 +1546,16 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         </Box>
       </Paper>
 
-      {/* Generated client code — inline below the form (no longer a separate tab) */}
+      {/* Generated client code — inline below the form, always rendered from the best-effort
+          partial scenario so it grows field-by-field as the user types. */}
       <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-codegen">
-        {codeScenario ? (
-          <LoadScenarioReview scenario={codeScenario} baseUrl={baseUrl} />
-        ) : (
-          <Alert severity="info" data-testid="load-code-incomplete">
-            <AlertTitle>No code to preview yet</AlertTitle>
-            Fill in the form above to preview the register &amp; start client code in nine languages.
-            {codeError && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                {codeError}
-              </Typography>
-            )}
+        {codeError && (
+          <Alert severity="info" data-testid="load-code-incomplete" sx={{ mb: 1 }}>
+            <AlertTitle>Preview updates as you type</AlertTitle>
+            Still needed before you can run it: {codeError}
           </Alert>
         )}
+        <LoadScenarioReview scenario={codeScenario} baseUrl={baseUrl} />
       </Paper>
 
       </>

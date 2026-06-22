@@ -265,9 +265,9 @@ There is **no charting dependency** (inline SVG) and no server change required. 
 **Layout.** A shared **Registered scenarios** section (the named-scenario registry: lifecycle-state badges, multi-select start, per-row edit/start/stop/delete) sits at the top, visible at all times. Below it, two sub-tabs separate the two things you do here:
 
 - **Run & Monitor** (default) — the live side: a "Running now" card per concurrently-running scenario, the single-run live status, the multi-scenario chart, and the post-run summary. An empty-state hint shows when nothing has run yet.
-- **Author** — create or edit a scenario: the stage-builder form, with the generated client code rendered inline directly below it (no separate Code tab).
+- **Create / Edit** — author a scenario: the stage-builder form, with the generated client code (idiomatic MockServer client builders for each language, not raw JSON) rendered inline directly below it and updated live as you fill in fields (no separate Code tab).
 
-The view follows what you're doing: clicking **edit** on a registered scenario (or "Edit running") switches to **Author**; starting a run (Load & Run, Start selected, or a per-row Start) switches to **Run & Monitor**.
+The view follows what you're doing: clicking **edit** on a registered scenario (or "Edit running") switches to **Create / Edit**; starting a run (Load & Run, Start selected, or a per-row Start) switches to **Run & Monitor**.
 
 **Stage builder.** Presents an ordered list of stages that forms the `LoadProfile.stages` array sent in `PUT /mockserver/loadScenario`. Each stage row lets the user pick the stage type, duration, setpoint (hold or ramp), and curve:
 

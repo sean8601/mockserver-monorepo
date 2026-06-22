@@ -275,9 +275,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance panel for load scenarios.** Author, run, monitor, stop and edit load scenarios from the UI.
   A shared named-scenario registry (lifecycle-state badges, multi-select start, per-row edit/start/stop/delete)
   sits above two sub-tabs: **Run & Monitor** (live "Running now" cards, status, the multi-scenario chart and
-  post-run summary) and **Author** (the stage-builder form with generated register-and-start client code for
-  nine languages rendered inline below it). The view follows the task — editing a scenario switches to Author,
-  starting a run switches to Run & Monitor. The chart plots every concurrently-running scenario at once — a
+  post-run summary) and **Create / Edit** (the stage-builder form with generated register-and-start client
+  code rendered inline below it). The code uses each client's idiomatic load-scenario builders
+  (`loadScenario(...).withProfile(LoadProfile.of(LoadStage.constantVus(...)))`, etc.) rather than raw JSON —
+  matching the Mock and Verification code generators — across Java, Node, Python, Go, C#, Ruby and Rust (plus
+  raw JSON and curl), and regenerates live as you fill in the form. The view follows the task — editing a
+  scenario switches to Create / Edit, starting a run switches to Run & Monitor. The chart plots every
+  concurrently-running scenario at once — a
   line per scenario plus an aggregate "all scenarios" total — with independent toggles for which metrics to
   show (RPS, VUs, in-flight, p50/p95/p99, error rate) and which scenarios to include (all enabled by default).
   Each run shows a determinate progress bar (elapsed / total profile duration), green while driving load and
