@@ -272,13 +272,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bringing every client to parity with Java.
 
 #### Dashboard UI
-- **Performance panel for load scenarios.** Author, run, monitor, stop and edit load scenarios from the UI —
-  working with the named-scenario registry (lifecycle-state badges, multi-select start, a "Running now" view
-  with per-scenario live metrics, start-delay and split Load / Load & Run actions), live polling of
-  VUs/throughput/latency/errors with a multi-scenario chart, and a **Code** tab generating register-and-start
-  snippets across nine languages. The chart plots every concurrently-running scenario at once — a line per
-  scenario plus an aggregate "all scenarios" total — with independent toggles for which metrics to show
-  (RPS, VUs, in-flight, p50/p95/p99, error rate) and which scenarios to include (all enabled by default).
+- **Performance panel for load scenarios.** Author, run, monitor, stop and edit load scenarios from the UI.
+  A shared named-scenario registry (lifecycle-state badges, multi-select start, per-row edit/start/stop/delete)
+  sits above two sub-tabs: **Run & Monitor** (live "Running now" cards, status, the multi-scenario chart and
+  post-run summary) and **Author** (the stage-builder form with generated register-and-start client code for
+  nine languages rendered inline below it). The view follows the task — editing a scenario switches to Author,
+  starting a run switches to Run & Monitor. The chart plots every concurrently-running scenario at once — a
+  line per scenario plus an aggregate "all scenarios" total — with independent toggles for which metrics to
+  show (RPS, VUs, in-flight, p50/p95/p99, error rate) and which scenarios to include (all enabled by default).
+  Each run shows a determinate progress bar (elapsed / total profile duration), green while driving load and
+  amber while paused.
 - **Contract and Cluster panels.** **Contract** runs an OpenAPI spec against a live service and renders a
   pass/fail-per-operation table; **Cluster** shows state-backend cluster status (node id, coordinator,
   members), auto-refreshing.

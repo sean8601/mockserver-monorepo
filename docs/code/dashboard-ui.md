@@ -262,7 +262,12 @@ There is **no charting dependency** (inline SVG) and no server change required. 
 
 `LoadScenarioPanel.tsx` (view = `performance`) is the dashboard control surface for [load injection](load-generation.md). It is lazy-loaded (shares the `@mui/x-charts` chunk with `MetricsView`) so the bundle does not download until the tab is opened.
 
-The panel is split into three areas:
+**Layout.** A shared **Registered scenarios** section (the named-scenario registry: lifecycle-state badges, multi-select start, per-row edit/start/stop/delete) sits at the top, visible at all times. Below it, two sub-tabs separate the two things you do here:
+
+- **Run & Monitor** (default) — the live side: a "Running now" card per concurrently-running scenario, the single-run live status, the multi-scenario chart, and the post-run summary. An empty-state hint shows when nothing has run yet.
+- **Author** — create or edit a scenario: the stage-builder form, with the generated client code rendered inline directly below it (no separate Code tab).
+
+The view follows what you're doing: clicking **edit** on a registered scenario (or "Edit running") switches to **Author**; starting a run (Load & Run, Start selected, or a per-row Start) switches to **Run & Monitor**.
 
 **Stage builder.** Presents an ordered list of stages that forms the `LoadProfile.stages` array sent in `PUT /mockserver/loadScenario`. Each stage row lets the user pick the stage type, duration, setpoint (hold or ramp), and curve:
 
@@ -288,6 +293,8 @@ Ramp curves offered: `LINEAR` / `QUADRATIC` / `EXPONENTIAL`. The builder prevent
 | `elapsedMillis` | Milliseconds since the run started |
 | `requestsSent`, `succeeded`, `failed` | Cumulative counters |
 | `p50Millis`, `p95Millis`, `p99Millis` | Latency percentiles from the histogram |
+
+A **determinate** progress bar (not an indeterminate sweep) fills with `elapsedMillis / Σ stage durations` so you can see how far through the run is, and is coloured by phase — green while driving load, amber during a `PAUSE` stage. It falls back to an empty bar when the total duration is unknown (older server that doesn't echo the definition).
 
 **Metrics graph.** A live `@mui/x-charts` `LineChart` built entirely from the polled scenario status — no Prometheus dependency, so it works with `metricsEnabled` off. Each registry poll appends a *frame* to a shared timeline, capturing a snapshot of every scenario running at that instant (keyed by scenario name); the legacy single-run status is folded in too, so older single-run servers still chart. The graph has two independent sets of toggles:
 

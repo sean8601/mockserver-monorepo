@@ -58,6 +58,7 @@ describe('LoadScenarioPanel', () => {
   it('renders the author form with VELOCITY/MUSTACHE template options', async () => {
     stubFetch({ state: 'none' });
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
     expect(screen.getByLabelText(/Scenario name/)).toBeInTheDocument();
     // template type select offers only Velocity + Mustache
@@ -67,6 +68,7 @@ describe('LoadScenarioPanel', () => {
   it('builds a valid PUT body with a staged profile from the form', async () => {
     const { calls } = stubFetch({ state: 'none' });
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'checkout-load' } });
@@ -120,6 +122,7 @@ describe('LoadScenarioPanel', () => {
   it('builds profile.stages including a RATE stage and a PAUSE stage', async () => {
     const { calls } = stubFetch({ state: 'none' });
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'rate-load' } });
@@ -159,6 +162,7 @@ describe('LoadScenarioPanel', () => {
   it('reorders and removes stages', async () => {
     const { calls } = stubFetch({ state: 'none' });
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'reorder-load' } });
@@ -182,6 +186,7 @@ describe('LoadScenarioPanel', () => {
   it('emits per-step request headers in MockServer KeyToMultiValue object-map shape', async () => {
     const { calls } = stubFetch({ state: 'none' });
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: 'auth-load' } });
@@ -390,6 +395,11 @@ describe('LoadScenarioPanel', () => {
 
   // --- Wave C: registry UX ---
 
+  /** Switch to the Author sub-tab, where the create/edit form + inline codegen live. */
+  function gotoAuthorTab() {
+    fireEvent.click(screen.getByRole('tab', { name: 'Author' }));
+  }
+
   /** Fill the seeded form's first step so buildScenario succeeds. */
   function fillValidStep(name = 'reg-load') {
     fireEvent.change(screen.getByLabelText(/Scenario name/), { target: { value: name } });
@@ -513,6 +523,63 @@ describe('LoadScenarioPanel', () => {
     expect(screen.getByTestId('load-chart')).not.toHaveTextContent('total + per scenario');
   });
 
+  it('defaults to the Run & Monitor sub-tab and reveals the form only on Author', async () => {
+    stubRegistry([]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    // Both sub-tabs exist; Run & Monitor is the default, so the author form is hidden.
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Run & Monitor' })).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Author' })).toBeInTheDocument();
+    expect(screen.queryByTestId('load-author-form')).not.toBeInTheDocument();
+    gotoAuthorTab();
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+  });
+
+  it('jumps to the Author tab when editing a registered scenario', async () => {
+    stubRegistry([{
+      name: 'editable', state: 'LOADED',
+      definition: {
+        name: 'editable', templateType: 'VELOCITY',
+        profile: { stages: [{ type: 'VU', vus: 2, durationMillis: 10000 }] },
+        steps: [{ request: { method: 'GET', path: '/x', socketAddress: { host: 'h', port: 80, scheme: 'HTTP' } } }],
+      },
+    }]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-registry-row-editable')).toBeInTheDocument());
+    // On the default Run tab the form is hidden; clicking Edit switches to Author and loads it.
+    expect(screen.queryByTestId('load-author-form')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit editable' }));
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    expect((screen.getByLabelText(/Scenario name/) as HTMLInputElement).value).toBe('editable');
+  });
+
+  it('jumps to the Run & Monitor tab when starting a scenario from the Author tab', async () => {
+    stubRegistry([{ name: 'startme', state: 'LOADED' }]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-registry-row-startme')).toBeInTheDocument());
+    gotoAuthorTab();
+    await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
+    // Starting the scenario from its registry row switches back to Run & Monitor (form hidden).
+    fireEvent.click(screen.getByRole('button', { name: 'Start startme' }));
+    await waitFor(() => expect(screen.queryByTestId('load-author-form')).not.toBeInTheDocument());
+  });
+
+  it('renders a determinate run-progress bar (not the old indeterminate sweep)', async () => {
+    stubRegistry([{
+      name: 'r1', state: 'RUNNING', requestsSent: 10, succeeded: 10, failed: 0, currentVus: 2,
+      p95Millis: 5, elapsedMillis: 5000, stageType: 'VU',
+      definition: {
+        name: 'r1', templateType: 'VELOCITY',
+        profile: { stages: [{ type: 'VU', vus: 2, durationMillis: 10000 }] },
+        steps: [{ request: { method: 'GET', path: '/', socketAddress: { host: 'h', port: 80, scheme: 'HTTP' } } }],
+      },
+    }]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-running-r1')).toBeInTheDocument());
+    const bar = within(screen.getByTestId('load-running-r1')).getByRole('progressbar');
+    // Determinate bars expose aria-valuenow (~50% at 5s of a 10s profile); indeterminate ones don't.
+    expect(bar).toHaveAttribute('aria-valuenow', '50');
+  });
+
   it('deletes one registered scenario via DELETE /loadScenario/{name}', async () => {
     const { calls } = stubRegistry([{ name: 'gone', state: 'LOADED' }]);
     render(<LoadScenarioPanel connectionParams={params} />);
@@ -536,6 +603,7 @@ describe('LoadScenarioPanel', () => {
   it('"Load" registers without starting (no /start call)', async () => {
     const { calls } = stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
     fillValidStep('register-only');
 
@@ -550,6 +618,7 @@ describe('LoadScenarioPanel', () => {
   it('"Load & Run" registers then starts the authored scenario by name', async () => {
     const { calls } = stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
     fillValidStep('run-now');
 
@@ -565,6 +634,7 @@ describe('LoadScenarioPanel', () => {
   it('binds the Start delay field to startDelayMillis in the registered body', async () => {
     const { calls } = stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
     fillValidStep('delayed');
     fireEvent.change(screen.getByLabelText(/Start delay/), { target: { value: '5000' } });
@@ -575,28 +645,28 @@ describe('LoadScenarioPanel', () => {
     expect((put.body as { startDelayMillis?: number }).startDelayMillis).toBe(5000);
   });
 
-  // --- Wave B: Code view ---
+  // --- Generated code (inline below the Author form) ---
 
-  it('renders the Code tab with generated register & start snippets', async () => {
+  it('renders generated register & start snippets inline below the form', async () => {
     stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
     fillValidStep('code-scenario');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
+    // A valid scenario renders the code review inline (no separate Code tab any more).
     await waitFor(() => expect(screen.getByTestId('load-code-review')).toBeInTheDocument());
-    // Default tab is Java; the snippet hits both endpoints and names the scenario.
     const review = screen.getByTestId('load-code-review');
     expect(review).toHaveTextContent('/mockserver/loadScenario');
     expect(review).toHaveTextContent('code-scenario');
   });
 
-  it('Code tab explains when the scenario is incomplete', async () => {
+  it('explains inline when the scenario is incomplete', async () => {
     stubRegistry([]);
     render(<LoadScenarioPanel connectionParams={params} />);
+    gotoAuthorTab();
     await waitFor(() => expect(screen.getByTestId('load-author-form')).toBeInTheDocument());
-    // No name / host filled — buildScenario fails, so the Code tab shows the guidance alert.
-    fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
+    // No name / host filled — buildScenario fails, so the inline codegen shows the guidance alert.
     await waitFor(() => expect(screen.getByTestId('load-code-incomplete')).toBeInTheDocument());
   });
 });

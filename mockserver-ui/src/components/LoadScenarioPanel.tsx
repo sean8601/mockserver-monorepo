@@ -529,7 +529,9 @@ function deriveTrackSeries(aligned: (Sample | null)[], def: SeriesDef): (number 
 export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPanelProps) {
   const setView = useDashboardStore((s) => s.setView);
 
-  const [view, setPanelView] = useState<'author' | 'code'>('author');
+  // Sub-tab: 'run' focuses on running scenarios + live metrics; 'author' on creating/editing a
+  // scenario (form + generated code). Defaults to 'run' so monitoring is what you land on.
+  const [view, setPanelView] = useState<'run' | 'author'>('run');
 
   const [status, setStatus] = useState<LoadScenarioStatus | null>(null);
   const [disabled, setDisabled] = useState(false);
@@ -703,6 +705,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
       setForm(scenarioToForm(definition));
     }
     setActionError(null);
+    setPanelView('author'); // editing → jump to the Author sub-tab
   }, [status?.definition]);
 
   // (Author flow below registers/runs explicitly via handleLoad / handleLoadAndRun.)
@@ -734,6 +737,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     void (async () => {
       const scenario = await registerForm();
       if (!scenario) return;
+      setPanelView('run'); // starting a run → jump to the Run & Monitor sub-tab
       await runAction(async () => {
         await startScenariosByName(connectionParams, [scenario.name]);
         setSamples([]);
@@ -755,12 +759,14 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   const startSelected = useCallback(() => {
     const names = [...selected];
     if (names.length === 0) return;
+    setPanelView('run'); // starting runs → jump to the Run & Monitor sub-tab
     void runAction(async () => {
       await startScenariosByName(connectionParams, names);
     });
   }, [connectionParams, runAction, selected]);
 
   const startSelectedOne = useCallback((name: string) => {
+    setPanelView('run'); // starting a run → jump to the Run & Monitor sub-tab
     void runAction(async () => {
       await startScenariosByName(connectionParams, [name]);
     });
@@ -939,15 +945,6 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
         </Tooltip>
       </Box>
 
-      <Tabs
-        value={view === 'code' ? 1 : 0}
-        onChange={(_, v: number) => setPanelView(v === 1 ? 'code' : 'author')}
-        sx={{ mb: 1.5, minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}
-      >
-        <Tab label="Author" />
-        <Tab label="Code" />
-      </Tabs>
-
       {disabled && (
         <Alert severity="info" sx={{ mb: 1.5 }} data-testid="load-disabled-alert">
           <AlertTitle>Load generation is disabled</AlertTitle>
@@ -980,19 +977,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         <HumanErrorAlert error={actionError} onClose={() => setActionError(null)} sx={{ mb: 1.5 }} data-testid="load-action-error" />
       )}
 
-      {view === 'code' ? (
-        codeScenario ? (
-          <LoadScenarioReview scenario={codeScenario} baseUrl={baseUrl} />
-        ) : (
-          <Alert severity="info" sx={{ mb: 1.5 }} data-testid="load-code-incomplete">
-            <AlertTitle>Complete the scenario to generate code</AlertTitle>
-            {codeError ?? 'Fill in the author form to preview register & start client code.'}
-          </Alert>
-        )
-      ) : (
-      <>
-
-      {/* Registered scenarios (Wave C) */}
+      {/* Registered scenarios (Wave C) — shared across both sub-tabs */}
       <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-registry">
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Registered scenarios</Typography>
@@ -1083,6 +1068,19 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         )}
       </Paper>
 
+      {/* Sub-tabs: focus on running/metrics, or on authoring a scenario */}
+      <Tabs
+        value={view === 'author' ? 1 : 0}
+        onChange={(_, v: number) => setPanelView(v === 1 ? 'author' : 'run')}
+        sx={{ mb: 1.5, minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}
+      >
+        <Tab label="Run & Monitor" />
+        <Tab label="Author" />
+      </Tabs>
+
+      {view === 'run' ? (
+      <>
+
       {/* Concurrent running view (Wave C): every actively-running registered scenario. */}
       {runningEntries.length > 0 && (
         <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-running-scenarios">
@@ -1106,7 +1104,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
                     Stop
                   </Button>
                 </Box>
-                <LinearProgress sx={{ mb: 1 }} />
+                <RunProgressBar status={st} definition={entry.definition} />
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 1 }}>
                   <Stat label="Active VUs" value={(st?.currentVus ?? 0).toLocaleString()} />
                   <Stat label="Requests sent" value={(st?.requestsSent ?? 0).toLocaleString()} />
@@ -1140,7 +1138,7 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
               Stop
             </Button>
           </Box>
-          <LinearProgress sx={{ mb: 1 }} />
+          <RunProgressBar status={status} definition={status.definition} />
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 1 }}>
             <Stat label="Active VUs" value={(status.currentVus ?? 0).toLocaleString()} />
             <Stat label="Requests sent" value={(status.requestsSent ?? 0).toLocaleString()} />
@@ -1244,6 +1242,21 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           </Typography>
         </Paper>
       )}
+
+      {/* Empty state — nothing has run yet in this view */}
+      {runningEntries.length === 0 && !running && frames.length === 0 && !showSummary && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 1.5, textAlign: 'center' }} data-testid="load-run-empty">
+          <Typography variant="body2" color="text.secondary">
+            Nothing running yet. Start a scenario from the registry above, or switch to the{' '}
+            <Link component="button" type="button" onClick={() => setPanelView('author')}>Author</Link>{' '}
+            tab to create one. Live throughput, latency and per-scenario charts appear here while runs are active.
+          </Typography>
+        </Paper>
+      )}
+
+      </>
+      ) : (
+      <>
 
       {/* Author form */}
       <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-author-form">
@@ -1450,6 +1463,23 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         </Box>
       </Paper>
 
+      {/* Generated client code — inline below the form (no longer a separate tab) */}
+      <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-codegen">
+        {codeScenario ? (
+          <LoadScenarioReview scenario={codeScenario} baseUrl={baseUrl} />
+        ) : (
+          <Alert severity="info" data-testid="load-code-incomplete">
+            <AlertTitle>No code to preview yet</AlertTitle>
+            Fill in the form above to preview the register &amp; start client code in nine languages.
+            {codeError && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                {codeError}
+              </Typography>
+            )}
+          </Alert>
+        )}
+      </Paper>
+
       </>
       )}
     </Box>
@@ -1477,6 +1507,34 @@ function Stat({ label, value }: { label: string; value: string }) {
       <Typography variant="caption" color="text.secondary">{label}</Typography>
       <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>{value}</Typography>
     </Card>
+  );
+}
+
+/** Sum of all stage durations (ms) for a scenario definition; 0 when unknown. */
+function totalDurationMillis(definition?: LoadScenarioDTO): number {
+  return (definition?.profile?.stages ?? []).reduce((sum, s) => sum + (s.durationMillis ?? 0), 0);
+}
+
+/**
+ * Determinate run-progress bar: fills with elapsed/total time so you can see how far through the
+ * scenario a run is, and is coloured by phase — green while driving load, amber during a PAUSE
+ * stage. Replaces the old indeterminate bar, whose constant sweep was distracting. Falls back to an
+ * empty bar when the total duration is unknown (e.g. an older server that doesn't echo the
+ * definition).
+ */
+function RunProgressBar({ status, definition }: { status?: LoadScenarioStatus; definition?: LoadScenarioDTO }) {
+  const total = totalDurationMillis(definition ?? status?.definition);
+  const elapsed = status?.elapsedMillis ?? 0;
+  const value = total > 0 ? Math.min(100, Math.max(0, (elapsed / total) * 100)) : 0;
+  const paused = status?.stageType === 'PAUSE';
+  return (
+    <LinearProgress
+      variant="determinate"
+      value={value}
+      color={paused ? 'warning' : 'success'}
+      aria-label={paused ? 'Run paused' : 'Run progress'}
+      sx={{ mb: 1, height: 6, borderRadius: 1 }}
+    />
   );
 }
 
