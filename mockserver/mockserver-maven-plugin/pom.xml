@@ -271,7 +271,8 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
-                                    <executable>scripts/stop_MockServer.sh</executable>
+                                    <!-- single canonical copy at the repo root (basedir is this module dir) -->
+                                    <executable>../../scripts/stop_MockServer.sh</executable>
                                 </configuration>
                             </execution>
                         </executions>

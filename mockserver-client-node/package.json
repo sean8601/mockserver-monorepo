@@ -33,8 +33,7 @@
     "mockServerClient.js",
     "mockServerClient.d.ts",
     "sendRequest.js",
-    "webSocketClient.js",
-    "stop_MockServer.sh"
+    "webSocketClient.js"
   ],
   "scripts": {
     "test": "node test/run_with_local_server.js",
