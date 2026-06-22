@@ -40,10 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ruby, Go, Rust, .NET, PHP), all producing the same wire JSON.
 - **LLM optimisation export.** Proxy your agent's LLM calls through MockServer, then export a one-click
   optimisation brief (Markdown) or structured JSON bundle (`LlmOptimisationReport`) from captured traffic.
-  Six deterministic signals detect repeated system prompts, large resent context, deterministic tool calls,
-  oversized tool results, output-token bloat and duplicate calls — each with token counts, estimated USD
-  saving, and a recommended lever. New **LLM Optimise** dashboard screen, `GET /mockserver/llm/optimisationReport`
-  endpoint, and `export_optimisation_report` MCP tool. Export-only and deterministic; secrets are redacted.
+  Nine deterministic signals detect repeated system prompts, low cache-hit rates, unused tool schema,
+  model overspend, large resent context, deterministic tool calls, oversized tool results, output-token
+  bloat and duplicate calls — each with token counts, estimated USD saving, and structured fix guidance
+  (copy-paste config snippet or example expectation where applicable). An in-product **verdict** (A–F grade
+  and "$X recoverable" headline computed via per-call MAX attribution so the total is always ≤ actual spend)
+  and two new session KPIs (**cache-hit rate** and **one-shot rate**) appear in the dashboard and the
+  Markdown brief. New **LLM Optimise** dashboard screen (with verdict banner, "Copy verdict" button, and
+  updated hero cards), `GET /mockserver/llm/optimisationReport` endpoint, and `export_optimisation_report`
+  MCP tool. Export-only and deterministic; secrets are redacted. The Anthropic codec now maps the top-level
+  `system` field so cache and repeated-prompt signals fire on Anthropic traffic.
 - **More embedding providers and rerank mocking.** `httpLlmResponse` embeddings now cover Gemini, Ollama and
   Bedrock (Titan / Cohere-on-Bedrock) in addition to OpenAI/Azure, all deterministic and L2-normalised. A new
   rerank action mocks Cohere and Voyage rerank endpoints in the provider-correct envelope.
