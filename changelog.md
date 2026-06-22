@@ -1685,6 +1685,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Correctness & reliability
+- **Dashboard UI `package-lock.json` re-synced with `package.json`** (`mockserver-ui`). The `playwright`
+  devDependency (used by the new screenshot-capture scripts) was added to `package.json` without a matching
+  resolved entry in `package-lock.json`, so `npm ci` failed its lock-sync pre-flight — breaking the
+  `mockserver-ui` build and the dashboard-bundle step of the `mockserver-netty` Maven build. The lock now
+  includes `playwright` (and `playwright-core`), restoring `npm ci`.
 - **PHP client TLS unit test no longer asserts against Guzzle's default options** (`mockserver-client-php`).
   `MockServerClientAuthTlsTest::testNoTlsOptionsWhenNotConfigured` asserted the recorded per-request options
   contained no `verify` key, but Guzzle always records its own secure-by-default `verify => true`, so the
