@@ -67,6 +67,7 @@ curl http://localhost:1080/hello
         <tr><td>Test an AI application that calls an LLM</td><td><a href="/mock_server/llm_response_mocking.html">LLM Response Mocking</a></td></tr>
         <tr><td>Cut my LLM / inference bill</td><td><a href="/mock_server/ai_optimisation.html">LLM Cost Optimisation</a></td></tr>
         <tr><td>Inject chaos / test resilience</td><td><a href="/mock_server/chaos_testing.html">Chaos Testing</a></td></tr>
+        <tr><td>Run a load / performance test against an API</td><td><a href="/mock_server/load_injection.html">Load Injection</a></td></tr>
         <tr><td>Assert which requests my code sent</td><td><a href="/mock_server/verification.html">Verification</a></td></tr>
         <tr><td>Mock a gRPC service</td><td><a href="/mock_server/grpc_mocking.html">gRPC Mocking</a></td></tr>
         <tr><td>Debug live traffic with breakpoints</td><td><a href="/mock_server/interactive_breakpoints.html">Interactive Breakpoints</a> &amp; <a href="/proxy/getting_started.html">Proxying</a></td></tr>
@@ -95,6 +96,7 @@ curl http://localhost:1080/hello
 	<li><strong><a href="/proxy/record_and_replay.html">record and replay</a></strong> real traffic to reproduce how a system behaves</li>
 	<li><strong><a href="/mock_server/interactive_breakpoints.html">pause and modify requests or responses using breakpoints</a></strong> intercept a matched or proxied request in the dashboard to inspect and modify it (or its response) live, then continue, step, or fail it</li>
 	<li><strong><a href="/mock_server/chaos_testing.html">inject chaos and faults</a></strong> introduce chaos as latency, errors, dropped connections &amp; malformed responses &mdash; HTTP, gRPC and TCP fault injection, plus <a href="/mock_server/chaos_testing_kubernetes.html">Kubernetes</a> and <a href="/mock_server/service_mesh.html">service-mesh</a> chaos</li>
+	<li><strong><a href="/mock_server/load_injection.html">drive load and performance tests</a></strong> with built-in, declarative <a href="/mock_server/load_injection.html">Load Scenarios</a> &mdash; ramp virtual users or arrival rate, vary data across iterations, and assert SLO verdicts over the generated traffic, with no external load tool required</li>
 	<li><strong><a href="/mock_server/response_templates.html">template dynamic responses</a></strong> with Velocity, Mustache or JavaScript so a mock can react to the incoming request</li>
 	<li><strong><a href="/mock_server/wasm_rules.html">custom matching and response logic via WASM</a></strong> in any language that compiles to WebAssembly</li>
 	<li><strong><a href="/mock_server/drift_detection.html">detect mock drift</a></strong> be warned when a mock no longer matches the real API</li>

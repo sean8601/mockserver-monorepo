@@ -18,6 +18,58 @@ sitemap:
 
 <p><strong>Registry model: load, then trigger.</strong> Scenarios are organised as a <strong>registry of named scenarios</strong>. You first <strong>load</strong> (register) a scenario by name with <code class="inline code">PUT /mockserver/loadScenario</code> — this does <em>not</em> run it — then <strong>trigger</strong> one or many by name with <code class="inline code">PUT /mockserver/loadScenario/start</code> to run them <strong>concurrently</strong>, each with its own optional <strong>start delay</strong>. Loading is always allowed; <strong>triggering a run is off by default</strong>: <code class="inline code">start</code> returns <code class="inline code">403 Forbidden</code> until <code class="inline code">loadGenerationEnabled=true</code>. Hard caps on concurrent scenarios, virtual users, in-flight requests, RPS, duration, and step count prevent the feature from self-DoS-ing the server. Scenarios can be <strong>preloaded at startup</strong> from a JSON file via <code class="inline code">mockserver.loadScenarioInitializationJsonPath</code>.</p>
 
+<a id="on_this_page" class="anchor" href="#on_this_page">&nbsp;</a>
+
+<h2>On this page</h2>
+
+<p>Drive a load run from the <strong>REST control plane</strong> or the <strong>dashboard</strong>, model the scenario with <strong>stages and templated steps</strong>, then <strong>assert SLOs and read the metrics</strong> exposed over Prometheus and OpenTelemetry:</p>
+
+<table class="comparison_table">
+	<thead>
+		<tr>
+			<th>Run a load test</th>
+			<th>Model the scenario</th>
+			<th>Verify &amp; observe</th>
+			<th>Operate &amp; tune</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#quickstart">Quickstart</a></li>
+					<li><a href="#control_plane_api">Control-Plane API</a></li>
+					<li><a href="#dashboard_ui">Dashboard UI (run &amp; edit)</a></li>
+					<li><a href="#examples">Examples (all clients)</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#load_scenario_model">Load Scenario Model</a></li>
+					<li><a href="#steps">Steps</a></li>
+					<li><a href="#load_profile">Load Profile (VU / RATE / PAUSE)</a></li>
+					<li><a href="#iteration_variables">Per-Iteration Template Variables</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#slo_integration">Asserting SLOs over results</a></li>
+					<li><a href="#observability">Observability &amp; Metrics</a></li>
+					<li><a href="#observability_exposure">Prometheus &amp; OTEL exposure</a></li>
+					<li><a href="#promql">Example PromQL</a></li>
+				</ul>
+			</td>
+			<td style="vertical-align: top;">
+				<ul>
+					<li><a href="#safety_caps">Safety Caps</a></li>
+					<li><a href="#configuration">Configuration</a></li>
+					<li><a href="#related">Related Pages</a></li>
+				</ul>
+			</td>
+		</tr>
+	</tbody>
+</table>
+
 <a id="quickstart" class="anchor" href="#quickstart">&nbsp;</a>
 
 <h2>Quickstart</h2>
@@ -122,6 +174,23 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
 
 <pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario/start \
   -d '{ "names": ["checkout-load", "background-poller"] }'</code></pre>
+
+<a id="dashboard_ui" class="anchor" href="#dashboard_ui">&nbsp;</a>
+
+<h2>Dashboard UI — Run &amp; Edit Load Tests</h2>
+
+<p>Everything the REST API does is also available from the <strong>Performance</strong> view in the <a href="/mock_server/mockserver_ui.html#ui_performance_section">MockServer dashboard</a> — build, run, and monitor load scenarios without writing any JSON. Open the dashboard at <code class="inline code">http://localhost:1080/mockserver/dashboard</code> and click <strong>Performance</strong> in the navigation bar. (Load generation must be enabled first — <code class="inline code">loadGenerationEnabled=true</code> — or the view shows the configuration flag needed to unlock it.)</p>
+
+<img class="ui_image" src="/images/MockServerPerformance.png" alt="MockServer dashboard Performance view — running and editing load scenarios">
+
+<p>The view has two tabs over a shared registry of scenarios:</p>
+
+<ul>
+    <li><strong>RUN &amp; MONITOR</strong> — the <em>running</em> view. Each registered scenario is a row with its live state (<code class="inline code">RUNNING</code> / <code class="inline code">LOADED</code> / <code class="inline code">STOPPED</code>), requests sent, error rate, and active VUs, plus per-scenario <strong>Start</strong> / <strong>Stop</strong> / <strong>edit</strong> / <strong>remove</strong> controls. Below it, <strong>Running now</strong> shows each active scenario's current stage, elapsed time, and hero tiles for <strong>Active VUs</strong>, <strong>Requests sent</strong>, <strong>Succeeded</strong> / <strong>Failed</strong>, <strong>Error rate</strong>, and <strong>p95</strong> latency. A combined <strong>Live throughput &amp; latency</strong> chart plots RPS, active VUs, in-flight, and p50/p95/p99 over the lifetime of the run — total and per scenario — drawn from the <code class="inline code">mock_server_load_*</code> metrics (requires <code class="inline code">metricsEnabled=true</code>).</li>
+    <li><strong>CREATE / EDIT</strong> — the <em>editing</em> view. A form-based builder assembles a scenario: choose the <strong>template type</strong>, add custom <strong>labels</strong> and an optional <strong>max requests</strong> cap, append an ordered list of <strong>stages</strong> (<code class="inline code">VU</code> / <code class="inline code">RATE</code> / <code class="inline code">PAUSE</code>, each with hold-or-ramp values, a ramp <strong>curve</strong>, and a duration), and define one or more <strong>steps</strong> (method, path, target host/port/scheme, optional templated body and headers, and a think-time delay). <strong>Load</strong> registers the scenario without running it; <strong>Load &amp; Run</strong> registers and starts it immediately. Selecting a registered scenario's edit icon loads its definition back into this form for tweaking and re-running.</li>
+</ul>
+
+<p>See the <a href="/mock_server/mockserver_ui.html#ui_performance_section">dashboard Performance reference</a> for a field-by-field walkthrough.</p>
 
 <a id="load_scenario_model" class="anchor" href="#load_scenario_model">&nbsp;</a>
 
@@ -349,96 +418,9 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
 
 <h2>Examples</h2>
 
-<h3>VU ramp then hold — templated path</h3>
+<p>Each example below shows the same scenario across every MockServer client and the plain REST API. Expand a language to see how to build the load scenario, register it, start it, read its live status, and stop it.</p>
 
-<p>Ramp from 1 to 10 VUs over 30 seconds, then hold 10 VUs for a minute. Each iteration fetches a different order ID derived from the global iteration index:</p>
-
-<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "checkout-load",
-    "templateType": "VELOCITY",
-    "maxRequests": 5000,
-    "profile": {
-      "stages": [
-        { "type": "VU", "startVus": 1, "endVus": 10, "durationMillis": 30000, "curve": "LINEAR" },
-        { "type": "VU", "vus": 10, "durationMillis": 60000 }
-      ]
-    },
-    "steps": [
-      {
-        "request": {
-          "method": "GET",
-          "path": "/api/orders/$iteration.index",
-          "headers": { "Host": ["orders.svc:8080"] },
-          "socketAddress": { "host": "orders.svc", "port": 8080, "scheme": "HTTP" }
-        },
-        "thinkTime": { "timeUnit": "MILLISECONDS", "value": 20 }
-      }
-    ]
-  }'</code></pre>
-
-<h3>Arrival-rate soak with a pause (open model)</h3>
-
-<p>Hold 2 VUs to warm up, pause to let the target settle, then ramp the request rate from 10 to 200 iterations/second and hold it — the open model that exposes queue build-up and tail latency:</p>
-
-<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "rate-soak",
-    "profile": {
-      "stages": [
-        { "type": "VU", "vus": 2, "durationMillis": 10000 },
-        { "type": "PAUSE", "durationMillis": 5000 },
-        { "type": "RATE", "startRate": 10, "endRate": 200, "durationMillis": 30000, "curve": "EXPONENTIAL", "maxVus": 40 },
-        { "type": "RATE", "rate": 200, "durationMillis": 60000 }
-      ]
-    },
-    "steps": [
-      {
-        "request": {
-          "method": "GET",
-          "path": "/health",
-          "socketAddress": { "host": "target.svc", "port": 8080, "scheme": "HTTP" }
-        }
-      }
-    ]
-  }'</code></pre>
-
-<h3>Multi-step scenario with per-VU data variation</h3>
-
-<p>A two-step user journey: create a basket, then add an item. The basket ID is derived from the VU, and the product ID from the iteration within that VU:</p>
-
-<pre class="prettyprint code"><code class="code">curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "basket-journey",
-    "templateType": "VELOCITY",
-    "profile": {
-      "stages": [
-        { "type": "VU", "vus": 5, "durationMillis": 60000 }
-      ]
-    },
-    "steps": [
-      {
-        "request": {
-          "method": "POST",
-          "path": "/baskets",
-          "body": { "type": "STRING", "string": "{\"customerId\": $iteration.vuId}" },
-          "socketAddress": { "host": "shop.svc", "port": 8080, "scheme": "HTTP" }
-        },
-        "thinkTime": { "timeUnit": "MILLISECONDS", "value": 50 }
-      },
-      {
-        "request": {
-          "method": "POST",
-          "path": "/baskets/$iteration.vuId/items",
-          "body": { "type": "STRING", "string": "{\"productId\": $iteration.vuIteration}" },
-          "socketAddress": { "host": "shop.svc", "port": 8080, "scheme": "HTTP" }
-        }
-      }
-    ]
-  }'</code></pre>
+{% include_subpage _includes/load_scenario_code_examples.html %}
 
 <a id="safety_caps" class="anchor" href="#safety_caps">&nbsp;</a>
 
@@ -569,7 +551,48 @@ curl -s -w "\n%{http_code}" -X PUT http://localhost:1080/mockserver/verifySLO \
 
 <h2>Observability &amp; Metrics</h2>
 
-<p>Every completed load-scenario dispatch is recorded into a dedicated <code class="inline code">mock_server_load_*</code> Prometheus metric family and mirrored over OpenTelemetry (OTLP). This lets you chart the injector's latency, throughput, and error rate alongside your system-under-test in Grafana, Datadog, or any OTEL-compatible backend — without a separate load tool.</p>
+<p>Every completed load-scenario dispatch is recorded into a dedicated <code class="inline code">mock_server_load_*</code> metric family that MockServer exposes through <strong>both</strong> of its observability channels — a <strong>Prometheus</strong> scrape endpoint and <strong>OpenTelemetry (OTLP)</strong> push. The same metrics drive the dashboard's live <a href="#dashboard_ui">throughput &amp; latency chart</a>. This lets you chart the injector's latency, throughput, and error rate alongside your system-under-test in Grafana, Datadog, or any OTEL-compatible backend — without a separate load tool.</p>
+
+<a id="observability_exposure" class="anchor" href="#observability_exposure">&nbsp;</a>
+
+<h3>How the metrics are exposed</h3>
+
+<p>The <code class="inline code">mock_server_load_*</code> family rides the same metrics pipeline as the rest of MockServer — there is no separate setup for load metrics. Turn on whichever channel(s) your backend consumes:</p>
+
+<table class="table-standard">
+    <thead>
+        <tr>
+            <th>Channel</th>
+            <th>How to enable</th>
+            <th>How to consume</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Prometheus</strong> (pull / scrape)</td>
+            <td>Set <code class="inline code">metricsEnabled=true</code> (<code class="inline code">MOCKSERVER_METRICS_ENABLED=true</code>).</td>
+            <td>Scrape <code class="inline code">GET /mockserver/metrics</code> — Prometheus text exposition format on the serve port (e.g. <code class="inline code">http://localhost:1080/mockserver/metrics</code>). Returns <code class="inline code">404</code> when metrics are disabled. Point a Prometheus <code class="inline code">scrape_config</code> at it, or <code class="inline code">curl</code> it directly.</td>
+        </tr>
+        <tr>
+            <td><strong>OpenTelemetry</strong> (push / OTLP)</td>
+            <td>Set <code class="inline code">otelEndpoint</code> to your collector's base URL (e.g. <code class="inline code">http://collector:4318</code>) and <code class="inline code">otelMetricsEnabled=true</code>. Metrics are pushed every <code class="inline code">otelMetricsExportIntervalSeconds</code> (default 60).</td>
+            <td>Your OTLP-compatible backend (Grafana, Datadog, Honeycomb, an OpenTelemetry Collector, …) receives the same series as OTLP metrics. All custom <code class="inline code">labels</code> are forwarded as OTEL attributes automatically.</td>
+        </tr>
+    </tbody>
+</table>
+
+<pre class="prettyprint code"><code class="code"># Run with load generation AND both metrics channels enabled
+docker run -p 1080:1080 \
+  -e MOCKSERVER_LOAD_GENERATION_ENABLED=true \
+  -e MOCKSERVER_METRICS_ENABLED=true \
+  -e MOCKSERVER_OTEL_ENDPOINT=http://collector:4318 \
+  -e MOCKSERVER_OTEL_METRICS_ENABLED=true \
+  mockserver/mockserver
+
+# Scrape the Prometheus endpoint and filter to the load family
+curl -s http://localhost:1080/mockserver/metrics | grep '^mock_server_load_'</code></pre>
+
+<p>See <a href="/mock_server/observability.html">Observability</a> for the full Prometheus and OpenTelemetry configuration reference (the <code class="inline code">mock_server_load_*</code> family feeds into the same pipeline).</p>
 
 <p>All per-request metrics carry six fixed labels so you can slice and dice without extra queries:</p>
 
@@ -701,6 +724,8 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
 
 <p>When your system under test propagates W3C Trace Context, the load-scenario latency histogram (<code class="inline code">mock_server_load_request_duration_seconds</code>) attaches the upstream <code class="inline code">trace_id</code> from the response's <code class="inline code">traceparent</code> header as a Prometheus exemplar. In Grafana, this lets you click a latency spike and jump directly to the trace that caused it.</p>
 
+<a id="promql" class="anchor" href="#promql">&nbsp;</a>
+
 <h3>Example PromQL</h3>
 
 <pre class="prettyprint code"><code class="code"># p95 request latency for a specific run
@@ -716,7 +741,7 @@ sum by (kind) (rate(mock_server_load_errors_total[1m]))
 # Is the scenario being throttled?
 rate(mock_server_load_throttled_total[1m])</code></pre>
 
-<p>Metrics require <code class="inline code">metricsEnabled=true</code>. See <a href="/mock_server/observability.html">Observability</a> for the full Prometheus and OTEL configuration reference.</p>
+<p>The Prometheus endpoint requires <code class="inline code">metricsEnabled=true</code>; OTLP export additionally requires <code class="inline code">otelEndpoint</code> and <code class="inline code">otelMetricsEnabled=true</code> — see <a href="#observability_exposure">How the metrics are exposed</a> above.</p>
 
 <a id="configuration" class="anchor" href="#configuration">&nbsp;</a>
 
@@ -782,6 +807,7 @@ rate(mock_server_load_throttled_total[1m])</code></pre>
 <h2>Related Pages</h2>
 
 <ul>
+    <li><a href="/mock_server/mockserver_ui.html#ui_performance_section">Dashboard — Performance view</a> &mdash; build, run, and monitor load scenarios from the UI (see <a href="#dashboard_ui">Dashboard UI</a> above)</li>
     <li><a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> &mdash; inject faults alongside load to verify resilience under stress</li>
     <li><a href="/mock_server/chaos_testing.html#slo_resilience_verdicts">SLO Resilience Verdicts</a> &mdash; assert that latency and error-rate objectives held during the load run</li>
     <li><a href="/mock_server/response_templates.html">Response Templates</a> &mdash; the Velocity / Mustache template engines used for <code class="inline code">path</code> and <code class="inline code">body</code> rendering in steps</li>
