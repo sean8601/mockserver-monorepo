@@ -132,6 +132,7 @@ Use `mcp_mock_default()` for the default `/mcp` path. `build()` returns the orde
 - **LLM and MCP builders** — fluent `llm` / `mcp` mock builders, wire-identical to the other clients
 - **Blocking (synchronous)** — uses `reqwest` blocking client; no async runtime needed
 - **TLS support** — optional HTTPS with configurable certificate verification
+- **Secured control plane** — `control_plane_bearer_token(..)` (JWT auth), `ca_cert_pem_path(..)` / `ca_cert_pem(..)` (trust a server CA), and `client_cert_pem(cert, key)` (mTLS)
 
 ## API Overview
 

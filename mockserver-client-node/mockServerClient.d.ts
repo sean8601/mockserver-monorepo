@@ -17,6 +17,39 @@ export type Port = number;
 export type ContextPath = string;
 export type TLS = boolean;
 export type CaCertPemFilePath = string;
+
+/**
+ * Optional control-plane authentication and mutual-TLS settings, supplied as a
+ * trailing argument to mockServerClient(...). All fields are optional and
+ * additive — omitting the object preserves the default (unauthenticated, no
+ * client certificate) behaviour.
+ */
+export interface MockServerClientOptions {
+    /**
+     * Static control-plane JWT. When set, every control-plane request carries
+     * an `Authorization: Bearer <bearerToken>` header. Use this when the server
+     * is started with `controlPlaneJWTAuthenticationRequired=true`.
+     */
+    bearerToken?: string;
+
+    /**
+     * A supplier evaluated per control-plane request to obtain the bearer token
+     * (so the token can be refreshed). Takes precedence over `bearerToken`.
+     */
+    bearerTokenSupplier?: () => string;
+
+    /**
+     * Path to a PEM client certificate presented for mutual TLS, for when the
+     * server requires `controlPlaneTLSMutualAuthenticationRequired=true`.
+     */
+    clientCertPemFilePath?: string;
+
+    /**
+     * Path to the PEM private key paired with `clientCertPemFilePath` for
+     * mutual TLS.
+     */
+    clientKeyPemFilePath?: string;
+}
 // Retains backwards compatability.
 export type KeysToMultiValues = KeyToMultiValue;
 
@@ -338,12 +371,14 @@ export interface MockServerClient {
  * @param contextPath {string} the context path if server was deployed as a war
  * @param tls {boolean} enable TLS (i.e. HTTPS) for communication to server
  * @param caCertPemFilePath {string} provide custom CA Certificate (defaults to MockServer CA Certificate)
+ * @param options {MockServerClientOptions} optional control-plane bearer token and mutual-TLS client certificate/key
  */
 export declare function mockServerClient(
     host: Host,
     port: Port,
     contextPath?: ContextPath,
     tls?: TLS,
-    caCertPemFilePath?: CaCertPemFilePath
+    caCertPemFilePath?: CaCertPemFilePath,
+    options?: MockServerClientOptions
 ): MockServerClient;
 

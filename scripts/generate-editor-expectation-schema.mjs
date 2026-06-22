@@ -69,6 +69,9 @@ const REFERENCE_FILES = [
   "keyToValue",
   "socketAddress",
   "protocol",
+  "rateLimit",
+  "conditionalRequestDefinition",
+  "recoverAfter",
   // NOTE: "draft-07" is deliberately NOT bundled. The source schemas reference
   // it via `#/definitions/draft-07` to mean "any valid JSON schema" (for JSON
   // body matchers). Embedding the meta-schema breaks validators two ways: its

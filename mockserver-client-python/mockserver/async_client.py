@@ -99,6 +99,10 @@ class AsyncMockServerClient:
         secure: bool = False,
         ca_cert_path: str | None = None,
         tls_verify: bool = True,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
+        control_plane_bearer_token: str | None = None,
+        control_plane_bearer_token_supplier: Callable[[], str] | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -106,6 +110,10 @@ class AsyncMockServerClient:
         self._secure = secure
         self._ca_cert_path = ca_cert_path
         self._tls_verify = tls_verify
+        self._client_cert_path = client_cert_path
+        self._client_key_path = client_key_path
+        self._control_plane_bearer_token = control_plane_bearer_token
+        self._control_plane_bearer_token_supplier = control_plane_bearer_token_supplier
         self._websocket_clients: list[MockServerWebSocketClient] = []
 
         scheme = "https" if secure else "http"
@@ -122,6 +130,21 @@ class AsyncMockServerClient:
             elif not tls_verify:
                 self._ssl_context.check_hostname = False
                 self._ssl_context.verify_mode = ssl.CERT_NONE
+            if client_cert_path:
+                # Load the client certificate chain (and private key) for mTLS.
+                self._ssl_context.load_cert_chain(
+                    certfile=client_cert_path, keyfile=client_key_path
+                )
+
+    def _control_plane_bearer(self) -> str | None:
+        """Resolve the control-plane bearer token for the current request.
+
+        The supplier (if configured) is evaluated per request so rotating /
+        short-lived tokens are picked up; otherwise the static token is used.
+        """
+        if self._control_plane_bearer_token_supplier is not None:
+            return self._control_plane_bearer_token_supplier()
+        return self._control_plane_bearer_token
 
     async def _request(
         self,
@@ -143,6 +166,9 @@ class AsyncMockServerClient:
             data = None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Content-Type", content_type)
+        bearer = self._control_plane_bearer()
+        if bearer:
+            req.add_header("Authorization", f"Bearer {bearer}")
 
         def _do_request() -> tuple[int, str]:
             try:

@@ -128,6 +128,10 @@ class MockServerClient:
         secure: bool = False,
         ca_cert_path: str | None = None,
         tls_verify: bool = True,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
+        control_plane_bearer_token: str | None = None,
+        control_plane_bearer_token_supplier: Callable[[], str] | None = None,
     ) -> None:
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
@@ -135,7 +139,16 @@ class MockServerClient:
         )
         self._thread.start()
         self._async_client = AsyncMockServerClient(
-            host, port, context_path, secure, ca_cert_path, tls_verify=tls_verify
+            host,
+            port,
+            context_path,
+            secure,
+            ca_cert_path,
+            tls_verify=tls_verify,
+            client_cert_path=client_cert_path,
+            client_key_path=client_key_path,
+            control_plane_bearer_token=control_plane_bearer_token,
+            control_plane_bearer_token_supplier=control_plane_bearer_token_supplier,
         )
 
     def _run(self, coro):

@@ -63,6 +63,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Control-plane auth and TLS/mTLS across every client.** The Go, .NET, Rust, PHP, Node and Python
+  clients now let you connect to a secured MockServer: a **control-plane bearer token** (static or a
+  per-request supplier) attached as `Authorization: Bearer <token>` to every control-plane request; a
+  **CA certificate** to trust the server's TLS over HTTPS; and a **client certificate + key** for mutual
+  TLS. All additive and backward-compatible (default behaviour unchanged); the underlying HTTP layer of
+  each client (net/http, HttpClient, reqwest, Guzzle, https, urllib+ssl) is configured accordingly.
+- **Editor JSON Schema regenerated and in sync** (`mockserver-vscode`, `mockserver-jetbrains`). The
+  bundled `*.mockserver.json` validation schema was stale; it now includes `crossProtocolScenarios`,
+  `responseWeights`, `switchAfter`, `rateLimit`, and the full `responseMode` enum (`SEQUENTIAL`/`RANDOM`/
+  `WEIGHTED`/`SWITCH`), so the IDEs no longer flag valid expectations as errors. The generator
+  (`scripts/generate-editor-expectation-schema.mjs`) had stopped resolving newer schema refs — its
+  reference-file list now covers `rateLimit`, `conditionalRequestDefinition`, and `recoverAfter`.
+
 <!-- Load scenario registry: named load/trigger, concurrent runs, start delay, preload -->
 - **Load scenario registry — load by name, trigger one or many to run concurrently, with start delays and
   startup preloading** (`mockserver-core`). Load scenarios are now a registry of NAMED scenarios you *load*

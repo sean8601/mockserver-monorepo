@@ -27,6 +27,7 @@ public sealed class MockServerClient : IDisposable
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
     private readonly bool _ownsHttpClient;
+    private Func<string>? _controlPlaneBearerTokenSupplier;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -62,6 +63,81 @@ public sealed class MockServerClient : IDisposable
         _baseUrl = baseUrl.TrimEnd('/');
         _httpClient = httpClient;
         _ownsHttpClient = false;
+    }
+
+    /// <summary>
+    /// Internal constructor used by <see cref="MockServerClientBuilder"/> to construct a
+    /// client around a pre-built (possibly TLS-configured) HttpClient with a bearer-token supplier.
+    /// </summary>
+    private MockServerClient(
+        string baseUrl, HttpClient httpClient, bool ownsHttpClient, Func<string>? controlPlaneBearerTokenSupplier)
+    {
+        _baseUrl = baseUrl.TrimEnd('/');
+        _httpClient = httpClient;
+        _ownsHttpClient = ownsHttpClient;
+        _controlPlaneBearerTokenSupplier = controlPlaneBearerTokenSupplier;
+    }
+
+    /// <summary>
+    /// Begin building a client with control-plane authentication and/or custom TLS.
+    /// </summary>
+    /// <param name="host">MockServer host (e.g., "localhost").</param>
+    /// <param name="port">MockServer port (default 1080).</param>
+    public static MockServerClientBuilder Builder(string host, int port = 1080)
+        => new MockServerClientBuilder(host, port);
+
+    internal static MockServerClient CreateConfigured(
+        string host, int port, string contextPath, bool secure,
+        HttpClient httpClient, bool ownsHttpClient, Func<string>? controlPlaneBearerTokenSupplier)
+    {
+        var scheme = secure ? "https" : "http";
+        var ctxPath = string.IsNullOrEmpty(contextPath)
+            ? ""
+            : (contextPath.StartsWith("/") ? contextPath : "/" + contextPath);
+        var baseUrl = $"{scheme}://{host}:{port}{ctxPath}";
+        return new MockServerClient(baseUrl, httpClient, ownsHttpClient, controlPlaneBearerTokenSupplier);
+    }
+
+    // -------------------------------------------------------------------
+    // Control-plane authentication
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    /// Attach <c>Authorization: Bearer &lt;token&gt;</c> to every control-plane request this
+    /// client sends. The client only ever issues control-plane requests, so all of its
+    /// requests carry the header. Returns this client for chaining.
+    /// </summary>
+    public MockServerClient WithControlPlaneBearerToken(string token)
+    {
+        if (string.IsNullOrEmpty(token))
+            throw new ArgumentException("token is required", nameof(token));
+        _controlPlaneBearerTokenSupplier = () => token;
+        return this;
+    }
+
+    /// <summary>
+    /// Attach <c>Authorization: Bearer &lt;token&gt;</c> to every control-plane request,
+    /// evaluating <paramref name="tokenSupplier"/> per request (e.g., for rotating tokens).
+    /// Returns this client for chaining.
+    /// </summary>
+    public MockServerClient WithControlPlaneBearerToken(Func<string> tokenSupplier)
+    {
+        _controlPlaneBearerTokenSupplier = tokenSupplier ?? throw new ArgumentNullException(nameof(tokenSupplier));
+        return this;
+    }
+
+    /// <summary>
+    /// Apply the configured control-plane bearer token (if any) to an outgoing request.
+    /// Evaluated per request so a supplier can return a rotating token.
+    /// </summary>
+    private void ApplyControlPlaneAuth(HttpRequestMessage request)
+    {
+        var supplier = _controlPlaneBearerTokenSupplier;
+        if (supplier == null) return;
+        var token = supplier();
+        if (string.IsNullOrEmpty(token)) return;
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
 
     // -------------------------------------------------------------------
@@ -1330,40 +1406,39 @@ public sealed class MockServerClient : IDisposable
     // HTTP transport
     // -------------------------------------------------------------------
 
-    private async Task<(int StatusCode, string Body)> PutAsync(string path, string jsonBody)
+    private async Task<(int StatusCode, string Body)> SendAsync(HttpRequestMessage request)
     {
-        var url = _baseUrl + path;
-        using var content = new StringContent(jsonBody ?? "", Encoding.UTF8, "application/json");
-        using var response = await _httpClient.PutAsync(url, content).ConfigureAwait(false);
-        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        return ((int)response.StatusCode, responseBody);
+        ApplyControlPlaneAuth(request);
+        using (request)
+        {
+            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+            var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            return ((int)response.StatusCode, responseBody);
+        }
     }
 
-    private async Task<(int StatusCode, string Body)> PutBytesAsync(string path, byte[] bytes)
+    private Task<(int StatusCode, string Body)> PutAsync(string path, string jsonBody)
     {
-        var url = _baseUrl + path;
-        using var content = new ByteArrayContent(bytes);
+        var request = new HttpRequestMessage(HttpMethod.Put, _baseUrl + path)
+        {
+            Content = new StringContent(jsonBody ?? "", Encoding.UTF8, "application/json")
+        };
+        return SendAsync(request);
+    }
+
+    private Task<(int StatusCode, string Body)> PutBytesAsync(string path, byte[] bytes)
+    {
+        var content = new ByteArrayContent(bytes);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
-        using var response = await _httpClient.PutAsync(url, content).ConfigureAwait(false);
-        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        return ((int)response.StatusCode, responseBody);
+        var request = new HttpRequestMessage(HttpMethod.Put, _baseUrl + path) { Content = content };
+        return SendAsync(request);
     }
 
-    private async Task<(int StatusCode, string Body)> GetAsync(string path)
-    {
-        var url = _baseUrl + path;
-        using var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
-        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        return ((int)response.StatusCode, responseBody);
-    }
+    private Task<(int StatusCode, string Body)> GetAsync(string path)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Get, _baseUrl + path));
 
-    private async Task<(int StatusCode, string Body)> DeleteAsync(string path)
-    {
-        var url = _baseUrl + path;
-        using var response = await _httpClient.DeleteAsync(url).ConfigureAwait(false);
-        var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        return ((int)response.StatusCode, responseBody);
-    }
+    private Task<(int StatusCode, string Body)> DeleteAsync(string path)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Delete, _baseUrl + path));
 
     public void Dispose()
     {

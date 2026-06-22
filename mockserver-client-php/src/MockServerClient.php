@@ -38,11 +38,40 @@ class MockServerClient
     private string $baseUri;
 
     /**
+     * A static control-plane bearer token, or a callable returning one
+     * (a supplier, so the token can refresh between requests). Null when no
+     * control-plane authentication is configured.
+     *
+     * @var string|callable():?string|null
+     */
+    private $controlPlaneBearerToken;
+
+    /** Path to a PEM CA bundle used to verify the MockServer HTTPS certificate. */
+    private ?string $caCertPath = null;
+
+    /** Path to a PEM client certificate presented for mutual TLS. */
+    private ?string $clientCertPath = null;
+
+    /** Path to the PEM private key for the client certificate (when separate). */
+    private ?string $clientKeyPath = null;
+
+    /**
      * @param string $host MockServer hostname
      * @param int $port MockServer port (default 1080)
      * @param string $contextPath Optional context path prefix
      * @param bool $secure Use HTTPS
      * @param array<string, mixed> $guzzleOptions Additional Guzzle client options
+     * @param string|callable():?string|null $controlPlaneBearerToken Optional control-plane
+     *        bearer token. May be a string, or a callable returning the current token
+     *        (a supplier, evaluated per request so it can refresh). When set, an
+     *        {@code Authorization: Bearer <token>} header is attached to every
+     *        control-plane request this client issues.
+     * @param string|null $caCertPath Optional path to a PEM CA bundle used to verify the
+     *        MockServer HTTPS certificate (Guzzle {@see RequestOptions::VERIFY}).
+     * @param string|null $clientCertPath Optional path to a PEM client certificate presented
+     *        for mutual TLS (Guzzle {@see RequestOptions::CERT}).
+     * @param string|null $clientKeyPath Optional path to the PEM private key for the client
+     *        certificate when it is stored separately (Guzzle {@see RequestOptions::SSL_KEY}).
      */
     public function __construct(
         string $host = 'localhost',
@@ -50,6 +79,10 @@ class MockServerClient
         string $contextPath = '',
         bool $secure = false,
         array $guzzleOptions = [],
+        string|callable|null $controlPlaneBearerToken = null,
+        ?string $caCertPath = null,
+        ?string $clientCertPath = null,
+        ?string $clientKeyPath = null,
     ) {
         $scheme = $secure ? 'https' : 'http';
         $ctxPath = '';
@@ -57,6 +90,11 @@ class MockServerClient
             $ctxPath = str_starts_with($contextPath, '/') ? $contextPath : '/' . $contextPath;
         }
         $this->baseUri = "{$scheme}://{$host}:{$port}{$ctxPath}";
+
+        $this->controlPlaneBearerToken = $controlPlaneBearerToken;
+        $this->caCertPath = $caCertPath;
+        $this->clientCertPath = $clientCertPath;
+        $this->clientKeyPath = $clientKeyPath;
 
         $defaultOptions = [
             'base_uri' => $this->baseUri,
@@ -69,6 +107,124 @@ class MockServerClient
         ];
 
         $this->httpClient = new GuzzleClient(array_merge($defaultOptions, $guzzleOptions));
+    }
+
+    // -----------------------------------------------------------------
+    // Control-plane authentication + TLS/mTLS (fluent setters)
+    // -----------------------------------------------------------------
+
+    /**
+     * Configure a control-plane bearer token.
+     *
+     * The token is sent as {@code Authorization: Bearer <token>} on every
+     * control-plane request this client issues. Supply either a fixed string or
+     * a callable (supplier) that returns the current token; the callable is
+     * evaluated per request so a rotating/refreshing token works transparently.
+     *
+     * Passing {@code null} clears any previously configured token.
+     *
+     * @param string|callable():?string|null $token A token string, a supplier
+     *        callable returning the token, or null to clear.
+     * @return $this
+     */
+    public function withControlPlaneBearerToken(string|callable|null $token): self
+    {
+        $this->controlPlaneBearerToken = $token;
+        return $this;
+    }
+
+    /**
+     * Trust a specific CA certificate when connecting to MockServer over HTTPS.
+     *
+     * @param string|null $caCertPath Path to a PEM CA bundle (Guzzle
+     *        {@see RequestOptions::VERIFY}), or null to clear.
+     * @return $this
+     */
+    public function withCaCertificate(?string $caCertPath): self
+    {
+        $this->caCertPath = $caCertPath;
+        return $this;
+    }
+
+    /**
+     * Present a client certificate (and optional separate private key) for
+     * mutual TLS to a MockServer that requires client authentication.
+     *
+     * @param string|null $clientCertPath Path to a PEM client certificate (Guzzle
+     *        {@see RequestOptions::CERT}), or null to clear.
+     * @param string|null $clientKeyPath Optional path to the PEM private key when
+     *        stored separately from the certificate (Guzzle {@see RequestOptions::SSL_KEY}).
+     * @return $this
+     */
+    public function withClientCertificate(?string $clientCertPath, ?string $clientKeyPath = null): self
+    {
+        $this->clientCertPath = $clientCertPath;
+        $this->clientKeyPath = $clientKeyPath;
+        return $this;
+    }
+
+    /**
+     * Build the per-request Guzzle options carrying control-plane auth + TLS/mTLS.
+     *
+     * The returned array contains an {@code Authorization} header (when a bearer
+     * token is configured) and {@see RequestOptions::VERIFY} /
+     * {@see RequestOptions::CERT} / {@see RequestOptions::SSL_KEY} (when CA /
+     * client-cert paths are configured).
+     *
+     * @return array<string, mixed>
+     */
+    private function controlPlaneOptions(): array
+    {
+        $options = [];
+
+        $token = $this->controlPlaneBearerToken;
+        if (is_callable($token)) {
+            $token = $token();
+        }
+        if (is_string($token) && $token !== '') {
+            $options[RequestOptions::HEADERS] = [
+                'Authorization' => 'Bearer ' . $token,
+            ];
+        }
+
+        if ($this->caCertPath !== null) {
+            $options[RequestOptions::VERIFY] = $this->caCertPath;
+        }
+        if ($this->clientCertPath !== null) {
+            $options[RequestOptions::CERT] = $this->clientCertPath;
+        }
+        if ($this->clientKeyPath !== null) {
+            $options[RequestOptions::SSL_KEY] = $this->clientKeyPath;
+        }
+
+        return $options;
+    }
+
+    /**
+     * Merge control-plane auth/TLS options into a set of per-request options.
+     *
+     * Header maps are merged key-wise (so a per-call Content-Type override and the
+     * Authorization header coexist); per-call values take precedence on conflict.
+     *
+     * @param array<string, mixed> $perRequest
+     * @return array<string, mixed>
+     */
+    private function withControlPlaneOptions(array $perRequest): array
+    {
+        $base = $this->controlPlaneOptions();
+
+        $baseHeaders = $base[RequestOptions::HEADERS] ?? [];
+        $perRequestHeaders = $perRequest[RequestOptions::HEADERS] ?? [];
+
+        $merged = array_merge($base, $perRequest);
+
+        if ($baseHeaders !== [] || $perRequestHeaders !== []) {
+            // Per-request headers win on conflict, but the Authorization header
+            // from the control plane is preserved when not overridden.
+            $merged[RequestOptions::HEADERS] = array_merge($baseHeaders, $perRequestHeaders);
+        }
+
+        return $merged;
     }
 
     // -----------------------------------------------------------------
@@ -1315,6 +1471,8 @@ class MockServerClient
             $options[RequestOptions::HEADERS] = ['Content-Type' => $contentType];
         }
 
+        $options = $this->withControlPlaneOptions($options);
+
         try {
             return $this->httpClient->request('PUT', $path, $options);
         } catch (ConnectException $e) {
@@ -1366,8 +1524,10 @@ class MockServerClient
      */
     private function send(string $method, string $path): \Psr\Http\Message\ResponseInterface
     {
+        $options = $this->withControlPlaneOptions([]);
+
         try {
-            return $this->httpClient->request($method, $path);
+            return $this->httpClient->request($method, $path, $options);
         } catch (ConnectException $e) {
             throw new ConnectionException(
                 "Failed to connect to MockServer at {$this->baseUri}: {$e->getMessage()}",

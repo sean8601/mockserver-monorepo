@@ -196,8 +196,15 @@ var mockServerClient;
      * @param contextPath the context path if server was deployed as a war i.e. '/myContextPath'
      * @param tls enable TLS (i.e. HTTPS) for communication to server
      * @param caCertPemFilePath provide custom CA Certificate (defaults to MockServer CA Certificate)
+     * @param options optional control-plane auth + mTLS settings:
+     *        {
+     *            bearerToken,            // static control-plane JWT attached as `Authorization: Bearer <token>`
+     *            bearerTokenSupplier,    // function() => string, evaluated per-request (overrides bearerToken)
+     *            clientCertPemFilePath,  // PEM client certificate for mutual TLS
+     *            clientKeyPemFilePath    // PEM private key for mutual TLS
+     *        }
      */
-    mockServerClient = function (host, port, contextPath, tls, caCertPemFilePath) {
+    mockServerClient = function (host, port, contextPath, tls, caCertPemFilePath, options) {
 
         var runningInNode = function () {
             return (typeof require !== 'undefined') && require('browser-or-node').isNode;
@@ -212,7 +219,32 @@ var mockServerClient;
         // mcpMockBuilder.js.
         var _mcpMock = (typeof require !== 'undefined') ? require('./mcpMockBuilder').mcpMock : (typeof window !== 'undefined' ? (window.mockServerMcp && window.mockServerMcp.mcpMock) : undefined);
 
-        var makeRequest = (runningInNode() ? require('./sendRequest').sendRequest(tls, caCertPemFilePath) : function (host, port, path, jsonBody) {
+        // Resolve the control-plane bearer token (static or supplier) for the
+        // browser (XMLHttpRequest) transport path. The Node transport resolves
+        // it per-request inside sendRequest.js.
+        var _resolveBrowserBearerToken = function () {
+            if (!options) {
+                return null;
+            }
+            var token = null;
+            if (typeof options.bearerTokenSupplier === 'function') {
+                token = options.bearerTokenSupplier();
+            } else if (options.bearerToken !== undefined && options.bearerToken !== null) {
+                token = options.bearerToken;
+            }
+            if (token === undefined || token === null || token === '') {
+                return null;
+            }
+            return String(token);
+        };
+        var _setBrowserAuthHeader = function (xmlhttp) {
+            var token = _resolveBrowserBearerToken();
+            if (token) {
+                xmlhttp.setRequestHeader("Authorization", "Bearer " + token);
+            }
+        };
+
+        var makeRequest = (runningInNode() ? require('./sendRequest').sendRequest(tls, caCertPemFilePath, options) : function (host, port, path, jsonBody) {
             var body = (typeof jsonBody === "string" ? jsonBody : JSON.stringify(jsonBody || ""));
             var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
 
@@ -240,6 +272,7 @@ var mockServerClient;
                         })(sucess, error));
                         xmlhttp.open('PUT', url);
                         xmlhttp.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+                        _setBrowserAuthHeader(xmlhttp);
                         xmlhttp.send(body);
                     } catch (e) {
                         if (error) {
@@ -250,7 +283,7 @@ var mockServerClient;
             };
         });
 
-        var makeGetRequest = (runningInNode() ? require('./sendRequest').sendGetRequest(tls, caCertPemFilePath) : function (host, port, path) {
+        var makeGetRequest = (runningInNode() ? require('./sendRequest').sendGetRequest(tls, caCertPemFilePath, options) : function (host, port, path) {
             var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
 
             return {
@@ -276,6 +309,7 @@ var mockServerClient;
                             };
                         })(sucess, error));
                         xmlhttp.open('GET', url);
+                        _setBrowserAuthHeader(xmlhttp);
                         xmlhttp.send();
                     } catch (e) {
                         if (error) {
@@ -286,7 +320,7 @@ var mockServerClient;
             };
         });
 
-        var makeBinaryRequest = (runningInNode() ? require('./sendRequest').sendBinaryRequest(tls, caCertPemFilePath) : function (host, port, path, bodyBuffer, contentType) {
+        var makeBinaryRequest = (runningInNode() ? require('./sendRequest').sendBinaryRequest(tls, caCertPemFilePath, options) : function (host, port, path, bodyBuffer, contentType) {
             var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
 
             return {
@@ -313,6 +347,7 @@ var mockServerClient;
                         })(sucess, error));
                         xmlhttp.open('PUT', url);
                         xmlhttp.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+                        _setBrowserAuthHeader(xmlhttp);
                         xmlhttp.send(bodyBuffer);
                     } catch (e) {
                         if (error) {
@@ -323,7 +358,7 @@ var mockServerClient;
             };
         });
 
-        var makeDeleteRequest = (runningInNode() ? require('./sendRequest').sendDeleteRequest(tls, caCertPemFilePath) : function (host, port, path) {
+        var makeDeleteRequest = (runningInNode() ? require('./sendRequest').sendDeleteRequest(tls, caCertPemFilePath, options) : function (host, port, path) {
             var url = (tls ? 'https' : 'http') + '://' + host + ':' + port + (contextPath ? (contextPath.indexOf("/") === 0 ? contextPath : "/" + contextPath) : "") + path;
 
             return {
@@ -349,6 +384,7 @@ var mockServerClient;
                             };
                         })(sucess, error));
                         xmlhttp.open('DELETE', url);
+                        _setBrowserAuthHeader(xmlhttp);
                         xmlhttp.send();
                     } catch (e) {
                         if (error) {

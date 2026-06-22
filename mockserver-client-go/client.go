@@ -2,11 +2,14 @@ package mockserver
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 )
@@ -17,15 +20,102 @@ type Client struct {
 	httpClient   *http.Client
 	bpMu         sync.Mutex // guards breakpointWS lazy-init and close
 	breakpointWS *breakpointWSClient
+
+	// bearerTokenSupplier, when non-nil, is invoked for every control-plane
+	// request to obtain the token attached as "Authorization: Bearer <token>".
+	bearerTokenSupplier func() string
+
+	// tlsConfig accumulates CA roots and client certificates from the
+	// WithCACert*/WithClientCert* options. It is applied to the http.Client's
+	// Transport (creating one if the user did not supply their own).
+	tlsConfig *tls.Config
+	// tlsConfigErr captures the first error encountered while building
+	// tlsConfig so it can surface on the next request rather than panicking
+	// inside an option.
+	tlsConfigErr error
+	// userSuppliedHTTPClient records that the caller provided an http.Client
+	// via WithHTTPClient, in which case a user-supplied Transport.TLSClientConfig
+	// takes precedence over the CA/client-cert options.
+	userSuppliedHTTPClient bool
 }
 
 // Option configures a Client.
 type Option func(*Client)
 
 // WithHTTPClient sets a custom http.Client for the MockServer client.
+//
+// Precedence: if the supplied http.Client has a *http.Transport whose
+// TLSClientConfig is already set, that configuration is left untouched and the
+// WithCACert*/WithClientCert* options are NOT applied on top of it (the caller
+// is assumed to be in full control of TLS). If the supplied client has no
+// TLSClientConfig, the CA/client-cert options populate one on its Transport.
 func WithHTTPClient(c *http.Client) Option {
 	return func(client *Client) {
 		client.httpClient = c
+		client.userSuppliedHTTPClient = true
+	}
+}
+
+// WithControlPlaneBearerToken attaches "Authorization: Bearer <token>" to every
+// control-plane request the client sends. Use this when MockServer is started
+// with mockserver.controlPlaneJWTAuthenticationRequired (the client does not
+// generate the JWT — supply the token string yourself).
+func WithControlPlaneBearerToken(token string) Option {
+	return func(client *Client) {
+		client.bearerTokenSupplier = func() string { return token }
+	}
+}
+
+// WithControlPlaneBearerTokenSupplier attaches "Authorization: Bearer <token>"
+// to every control-plane request, calling the supplied function once per
+// request so a short-lived/refreshable token can be provided. If supplier
+// returns an empty string, no Authorization header is attached for that request.
+func WithControlPlaneBearerTokenSupplier(supplier func() string) Option {
+	return func(client *Client) {
+		client.bearerTokenSupplier = supplier
+	}
+}
+
+// WithCACertPEMPath trusts the CA certificate(s) in the given PEM file when
+// connecting to an HTTPS MockServer, so a server presenting a certificate
+// signed by that CA validates. Compose with WithTLS to use HTTPS.
+func WithCACertPEMPath(path string) Option {
+	return func(client *Client) {
+		pem, err := os.ReadFile(path)
+		if err != nil {
+			client.setTLSConfigErr(fmt.Errorf("mockserver: read CA cert %q: %w", path, err))
+			return
+		}
+		WithCACertPEM(pem)(client)
+	}
+}
+
+// WithCACertPEM trusts the CA certificate(s) in the given PEM bytes when
+// connecting to an HTTPS MockServer. Compose with WithTLS to use HTTPS.
+func WithCACertPEM(pem []byte) Option {
+	return func(client *Client) {
+		cfg := client.ensureTLSConfig()
+		if cfg.RootCAs == nil {
+			cfg.RootCAs = x509.NewCertPool()
+		}
+		if !cfg.RootCAs.AppendCertsFromPEM(pem) {
+			client.setTLSConfigErr(fmt.Errorf("mockserver: no valid CA certificates found in PEM"))
+		}
+	}
+}
+
+// WithClientCertPEM presents the given client certificate + private key (PEM
+// files) for mutual TLS when connecting to MockServer started with
+// mockserver.controlPlaneTLSMutualAuthenticationRequired.
+func WithClientCertPEM(certPath, keyPath string) Option {
+	return func(client *Client) {
+		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			client.setTLSConfigErr(fmt.Errorf("mockserver: load client cert/key: %w", err))
+			return
+		}
+		cfg := client.ensureTLSConfig()
+		cfg.Certificates = append(cfg.Certificates, cert)
 	}
 }
 
@@ -67,6 +157,7 @@ func New(host string, port int, opts ...Option) *Client {
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.applyTLSConfig()
 	return c
 }
 
@@ -85,7 +176,54 @@ func NewFromURL(baseURL string, opts ...Option) *Client {
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.applyTLSConfig()
 	return c
+}
+
+// ensureTLSConfig lazily creates the accumulating tls.Config used by the
+// CA/client-cert options.
+func (c *Client) ensureTLSConfig() *tls.Config {
+	if c.tlsConfig == nil {
+		c.tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return c.tlsConfig
+}
+
+// setTLSConfigErr records the first TLS configuration error so it surfaces on
+// the next request rather than panicking inside an option.
+func (c *Client) setTLSConfigErr(err error) {
+	if c.tlsConfigErr == nil {
+		c.tlsConfigErr = err
+	}
+}
+
+// applyTLSConfig installs the accumulated tls.Config onto the http.Client's
+// Transport. If the user supplied their own http.Client whose Transport already
+// has a TLSClientConfig, that configuration takes precedence and is left alone.
+func (c *Client) applyTLSConfig() {
+	if c.tlsConfig == nil {
+		return
+	}
+	if c.httpClient == nil {
+		c.httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	transport, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		if c.userSuppliedHTTPClient && c.httpClient.Transport != nil {
+			// A custom non-*http.Transport RoundTripper is fully in the
+			// caller's control; do not override it.
+			return
+		}
+		transport = http.DefaultTransport.(*http.Transport).Clone()
+		c.httpClient.Transport = transport
+	}
+
+	if c.userSuppliedHTTPClient && transport.TLSClientConfig != nil {
+		// Caller already configured TLS; their configuration wins.
+		return
+	}
+	transport.TLSClientConfig = c.tlsConfig
 }
 
 // ForwardChainExpectation allows chaining a When() call with Respond/Forward/Error.
@@ -730,6 +868,10 @@ func (c *Client) doRequest(method, path string, body []byte, params url.Values) 
 // given Content-Type. The body is sent verbatim (no encoding), which is
 // required for raw binary payloads such as gRPC descriptor sets.
 func (c *Client) doRequestWithContentType(method, path string, body []byte, params url.Values, contentType string) ([]byte, int, error) {
+	if c.tlsConfigErr != nil {
+		return nil, 0, c.tlsConfigErr
+	}
+
 	u := c.baseURL + path
 	if len(params) > 0 {
 		u = u + "?" + params.Encode()
@@ -745,6 +887,15 @@ func (c *Client) doRequestWithContentType(method, path string, body []byte, para
 		return nil, 0, fmt.Errorf("mockserver: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
+
+	// Attach the control-plane bearer token (if configured) to every
+	// control-plane request. All requests this client sends are control-plane
+	// (/mockserver/*); the data plane is never driven through this method.
+	if c.bearerTokenSupplier != nil {
+		if token := c.bearerTokenSupplier(); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

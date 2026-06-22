@@ -22,6 +22,9 @@
     "chaos": {
       "$ref": "#/definitions/httpChaosProfile"
     },
+    "rateLimit": {
+      "$ref": "#/definitions/rateLimit"
+    },
     "httpRequest": {
       "$ref": "#/definitions/requestDefinition"
     },
@@ -147,8 +150,52 @@
     "responseMode": {
       "enum": [
         "SEQUENTIAL",
-        "RANDOM"
+        "RANDOM",
+        "WEIGHTED",
+        "SWITCH"
       ]
+    },
+    "responseWeights": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "switchAfter": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "crossProtocolScenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "trigger": {
+            "enum": [
+              "DNS_QUERY",
+              "WEBSOCKET_CONNECT",
+              "GRPC_REQUEST",
+              "HTTP_REQUEST"
+            ]
+          },
+          "matchPattern": {
+            "type": "string"
+          },
+          "scenarioName": {
+            "type": "string"
+          },
+          "targetState": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger",
+          "scenarioName",
+          "targetState"
+        ]
+      }
     },
     "times": {
       "$ref": "#/definitions/times"
@@ -295,6 +342,9 @@
         },
         {
           "$ref": "#/definitions/dnsRequestDefinition"
+        },
+        {
+          "$ref": "#/definitions/conditionalRequestDefinition"
         }
       ],
       "definitions": {}
@@ -304,6 +354,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "not": {
+          "type": "boolean"
+        },
         "specUrlOrPayload": {
           "anyOf": [
             {
@@ -315,6 +368,9 @@
           ]
         },
         "operationId": {
+          "type": "string"
+        },
+        "contextPathPrefix": {
           "type": "string"
         }
       },
@@ -383,6 +439,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "not": {
+          "type": "boolean"
+        },
         "secure": {
           "type": "boolean"
         },
@@ -463,11 +522,17 @@
         "body": {
           "$ref": "#/definitions/bodyWithContentType"
         },
+        "generateFromSchema": {
+          "type": "string"
+        },
         "cookies": {
           "$ref": "#/definitions/keyToValue"
         },
         "connectionOptions": {
           "$ref": "#/definitions/connectionOptions"
+        },
+        "recoverAfter": {
+          "$ref": "#/definitions/recoverAfter"
         },
         "headers": {
           "$ref": "#/definitions/keyToMultiValue"
@@ -477,6 +542,9 @@
         },
         "statusCode": {
           "type": "integer"
+        },
+        "statusCodeRange": {
+          "type": "string"
         },
         "reasonPhrase": {
           "type": "string"
@@ -555,11 +623,184 @@
                   }
                 }
               }
+            },
+            "condition": {
+              "$ref": "#/definitions/responseModifierCondition"
+            },
+            "modifiers": {
+              "type": "array",
+              "additionalProperties": false,
+              "items": {
+                "$ref": "#/definitions/responseModifier"
+              }
+            },
+            "jsonPatch": {
+              "type": "array"
+            },
+            "jsonMergePatch": {
+              "type": "object"
             }
           }
         }
       },
-      "definitions": {}
+      "definitions": {
+        "responseModifierCondition": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "statusCode": {
+              "type": "integer"
+            },
+            "statusCodeRange": {
+              "type": "string"
+            },
+            "responseHasHeader": {
+              "type": "string"
+            },
+            "requestHasHeader": {
+              "type": "string"
+            }
+          }
+        },
+        "responseModifier": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "headers": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "add": {
+                  "$ref": "#/definitions/keyToMultiValue"
+                },
+                "replace": {
+                  "$ref": "#/definitions/keyToMultiValue"
+                },
+                "remove": {
+                  "type": "array",
+                  "additionalProperties": false,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "cookies": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "add": {
+                  "$ref": "#/definitions/keyToValue"
+                },
+                "replace": {
+                  "$ref": "#/definitions/keyToValue"
+                },
+                "remove": {
+                  "type": "array",
+                  "additionalProperties": false,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "condition": {
+              "$ref": "#/definitions/responseModifierCondition"
+            },
+            "modifiers": {
+              "type": "array",
+              "additionalProperties": false,
+              "items": {
+                "$ref": "#/definitions/responseModifier"
+              }
+            },
+            "jsonPatch": {
+              "type": "array"
+            },
+            "jsonMergePatch": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "responseModifierCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "statusCode": {
+          "type": "integer"
+        },
+        "statusCodeRange": {
+          "type": "string"
+        },
+        "responseHasHeader": {
+          "type": "string"
+        },
+        "requestHasHeader": {
+          "type": "string"
+        }
+      }
+    },
+    "responseModifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "$ref": "#/definitions/keyToMultiValue"
+            },
+            "replace": {
+              "$ref": "#/definitions/keyToMultiValue"
+            },
+            "remove": {
+              "type": "array",
+              "additionalProperties": false,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "cookies": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "$ref": "#/definitions/keyToValue"
+            },
+            "replace": {
+              "$ref": "#/definitions/keyToValue"
+            },
+            "remove": {
+              "type": "array",
+              "additionalProperties": false,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "condition": {
+          "$ref": "#/definitions/responseModifierCondition"
+        },
+        "modifiers": {
+          "type": "array",
+          "additionalProperties": false,
+          "items": {
+            "$ref": "#/definitions/responseModifier"
+          }
+        },
+        "jsonPatch": {
+          "type": "array"
+        },
+        "jsonMergePatch": {
+          "type": "object"
+        }
+      }
     },
     "httpForward": {
       "title": "host and port to forward to",
@@ -757,6 +998,22 @@
                       }
                     }
                   }
+                },
+                "condition": {
+                  "$ref": "#/definitions/responseModifierCondition"
+                },
+                "modifiers": {
+                  "type": "array",
+                  "additionalProperties": false,
+                  "items": {
+                    "$ref": "#/definitions/responseModifier"
+                  }
+                },
+                "jsonPatch": {
+                  "type": "array"
+                },
+                "jsonMergePatch": {
+                  "type": "object"
                 }
               }
             },
@@ -787,7 +1044,86 @@
           }
         }
       ],
-      "definitions": {}
+      "definitions": {
+        "responseModifierCondition": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "statusCode": {
+              "type": "integer"
+            },
+            "statusCodeRange": {
+              "type": "string"
+            },
+            "responseHasHeader": {
+              "type": "string"
+            },
+            "requestHasHeader": {
+              "type": "string"
+            }
+          }
+        },
+        "responseModifier": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "headers": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "add": {
+                  "$ref": "#/definitions/keyToMultiValue"
+                },
+                "replace": {
+                  "$ref": "#/definitions/keyToMultiValue"
+                },
+                "remove": {
+                  "type": "array",
+                  "additionalProperties": false,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "cookies": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "add": {
+                  "$ref": "#/definitions/keyToValue"
+                },
+                "replace": {
+                  "$ref": "#/definitions/keyToValue"
+                },
+                "remove": {
+                  "type": "array",
+                  "additionalProperties": false,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "condition": {
+              "$ref": "#/definitions/responseModifierCondition"
+            },
+            "modifiers": {
+              "type": "array",
+              "additionalProperties": false,
+              "items": {
+                "$ref": "#/definitions/responseModifier"
+              }
+            },
+            "jsonPatch": {
+              "type": "array"
+            },
+            "jsonMergePatch": {
+              "type": "object"
+            }
+          }
+        }
+      }
     },
     "httpForwardValidateAction": {
       "title": "forward and validate against OpenAPI spec",
@@ -955,7 +1291,9 @@
             "GEMINI",
             "BEDROCK",
             "AZURE_OPENAI",
-            "OLLAMA"
+            "OLLAMA",
+            "COHERE",
+            "VOYAGE"
           ]
         },
         "model": {
@@ -1009,6 +1347,15 @@
             "outputSchema": {
               "type": "string"
             },
+            "enforceOutputSchema": {
+              "type": "boolean"
+            },
+            "toolChoice": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
             "streamingPhysics": {
               "type": "object",
               "additionalProperties": false,
@@ -1039,6 +1386,22 @@
           "properties": {
             "dimensions": {
               "type": "integer"
+            },
+            "deterministicFromInput": {
+              "type": "boolean"
+            },
+            "seed": {
+              "type": "integer"
+            }
+          }
+        },
+        "rerank": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "topN": {
+              "type": "integer",
+              "minimum": 0
             },
             "deterministicFromInput": {
               "type": "boolean"
@@ -1196,6 +1559,47 @@
             }
           }
         },
+        "matchers": {
+          "type": "array",
+          "description": "per-incoming-frame response rules; when set, an incoming frame matching a rule triggers that rule's responses",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "frameType": {
+                "enum": [
+                  "TEXT",
+                  "BINARY",
+                  "PING",
+                  "PONG",
+                  "ANY"
+                ]
+              },
+              "textMatcher": {
+                "type": "string"
+              },
+              "responses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "binary": {
+                      "type": "string",
+                      "format": "byte"
+                    },
+                    "delay": {
+                      "$ref": "#/definitions/delay"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "closeConnection": {
           "type": "boolean"
         },
@@ -1304,6 +1708,13 @@
               "json": {
                 "type": "string"
               },
+              "templateType": {
+                "enum": [
+                  "VELOCITY",
+                  "JAVASCRIPT",
+                  "MUSTACHE"
+                ]
+              },
               "delay": {
                 "$ref": "#/definitions/delay"
               }
@@ -1327,6 +1738,13 @@
                   "properties": {
                     "json": {
                       "type": "string"
+                    },
+                    "templateType": {
+                      "enum": [
+                        "VELOCITY",
+                        "JAVASCRIPT",
+                        "MUSTACHE"
+                      ]
                     },
                     "delay": {
                       "$ref": "#/definitions/delay"
@@ -2006,6 +2424,32 @@
             },
             "type": {
               "enum": [
+                "FUZZY"
+              ]
+            },
+            "fuzzy": {
+              "type": "string"
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "ignoreCase": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "type": "boolean"
+            },
+            "optional": {
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
                 "STRING"
               ]
             },
@@ -2131,6 +2575,22 @@
               "type": "string"
             },
             "variablesSchema": {
+              "type": "string"
+            },
+            "selectionSetMatchType": {
+              "enum": [
+                "NORMALISED_STRING",
+                "AST_EXACT",
+                "AST_SUBSET"
+              ]
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "schema": {
               "type": "string"
             }
           },
@@ -2345,6 +2805,18 @@
         },
         "value": {
           "type": "integer"
+        },
+        "template": {
+          "type": "string",
+          "description": "opt-in template rendered against the request whose output is parsed as a millisecond delay (e.g. respond more slowly for larger payloads); falls back to value/timeUnit on a non-numeric or blank result"
+        },
+        "templateType": {
+          "type": "string",
+          "description": "template engine used to evaluate the delay template; only VELOCITY and MUSTACHE are supported",
+          "enum": [
+            "VELOCITY",
+            "MUSTACHE"
+          ]
         },
         "distribution": {
           "type": "object",
@@ -2565,6 +3037,122 @@
       ],
       "definitions": {}
     },
+    "rateLimit": {
+      "title": "declarative protocol-agnostic rate limit / quota",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Shared counter key; expectations with the same name share one rate-limit counter. When omitted the expectation id is used as the key"
+        },
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "fixed_window",
+            "token_bucket"
+          ],
+          "description": "Rate-limiting algorithm; defaults to fixed_window"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "fixed_window: maximum requests allowed per window before requests are rejected"
+        },
+        "windowMillis": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "fixed_window: fixed-window length in milliseconds"
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "token_bucket: bucket capacity in tokens"
+        },
+        "refillPerSecond": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "token_bucket: token refill rate per second"
+        },
+        "errorStatus": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599,
+          "description": "Status returned when the request is over-limit (default 429)"
+        },
+        "retryAfter": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Literal Retry-After header value; when omitted it is computed from the window/bucket reset time"
+        }
+      }
+    },
+    "conditionalRequestDefinition": {
+      "title": "conditional (if-then-else) request matcher",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "not": {
+          "type": "boolean"
+        },
+        "if": {
+          "$ref": "#/definitions/conditionalBranch"
+        },
+        "then": {
+          "$ref": "#/definitions/conditionalBranch"
+        },
+        "else": {
+          "$ref": "#/definitions/conditionalBranch"
+        }
+      },
+      "required": [
+        "if"
+      ],
+      "definitions": {
+        "conditionalBranch": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/httpRequest"
+            },
+            {
+              "$ref": "#/definitions/openAPIDefinition"
+            },
+            {
+              "$ref": "#/definitions/conditionalRequestDefinition"
+            }
+          ]
+        }
+      }
+    },
+    "conditionalBranch": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/httpRequest"
+        },
+        {
+          "$ref": "#/definitions/openAPIDefinition"
+        },
+        {
+          "$ref": "#/definitions/conditionalRequestDefinition"
+        }
+      ]
+    },
+    "recoverAfter": {
+      "title": "recover after",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "failTimes": {
+          "type": "integer"
+        },
+        "failResponse": {
+          "type": "object"
+        },
+        "idempotencyHeader": {
+          "type": "string"
+        }
+      }
+    },
     "expectation": {
       "title": "expectation",
       "type": "object",
@@ -2583,6 +3171,9 @@
         },
         "chaos": {
           "$ref": "#/definitions/httpChaosProfile"
+        },
+        "rateLimit": {
+          "$ref": "#/definitions/rateLimit"
         },
         "httpRequest": {
           "$ref": "#/definitions/requestDefinition"
@@ -2709,8 +3300,52 @@
         "responseMode": {
           "enum": [
             "SEQUENTIAL",
-            "RANDOM"
+            "RANDOM",
+            "WEIGHTED",
+            "SWITCH"
           ]
+        },
+        "responseWeights": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "switchAfter": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "crossProtocolScenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "trigger": {
+                "enum": [
+                  "DNS_QUERY",
+                  "WEBSOCKET_CONNECT",
+                  "GRPC_REQUEST",
+                  "HTTP_REQUEST"
+                ]
+              },
+              "matchPattern": {
+                "type": "string"
+              },
+              "scenarioName": {
+                "type": "string"
+              },
+              "targetState": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "trigger",
+              "scenarioName",
+              "targetState"
+            ]
+          }
         },
         "times": {
           "$ref": "#/definitions/times"

@@ -64,6 +64,10 @@ pub struct ClientBuilder {
     context_path: String,
     secure: bool,
     tls_verify: bool,
+    control_plane_bearer_token: Option<String>,
+    ca_cert_pem: Option<Vec<u8>>,
+    /// Client identity for mTLS as `(certificate PEM, private key PEM)`.
+    client_identity_pem: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 impl ClientBuilder {
@@ -75,6 +79,9 @@ impl ClientBuilder {
             context_path: String::new(),
             secure: false,
             tls_verify: true,
+            control_plane_bearer_token: None,
+            ca_cert_pem: None,
+            client_identity_pem: None,
         }
     }
 
@@ -96,6 +103,82 @@ impl ClientBuilder {
         self
     }
 
+    /// Attach an `Authorization: Bearer <token>` header to **every control-plane
+    /// request** the built client sends.
+    ///
+    /// Use this when the server requires a JWT on the control plane
+    /// (`mockserver.controlPlaneJWTAuthenticationRequired=true`). The client does
+    /// not generate the token — supply the JWT string here. The header is only
+    /// sent on control-plane (`/mockserver/*`) requests issued by this client; it
+    /// is not added to any proxied/data-plane traffic.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use mockserver_client::ClientBuilder;
+    ///
+    /// let client = ClientBuilder::new("localhost", 1080)
+    ///     .secure(true)
+    ///     .control_plane_bearer_token("eyJhbGciOi...")
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn control_plane_bearer_token(mut self, token: impl Into<String>) -> Self {
+        self.control_plane_bearer_token = Some(token.into());
+        self
+    }
+
+    /// Trust the given CA certificate (PEM file path) when connecting over HTTPS.
+    ///
+    /// Reads the PEM file and adds it as an additional trusted root so a
+    /// MockServer HTTPS certificate issued by that CA validates. Compose with
+    /// [`secure(true)`](Self::secure). The CA is added to — not a replacement for
+    /// — the platform's default trust store.
+    ///
+    /// Errors from reading the file surface when [`build`](Self::build) is called.
+    pub fn ca_cert_pem_path(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        self.ca_cert_pem = std::fs::read(path.as_ref()).ok();
+        // Defer error reporting to build(); but if the read failed we still want
+        // build() to fail loudly rather than silently ignore the CA, so record a
+        // sentinel empty Vec which Certificate::from_pem will reject.
+        if self.ca_cert_pem.is_none() {
+            self.ca_cert_pem = Some(Vec::new());
+        }
+        self
+    }
+
+    /// Trust the given CA certificate (PEM bytes) when connecting over HTTPS.
+    ///
+    /// In-memory counterpart to [`ca_cert_pem_path`](Self::ca_cert_pem_path).
+    pub fn ca_cert_pem(mut self, bytes: impl Into<Vec<u8>>) -> Self {
+        self.ca_cert_pem = Some(bytes.into());
+        self
+    }
+
+    /// Present a client certificate + private key (PEM) for mutual TLS (mTLS).
+    ///
+    /// Reads the certificate and PKCS#8 private key PEM files and configures them
+    /// as the client identity used in the TLS handshake — required when the
+    /// server enforces `mockserver.controlPlaneTLSMutualAuthenticationRequired`.
+    ///
+    /// Errors from reading either file, or from building the identity, surface
+    /// when [`build`](Self::build) is called.
+    pub fn client_cert_pem(
+        mut self,
+        cert_path: impl AsRef<std::path::Path>,
+        key_path: impl AsRef<std::path::Path>,
+    ) -> Self {
+        match (
+            std::fs::read(cert_path.as_ref()),
+            std::fs::read(key_path.as_ref()),
+        ) {
+            (Ok(cert), Ok(key)) => self.client_identity_pem = Some((cert, key)),
+            // Record a sentinel empty buffer so build() fails loudly rather than
+            // silently dropping the requested client certificate.
+            _ => self.client_identity_pem = Some((Vec::new(), Vec::new())),
+        }
+        self
+    }
+
     /// Build the client.
     pub fn build(self) -> Result<MockServerClient> {
         let scheme = if self.secure { "https" } else { "http" };
@@ -108,9 +191,31 @@ impl ClientBuilder {
         };
         let base_url = format!("{scheme}://{}:{}{ctx}", self.host, self.port);
 
-        let http_client = Client::builder()
-            .danger_accept_invalid_certs(!self.tls_verify)
-            .build()?;
+        let mut builder = Client::builder().danger_accept_invalid_certs(!self.tls_verify);
+
+        // Attach the control-plane bearer token as a default header so it rides
+        // on every control-plane request this client issues (this client only
+        // ever talks to the `/mockserver/*` control plane).
+        if let Some(token) = self.control_plane_bearer_token {
+            let mut headers = reqwest::header::HeaderMap::new();
+            let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+                .map_err(|e| Error::InvalidRequest(format!("invalid bearer token: {e}")))?;
+            value.set_sensitive(true);
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+            builder = builder.default_headers(headers);
+        }
+
+        if let Some(ca) = self.ca_cert_pem {
+            let cert = reqwest::Certificate::from_pem(&ca)?;
+            builder = builder.add_root_certificate(cert);
+        }
+
+        if let Some((cert_pem, key_pem)) = self.client_identity_pem {
+            let identity = reqwest::Identity::from_pkcs8_pem(&cert_pem, &key_pem)?;
+            builder = builder.identity(identity);
+        }
+
+        let http_client = builder.build()?;
 
         Ok(MockServerClient {
             base_url,

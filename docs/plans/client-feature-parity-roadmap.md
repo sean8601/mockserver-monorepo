@@ -20,30 +20,44 @@ the new `examples/validate/run.sh` Docker harness.
   validated end-to-end by `examples/validate/run.sh` (every client passes against a freshly-built
   MockServer image).
 
-## Remaining parity gaps (per the breadth survey)
+## Gap re-verification (2026-06-22) — the breadth survey was substantially wrong
 
-| Area | Clients missing it | Notes | Size |
-|------|--------------------|-------|------|
-| Callbacks (class + closure/websocket) | Go, .NET, Rust, PHP | Node/Python/Ruby have closure callbacks only; Java full | L |
-| OpenAPI import / matcher | Go, PHP | generate-from-spec + OpenAPI request matcher | M |
-| Control-plane auth (Basic / mTLS) | Go, .NET, Rust, PHP | client-side auth headers + mTLS material | M |
-| TLS / mTLS client config | Go (partial), .NET (partial), PHP (none) | secure transport + client certs | M |
-| LLM mocking builders | Go | other clients have LLM builders | M |
-| Load-scenario injection | PHP | every other client has it | S |
-| Breakpoint / debugging | PHP | every other client has it | M |
-| `responseWeights` / `switchAfter` fluent setters | Java fluent (added in scenario work) | confirm all clients expose typed setters, not just fields | S |
+A precise, file:line re-verification of every claimed gap found **most were already complete**:
 
-## Schema-consistency follow-ups (surfaced during the scenario work)
+| Area | Survey said | Reality |
+|------|-------------|---------|
+| OpenAPI import / matcher | missing in Go, PHP | **already COMPLETE** in both (`openapi.go`, `OpenAPIExpectation.php`) |
+| LLM mocking builders | missing in Go | **already COMPLETE** (`llm.go`) |
+| Load-scenario injection | missing in PHP | **already COMPLETE** (`MockServerClient.php` loadScenario/status/stop + `LoadScenario.php`) |
+| Breakpoint / debugging | missing in PHP | **infeasible by design** — PHP client is REST-only (no WebSocket); breakpoints need a bidirectional callback WS. Go/.NET/Rust/Python/Node/Java all have it. |
+| `responseWeights`/`switchAfter` setters | confirm | done in the scenario work |
 
-- **Editor-extension bundled schemas are stale**: `mockserver-vscode/schemas/mockserver-expectation.schema.json`
-  and `mockserver-jetbrains/src/main/resources/schemas/mockserver-expectation.schema.json` (identical)
-  use `additionalProperties: false` but lack `scenarioName`/`scenarioState`/`newScenarioState`,
-  `responseMode`/`responseWeights`/`switchAfter`, and `crossProtocolScenarios`. A user authoring those
-  fields in a `*.mockserver.json` gets false IDE validation errors. Regenerate these from the server
-  `expectation.json` (single source of truth) so the IDE schema tracks the server.
+## DONE in the parity waves
+
+- **Control-plane auth + TLS/mTLS** across Go, .NET, Rust, PHP, Node, Python: control-plane bearer
+  token (static + supplier), CA trust, client cert (mTLS). Additive; unit-tested per client (header
+  attach + cert/TLS wiring with real cert material).
+- **Editor JSON Schema sync**: regenerated `mockserver-vscode` + `mockserver-jetbrains` schemas (now
+  carry `crossProtocolScenarios`/`responseWeights`/`switchAfter`/`rateLimit`/full `responseMode`);
+  fixed the generator's reference-file list (`rateLimit`, `conditionalRequestDefinition`, `recoverAfter`).
+
+## The ONE real remaining gap: callbacks
+
+| Capability | Missing in | Effort | Validation |
+|------------|-----------|--------|-----------|
+| **Class callbacks** (`httpResponseClassCallback`/`httpForwardClassCallback` — declarative, REST-only) | Go, .NET, Rust, PHP, Node; Python has model not builder | S per client (model + builder; server accepts it) | harness: assert the server accepts the expectation |
+| **Object/closure callbacks** (`httpObjectCallback` over the callback WebSocket — write the response in your language) | Go, .NET, Rust (reuse their existing breakpoint WS client + clientId handshake + request/response envelope); Python has WS, needs builders | M-L per client | harness end-to-end: register a closure, send a request, assert the dynamic response |
+| Object/closure callbacks in PHP | — | **infeasible** (REST-only, no WS) — document the limitation | — |
+
+Callback wire contract (from `httpClassCallback.json` / `httpObjectCallback.json` + `CallbackWebSocketServerHandler`): class = `{callbackClass, delay?, primary?}`; object = `{clientId, responseCallback, delay?, primary?}`; the WS registers a clientId, the server sends `{type:"org.mockserver.model.HttpRequest", value}` and the client replies `{type:"org.mockserver.model.HttpResponse", value}` carrying a `WebSocketCorrelationId` header. Reference: Node `webSocketClient.js`, Java `BreakpointWebSocketClient`.
+
+## Optional consistency follow-up
+
 - **Consumer OpenAPI** (`jekyll-www.mock-server.com/mockserver-openapi.yaml`) is a minimal control-plane
-  spec (no `switchAfter` either); optionally extend its expectation model with `crossProtocolScenarios`
-  so generated Postman/Bruno collections can demonstrate it.
+  spec; optionally extend its expectation model with `crossProtocolScenarios` for the generated
+  Postman/Bruno collections.
+- **Wire the editor-schema generator into the JetBrains gradle build** (VS Code already runs it on
+  `vscode:prepublish`) so the schema can't drift again.
 
 ## Documentation navigation follow-ups (from the nav audit)
 
