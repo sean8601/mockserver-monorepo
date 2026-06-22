@@ -1698,9 +1698,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Load-injection traffic no longer floods the request log** (`mockserver-core`). A running load scenario
   generated requests that were recorded in the bounded request event log (`maxLogEntries`), so a sustained
   run filled the log and evicted real and LLM traffic — emptying the Traffic, Trace, and LLM Optimise views
-  (and the dashboard log) while the load ran. Load-generation requests are now marked and kept out of the
-  event log, so other traffic is preserved. Load throughput/latency metrics and SLO samples are unaffected
-  (they are recorded independently of the event log).
+  (and the dashboard log) while the load ran. Load-generation requests are now marked with an in-process-only
+  flag (not a wire header) and kept out of the driver's event log, so other traffic is preserved. Because the
+  marker is never serialized to the wire it stays driver-only and cannot reach an upstream target to disable
+  that target's logging. The suppression is gated by the new `loadGenerationSuppressEventLog` property
+  (default `true`); set it to `false` to record load-generation traffic in the driver's event log too. Load
+  throughput/latency metrics and SLO samples are unaffected (they are recorded independently of the event log).
 - **`crossProtocolScenarios` was rejected by the expectation schema** (`mockserver-core`). The
   cross-protocol scenario-correlation field was present in the model and honoured at runtime, but it
   was missing from the expectation validation schema, so any expectation that used it was rejected with

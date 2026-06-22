@@ -150,6 +150,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long sloWindowRetentionMillis;
     private Integer sloWindowMaxSamples;
     private Boolean loadGenerationEnabled;
+    private Boolean loadGenerationSuppressEventLog;
     private Integer loadGenerationMaxVirtualUsers;
     private Integer loadGenerationMaxInFlightRequests;
     private Integer loadGenerationMaxRequestsPerSecond;
@@ -408,6 +409,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.sloWindowRetentionMillis = configuration.sloWindowRetentionMillis();
             this.sloWindowMaxSamples = configuration.sloWindowMaxSamples();
             this.loadGenerationEnabled = configuration.loadGenerationEnabled();
+            this.loadGenerationSuppressEventLog = configuration.loadGenerationSuppressEventLog();
             this.loadGenerationMaxVirtualUsers = configuration.loadGenerationMaxVirtualUsers();
             this.loadGenerationMaxInFlightRequests = configuration.loadGenerationMaxInFlightRequests();
             this.loadGenerationMaxRequestsPerSecond = configuration.loadGenerationMaxRequestsPerSecond();
@@ -704,6 +706,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.sloWindowRetentionMillis(sloWindowRetentionMillis);
         configuration.sloWindowMaxSamples(sloWindowMaxSamples);
         configuration.loadGenerationEnabled(loadGenerationEnabled);
+        configuration.loadGenerationSuppressEventLog(loadGenerationSuppressEventLog);
         configuration.loadGenerationMaxVirtualUsers(loadGenerationMaxVirtualUsers);
         configuration.loadGenerationMaxInFlightRequests(loadGenerationMaxInFlightRequests);
         configuration.loadGenerationMaxRequestsPerSecond(loadGenerationMaxRequestsPerSecond);
@@ -1163,6 +1166,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (loadGenerationEnabled != null) {
             target.loadGenerationEnabled(loadGenerationEnabled);
+        }
+        if (loadGenerationSuppressEventLog != null) {
+            target.loadGenerationSuppressEventLog(loadGenerationSuppressEventLog);
         }
         if (loadGenerationMaxVirtualUsers != null) {
             target.loadGenerationMaxVirtualUsers(loadGenerationMaxVirtualUsers);
@@ -2529,6 +2535,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setLoadGenerationEnabled(Boolean loadGenerationEnabled) {
         this.loadGenerationEnabled = loadGenerationEnabled;
+        return this;
+    }
+
+    public Boolean getLoadGenerationSuppressEventLog() {
+        return loadGenerationSuppressEventLog;
+    }
+
+    public ConfigurationDTO setLoadGenerationSuppressEventLog(Boolean loadGenerationSuppressEventLog) {
+        this.loadGenerationSuppressEventLog = loadGenerationSuppressEventLog;
         return this;
     }
 

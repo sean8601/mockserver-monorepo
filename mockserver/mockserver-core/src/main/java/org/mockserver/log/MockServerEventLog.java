@@ -141,19 +141,6 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
     private final AtomicLong droppedLogEvents = new AtomicLong(0);
     private final AtomicBoolean droppedLogEventWarned = new AtomicBoolean(false);
 
-    /**
-     * Header marker that {@link org.mockserver.mock.action.http.LoadScenarioOrchestrator} sets on every
-     * request it generates (the value is the load run id). Requests carrying it are recognised as the
-     * server's own load-generation traffic and are NOT recorded in this bounded event log, so a running
-     * load scenario cannot flood the log and evict real / LLM traffic. Load metrics and SLO samples are
-     * captured client-side by the orchestrator, independently of this log.
-     *
-     * <p>The marker is trust-on-the-wire: it is matched verbatim on the inbound request, so an external
-     * client could set this header to keep its own requests out of the event log. That is acceptable for
-     * a mock / test server whose data plane is unauthenticated by design.
-     */
-    public static final String LOAD_GENERATED_HEADER = "x-mockserver-load-generated";
-
     public MockServerEventLog(Configuration configuration, MockServerLogger mockServerLogger, Scheduler scheduler, boolean asynchronousEventProcessing) {
         super(scheduler);
         this.configuration = configuration;
@@ -200,12 +187,16 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
     }
 
     /**
-     * True when this entry's request(s) carry the {@link #LOAD_GENERATED_HEADER} marker, i.e. the entry
-     * describes the server's own load-generation traffic and should be kept out of the event log.
+     * True when this entry's request(s) carry the in-process load-generation marker set by
+     * {@link org.mockserver.mock.action.http.LoadScenarioOrchestrator} via
+     * {@link HttpRequest#setLoadGenerated(boolean)}, i.e. the entry describes the server's own
+     * load-generation traffic and should be kept out of the event log. The marker is an in-process
+     * flag, not a wire header, so it never travels to an upstream target and only suppresses logging
+     * on the driver that generated the traffic.
      */
     private static boolean isLoadGenerated(LogEntry logEntry) {
         for (RequestDefinition request : logEntry.getHttpRequests()) {
-            if (request instanceof HttpRequest && ((HttpRequest) request).containsHeader(LOAD_GENERATED_HEADER)) {
+            if (request instanceof HttpRequest && ((HttpRequest) request).isLoadGenerated()) {
                 return true;
             }
         }
