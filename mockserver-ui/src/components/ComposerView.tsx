@@ -87,7 +87,7 @@ import {
 import McpToolsPanel from './McpToolsPanel';
 import ScenarioPanel from './ScenarioPanel';
 import ImportForm from './ImportForm';
-import JsonEditor from './JsonEditor';
+import JsonEditor from './JsonEditorLazy';
 import SnippetPalette from './SnippetPalette';
 import type { TemplateEngine as SnippetEngine } from '../lib/templateSnippets';
 
