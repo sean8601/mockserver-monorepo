@@ -119,7 +119,7 @@ const TABS = [
   { value: 'optimise',     ariaLabel: 'LLM Optimise view',         file: 'MockServerOptimise.png',     lazy: true, settleMs: SLOW_SETTLE },
   { value: 'async',        ariaLabel: 'AsyncAPI broker mock view', file: 'MockServerAsyncAPI.png' },
   { value: 'grpc',         ariaLabel: 'gRPC services view',        file: 'MockServerGRPC.png',         settleMs: SLOW_SETTLE },
-  { value: 'sessions',     ariaLabel: 'Session inspector view',    file: 'MockServerSessions.png',     settleMs: SLOW_SETTLE },
+  { value: 'sessions',     ariaLabel: 'Trace inspector view',      file: 'MockServerSessions.png',     settleMs: SLOW_SETTLE },
   { value: 'library',      ariaLabel: 'Library of captured content', file: 'MockServerLibrary.png' },
   { value: 'drift',        ariaLabel: 'Drift detection view',      file: 'MockServerDrift.png' },
   { value: 'verification', ariaLabel: 'Verification view',         file: 'MockServerVerification.png' },
