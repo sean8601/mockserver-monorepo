@@ -1685,6 +1685,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Correctness & reliability
+- **PHP client TLS unit test no longer asserts against Guzzle's default options** (`mockserver-client-php`).
+  `MockServerClientAuthTlsTest::testNoTlsOptionsWhenNotConfigured` asserted the recorded per-request options
+  contained no `verify` key, but Guzzle always records its own secure-by-default `verify => true`, so the
+  assertion could never pass and the PHP client build failed. The test now asserts the client does not
+  override Guzzle's default verification with a custom CA path (and still adds no client certificate/key).
 - **Load-generation cap properties are now serialized through the configuration DTO** (`mockserver-core`). The
   `loadGenerationMaxRate`, `loadGenerationMaxStages`, `loadGenerationMaxConcurrentScenarios` and
   `loadScenarioInitializationJsonPath` properties were read from system properties but missing from
