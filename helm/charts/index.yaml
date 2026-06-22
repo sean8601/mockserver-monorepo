@@ -21,7 +21,7 @@ entries:
           url: https://www.mock-server.com/mockserver-cosign.pub
     apiVersion: v1
     appVersion: 7.2.0
-    created: "2026-06-22T20:33:17.658686774Z"
+    created: "2026-06-22T21:42:17.827689733Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer is a mocking,
       debugging proxy and chaos engineering tool for multiple protocols (HTTP/1.1,
       HTTP/2, HTTP/3, gRPC, GraphQL, LLM, MCP, Kafka, TCP and more) — mock any system
@@ -85,7 +85,7 @@ entries:
           url: https://www.mock-server.com/mockserver-cosign.pub
     apiVersion: v1
     appVersion: 7.1.0
-    created: "2026-06-22T20:33:17.65758173Z"
+    created: "2026-06-22T21:42:17.825980755Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer is a mocking,
       debugging proxy and chaos engineering tool for multiple protocols (HTTP, gRPC,
       GraphQL, LLM, MCP, Kafka, TCP and more) — mock any system you integrate with,
@@ -149,7 +149,7 @@ entries:
           url: https://www.mock-server.com/mockserver-cosign.pub
     apiVersion: v1
     appVersion: 7.0.0
-    created: "2026-06-22T20:33:17.656434664Z"
+    created: "2026-06-22T21:42:17.824811242Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -183,7 +183,7 @@ entries:
     version: 7.0.0
   - apiVersion: v1
     appVersion: 6.1.0
-    created: "2026-06-22T20:33:17.655366782Z"
+    created: "2026-06-22T21:42:17.823717447Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -217,7 +217,7 @@ entries:
     version: 6.1.0
   - apiVersion: v1
     appVersion: 6.0.0
-    created: "2026-06-22T20:33:17.654755137Z"
+    created: "2026-06-22T21:42:17.823112594Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -251,7 +251,7 @@ entries:
     version: 6.0.0
   - apiVersion: v1
     appVersion: 5.15.0
-    created: "2026-06-22T20:33:17.648495213Z"
+    created: "2026-06-22T21:42:17.81650387Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -284,7 +284,7 @@ entries:
     version: 5.15.0
   - apiVersion: v1
     appVersion: 5.14.0
-    created: "2026-06-22T20:33:17.64797608Z"
+    created: "2026-06-22T21:42:17.816043699Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -317,7 +317,7 @@ entries:
     version: 5.14.0
   - apiVersion: v1
     appVersion: 5.13.2
-    created: "2026-06-22T20:33:17.647485163Z"
+    created: "2026-06-22T21:42:17.815559568Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -350,7 +350,7 @@ entries:
     version: 5.13.2
   - apiVersion: v1
     appVersion: 5.13.1
-    created: "2026-06-22T20:33:17.646969539Z"
+    created: "2026-06-22T21:42:17.815115527Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -383,7 +383,7 @@ entries:
     version: 5.13.1
   - apiVersion: v1
     appVersion: 5.13.0
-    created: "2026-06-22T20:33:17.645875915Z"
+    created: "2026-06-22T21:42:17.814667721Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -416,7 +416,7 @@ entries:
     version: 5.13.0
   - apiVersion: v1
     appVersion: 5.12.0
-    created: "2026-06-22T20:33:17.645372107Z"
+    created: "2026-06-22T21:42:17.814231325Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -449,7 +449,7 @@ entries:
     version: 5.12.0
   - apiVersion: v1
     appVersion: 5.11.2
-    created: "2026-06-22T20:33:17.64488571Z"
+    created: "2026-06-22T21:42:17.813790013Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -482,7 +482,7 @@ entries:
     version: 5.11.2
   - apiVersion: v1
     appVersion: 5.11.1
-    created: "2026-06-22T20:33:17.644394389Z"
+    created: "2026-06-22T21:42:17.813332147Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -515,7 +515,7 @@ entries:
     version: 5.11.1
   - apiVersion: v1
     appVersion: 5.11.0
-    created: "2026-06-22T20:33:17.64389596Z"
+    created: "2026-06-22T21:42:17.812889633Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -548,7 +548,7 @@ entries:
     version: 5.11.0
   - apiVersion: v1
     appVersion: 5.10.0
-    created: "2026-06-22T20:33:17.643403237Z"
+    created: "2026-06-22T21:42:17.8124286Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -581,7 +581,7 @@ entries:
     version: 5.10.0
   - apiVersion: v1
     appVersion: 5.9.0
-    created: "2026-06-22T20:33:17.653569029Z"
+    created: "2026-06-22T21:42:17.822497916Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -614,7 +614,7 @@ entries:
     version: 5.9.0
   - apiVersion: v1
     appVersion: 5.8.1
-    created: "2026-06-22T20:33:17.65315758Z"
+    created: "2026-06-22T21:42:17.822077883Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -647,7 +647,7 @@ entries:
     version: 5.8.1
   - apiVersion: v1
     appVersion: 5.8.0
-    created: "2026-06-22T20:33:17.652740655Z"
+    created: "2026-06-22T21:42:17.821663891Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -680,7 +680,7 @@ entries:
     version: 5.8.0
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.652340693Z"
+    created: "2026-06-22T21:42:17.821227914Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -713,7 +713,7 @@ entries:
     version: 5.7.2
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.651977478Z"
+    created: "2026-06-22T21:42:17.820821737Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -746,7 +746,7 @@ entries:
     version: 5.7.1
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.651603392Z"
+    created: "2026-06-22T21:42:17.820408982Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -779,7 +779,7 @@ entries:
     version: 5.7.0
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.651215669Z"
+    created: "2026-06-22T21:42:17.819984047Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -812,7 +812,7 @@ entries:
     version: 5.6.1
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.650781632Z"
+    created: "2026-06-22T21:42:17.819575926Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -845,7 +845,7 @@ entries:
     version: 5.6.0
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.650408774Z"
+    created: "2026-06-22T21:42:17.819158267Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -878,7 +878,7 @@ entries:
     version: 5.5.4
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.650037532Z"
+    created: "2026-06-22T21:42:17.818161198Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -911,7 +911,7 @@ entries:
     version: 5.5.1
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.649681481Z"
+    created: "2026-06-22T21:42:17.817723975Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -944,7 +944,7 @@ entries:
     version: 5.5.0
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.649324173Z"
+    created: "2026-06-22T21:42:17.817287121Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -977,7 +977,7 @@ entries:
     version: 5.4.1
   - apiVersion: v1
     appVersion: "1.0"
-    created: "2026-06-22T20:33:17.648934285Z"
+    created: "2026-06-22T21:42:17.816890736Z"
     description: Chart to deploy MockServer to Kubernetes.  MockServer enables easy
       mocking of any system you integrate with via HTTP or HTTPS with clients written
       in Java, JavaScript and Ruby.  MockServer also includes a proxy that introspects
@@ -1008,4 +1008,4 @@ entries:
     urls:
     - https://www.mock-server.com/mockserver-5.3.0.tgz
     version: 5.3.0
-generated: "2026-06-22T20:33:17.6427479Z"
+generated: "2026-06-22T21:42:17.811779333Z"
