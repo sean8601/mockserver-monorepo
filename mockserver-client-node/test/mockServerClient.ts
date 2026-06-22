@@ -1,6 +1,6 @@
 import {mockServerClient, ClockStatus, GrpcService, MockServerClient, ScenarioHandle, ScenarioList, ScenarioState, llm as llmFactory, mcpMock} from '../index';
 import {RequestResponse} from '../mockServerClient';
-import {CrossProtocolScenario, Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioStatus, RequestDefinition} from '../mockServer';
+import {CrossProtocolScenario, Expectation, ExpectationStep, HttpChaosProfile, HttpOverrideForwardedRequest, HttpRequest, HttpResponse, LoadScenario, LoadScenarioEntry, LoadScenarioList, LoadScenarioRegistration, LoadScenarioStartResult, LoadScenarioStopResult, RequestDefinition} from '../mockServer';
 
 const client: MockServerClient = mockServerClient('mockhttp', 1080);
 
@@ -298,6 +298,7 @@ async function test() {
         templateType: "VELOCITY",
         labels: {team: "node"},
         maxRequests: 100,
+        startDelayMillis: 250,
         profile: {
             stages: [
                 {type: "VU", startVus: 1, endVus: 10, durationMillis: 5000, curve: "LINEAR"},
@@ -314,9 +315,17 @@ async function test() {
             }
         ]
     };
-    requestResponse = await client.loadScenario(loadScenarioDefinition);
-    let loadStatus: LoadScenarioStatus = await client.loadScenarioStatus();
-    requestResponse = await client.stopLoadScenario();
+    let loadRegistration: LoadScenarioRegistration = await client.loadScenario(loadScenarioDefinition);
+    let loadList: LoadScenarioList = await client.loadScenarios();
+    let loadEntry: LoadScenarioEntry = await client.getLoadScenario("load-test");
+    let loadStart: LoadScenarioStartResult = await client.startLoadScenarios("load-test");
+    loadStart = await client.startLoadScenarios(["load-test"]);
+    let loadStop: LoadScenarioStopResult = await client.stopLoadScenarios("load-test");
+    loadStop = await client.stopLoadScenarios(["load-test"]);
+    loadStop = await client.stopLoadScenarios();
+    requestResponse = await client.deleteLoadScenario("load-test");
+    requestResponse = await client.clearLoadScenarios();
+    loadStart = await client.runLoadScenario(loadScenarioDefinition);
 
     // stateful scenario (state machine) management
     const deployScenario: ScenarioHandle = client.scenario("Deploy");

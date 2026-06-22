@@ -12,8 +12,39 @@ namespace MockServer.Client.Models;
 // ---------------------------------------------------------------------------
 
 // ===========================================================================
-// Load scenarios — PUT/GET/DELETE /mockserver/loadScenario
+// Load scenarios — load-scenario registry under /mockserver/loadScenario
+//
+//   PUT    /mockserver/loadScenario           register/load (does not run)
+//   GET    /mockserver/loadScenario           list all registered scenarios
+//   GET    /mockserver/loadScenario/{name}    fetch one (404 if absent)
+//   DELETE /mockserver/loadScenario/{name}    remove one
+//   DELETE /mockserver/loadScenario           clear all
+//   PUT    /mockserver/loadScenario/start     start one or more by name
+//   PUT    /mockserver/loadScenario/stop      stop named, all, or every running
+//
+// Registration is always allowed (even when loadGenerationEnabled=false);
+// only /start requires load generation to be enabled (HTTP 403 otherwise).
 // ===========================================================================
+
+/// <summary>The lifecycle state of a registered load scenario.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum LoadScenarioState
+{
+    /// <summary>Registered but never started.</summary>
+    LOADED,
+
+    /// <summary>Accepted to start and waiting out its <see cref="LoadScenario.StartDelayMillis"/>.</summary>
+    PENDING,
+
+    /// <summary>Actively driving load.</summary>
+    RUNNING,
+
+    /// <summary>Finished its profile.</summary>
+    COMPLETED,
+
+    /// <summary>Stopped before completing.</summary>
+    STOPPED
+}
 
 /// <summary>
 /// The kind of a <see cref="LoadStage"/>.
@@ -182,12 +213,14 @@ public sealed class LoadStep
 
 /// <summary>
 /// An API-driven load scenario: ordered templated steps driven at a target concurrency.
-/// Submitted to <c>PUT /mockserver/loadScenario</c>. Off by default — the server returns 403
-/// until <c>loadGenerationEnabled=true</c>.
+/// Registered with <c>PUT /mockserver/loadScenario</c> under its unique <see cref="Name"/>;
+/// registration does not start it and is always allowed. Starting it (via
+/// <c>PUT /mockserver/loadScenario/start</c>) requires the server to be started with
+/// <c>loadGenerationEnabled=true</c>, otherwise the server returns HTTP 403.
 /// </summary>
 public sealed class LoadScenario
 {
-    /// <summary>Human-readable scenario name (required).</summary>
+    /// <summary>Unique scenario name, used as the registry key (required).</summary>
     [JsonPropertyName("name")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Name { get; set; }
@@ -196,6 +229,11 @@ public sealed class LoadScenario
     [JsonPropertyName("templateType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LoadTemplateType? TemplateType { get; set; }
+
+    /// <summary>Optional delay (in milliseconds) between the scenario being started and load beginning; honoured by <c>PUT /mockserver/loadScenario/start</c>.</summary>
+    [JsonPropertyName("startDelayMillis")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? StartDelayMillis { get; set; }
 
     /// <summary>Optional hard cap on the total number of requests dispatched.</summary>
     [JsonPropertyName("maxRequests")]
@@ -219,23 +257,38 @@ public sealed class LoadScenario
 }
 
 /// <summary>
-/// The status of the current (or most recent) load scenario, returned by
-/// <c>GET /mockserver/loadScenario</c>.
+/// Live runtime metrics for a registered load scenario. The server emits these
+/// fields FLAT on a registry-listing entry (siblings of name/state/definition),
+/// present only once the scenario has run; <see cref="LoadScenarioEntry"/> inherits
+/// this type so the flat JSON populates them directly.
 /// </summary>
-public sealed class LoadScenarioStatus
+public class LoadScenarioStatus
 {
+    /// <summary>The registry key (unique scenario name).</summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
-    /// <summary>Lifecycle state: "none", "running", "completed" or "stopped".</summary>
+    /// <summary>Lifecycle state (see <see cref="LoadScenarioState"/>).</summary>
     [JsonPropertyName("state")]
-    public string? State { get; set; }
+    public LoadScenarioState? State { get; set; }
 
     [JsonPropertyName("elapsedMillis")]
     public long? ElapsedMillis { get; set; }
 
     [JsonPropertyName("currentVus")]
     public int? CurrentVus { get; set; }
+
+    /// <summary>0-based index of the currently-running stage (present only while running).</summary>
+    [JsonPropertyName("stageIndex")]
+    public int? StageIndex { get; set; }
+
+    /// <summary>Type of the currently-running stage (present only while running).</summary>
+    [JsonPropertyName("stageType")]
+    public string? StageType { get; set; }
+
+    /// <summary>Current setpoint for the running stage (target VUs, target rate, or 0 for PAUSE).</summary>
+    [JsonPropertyName("currentTarget")]
+    public double? CurrentTarget { get; set; }
 
     [JsonPropertyName("requestsSent")]
     public long? RequestsSent { get; set; }
@@ -264,9 +317,77 @@ public sealed class LoadScenarioStatus
     [JsonPropertyName("endedAt")]
     public long? EndedAt { get; set; }
 
-    /// <summary>The full scenario definition this run was started with (omitted when state is "none").</summary>
+    /// <summary>Scenario-level annotation labels carried through to the run.</summary>
+    [JsonPropertyName("labels")]
+    public Dictionary<string, string>? Labels { get; set; }
+}
+
+/// <summary>
+/// One registered scenario as returned by the registry endpoints
+/// (<c>GET /mockserver/loadScenario</c> and <c>GET /mockserver/loadScenario/{name}</c>):
+/// the scenario name, its lifecycle state, the registered definition, and — once it has
+/// run — its live status fields, which the server emits FLAT on the entry. This type
+/// inherits <see cref="LoadScenarioStatus"/> so those flat fields populate directly.
+/// </summary>
+public sealed class LoadScenarioEntry : LoadScenarioStatus
+{
+    /// <summary>Optional delay (ms) before the scenario begins driving load once started.</summary>
+    [JsonPropertyName("startDelayMillis")]
+    public long? StartDelayMillis { get; set; }
+
+    /// <summary>The full registered scenario definition.</summary>
     [JsonPropertyName("definition")]
     public LoadScenario? Definition { get; set; }
+}
+
+/// <summary>
+/// The full registry listing returned by <c>GET /mockserver/loadScenario</c>.
+/// </summary>
+public sealed class LoadScenarioList
+{
+    /// <summary>Every registered scenario, in registration order.</summary>
+    [JsonPropertyName("scenarios")]
+    public List<LoadScenarioEntry> Scenarios { get; set; } = new();
+}
+
+/// <summary>A name/state pair echoed back from a register or start operation.</summary>
+public sealed class LoadScenarioRef
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("state")]
+    public LoadScenarioState? State { get; set; }
+}
+
+/// <summary>
+/// The result of <c>PUT /mockserver/loadScenario/start</c>: the scenarios accepted to start
+/// (each with its resulting state) and an overall status string.
+/// </summary>
+public sealed class LoadScenarioStartResult
+{
+    /// <summary>The scenarios accepted to start, each with its resulting state.</summary>
+    [JsonPropertyName("started")]
+    public List<LoadScenarioRef> Started { get; set; } = new();
+
+    /// <summary>Overall status string returned by the server.</summary>
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+}
+
+/// <summary>
+/// The result of <c>PUT /mockserver/loadScenario/stop</c>: the scenarios stopped (each with its
+/// resulting state) and an overall status string.
+/// </summary>
+public sealed class LoadScenarioStopResult
+{
+    /// <summary>The scenarios that were stopped, each with its resulting state.</summary>
+    [JsonPropertyName("stopped")]
+    public List<LoadScenarioRef> Stopped { get; set; } = new();
+
+    /// <summary>Overall status string returned by the server.</summary>
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
 }
 
 // ===========================================================================

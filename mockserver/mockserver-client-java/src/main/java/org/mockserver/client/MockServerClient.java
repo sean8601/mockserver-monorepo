@@ -2733,45 +2733,47 @@ public class MockServerClient implements Stoppable {
         return httpResponse != null ? httpResponse.getBodyAsString() : "";
     }
 
-    // load-scenario (load injection) control-plane helpers
+    // load-scenario (load injection) registry control-plane helpers
 
     /**
-     * Start a load-injection scenario. The scenario is serialized and sent as
-     * {@code PUT /mockserver/loadScenario}. Load generation is off by default — if
-     * {@code loadGenerationEnabled} is not set on the server this throws a
-     * {@link ClientException} with a helpful message (the server responds {@code 403}).
+     * Register (load) a load-injection scenario into the load-scenario registry via
+     * {@code PUT /mockserver/loadScenario}. Registration does <em>not</em> start the
+     * scenario — it is loaded in the {@code LOADED} state and driving no traffic. Each
+     * scenario is identified by its unique {@code name}; registering a scenario with an
+     * existing name replaces it.
      *
-     * @param loadScenario the load scenario to start (see {@link org.mockserver.load.LoadScenario})
-     * @return this MockServerClient
+     * <p>Registration is always permitted, even when {@code loadGenerationEnabled} is
+     * off on the server — only {@link #startLoadScenarios(String...) starting} requires
+     * load generation to be enabled.
+     *
+     * @param scenario the load scenario to register (see {@link org.mockserver.load.LoadScenario})
+     * @return JSON string describing the registered scenario ({@code {"name":...,"state":...}})
      */
-    public MockServerClient loadScenario(LoadScenario loadScenario) {
+    public String loadScenario(LoadScenario scenario) {
         HttpResponse httpResponse = sendRequest(
             request()
                 .withMethod("PUT")
                 .withContentType(APPLICATION_JSON_UTF_8)
                 .withPath(calculatePath("loadScenario"))
-                .withBody(loadScenarioSerializer.serialize(loadScenario), StandardCharsets.UTF_8),
+                .withBody(loadScenarioSerializer.serialize(scenario), StandardCharsets.UTF_8),
             false
         );
-        if (httpResponse != null && httpResponse.getStatusCode() != null) {
-            if (httpResponse.getStatusCode() == FORBIDDEN.code()) {
-                throw new ClientException("load generation is disabled on this MockServer; set loadGenerationEnabled=true to enable load scenarios - server responded: " + httpResponse.getBodyAsString());
-            } else if (httpResponse.getStatusCode() >= 400) {
-                throw new ClientException(formatLogMessage("error:{}while starting load scenario", httpResponse.getBodyAsString()));
-            }
+        if (httpResponse != null && httpResponse.getStatusCode() != null && httpResponse.getStatusCode() >= 400) {
+            throw new ClientException(formatLogMessage("error:{}while registering load scenario", httpResponse.getBodyAsString()));
         }
-        return clientClass.cast(this);
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
     }
 
     /**
-     * Retrieve the current load-scenario status as a JSON string via
-     * {@code GET /mockserver/loadScenario}. When no scenario is running the body is
-     * {@code {"state":"none"}}; while running it contains the scenario name, state,
-     * elapsed time, current virtual users, request counts and latency percentiles.
+     * List all registered load scenarios via {@code GET /mockserver/loadScenario}. The
+     * response body is a JSON object {@code {"scenarios":[{"name":...,"state":...,"definition":...,"status":...}]}}
+     * where each entry carries the scenario name, lifecycle state (one of {@code LOADED},
+     * {@code PENDING}, {@code RUNNING}, {@code COMPLETED}, {@code STOPPED}), its definition,
+     * and live status for running scenarios.
      *
-     * @return JSON string describing the current load-scenario status
+     * @return JSON string listing all registered load scenarios
      */
-    public String loadScenarioStatus() {
+    public String loadScenarios() {
         HttpResponse httpResponse = sendRequest(
             request()
                 .withMethod("GET")
@@ -2782,11 +2784,48 @@ public class MockServerClient implements Stoppable {
     }
 
     /**
-     * Stop the currently-running load scenario via {@code DELETE /mockserver/loadScenario}.
+     * Retrieve a single registered load scenario by name via
+     * {@code GET /mockserver/loadScenario/{name}}. The server responds {@code 404} if no
+     * scenario with that name is registered.
+     *
+     * @param name the unique name of the registered load scenario
+     * @return JSON string describing the named load scenario (name, state, definition, status)
+     */
+    public String getLoadScenario(String name) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("GET")
+                .withPath(calculatePath("loadScenario/" + name)),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Remove a single registered load scenario by name via
+     * {@code DELETE /mockserver/loadScenario/{name}}. If the scenario is running it is
+     * stopped before removal.
+     *
+     * @param name the unique name of the load scenario to remove
+     * @return this MockServerClient
+     */
+    public MockServerClient deleteLoadScenario(String name) {
+        sendRequest(
+            request()
+                .withMethod("DELETE")
+                .withPath(calculatePath("loadScenario/" + name)),
+            true
+        );
+        return clientClass.cast(this);
+    }
+
+    /**
+     * Remove all registered load scenarios via {@code DELETE /mockserver/loadScenario}.
+     * Any running scenarios are stopped before the registry is cleared.
      *
      * @return this MockServerClient
      */
-    public MockServerClient stopLoadScenario() {
+    public MockServerClient clearLoadScenarios() {
         sendRequest(
             request()
                 .withMethod("DELETE")
@@ -2794,6 +2833,86 @@ public class MockServerClient implements Stoppable {
             true
         );
         return clientClass.cast(this);
+    }
+
+    /**
+     * Start one or more previously-registered load scenarios by name via
+     * {@code PUT /mockserver/loadScenario/start} with body {@code {"names":[...]}}. Each
+     * named scenario begins running (honouring its {@code startDelayMillis}, which holds
+     * the scenario in {@code PENDING} until the delay elapses).
+     *
+     * <p>Starting requires {@code loadGenerationEnabled} on the server — if it is off the
+     * server responds {@code 403} and this throws a {@link ClientException} with a helpful
+     * message. An unknown scenario name causes the server to respond {@code 404}, which is
+     * also surfaced as a {@link ClientException}.
+     *
+     * @param names the names of the registered scenarios to start
+     * @return JSON string describing the started scenarios ({@code {"started":[...],"status":...}})
+     */
+    public String startLoadScenarios(String... names) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("loadScenario/start"))
+                .withBody(namesBody(names), StandardCharsets.UTF_8),
+            false
+        );
+        if (httpResponse != null && httpResponse.getStatusCode() != null) {
+            if (httpResponse.getStatusCode() == FORBIDDEN.code()) {
+                throw new ClientException("load generation is disabled on this MockServer; set loadGenerationEnabled=true to enable load scenarios - server responded: " + httpResponse.getBodyAsString());
+            } else if (httpResponse.getStatusCode() >= 400) {
+                throw new ClientException(formatLogMessage("error:{}while starting load scenarios", httpResponse.getBodyAsString()));
+            }
+        }
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Stop one or more running load scenarios via {@code PUT /mockserver/loadScenario/stop}.
+     * When {@code names} are supplied the body is {@code {"names":[...]}} and only those
+     * scenarios are stopped; when called with no arguments the body is empty, which stops
+     * all running scenarios. Stopped scenarios transition to the {@code STOPPED} state but
+     * remain registered (and can be re-started).
+     *
+     * @param names the names of the scenarios to stop, or none to stop all running scenarios
+     * @return JSON string describing the stopped scenarios ({@code {"stopped":[...],"status":...}})
+     */
+    public String stopLoadScenarios(String... names) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("loadScenario/stop"))
+                .withBody(names != null && names.length > 0 ? namesBody(names) : "", StandardCharsets.UTF_8),
+            false
+        );
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Convenience helper that registers the given scenario and then immediately starts it,
+     * combining {@link #loadScenario(LoadScenario)} and {@link #startLoadScenarios(String...)}.
+     * Starting requires {@code loadGenerationEnabled} on the server (see
+     * {@link #startLoadScenarios(String...)} for the {@code 403} behaviour).
+     *
+     * @param scenario the load scenario to register and start
+     * @return JSON string describing the started scenario ({@code {"started":[...],"status":...}})
+     */
+    public String runLoadScenario(LoadScenario scenario) {
+        loadScenario(scenario);
+        return startLoadScenarios(scenario.getName());
+    }
+
+    private static String namesBody(String... names) {
+        StringBuilder body = new StringBuilder("{\"names\":[");
+        for (int i = 0; i < names.length; i++) {
+            if (i > 0) {
+                body.append(',');
+            }
+            body.append('"').append(names[i] != null ? names[i].replace("\\", "\\\\").replace("\"", "\\\"") : "").append('"');
+        }
+        return body.append("]}").toString();
     }
 
     // asyncapi control-plane helpers

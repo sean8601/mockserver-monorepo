@@ -1953,7 +1953,7 @@ impl SocketAddress {
 }
 
 // ---------------------------------------------------------------------------
-// Load scenario (PUT/GET/DELETE /mockserver/loadScenario)
+// Load scenario registry (PUT/GET/DELETE /mockserver/loadScenario[/...])
 // ---------------------------------------------------------------------------
 
 /// The interpolation curve used to ramp a value (virtual users or arrival
@@ -2178,7 +2178,10 @@ impl LoadStep {
 
 /// An API-driven load scenario: ordered templated steps driven at a target
 /// concurrency. Maps to the `LoadScenario` schema (the body of
-/// `PUT /mockserver/loadScenario`).
+/// `PUT /mockserver/loadScenario`, which registers the scenario in the
+/// registry without running it). The unique [`name`](LoadScenario::name) is the
+/// registry key used by `start`/`stop` and the per-scenario `GET`/`DELETE`
+/// endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadScenario {
@@ -2194,6 +2197,12 @@ pub struct LoadScenario {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_requests: Option<u64>,
 
+    /// Optional delay (milliseconds) applied between a `start` request being
+    /// accepted and the scenario actually beginning to drive load. Honoured by
+    /// `PUT /mockserver/loadScenario/start`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_delay_millis: Option<u64>,
+
     /// The ramp profile.
     pub profile: LoadProfile,
 
@@ -2208,6 +2217,7 @@ impl LoadScenario {
             name: name.into(),
             template_type: None,
             max_requests: None,
+            start_delay_millis: None,
             profile,
             steps,
         }
@@ -2222,6 +2232,13 @@ impl LoadScenario {
     /// Set the hard cap on total requests dispatched.
     pub fn max_requests(mut self, max_requests: u64) -> Self {
         self.max_requests = Some(max_requests);
+        self
+    }
+
+    /// Set the delay (milliseconds) before the scenario begins driving load
+    /// once started.
+    pub fn start_delay_millis(mut self, start_delay_millis: u64) -> Self {
+        self.start_delay_millis = Some(start_delay_millis);
         self
     }
 }

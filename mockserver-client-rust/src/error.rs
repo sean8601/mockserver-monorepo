@@ -16,6 +16,9 @@ pub enum Error {
     /// Enable it via the corresponding server property (e.g.
     /// `loadGenerationEnabled=true`, `sloTrackingEnabled=true`).
     FeatureDisabled(String),
+    /// A named resource was not found (HTTP 404), e.g. starting or fetching a
+    /// load scenario whose `name` is not registered.
+    NotFound(String),
     /// An unexpected HTTP status was returned.
     UnexpectedStatus { status: u16, body: String },
     /// A network or transport error from reqwest.
@@ -32,6 +35,7 @@ impl fmt::Display for Error {
             Error::FeatureDisabled(msg) => {
                 write!(f, "feature disabled on server (403): {msg}")
             }
+            Error::NotFound(msg) => write!(f, "not found (404): {msg}"),
             Error::UnexpectedStatus { status, body } => {
                 write!(f, "unexpected HTTP {status}: {body}")
             }

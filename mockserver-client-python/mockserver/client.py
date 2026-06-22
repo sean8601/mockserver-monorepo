@@ -224,20 +224,46 @@ class MockServerClient:
         return self._run(self._async_client.service_chaos_status())
 
     def load_scenario(self, scenario: LoadScenario | dict) -> dict:
-        """Start a load-injection scenario on the server's load generator.
+        """Register (load) a load-injection scenario in the server-side registry.
+
+        The scenario must carry a unique ``name``. Registration adds it in the
+        ``LOADED`` state but does not start generating load; it is allowed even
+        when the server was started without ``loadGenerationEnabled``. Use
+        :meth:`start_load_scenarios` to begin generating load.
+        """
+        return self._run(self._async_client.load_scenario(scenario))
+
+    def load_scenarios(self) -> dict:
+        """List every registered load scenario."""
+        return self._run(self._async_client.load_scenarios())
+
+    def get_load_scenario(self, name: str) -> dict:
+        """Retrieve a single registered load scenario by *name* (404 if absent)."""
+        return self._run(self._async_client.get_load_scenario(name))
+
+    def delete_load_scenario(self, name: str) -> dict:
+        """Remove a single registered load scenario by *name* (stops it if running)."""
+        return self._run(self._async_client.delete_load_scenario(name))
+
+    def clear_load_scenarios(self) -> dict:
+        """Remove every registered load scenario (stopping any that are running)."""
+        return self._run(self._async_client.clear_load_scenarios())
+
+    def start_load_scenarios(self, names: str | list[str]) -> dict:
+        """Start one or more registered load scenarios by name.
 
         The server must have been started with ``loadGenerationEnabled``;
         otherwise this raises an error reporting the ``403`` response.
         """
-        return self._run(self._async_client.load_scenario(scenario))
+        return self._run(self._async_client.start_load_scenarios(names))
 
-    def load_scenario_status(self) -> dict:
-        """Query the status of the currently running load scenario."""
-        return self._run(self._async_client.load_scenario_status())
+    def stop_load_scenarios(self, names: str | list[str] | None = None) -> dict:
+        """Stop running load scenarios (``None`` stops every running scenario)."""
+        return self._run(self._async_client.stop_load_scenarios(names))
 
-    def stop_load_scenario(self) -> dict:
-        """Stop the currently running load scenario."""
-        return self._run(self._async_client.stop_load_scenario())
+    def run_load_scenario(self, scenario: LoadScenario | dict) -> dict:
+        """Convenience: register *scenario* then immediately start it."""
+        return self._run(self._async_client.run_load_scenario(scenario))
 
     def scenario(self, name: str) -> SyncScenarioHandle:
         """Return a handle to the named stateful scenario, wrapping the

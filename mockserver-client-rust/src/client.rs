@@ -1049,50 +1049,119 @@ impl MockServerClient {
     }
 
     // ------------------------------------------------------------------
-    // SRE control plane — load scenarios
+    // SRE control plane — load scenario registry
     // ------------------------------------------------------------------
 
-    /// Start a load scenario.
+    /// Register (load) a load scenario in the registry without running it.
     ///
     /// Sends a `PUT /mockserver/loadScenario` with the given [`LoadScenario`].
-    /// The scenario is a pure SLI producer — each completed request records a
-    /// latency/error sample (readable later via [`verify_slo`](Self::verify_slo)).
+    /// The scenario's [`name`](LoadScenario::name) is the unique registry key
+    /// used later by [`start_load_scenarios`](Self::start_load_scenarios) /
+    /// [`stop_load_scenarios`](Self::stop_load_scenarios) and the per-scenario
+    /// fetch/delete endpoints.
     ///
-    /// Off by default on the server: returns [`Error::FeatureDisabled`] when the
-    /// server responds `403` (`loadGenerationEnabled=false`). Returns the raw
-    /// JSON status the server echoes (`{"status":"started","name":..,"steps":..}`).
-    pub fn set_load_scenario(&self, scenario: &LoadScenario) -> Result<Value> {
+    /// Registering is always allowed — even when load generation is disabled on
+    /// the server — so this does not surface [`Error::FeatureDisabled`]. Returns
+    /// the raw JSON the server echoes (`{"name":..,"state":"LOADED"}`).
+    pub fn load_scenario(&self, scenario: &LoadScenario) -> Result<Value> {
         let resp = self
             .http
             .put(self.url("/mockserver/loadScenario"))
             .json(scenario)
             .send()?;
-        self.json_or_feature_error(resp)
+        self.load_scenario_json(resp)
     }
 
-    /// Retrieve the status of the current (or most recent) load scenario.
+    /// List every registered load scenario.
     ///
-    /// Sends a `GET /mockserver/loadScenario` and returns the raw JSON status
-    /// (lifecycle state, request counts, latency percentiles, etc.).
-    pub fn load_scenario_status(&self) -> Result<Value> {
+    /// Sends a `GET /mockserver/loadScenario` and returns the raw JSON
+    /// (`{"scenarios":[{"name":..,"state":..,"definition":..,"status":..?}]}`).
+    pub fn load_scenarios(&self) -> Result<Value> {
+        let resp = self.http.get(self.url("/mockserver/loadScenario")).send()?;
+        self.load_scenario_json(resp)
+    }
+
+    /// Fetch a single registered load scenario by name.
+    ///
+    /// Sends a `GET /mockserver/loadScenario/{name}`. Returns
+    /// [`Error::NotFound`] when no scenario with that name is registered.
+    pub fn get_load_scenario(&self, name: impl AsRef<str>) -> Result<Value> {
         let resp = self
             .http
-            .get(self.url("/mockserver/loadScenario"))
+            .get(self.url(&format!("/mockserver/loadScenario/{}", name.as_ref())))
             .send()?;
-        self.json_or_feature_error(resp)
+        self.load_scenario_json(resp)
     }
 
-    /// Stop the current load scenario.
+    /// Remove a single registered load scenario by name.
     ///
-    /// Sends a `DELETE /mockserver/loadScenario`. Idempotent — succeeds whether
-    /// or not a scenario was running. Returns the raw JSON status
-    /// (`{"status":"stopped"}`).
-    pub fn stop_load_scenario(&self) -> Result<Value> {
+    /// Sends a `DELETE /mockserver/loadScenario/{name}`. Returns
+    /// [`Error::NotFound`] when no scenario with that name is registered.
+    pub fn delete_load_scenario(&self, name: impl AsRef<str>) -> Result<Value> {
+        let resp = self
+            .http
+            .delete(self.url(&format!("/mockserver/loadScenario/{}", name.as_ref())))
+            .send()?;
+        self.load_scenario_json(resp)
+    }
+
+    /// Clear all registered load scenarios.
+    ///
+    /// Sends a `DELETE /mockserver/loadScenario`. Idempotent.
+    pub fn clear_load_scenarios(&self) -> Result<Value> {
         let resp = self
             .http
             .delete(self.url("/mockserver/loadScenario"))
             .send()?;
-        self.json_or_feature_error(resp)
+        self.load_scenario_json(resp)
+    }
+
+    /// Start one or more registered load scenarios by name.
+    ///
+    /// Sends a `PUT /mockserver/loadScenario/start` with `{"names":[...]}`.
+    /// Requires load generation to be enabled on the server — returns
+    /// [`Error::FeatureDisabled`] on `403` (`loadGenerationEnabled=false`) — and
+    /// [`Error::NotFound`] when a name is not registered. Honours each
+    /// scenario's `startDelayMillis`. Returns the raw JSON
+    /// (`{"started":[{"name":..,"state":..}],"status":..}`).
+    pub fn start_load_scenarios<S: AsRef<str>>(&self, names: &[S]) -> Result<Value> {
+        let names: Vec<&str> = names.iter().map(|n| n.as_ref()).collect();
+        let body = serde_json::json!({ "names": names });
+        let resp = self
+            .http
+            .put(self.url("/mockserver/loadScenario/start"))
+            .json(&body)
+            .send()?;
+        self.load_scenario_json(resp)
+    }
+
+    /// Stop running load scenarios.
+    ///
+    /// Sends a `PUT /mockserver/loadScenario/stop`. When `names` is non-empty the
+    /// body is `{"names":[...]}`; when it is empty (or `&[]`) the body is empty,
+    /// which the server treats as "stop all". Returns the raw JSON
+    /// (`{"stopped":[..],"status":..}`).
+    pub fn stop_load_scenarios<S: AsRef<str>>(&self, names: &[S]) -> Result<Value> {
+        let mut req = self.http.put(self.url("/mockserver/loadScenario/stop"));
+        if names.is_empty() {
+            req = req.header("Content-Type", "application/json").body("");
+        } else {
+            let names: Vec<&str> = names.iter().map(|n| n.as_ref()).collect();
+            req = req.json(&serde_json::json!({ "names": names }));
+        }
+        let resp = req.send()?;
+        self.load_scenario_json(resp)
+    }
+
+    /// Convenience: register `scenario` then immediately start it by name.
+    ///
+    /// Equivalent to [`load_scenario`](Self::load_scenario) followed by
+    /// [`start_load_scenarios`](Self::start_load_scenarios) with the scenario's
+    /// own name. Returns the JSON from the `start` call. Surfaces
+    /// [`Error::FeatureDisabled`] from `start` when load generation is disabled.
+    pub fn run_load_scenario(&self, scenario: &LoadScenario) -> Result<Value> {
+        self.load_scenario(scenario)?;
+        self.start_load_scenarios(&[scenario.name.as_str()])
     }
 
     // ------------------------------------------------------------------
@@ -1294,6 +1363,30 @@ impl MockServerClient {
             }
             400 => Err(Error::InvalidRequest(resp.text()?)),
             403 => Err(Error::FeatureDisabled(resp.text()?)),
+            _ => Err(Error::UnexpectedStatus {
+                status,
+                body: resp.text().unwrap_or_default(),
+            }),
+        }
+    }
+
+    /// Handler for load-scenario registry endpoints. Like
+    /// [`json_or_feature_error`](Self::json_or_feature_error) but additionally
+    /// maps `404` to [`Error::NotFound`] (an unknown scenario name).
+    fn load_scenario_json(&self, resp: reqwest::blocking::Response) -> Result<Value> {
+        let status = resp.status().as_u16();
+        match status {
+            200 | 201 => {
+                let text = resp.text()?;
+                if text.is_empty() {
+                    Ok(Value::Null)
+                } else {
+                    Ok(serde_json::from_str(&text)?)
+                }
+            }
+            400 => Err(Error::InvalidRequest(resp.text()?)),
+            403 => Err(Error::FeatureDisabled(resp.text()?)),
+            404 => Err(Error::NotFound(resp.text()?)),
             _ => Err(Error::UnexpectedStatus {
                 status,
                 body: resp.text().unwrap_or_default(),

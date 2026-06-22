@@ -3,6 +3,7 @@ package mockserver
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 )
 
 // This file adds the SRE control-plane operations: load scenarios (load
@@ -31,9 +32,18 @@ func (e *FeatureDisabledError) Error() string {
 }
 
 // -----------------------------------------------------------------------------
-// 1. Load scenario  (PUT/GET/DELETE /mockserver/loadScenario)
-//    OpenAPI: paths ./mockserver/loadScenario (lines 2666-2835),
-//    schemas LoadScenario (4427), LoadProfile (4375), LoadStep (4402).
+// 1. Load scenario registry
+//    Register/list/get/delete:
+//      PUT    /mockserver/loadScenario          register (does not run)
+//      GET    /mockserver/loadScenario          list all
+//      GET    /mockserver/loadScenario/{name}   get one
+//      DELETE /mockserver/loadScenario/{name}   remove one
+//      DELETE /mockserver/loadScenario          clear all
+//    Run control:
+//      PUT    /mockserver/loadScenario/start     start one/many (requires loadGenerationEnabled)
+//      PUT    /mockserver/loadScenario/stop      stop named / all
+//    States: LOADED, PENDING, RUNNING, COMPLETED, STOPPED.
+//    schemas LoadScenario, LoadProfile, LoadStep (OpenAPI).
 // -----------------------------------------------------------------------------
 
 // LoadStageType is the kind of a LoadStage. Wire values match schema
@@ -162,6 +172,9 @@ type LoadScenario struct {
 	TemplateType string `json:"templateType,omitempty"`
 	// MaxRequests is an optional hard cap on total requests dispatched.
 	MaxRequests int `json:"maxRequests,omitempty"`
+	// StartDelayMillis is an optional delay (milliseconds) applied before the
+	// scenario starts driving load once started.
+	StartDelayMillis int64 `json:"startDelayMillis,omitempty"`
 	// Labels are optional scenario-level annotation labels.
 	Labels map[string]string `json:"labels,omitempty"`
 	// Profile is the ramp profile (required).
@@ -170,52 +183,194 @@ type LoadScenario struct {
 	Steps []LoadStep `json:"steps,omitempty"`
 }
 
-// LoadScenarioStatusResult is the status of the current (or most recent) load
-// scenario. Wire keys match the GET /mockserver/loadScenario response (OpenAPI
-// line 2754).
-type LoadScenarioStatusResult struct {
-	Name          string        `json:"name,omitempty"`
-	State         string        `json:"state,omitempty"`
-	ElapsedMillis int64         `json:"elapsedMillis,omitempty"`
-	CurrentVus    int           `json:"currentVus,omitempty"`
-	RequestsSent  int64         `json:"requestsSent,omitempty"`
-	Succeeded     int64         `json:"succeeded,omitempty"`
-	Failed        int64         `json:"failed,omitempty"`
-	P50Millis     float64       `json:"p50Millis,omitempty"`
-	P95Millis     float64       `json:"p95Millis,omitempty"`
-	P99Millis     float64       `json:"p99Millis,omitempty"`
-	RunID         string        `json:"runId,omitempty"`
-	StartedAt     int64         `json:"startedAt,omitempty"`
-	EndedAt       int64         `json:"endedAt,omitempty"`
-	Definition    *LoadScenario `json:"definition,omitempty"`
+// LoadScenarioState is the lifecycle state of a registered load scenario.
+// One of LOADED, PENDING, RUNNING, COMPLETED, STOPPED.
+type LoadScenarioState = string
+
+const (
+	// LoadScenarioStateLoaded is a registered scenario not yet started.
+	LoadScenarioStateLoaded LoadScenarioState = "LOADED"
+	// LoadScenarioStatePending is a started scenario waiting on its start delay.
+	LoadScenarioStatePending LoadScenarioState = "PENDING"
+	// LoadScenarioStateRunning is a scenario actively driving load.
+	LoadScenarioStateRunning LoadScenarioState = "RUNNING"
+	// LoadScenarioStateCompleted is a scenario that ran its profile to completion.
+	LoadScenarioStateCompleted LoadScenarioState = "COMPLETED"
+	// LoadScenarioStateStopped is a scenario stopped before completion.
+	LoadScenarioStateStopped LoadScenarioState = "STOPPED"
+)
+
+// LoadScenarioRef is a {name,state} pair returned when registering or starting
+// a scenario.
+type LoadScenarioRef struct {
+	Name  string `json:"name,omitempty"`
+	State string `json:"state,omitempty"`
 }
 
-// SetLoadScenario starts a load scenario (PUT /mockserver/loadScenario).
-// Returns a FeatureDisabledError if load generation is disabled on the server
-// (HTTP 403, loadGenerationEnabled=false).
-func (c *Client) SetLoadScenario(scenario LoadScenario) error {
+// LoadScenarioStatus is the live status of a running (or most recently run)
+// scenario. The server emits these fields FLAT on the listing entry (siblings
+// of name/state/definition), present only once the scenario has run, so it is
+// embedded into LoadScenarioEntry and carries no name/state of its own.
+type LoadScenarioStatus struct {
+	ElapsedMillis int64             `json:"elapsedMillis,omitempty"`
+	CurrentVus    int               `json:"currentVus,omitempty"`
+	StageIndex    int               `json:"stageIndex,omitempty"`
+	StageType     string            `json:"stageType,omitempty"`
+	CurrentTarget float64           `json:"currentTarget,omitempty"`
+	RequestsSent  int64             `json:"requestsSent,omitempty"`
+	Succeeded     int64             `json:"succeeded,omitempty"`
+	Failed        int64             `json:"failed,omitempty"`
+	P50Millis     float64           `json:"p50Millis,omitempty"`
+	P95Millis     float64           `json:"p95Millis,omitempty"`
+	P99Millis     float64           `json:"p99Millis,omitempty"`
+	RunID         string            `json:"runId,omitempty"`
+	StartedAt     int64             `json:"startedAt,omitempty"`
+	EndedAt       int64             `json:"endedAt,omitempty"`
+	Labels        map[string]string `json:"labels,omitempty"`
+}
+
+// LoadScenarioEntry is one entry of the registry listing: the scenario name,
+// its current lifecycle state, the registered definition, and — when the
+// scenario has run — its live status fields, which the server emits FLAT on the
+// entry. The embedded LoadScenarioStatus promotes those flat fields onto the
+// entry; the entry's own Name/State (depth 0) win over the embedded type.
+type LoadScenarioEntry struct {
+	Name             string        `json:"name,omitempty"`
+	State            string        `json:"state,omitempty"`
+	StartDelayMillis int64         `json:"startDelayMillis,omitempty"`
+	Definition       *LoadScenario `json:"definition,omitempty"`
+	LoadScenarioStatus
+}
+
+// LoadScenarioList is the response of GET /mockserver/loadScenario.
+type LoadScenarioList struct {
+	Scenarios []LoadScenarioEntry `json:"scenarios,omitempty"`
+}
+
+// LoadScenarioStartResult is the response of PUT /mockserver/loadScenario/start.
+type LoadScenarioStartResult struct {
+	Started []LoadScenarioRef `json:"started,omitempty"`
+	Status  string            `json:"status,omitempty"`
+}
+
+// LoadScenarioStopResult is the response of PUT /mockserver/loadScenario/stop.
+type LoadScenarioStopResult struct {
+	Stopped []LoadScenarioRef `json:"stopped,omitempty"`
+	Status  string            `json:"status,omitempty"`
+}
+
+// loadScenarioNames is the wire body shared by start (names) and stop (names/all).
+type loadScenarioNames struct {
+	Names []string `json:"names,omitempty"`
+	All   bool     `json:"all,omitempty"`
+}
+
+// LoadScenario registers (loads) a scenario in the registry without running it
+// (PUT /mockserver/loadScenario). Each scenario is keyed by its unique Name.
+// Registration is allowed even when load generation is disabled on the server.
+// Returns the registered scenario reference ({name,state}).
+func (c *Client) LoadScenario(scenario LoadScenario) (*LoadScenarioRef, error) {
 	body, err := json.Marshal(scenario)
 	if err != nil {
-		return fmt.Errorf("mockserver: marshal load scenario: %w", err)
+		return nil, fmt.Errorf("mockserver: marshal load scenario: %w", err)
 	}
 
 	respBody, statusCode, err := c.doRequest("PUT", "/mockserver/loadScenario", body, nil)
 	if err != nil {
-		return err
-	}
-	if statusCode == 403 {
-		return &FeatureDisabledError{Feature: "load generation", Status: statusCode, Body: string(respBody)}
+		return nil, err
 	}
 	if statusCode >= 400 {
-		return fmt.Errorf("mockserver: start load scenario failed (status %d): %s", statusCode, string(respBody))
+		return nil, fmt.Errorf("mockserver: register load scenario failed (status %d): %s", statusCode, string(respBody))
+	}
+	var ref LoadScenarioRef
+	if len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, &ref); err != nil {
+			return nil, fmt.Errorf("mockserver: unmarshal load scenario ref: %w", err)
+		}
+	}
+	return &ref, nil
+}
+
+// LoadScenarios lists all registered scenarios with their state, definition and
+// optional live status (GET /mockserver/loadScenario).
+func (c *Client) LoadScenarios() (*LoadScenarioList, error) {
+	respBody, statusCode, err := c.doRequest("GET", "/mockserver/loadScenario", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("mockserver: list load scenarios failed (status %d): %s", statusCode, string(respBody))
+	}
+	var list LoadScenarioList
+	if len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, &list); err != nil {
+			return nil, fmt.Errorf("mockserver: unmarshal load scenario list: %w", err)
+		}
+	}
+	return &list, nil
+}
+
+// GetLoadScenario retrieves a single registered scenario by name
+// (GET /mockserver/loadScenario/{name}). Returns an error if no scenario with
+// that name is registered (HTTP 404).
+func (c *Client) GetLoadScenario(name string) (*LoadScenarioEntry, error) {
+	respBody, statusCode, err := c.doRequest("GET", "/mockserver/loadScenario/"+url.PathEscape(name), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode == 404 {
+		return nil, fmt.Errorf("mockserver: load scenario %q not found", name)
+	}
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("mockserver: get load scenario failed (status %d): %s", statusCode, string(respBody))
+	}
+	var entry LoadScenarioEntry
+	if len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, &entry); err != nil {
+			return nil, fmt.Errorf("mockserver: unmarshal load scenario: %w", err)
+		}
+	}
+	return &entry, nil
+}
+
+// DeleteLoadScenario removes a single registered scenario by name
+// (DELETE /mockserver/loadScenario/{name}).
+func (c *Client) DeleteLoadScenario(name string) error {
+	respBody, statusCode, err := c.doRequest("DELETE", "/mockserver/loadScenario/"+url.PathEscape(name), nil, nil)
+	if err != nil {
+		return err
+	}
+	if statusCode >= 400 {
+		return fmt.Errorf("mockserver: delete load scenario failed (status %d): %s", statusCode, string(respBody))
 	}
 	return nil
 }
 
-// LoadScenarioStatus retrieves the status of the current (or most recent) load
-// scenario (GET /mockserver/loadScenario).
-func (c *Client) LoadScenarioStatus() (*LoadScenarioStatusResult, error) {
-	respBody, statusCode, err := c.doRequest("GET", "/mockserver/loadScenario", nil, nil)
+// ClearLoadScenarios removes all registered scenarios
+// (DELETE /mockserver/loadScenario). Idempotent.
+func (c *Client) ClearLoadScenarios() error {
+	respBody, statusCode, err := c.doRequest("DELETE", "/mockserver/loadScenario", nil, nil)
+	if err != nil {
+		return err
+	}
+	if statusCode >= 400 {
+		return fmt.Errorf("mockserver: clear load scenarios failed (status %d): %s", statusCode, string(respBody))
+	}
+	return nil
+}
+
+// StartLoadScenarios starts one or more registered scenarios by name
+// (PUT /mockserver/loadScenario/start). Requires load generation to be enabled
+// on the server — returns a FeatureDisabledError on HTTP 403
+// (loadGenerationEnabled=false). Returns an error if a named scenario is not
+// registered (HTTP 404). Honours each scenario's StartDelayMillis.
+func (c *Client) StartLoadScenarios(names ...string) (*LoadScenarioStartResult, error) {
+	body, err := json.Marshal(loadScenarioNames{Names: names})
+	if err != nil {
+		return nil, fmt.Errorf("mockserver: marshal start request: %w", err)
+	}
+
+	respBody, statusCode, err := c.doRequest("PUT", "/mockserver/loadScenario/start", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -223,32 +378,55 @@ func (c *Client) LoadScenarioStatus() (*LoadScenarioStatusResult, error) {
 		return nil, &FeatureDisabledError{Feature: "load generation", Status: statusCode, Body: string(respBody)}
 	}
 	if statusCode >= 400 {
-		return nil, fmt.Errorf("mockserver: load scenario status failed (status %d): %s", statusCode, string(respBody))
+		return nil, fmt.Errorf("mockserver: start load scenarios failed (status %d): %s", statusCode, string(respBody))
 	}
-	var result LoadScenarioStatusResult
+	var result LoadScenarioStartResult
 	if len(respBody) > 0 {
 		if err := json.Unmarshal(respBody, &result); err != nil {
-			return nil, fmt.Errorf("mockserver: unmarshal load scenario status: %w", err)
+			return nil, fmt.Errorf("mockserver: unmarshal start result: %w", err)
 		}
 	}
 	return &result, nil
 }
 
-// StopLoadScenario stops the current load scenario (DELETE
-// /mockserver/loadScenario). Idempotent — returns nil whether or not a scenario
-// was running.
-func (c *Client) StopLoadScenario() error {
-	respBody, statusCode, err := c.doRequest("DELETE", "/mockserver/loadScenario", nil, nil)
-	if err != nil {
-		return err
+// StopLoadScenarios stops the named running scenarios
+// (PUT /mockserver/loadScenario/stop). With no names it stops all running
+// scenarios (sends an empty body). Idempotent.
+func (c *Client) StopLoadScenarios(names ...string) (*LoadScenarioStopResult, error) {
+	var body []byte
+	if len(names) > 0 {
+		var err error
+		body, err = json.Marshal(loadScenarioNames{Names: names})
+		if err != nil {
+			return nil, fmt.Errorf("mockserver: marshal stop request: %w", err)
+		}
 	}
-	if statusCode == 403 {
-		return &FeatureDisabledError{Feature: "load generation", Status: statusCode, Body: string(respBody)}
+
+	respBody, statusCode, err := c.doRequest("PUT", "/mockserver/loadScenario/stop", body, nil)
+	if err != nil {
+		return nil, err
 	}
 	if statusCode >= 400 {
-		return fmt.Errorf("mockserver: stop load scenario failed (status %d): %s", statusCode, string(respBody))
+		return nil, fmt.Errorf("mockserver: stop load scenarios failed (status %d): %s", statusCode, string(respBody))
 	}
-	return nil
+	var result LoadScenarioStopResult
+	if len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return nil, fmt.Errorf("mockserver: unmarshal stop result: %w", err)
+		}
+	}
+	return &result, nil
+}
+
+// RunLoadScenario is a convenience that registers a scenario and immediately
+// starts it. It is equivalent to LoadScenario followed by StartLoadScenarios
+// for the scenario's name. Starting requires load generation to be enabled
+// (FeatureDisabledError on HTTP 403).
+func (c *Client) RunLoadScenario(scenario LoadScenario) (*LoadScenarioStartResult, error) {
+	if _, err := c.LoadScenario(scenario); err != nil {
+		return nil, err
+	}
+	return c.StartLoadScenarios(scenario.Name)
 }
 
 // -----------------------------------------------------------------------------

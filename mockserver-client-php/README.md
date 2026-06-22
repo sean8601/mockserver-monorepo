@@ -160,22 +160,30 @@ use MockServer\LoadScenario;
 use MockServer\LoadProfile;
 use MockServer\LoadStage;
 
-// Load generation (requires loadGenerationEnabled=true; SLI producer for SLOs)
-$client->loadScenario(
-    LoadScenario::scenario('checkout-load')
-        ->maxRequests(5000)
-        ->profile(LoadProfile::of(
-            LoadStage::vuRamp(1, 10, 10000),   // warm up
-            LoadStage::vuHold(10, 30000),      // steady state
-            LoadStage::pause(5000),            // cool down
-        ))
-        ->addStep(
-            HttpRequest::request()->method('GET')->path('/api/item/$iteration.index'),
-            Delay::milliseconds(20),
-        )
-);
-$status = $client->loadScenarioStatus();   // GET — lifecycle state + percentiles
-$client->stopLoadScenario();               // DELETE — idempotent
+// Load generation registry: register scenarios (always allowed), then start
+// them (requires loadGenerationEnabled=true). Each scenario is an SLI producer.
+$scenario = LoadScenario::scenario('checkout-load')
+    ->maxRequests(5000)
+    ->profile(LoadProfile::of(
+        LoadStage::vuRamp(1, 10, 10000),   // warm up
+        LoadStage::vuHold(10, 30000),      // steady state
+        LoadStage::pause(5000),            // cool down
+    ))
+    ->addStep(
+        HttpRequest::request()->method('GET')->path('/api/item/$iteration.index'),
+        Delay::milliseconds(20),
+    );
+
+$client->loadScenario($scenario);            // PUT — register (does not run)
+$client->startLoadScenarios('checkout-load');// PUT /start — drive load (name or array)
+$client->loadScenarios();                    // GET — list all + state
+$client->getLoadScenario('checkout-load');   // GET /{name}
+$client->stopLoadScenarios();                // PUT /stop — stop all (or pass names)
+$client->deleteLoadScenario('checkout-load');// DELETE /{name}
+$client->clearLoadScenarios();               // DELETE — remove all
+
+// Or register-and-start in one call:
+$client->runLoadScenario($scenario);
 
 // Service-scoped HTTP chaos for a downstream host (optional TTL dead-man's switch)
 $client->setServiceChaos('payments.internal:8443', [

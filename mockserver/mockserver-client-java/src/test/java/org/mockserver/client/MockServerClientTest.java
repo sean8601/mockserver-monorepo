@@ -33,8 +33,10 @@ import java.util.concurrent.TimeUnit;
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
+import static io.netty.handler.codec.http.HttpResponseStatus.CONFLICT;
 import static io.netty.handler.codec.http.HttpResponseStatus.CREATED;
 import static io.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
+import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.CoreMatchers.*;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -1854,7 +1856,7 @@ public class MockServerClientTest {
     }
 
     @Test
-    public void shouldSendLoadScenarioRequest() {
+    public void shouldSendRegisterLoadScenarioRequest() {
         // when
         mockServerClient.loadScenario(sampleLoadScenario());
 
@@ -1868,22 +1870,22 @@ public class MockServerClientTest {
     }
 
     @Test
-    public void shouldThrowHelpfulErrorWhenLoadGenerationDisabled() {
-        // given
+    public void shouldThrowErrorWhenRegisterLoadScenarioRejected() {
+        // given (a 4xx other than 400/401, which sendRequest itself maps to dedicated exceptions)
         when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
-            .thenReturn(response().withStatusCode(FORBIDDEN.code()).withBody("{\"error\":\"load generation not enabled (set loadGenerationEnabled=true)\"}"));
+            .thenReturn(response().withStatusCode(CONFLICT.code()).withBody("{\"error\":\"a load scenario named 'smoke' is already registered\"}"));
 
         // when
         ClientException clientException = assertThrows(ClientException.class, () -> mockServerClient.loadScenario(sampleLoadScenario()));
 
         // then
-        assertThat(clientException.getMessage(), containsString("loadGenerationEnabled=true"));
+        assertThat(clientException.getMessage(), containsString("while registering load scenario"));
     }
 
     @Test
-    public void shouldSendLoadScenarioStatusRequest() {
+    public void shouldSendListLoadScenariosRequest() {
         // when
-        mockServerClient.loadScenarioStatus();
+        mockServerClient.loadScenarios();
 
         // then
         verify(mockHttpClient).sendRequest(
@@ -1898,15 +1900,122 @@ public class MockServerClientTest {
     }
 
     @Test
-    public void shouldSendStopLoadScenarioRequest() {
+    public void shouldSendGetLoadScenarioByNameRequest() {
         // when
-        mockServerClient.stopLoadScenario();
+        mockServerClient.getLoadScenario("smoke");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("GET"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/smoke"));
+    }
+
+    @Test
+    public void shouldSendDeleteLoadScenarioByNameRequest() {
+        // when
+        mockServerClient.deleteLoadScenario("smoke");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("DELETE"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/smoke"));
+    }
+
+    @Test
+    public void shouldSendClearLoadScenariosRequest() {
+        // when
+        mockServerClient.clearLoadScenarios();
 
         // then
         verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
         HttpRequest sent = httpRequestArgumentCaptor.getValue();
         assertThat(sent.getMethod().getValue(), is("DELETE"));
         assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario"));
+    }
+
+    @Test
+    public void shouldSendStartLoadScenariosRequest() {
+        // when
+        mockServerClient.startLoadScenarios("smoke", "soak");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/start"));
+        assertThat(sent.getBodyAsString(), is("{\"names\":[\"smoke\",\"soak\"]}"));
+    }
+
+    @Test
+    public void shouldThrowHelpfulErrorWhenLoadGenerationDisabledOnStart() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(FORBIDDEN.code()).withBody("{\"error\":\"load generation not enabled (set loadGenerationEnabled=true)\"}"));
+
+        // when
+        ClientException clientException = assertThrows(ClientException.class, () -> mockServerClient.startLoadScenarios("smoke"));
+
+        // then
+        assertThat(clientException.getMessage(), containsString("loadGenerationEnabled=true"));
+    }
+
+    @Test
+    public void shouldThrowErrorWhenStartLoadScenarioUnknownName() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(NOT_FOUND.code()).withBody("{\"error\":\"no load scenario registered with name 'ghost'\"}"));
+
+        // when
+        ClientException clientException = assertThrows(ClientException.class, () -> mockServerClient.startLoadScenarios("ghost"));
+
+        // then
+        assertThat(clientException.getMessage(), containsString("while starting load scenarios"));
+    }
+
+    @Test
+    public void shouldSendStopNamedLoadScenariosRequest() {
+        // when
+        mockServerClient.stopLoadScenarios("smoke");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/stop"));
+        assertThat(sent.getBodyAsString(), is("{\"names\":[\"smoke\"]}"));
+    }
+
+    @Test
+    public void shouldSendStopAllLoadScenariosRequest() {
+        // when
+        mockServerClient.stopLoadScenarios();
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/stop"));
+        assertThat(sent.getBodyAsString(), is(""));
+    }
+
+    @Test
+    public void shouldRunLoadScenarioRegisterThenStart() {
+        // when
+        mockServerClient.runLoadScenario(sampleLoadScenario());
+
+        // then
+        verify(mockHttpClient, times(2)).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        java.util.List<HttpRequest> sent = httpRequestArgumentCaptor.getAllValues();
+        HttpRequest register = sent.get(0);
+        assertThat(register.getMethod().getValue(), is("PUT"));
+        assertThat(register.getPath().getValue(), is("/mockserver/loadScenario"));
+        assertThat(register.getBodyAsString(), containsString("\"name\" : \"smoke\""));
+        HttpRequest start = sent.get(1);
+        assertThat(start.getMethod().getValue(), is("PUT"));
+        assertThat(start.getPath().getValue(), is("/mockserver/loadScenario/start"));
+        assertThat(start.getBodyAsString(), is("{\"names\":[\"smoke\"]}"));
     }
 
     // -------------------------------------------------------------------

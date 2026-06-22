@@ -1315,13 +1315,18 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
     });
 
     // ========================================================================
-    // Load scenario (load injection) management
-    //   PUT    /mockserver/loadScenario  (start a scenario; 403 unless enabled)
-    //   GET    /mockserver/loadScenario  (status)
-    //   DELETE /mockserver/loadScenario  (stop)
-    // The integration server is started WITHOUT loadGenerationEnabled, so PUT is
-    // expected to be forbidden - which deterministically exercises the client's
-    // PUT path + body plumbing and its 403 rejection message.
+    // Load scenario registry management
+    //   PUT    /mockserver/loadScenario        (register; allowed when off)
+    //   GET    /mockserver/loadScenario        (list all registered)
+    //   GET    /mockserver/loadScenario/{name} (one; 404 if absent)
+    //   DELETE /mockserver/loadScenario/{name} (remove one)
+    //   DELETE /mockserver/loadScenario        (clear all)
+    //   PUT    /mockserver/loadScenario/start  (start; 403 unless enabled)
+    //   PUT    /mockserver/loadScenario/stop   (stop running)
+    // The integration server is started WITHOUT loadGenerationEnabled, so
+    // REGISTRATION is allowed (exercises the registry CRUD paths) while STARTING
+    // is forbidden - which deterministically exercises the client's start path
+    // and its 403 rejection message.
     // ========================================================================
 
     var loadScenarioDefinition = {
@@ -1329,6 +1334,7 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         templateType: "VELOCITY",
         labels: { team: "node-client" },
         maxRequests: 10,
+        startDelayMillis: 50,
         profile: {
             stages: [
                 { type: "VU", vus: 2, durationMillis: 1000 },
@@ -1349,10 +1355,47 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
         ]
     };
 
-    it('should reject loadScenario with a clear message when load generation is disabled', async function () {
+    it('should register a load scenario even when load generation is disabled', async function () {
+        await client.clearLoadScenarios();
+        var registration = await client.loadScenario(loadScenarioDefinition);
+        assert.ok(registration, "loadScenario should resolve a registration object");
+        assert.equal(registration.name, loadScenarioDefinition.name, "registration should echo the scenario name");
+        assert.ok(typeof registration.state === "string", "registration should carry a string 'state'");
+    });
+
+    it('should list registered load scenarios', async function () {
+        await client.clearLoadScenarios();
+        await client.loadScenario(loadScenarioDefinition);
+        var list = await client.loadScenarios();
+        assert.ok(list && Array.isArray(list.scenarios), "loadScenarios should resolve {scenarios: [...]}");
+        var names = list.scenarios.map(function (s) { return s.name; });
+        assert.ok(names.indexOf(loadScenarioDefinition.name) !== -1, "the registered scenario should be listed");
+    });
+
+    it('should get a single registered load scenario by name', async function () {
+        await client.loadScenario(loadScenarioDefinition);
+        var entry = await client.getLoadScenario(loadScenarioDefinition.name);
+        assert.ok(entry, "getLoadScenario should resolve an entry");
+        assert.equal(entry.name, loadScenarioDefinition.name, "entry should carry the requested name");
+    });
+
+    it('should reject getLoadScenario with 404 for an unknown name', async function () {
         var rejected = false;
         try {
-            await client.loadScenario(loadScenarioDefinition);
+            await client.getLoadScenario("node-client-no-such-scenario");
+        } catch (err) {
+            rejected = true;
+            var message = (typeof err === "string") ? err : String(err);
+            assert.ok(message.indexOf("404") !== -1, "expected a 404 but got: " + message);
+        }
+        assert.equal(rejected, true, "getLoadScenario should reject for an unknown scenario");
+    });
+
+    it('should reject startLoadScenarios with a clear message when load generation is disabled', async function () {
+        await client.loadScenario(loadScenarioDefinition);
+        var rejected = false;
+        try {
+            await client.startLoadScenarios(loadScenarioDefinition.name);
         } catch (err) {
             rejected = true;
             var message = (typeof err === "string") ? err : String(err);
@@ -1361,19 +1404,67 @@ describe('mock server node client (no proxy)', { concurrency: 1 }, function () {
                 "expected a clear 'load generation is not enabled' message but got: " + message
             );
         }
-        assert.equal(rejected, true, "loadScenario should reject when loadGenerationEnabled=false");
+        assert.equal(rejected, true, "startLoadScenarios should reject when loadGenerationEnabled=false");
     });
 
-    it('should query loadScenario status', async function () {
-        var status = await client.loadScenarioStatus();
-        assert.ok(status, "loadScenarioStatus should resolve a status object");
-        assert.ok(typeof status.state === "string", "status should carry a string 'state' field");
+    it('should accept an array of names for startLoadScenarios', async function () {
+        await client.loadScenario(loadScenarioDefinition);
+        var rejected = false;
+        try {
+            await client.startLoadScenarios([loadScenarioDefinition.name]);
+        } catch (err) {
+            rejected = true;
+            var message = (typeof err === "string") ? err : String(err);
+            assert.ok(
+                message.toLowerCase().indexOf("load generation is not enabled") !== -1,
+                "expected a clear 'load generation is not enabled' message but got: " + message
+            );
+        }
+        assert.equal(rejected, true, "startLoadScenarios(array) should reject when loadGenerationEnabled=false");
     });
 
-    it('should stop a load scenario', async function () {
-        var result = await client.stopLoadScenario();
-        assert.ok(result, "stopLoadScenario should resolve a response");
-        assert.equal(result.statusCode, 200, "stopLoadScenario should return HTTP 200");
+    it('should stop all running load scenarios with an empty body', async function () {
+        var result = await client.stopLoadScenarios();
+        assert.ok(result, "stopLoadScenarios should resolve a result");
+        assert.equal(result.status, "stopped", "stopLoadScenarios should report status 'stopped'");
+    });
+
+    it('should delete a single registered load scenario by name', async function () {
+        await client.clearLoadScenarios();
+        await client.loadScenario(loadScenarioDefinition);
+        var result = await client.deleteLoadScenario(loadScenarioDefinition.name);
+        assert.ok(result, "deleteLoadScenario should resolve a response");
+        assert.equal(result.statusCode, 200, "deleteLoadScenario should return HTTP 200");
+        var list = await client.loadScenarios();
+        var names = list.scenarios.map(function (s) { return s.name; });
+        assert.ok(names.indexOf(loadScenarioDefinition.name) === -1, "the deleted scenario should no longer be listed");
+    });
+
+    it('should clear all registered load scenarios', async function () {
+        await client.loadScenario(loadScenarioDefinition);
+        var result = await client.clearLoadScenarios();
+        assert.ok(result, "clearLoadScenarios should resolve a response");
+        assert.equal(result.statusCode, 200, "clearLoadScenarios should return HTTP 200");
+        var list = await client.loadScenarios();
+        assert.equal(list.scenarios.length, 0, "registry should be empty after clearLoadScenarios");
+    });
+
+    it('should reject runLoadScenario (register then start) when load generation is disabled', async function () {
+        var rejected = false;
+        try {
+            await client.runLoadScenario(loadScenarioDefinition);
+        } catch (err) {
+            rejected = true;
+            var message = (typeof err === "string") ? err : String(err);
+            assert.ok(
+                message.toLowerCase().indexOf("load generation is not enabled") !== -1,
+                "expected a clear 'load generation is not enabled' message but got: " + message
+            );
+        }
+        assert.equal(rejected, true, "runLoadScenario should reject when loadGenerationEnabled=false");
+        // even though start failed, registration should have succeeded
+        var entry = await client.getLoadScenario(loadScenarioDefinition.name);
+        assert.equal(entry.name, loadScenarioDefinition.name, "runLoadScenario should still have registered the scenario");
     });
 
     // ========================================================================

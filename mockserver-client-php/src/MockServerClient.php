@@ -779,19 +779,17 @@ class MockServerClient
     // -----------------------------------------------------------------
 
     /**
-     * Start an API load scenario (a pure SLI producer).
+     * Register (load) an API load scenario in the server's registry.
      *
      * A scenario is an ordered list of templated request steps fired at a target
-     * concurrency described by a ramp profile. Each completed request records a
-     * latency/error sample that {@see verifySlo()} can read.
-     *
-     * Off by default — the server returns 403 until started with
-     * {@code loadGenerationEnabled=true}.
+     * load described by a staged {@see LoadProfile}. Each scenario carries a
+     * unique {@code name} the registry keys it by. Registration only loads the
+     * scenario; it does not drive any load — call {@see startLoadScenarios()} to
+     * run it. Registration is allowed even when load generation is disabled.
      *
      * @param LoadScenario|array<string, mixed> $scenario The scenario, as a
      *        {@see LoadScenario} value object or an equivalent camelCase array.
-     * @return array<string, mixed> The started-run status ({status, name, steps}).
-     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @return array<string, mixed> The registered reference ({name, state}).
      * @throws InvalidRequestException If the scenario is rejected (HTTP 400).
      * @throws MockServerException On communication errors.
      */
@@ -800,50 +798,136 @@ class MockServerClient
         $body = json_encode(self::toPayload($scenario), JSON_THROW_ON_ERROR);
         $response = $this->put('/mockserver/loadScenario', $body);
 
-        return $this->decodeSreResponse(
-            $response,
-            'start load scenario',
-            featureFlag: 'loadGenerationEnabled',
-        );
+        return $this->decodeSreResponse($response, 'register load scenario');
     }
 
     /**
-     * Retrieve the status of the current (or most recent) load scenario.
+     * List all registered load scenarios with their current state.
      *
-     * When a run exists the response also echoes its full {@code definition} (a
-     * valid {@code LoadScenario} body that can be re-submitted).
+     * Each entry echoes the scenario's {@code name}, {@code state}, full
+     * {@code definition} (a valid {@code LoadScenario} body that can be
+     * re-submitted) and, for running/completed scenarios, an optional live
+     * {@code status}.
      *
-     * @return array<string, mixed> The load scenario status.
-     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @return array<string, mixed> The scenario list ({scenarios: [...]}).
      * @throws MockServerException On communication errors.
      */
-    public function loadScenarioStatus(): array
+    public function loadScenarios(): array
     {
         $response = $this->get('/mockserver/loadScenario');
 
+        return $this->decodeSreResponse($response, 'list load scenarios');
+    }
+
+    /**
+     * Retrieve a single registered load scenario by name.
+     *
+     * @param string $name The unique scenario name.
+     * @return array<string, mixed> The scenario entry ({name, state, definition, status?}).
+     * @throws InvalidRequestException If no scenario with that name exists (HTTP 404).
+     * @throws MockServerException On communication errors.
+     */
+    public function getLoadScenario(string $name): array
+    {
+        $response = $this->get('/mockserver/loadScenario/' . rawurlencode($name));
+
+        return $this->decodeSreResponse($response, "get load scenario '{$name}'");
+    }
+
+    /**
+     * Remove a single registered load scenario by name.
+     *
+     * @param string $name The unique scenario name.
+     * @return array<string, mixed> The server response.
+     * @throws InvalidRequestException If no scenario with that name exists (HTTP 404).
+     * @throws MockServerException On communication errors.
+     */
+    public function deleteLoadScenario(string $name): array
+    {
+        $response = $this->delete('/mockserver/loadScenario/' . rawurlencode($name));
+
+        return $this->decodeSreResponse($response, "delete load scenario '{$name}'");
+    }
+
+    /**
+     * Remove all registered load scenarios. Idempotent.
+     *
+     * @return array<string, mixed> The server response.
+     * @throws MockServerException On communication errors.
+     */
+    public function clearLoadScenarios(): array
+    {
+        $response = $this->delete('/mockserver/loadScenario');
+
+        return $this->decodeSreResponse($response, 'clear load scenarios');
+    }
+
+    /**
+     * Start one or more previously-registered load scenarios.
+     *
+     * Drives the load for each named scenario, honouring its
+     * {@code startDelayMillis}. Off by default — the server returns 403 until
+     * started with {@code loadGenerationEnabled=true}.
+     *
+     * @param string|array<int, string> $names A single scenario name or a list of names.
+     * @return array<string, mixed> The started status ({started: [{name, state}], status}).
+     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @throws InvalidRequestException If a named scenario is unknown (HTTP 404)
+     *         or the request is invalid (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function startLoadScenarios(string|array $names): array
+    {
+        $body = json_encode(['names' => self::toNameList($names)], JSON_THROW_ON_ERROR);
+        $response = $this->put('/mockserver/loadScenario/start', $body);
+
         return $this->decodeSreResponse(
             $response,
-            'get load scenario status',
+            'start load scenarios',
             featureFlag: 'loadGenerationEnabled',
         );
     }
 
     /**
-     * Stop the current load scenario. Idempotent.
+     * Stop running load scenarios.
      *
-     * @return array<string, mixed> The stop status ({status: "stopped"}).
-     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * Pass a single name or a list of names to stop those scenarios, or null
+     * (the default) to stop all running scenarios. Idempotent.
+     *
+     * @param string|array<int, string>|null $names A scenario name, a list of
+     *        names, or null to stop all.
+     * @return array<string, mixed> The stopped status ({stopped: [...], status}).
      * @throws MockServerException On communication errors.
      */
-    public function stopLoadScenario(): array
+    public function stopLoadScenarios(string|array|null $names = null): array
     {
-        $response = $this->delete('/mockserver/loadScenario');
+        if ($names === null) {
+            $body = '';
+        } else {
+            $body = json_encode(['names' => self::toNameList($names)], JSON_THROW_ON_ERROR);
+        }
+        $response = $this->put('/mockserver/loadScenario/stop', $body);
 
-        return $this->decodeSreResponse(
-            $response,
-            'stop load scenario',
-            featureFlag: 'loadGenerationEnabled',
-        );
+        return $this->decodeSreResponse($response, 'stop load scenarios');
+    }
+
+    /**
+     * Convenience: register a load scenario and immediately start it.
+     *
+     * Equivalent to {@see loadScenario()} followed by {@see startLoadScenarios()}
+     * for the scenario's name.
+     *
+     * @param LoadScenario|array<string, mixed> $scenario The scenario to register and run.
+     * @return array<string, mixed> The started status ({started: [{name, state}], status}).
+     * @throws FeatureNotEnabledException If load generation is disabled (HTTP 403).
+     * @throws InvalidRequestException If the scenario is rejected (HTTP 400).
+     * @throws MockServerException On communication errors.
+     */
+    public function runLoadScenario(LoadScenario|array $scenario): array
+    {
+        $this->loadScenario($scenario);
+
+        return $this->startLoadScenarios(self::scenarioName($scenario));
     }
 
     // -----------------------------------------------------------------
@@ -1040,6 +1124,36 @@ class MockServerClient
     }
 
     /**
+     * Normalise a single name or list of names into a list of strings.
+     *
+     * @param string|array<int, string> $names
+     * @return array<int, string>
+     */
+    private static function toNameList(string|array $names): array
+    {
+        return is_array($names) ? array_values($names) : [$names];
+    }
+
+    /**
+     * Extract the unique {@code name} of a scenario value object or array.
+     *
+     * @param LoadScenario|array<string, mixed> $scenario
+     * @throws InvalidRequestException If the scenario has no name.
+     */
+    private static function scenarioName(LoadScenario|array $scenario): string
+    {
+        $name = $scenario instanceof LoadScenario
+            ? $scenario->getName()
+            : ($scenario['name'] ?? null);
+
+        if (!is_string($name) || $name === '') {
+            throw new InvalidRequestException('Load scenario must have a non-empty "name" to run.');
+        }
+
+        return $name;
+    }
+
+    /**
      * Decode a control-plane (SRE) JSON response, surfacing the common error
      * statuses with clear, typed exceptions.
      *
@@ -1070,6 +1184,9 @@ class MockServerClient
         }
         if ($status === 400) {
             throw new InvalidRequestException("Failed to {$action} (HTTP 400): {$responseBody}");
+        }
+        if ($status === 404) {
+            throw new InvalidRequestException("Failed to {$action}: not found (HTTP 404): {$responseBody}");
         }
         if ($status >= 400) {
             throw new MockServerException("Failed to {$action} (HTTP {$status}): {$responseBody}");

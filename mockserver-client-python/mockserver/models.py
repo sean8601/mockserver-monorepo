@@ -2175,10 +2175,17 @@ class LoadStep:
 
 @dataclass
 class LoadScenario:
-    """A load-injection scenario run by the server's load generator.
+    """A load-injection scenario registered with the server's load generator.
 
-    Requires the server to be started with ``loadGenerationEnabled`` — otherwise
-    the control-plane endpoint responds ``403`` and the client raises an error.
+    Registering a scenario (``load_scenario``) adds it to the server-side
+    registry in the ``LOADED`` state but does **not** start generating load —
+    registration is allowed even when ``loadGenerationEnabled`` is off. Starting
+    a registered scenario (``start_load_scenarios``) requires the server to have
+    been started with ``loadGenerationEnabled``; otherwise the start endpoint
+    responds ``403`` and the client raises an error.
+
+    ``start_delay_millis`` defers the start of load generation by the given
+    number of milliseconds after the scenario is started.
     """
 
     name: str | None = None
@@ -2186,6 +2193,7 @@ class LoadScenario:
     steps: list[LoadStep] | None = None
     template_type: str | None = None
     max_requests: int | None = None
+    start_delay_millis: int | None = None
     labels: dict | None = None
 
     def to_dict(self) -> dict:
@@ -2195,6 +2203,7 @@ class LoadScenario:
             "steps": [s.to_dict() for s in self.steps] if self.steps is not None else None,
             "templateType": self.template_type,
             "maxRequests": self.max_requests,
+            "startDelayMillis": self.start_delay_millis,
             "labels": self.labels,
         })
 
@@ -2209,6 +2218,7 @@ class LoadScenario:
             steps=[LoadStep.from_dict(s) for s in steps] if steps is not None else None,
             template_type=data.get("templateType"),
             max_requests=data.get("maxRequests"),
+            start_delay_millis=data.get("startDelayMillis"),
             labels=data.get("labels"),
         )
 

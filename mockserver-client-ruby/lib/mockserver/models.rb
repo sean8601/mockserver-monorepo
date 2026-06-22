@@ -2392,25 +2392,28 @@ module MockServer
   # +template_type+ selects the templating engine (+VELOCITY+ or +MUSTACHE+) used to
   # render step requests; +max_requests+ caps the total requests issued.
   class LoadScenario
-    attr_accessor :name, :template_type, :labels, :max_requests, :profile, :steps
+    attr_accessor :name, :template_type, :labels, :max_requests, :start_delay_millis, :profile, :steps
 
-    def initialize(name:, profile:, steps:, template_type: nil, labels: nil, max_requests: nil)
+    def initialize(name:, profile:, steps:, template_type: nil, labels: nil, max_requests: nil,
+                   start_delay_millis: nil)
       @name = name
       @profile = profile
       @steps = steps
       @template_type = template_type
       @labels = labels
       @max_requests = max_requests
+      @start_delay_millis = start_delay_millis
     end
 
     def to_h
       MockServer.strip_none({
-        'name'         => @name,
-        'templateType' => @template_type,
-        'labels'       => @labels,
-        'maxRequests'  => @max_requests,
-        'profile'      => @profile&.to_h,
-        'steps'        => @steps&.map(&:to_h)
+        'name'             => @name,
+        'templateType'     => @template_type,
+        'labels'           => @labels,
+        'maxRequests'      => @max_requests,
+        'startDelayMillis' => @start_delay_millis,
+        'profile'          => @profile&.to_h,
+        'steps'            => @steps&.map(&:to_h)
       })
     end
 
@@ -2419,12 +2422,13 @@ module MockServer
 
       steps_data = data['steps']
       new(
-        name:          data['name'],
-        template_type: data['templateType'],
-        labels:        data['labels'],
-        max_requests:  data['maxRequests'],
-        profile:       LoadProfile.from_hash(data['profile']),
-        steps:         steps_data ? steps_data.map { |s| LoadStep.from_hash(s) } : nil
+        name:               data['name'],
+        template_type:      data['templateType'],
+        labels:             data['labels'],
+        max_requests:       data['maxRequests'],
+        start_delay_millis: data['startDelayMillis'],
+        profile:            LoadProfile.from_hash(data['profile']),
+        steps:              steps_data ? steps_data.map { |s| LoadStep.from_hash(s) } : nil
       )
     end
   end

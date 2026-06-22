@@ -797,86 +797,219 @@ public sealed class MockServerClient : IDisposable
     }
 
     // -------------------------------------------------------------------
-    // SRE control plane: load scenarios
+    // SRE control plane: load-scenario registry
+    //
+    // Scenarios are registered (loaded) under a unique name without running,
+    // then started and stopped by name. Registration is always allowed;
+    // only starting requires the server's loadGenerationEnabled=true.
     // -------------------------------------------------------------------
 
     /// <summary>
-    /// Start an API-driven load scenario (PUT /mockserver/loadScenario).
+    /// Register (load) a load scenario under its unique name (PUT /mockserver/loadScenario).
+    /// Registration does not start the scenario and is allowed even when load generation is
+    /// disabled; start it later with <see cref="StartLoadScenarios"/>.
     /// </summary>
-    /// <exception cref="MockServerClientException">
-    /// If load generation is disabled (HTTP 403 — start MockServer with
-    /// loadGenerationEnabled=true) or the scenario is invalid (HTTP 400).
-    /// </exception>
-    public string LoadScenario(LoadScenario scenario)
+    /// <exception cref="MockServerClientException">If the scenario is invalid (HTTP 400).</exception>
+    public LoadScenarioRef LoadScenario(LoadScenario scenario)
         => LoadScenarioAsync(scenario).GetAwaiter().GetResult();
 
     /// <summary>
-    /// Start an API-driven load scenario (async). See <see cref="LoadScenario(MockServer.Client.Models.LoadScenario)"/>.
+    /// Register (load) a load scenario (async). See <see cref="LoadScenario(MockServer.Client.Models.LoadScenario)"/>.
     /// </summary>
-    public async Task<string> LoadScenarioAsync(LoadScenario scenario)
+    public async Task<LoadScenarioRef> LoadScenarioAsync(LoadScenario scenario)
     {
         if (scenario == null) throw new ArgumentNullException(nameof(scenario));
         var json = JsonSerializer.Serialize(scenario, JsonOptions);
         var (statusCode, body) = await PutAsync("/mockserver/loadScenario", json).ConfigureAwait(false);
 
+        if (statusCode == 400)
+            throw new MockServerClientException($"Invalid load scenario: {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to register load scenario (HTTP {statusCode}): {body}");
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<LoadScenarioRef>(body, JsonOptions);
+            if (result != null) return result;
+        }
+        return new LoadScenarioRef { Name = scenario.Name };
+    }
+
+    /// <summary>
+    /// List all registered load scenarios (GET /mockserver/loadScenario).
+    /// </summary>
+    public LoadScenarioList LoadScenarios()
+        => LoadScenariosAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// List all registered load scenarios (async). See <see cref="LoadScenarios"/>.
+    /// </summary>
+    public async Task<LoadScenarioList> LoadScenariosAsync()
+    {
+        var (statusCode, body) = await GetAsync("/mockserver/loadScenario").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to list load scenarios (HTTP {statusCode}): {body}");
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<LoadScenarioList>(body, JsonOptions);
+            if (result != null) return result;
+        }
+        return new LoadScenarioList();
+    }
+
+    /// <summary>
+    /// Fetch a single registered load scenario by name (GET /mockserver/loadScenario/{name}).
+    /// </summary>
+    /// <exception cref="MockServerClientException">If no scenario is registered under that name (HTTP 404).</exception>
+    public LoadScenarioEntry GetLoadScenario(string name)
+        => GetLoadScenarioAsync(name).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Fetch a single registered load scenario by name (async). See <see cref="GetLoadScenario"/>.
+    /// </summary>
+    public async Task<LoadScenarioEntry> GetLoadScenarioAsync(string name)
+    {
+        if (name == null) throw new ArgumentNullException(nameof(name));
+        var (statusCode, body) = await GetAsync($"/mockserver/loadScenario/{Uri.EscapeDataString(name)}").ConfigureAwait(false);
+
+        if (statusCode == 404)
+            throw new MockServerClientException($"No load scenario registered with name '{name}' (HTTP 404): {body}");
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to get load scenario '{name}' (HTTP {statusCode}): {body}");
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<LoadScenarioEntry>(body, JsonOptions);
+            if (result != null) return result;
+        }
+        return new LoadScenarioEntry { Name = name };
+    }
+
+    /// <summary>
+    /// Remove a single registered load scenario by name (DELETE /mockserver/loadScenario/{name}).
+    /// </summary>
+    public void DeleteLoadScenario(string name)
+        => DeleteLoadScenarioAsync(name).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Remove a single registered load scenario by name (async). See <see cref="DeleteLoadScenario"/>.
+    /// </summary>
+    public async Task DeleteLoadScenarioAsync(string name)
+    {
+        if (name == null) throw new ArgumentNullException(nameof(name));
+        var (statusCode, body) = await DeleteAsync($"/mockserver/loadScenario/{Uri.EscapeDataString(name)}").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to delete load scenario '{name}' (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Clear all registered load scenarios (DELETE /mockserver/loadScenario). Idempotent.
+    /// </summary>
+    public void ClearLoadScenarios()
+        => ClearLoadScenariosAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Clear all registered load scenarios (async). See <see cref="ClearLoadScenarios"/>.
+    /// </summary>
+    public async Task ClearLoadScenariosAsync()
+    {
+        var (statusCode, body) = await DeleteAsync("/mockserver/loadScenario").ConfigureAwait(false);
+
+        if (statusCode >= 400)
+            throw new MockServerClientException($"Failed to clear load scenarios (HTTP {statusCode}): {body}");
+    }
+
+    /// <summary>
+    /// Start one or more registered load scenarios by name (PUT /mockserver/loadScenario/start).
+    /// Honours each scenario's startDelayMillis. Requires the server to be started with
+    /// loadGenerationEnabled=true.
+    /// </summary>
+    /// <exception cref="MockServerClientException">
+    /// If load generation is disabled (HTTP 403 — start MockServer with loadGenerationEnabled=true)
+    /// or a named scenario is not registered (HTTP 404).
+    /// </exception>
+    public LoadScenarioStartResult StartLoadScenarios(params string[] names)
+        => StartLoadScenariosAsync(names).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Start one or more registered load scenarios by name (async). See <see cref="StartLoadScenarios"/>.
+    /// </summary>
+    public async Task<LoadScenarioStartResult> StartLoadScenariosAsync(params string[] names)
+    {
+        if (names == null || names.Length == 0)
+            throw new ArgumentException("At least one scenario name must be provided to start.", nameof(names));
+
+        var json = JsonSerializer.Serialize(new Dictionary<string, object> { ["names"] = names }, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/loadScenario/start", json).ConfigureAwait(false);
+
         if (statusCode == 403)
             throw new MockServerClientException(
                 "Failed to start load scenario: load generation is disabled " +
                 $"(start MockServer with loadGenerationEnabled=true) (HTTP 403): {body}");
-        if (statusCode == 400)
-            throw new MockServerClientException($"Invalid load scenario: {body}");
+        if (statusCode == 404)
+            throw new MockServerClientException($"Failed to start load scenario: unknown scenario name (HTTP 404): {body}");
         if (statusCode >= 400)
             throw new MockServerClientException($"Failed to start load scenario (HTTP {statusCode}): {body}");
 
-        return body ?? "";
+        if (!string.IsNullOrEmpty(body))
+        {
+            var result = JsonSerializer.Deserialize<LoadScenarioStartResult>(body, JsonOptions);
+            if (result != null) return result;
+        }
+        return new LoadScenarioStartResult();
     }
 
     /// <summary>
-    /// Retrieve the status of the current (or most recent) load scenario (GET /mockserver/loadScenario).
+    /// Stop running load scenarios (PUT /mockserver/loadScenario/stop). Pass one or more names to
+    /// stop those scenarios, or pass no names to stop every running scenario. Idempotent.
     /// </summary>
-    public LoadScenarioStatus LoadScenarioStatus()
-        => LoadScenarioStatusAsync().GetAwaiter().GetResult();
+    public LoadScenarioStopResult StopLoadScenarios(params string[] names)
+        => StopLoadScenariosAsync(names).GetAwaiter().GetResult();
 
     /// <summary>
-    /// Retrieve the current load scenario status (async).
+    /// Stop running load scenarios (async). See <see cref="StopLoadScenarios"/>.
     /// </summary>
-    public async Task<LoadScenarioStatus> LoadScenarioStatusAsync()
+    public async Task<LoadScenarioStopResult> StopLoadScenariosAsync(params string[] names)
     {
-        var (statusCode, body) = await GetAsync("/mockserver/loadScenario").ConfigureAwait(false);
+        // No names => stop all (empty body); named => {"names":[...]}.
+        var json = names == null || names.Length == 0
+            ? ""
+            : JsonSerializer.Serialize(new Dictionary<string, object> { ["names"] = names }, JsonOptions);
+        var (statusCode, body) = await PutAsync("/mockserver/loadScenario/stop", json).ConfigureAwait(false);
 
-        if (statusCode == 403)
-            throw new MockServerClientException(
-                "Failed to get load scenario status: load generation is disabled " +
-                $"(start MockServer with loadGenerationEnabled=true) (HTTP 403): {body}");
         if (statusCode >= 400)
-            throw new MockServerClientException($"Failed to get load scenario status (HTTP {statusCode}): {body}");
+            throw new MockServerClientException($"Failed to stop load scenario (HTTP {statusCode}): {body}");
 
         if (!string.IsNullOrEmpty(body))
         {
-            var result = JsonSerializer.Deserialize<LoadScenarioStatus>(body, JsonOptions);
+            var result = JsonSerializer.Deserialize<LoadScenarioStopResult>(body, JsonOptions);
             if (result != null) return result;
         }
-        return new LoadScenarioStatus();
+        return new LoadScenarioStopResult();
     }
 
     /// <summary>
-    /// Stop the current load scenario (DELETE /mockserver/loadScenario). Idempotent.
+    /// Convenience helper: register a load scenario and immediately start it. Equivalent to
+    /// <see cref="LoadScenario(MockServer.Client.Models.LoadScenario)"/> followed by
+    /// <see cref="StartLoadScenarios"/> for that scenario's name. Requires the server to be started
+    /// with loadGenerationEnabled=true.
     /// </summary>
-    public void StopLoadScenario() => StopLoadScenarioAsync().GetAwaiter().GetResult();
+    public LoadScenarioStartResult RunLoadScenario(LoadScenario scenario)
+        => RunLoadScenarioAsync(scenario).GetAwaiter().GetResult();
 
     /// <summary>
-    /// Stop the current load scenario (async).
+    /// Register a load scenario and immediately start it (async). See <see cref="RunLoadScenario"/>.
     /// </summary>
-    public async Task StopLoadScenarioAsync()
+    public async Task<LoadScenarioStartResult> RunLoadScenarioAsync(LoadScenario scenario)
     {
-        var (statusCode, body) = await DeleteAsync("/mockserver/loadScenario").ConfigureAwait(false);
-
-        if (statusCode == 403)
-            throw new MockServerClientException(
-                "Failed to stop load scenario: load generation is disabled " +
-                $"(start MockServer with loadGenerationEnabled=true) (HTTP 403): {body}");
-        if (statusCode >= 400)
-            throw new MockServerClientException($"Failed to stop load scenario (HTTP {statusCode}): {body}");
+        if (scenario == null) throw new ArgumentNullException(nameof(scenario));
+        var registered = await LoadScenarioAsync(scenario).ConfigureAwait(false);
+        var name = registered.Name ?? scenario.Name
+            ?? throw new MockServerClientException("Cannot start load scenario: the scenario has no name.");
+        return await StartLoadScenariosAsync(name).ConfigureAwait(false);
     }
 
     // -------------------------------------------------------------------

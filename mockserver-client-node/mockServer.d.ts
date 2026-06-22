@@ -536,23 +536,37 @@ export interface LoadStep {
 
 /**
  * A server-driven load-injection scenario. MockServer drives the `steps`
- * against the configured traffic `profile`. Requires the server to be started
- * with `loadGenerationEnabled=true`.
+ * against the configured traffic `profile`. Register a scenario with
+ * `loadScenario(...)`; run registered scenarios with `startLoadScenarios(...)`.
+ * Registration is allowed at any time, but starting a scenario requires the
+ * server to be started with `loadGenerationEnabled=true`.
  */
 export interface LoadScenario {
+  /** unique name used to address the scenario in the registry */
   name: string;
   templateType?: "VELOCITY" | "MUSTACHE";
   labels?: { [key: string]: string };
   /** optional hard cap on the total number of requests sent */
   maxRequests?: number;
+  /** optional delay before the scenario begins once started */
+  startDelayMillis?: number;
   profile: LoadProfile;
   steps: LoadStep[];
 }
 
 /**
- * Status of the current (or most recent) load scenario, as returned by
- * `loadScenarioStatus()`. When no scenario has run the server returns
- * `{ state: "none" }`.
+ * Lifecycle state of a registered load scenario in the registry.
+ *   LOADED    - registered, not yet started
+ *   PENDING   - started, waiting out its startDelayMillis
+ *   RUNNING   - actively driving load
+ *   COMPLETED - finished naturally
+ *   STOPPED   - stopped before completion
+ */
+export type LoadScenarioState = "LOADED" | "PENDING" | "RUNNING" | "COMPLETED" | "STOPPED";
+
+/**
+ * Live runtime status of a load scenario run (carried on a registry entry under
+ * `status` while/after the scenario runs).
  */
 export interface LoadScenarioStatus {
   state: string;
@@ -570,6 +584,50 @@ export interface LoadScenarioStatus {
   endedAt?: number;
   labels?: { [key: string]: string };
   definition?: LoadScenario;
+}
+
+/**
+ * A single entry in the load scenario registry, as returned by
+ * `getLoadScenario(name)` and within `loadScenarios()`.
+ */
+export interface LoadScenarioEntry {
+  name: string;
+  state: LoadScenarioState;
+  definition?: LoadScenario;
+  /** present once the scenario has been started */
+  status?: LoadScenarioStatus;
+}
+
+/**
+ * Result of registering a load scenario via `loadScenario(...)`.
+ */
+export interface LoadScenarioRegistration {
+  name: string;
+  state: LoadScenarioState;
+}
+
+/**
+ * Result of listing the registry via `loadScenarios()`.
+ */
+export interface LoadScenarioList {
+  scenarios: LoadScenarioEntry[];
+}
+
+/**
+ * Result of starting scenarios via `startLoadScenarios(...)` /
+ * `runLoadScenario(...)`.
+ */
+export interface LoadScenarioStartResult {
+  started: LoadScenarioRegistration[];
+  status: string;
+}
+
+/**
+ * Result of stopping scenarios via `stopLoadScenarios(...)`.
+ */
+export interface LoadScenarioStopResult {
+  stopped: LoadScenarioRegistration[];
+  status: string;
 }
 
 export interface AfterAction {

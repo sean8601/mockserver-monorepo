@@ -261,71 +261,159 @@ module MockServer
     end
 
     # -------------------------------------------------------------------
-    # Load scenario (load injection)
+    # Load scenario registry (load injection)
     # -------------------------------------------------------------------
+    #
+    # The load scenario registry decouples *registering* a scenario from
+    # *running* it:
+    #
+    #   * registering (load_scenario) only stores the definition keyed by its
+    #     unique +name+ and is allowed even when +loadGenerationEnabled+ is off;
+    #   * starting (start_load_scenarios) is what actually drives traffic and
+    #     requires +loadGenerationEnabled+ on the server (otherwise a 403).
+    #
+    # Scenario states are: LOADED, PENDING, RUNNING, COMPLETED, STOPPED.
 
-    # Start a load-injection scenario. The scenario drives synthetic traffic at the
-    # target(s) according to its profile and steps.
+    # Register (load) a scenario into the registry without running it.
     #
-    # +scenario+ may be a {LoadScenario} model (which responds to +to_h+) or a plain
-    # Hash already shaped to the +LoadScenario+ JSON contract.
+    # +scenario+ may be a {LoadScenario} model (which responds to +to_h+) or a
+    # plain Hash already shaped to the +LoadScenario+ JSON contract. It must
+    # carry a unique +name+. Registering is permitted even when load generation
+    # is disabled on the server.
     #
-    # Requires +loadGenerationEnabled+ on the server; a 403 response raises a clear
-    # error explaining the feature is disabled.
-    #
-    # @param scenario [LoadScenario, Hash] the scenario to run
-    # @return [Hash] parsed response (e.g. the running scenario status)
+    # @param scenario [LoadScenario, Hash] the scenario to register
+    # @return [Hash] parsed response of the form { "name" => ..., "state" => ... }
     def load_scenario(scenario)
       payload = scenario.respond_to?(:to_h) ? scenario.to_h : scenario
       body = JSON.generate(payload)
       status, response_body = request('PUT', '/mockserver/loadScenario', body)
-      if status == 403
-        raise Error, 'Load scenario rejected (status=403): load generation is disabled ' \
-                     '(set loadGenerationEnabled=true on the server to enable it)'
-      end
       if status >= 400
-        raise Error, "Failed to start load scenario (status=#{status}): #{response_body}"
+        raise Error, "Failed to register load scenario (status=#{status}): #{response_body}"
       end
 
       response_body && !response_body.empty? ? JSON.parse(response_body) : {}
     end
 
-    # Query the status of the currently running load scenario.
+    # List all registered load scenarios.
     #
-    # Requires +loadGenerationEnabled+ on the server; a 403 response raises a clear
-    # error explaining the feature is disabled.
-    #
-    # @return [Hash] parsed load scenario status
-    def load_scenario_status
+    # @return [Hash] parsed response of the form
+    #   { "scenarios" => [ { "name" => ..., "state" => ..., "definition" => ..., "status" => ... }, ... ] }
+    def load_scenarios
       status, response_body = request('GET', '/mockserver/loadScenario')
-      if status == 403
-        raise Error, 'Load scenario status unavailable (status=403): load generation is disabled ' \
-                     '(set loadGenerationEnabled=true on the server to enable it)'
-      end
       if status >= 400
-        raise Error, "Failed to get load scenario status (status=#{status}): #{response_body}"
+        raise Error, "Failed to list load scenarios (status=#{status}): #{response_body}"
       end
 
       response_body && !response_body.empty? ? JSON.parse(response_body) : {}
     end
 
-    # Stop the currently running load scenario.
+    # Fetch a single registered load scenario by name.
     #
-    # Requires +loadGenerationEnabled+ on the server; a 403 response raises a clear
-    # error explaining the feature is disabled.
-    #
-    # @return [Hash] parsed response
-    def stop_load_scenario
-      status, response_body = request('DELETE', '/mockserver/loadScenario')
-      if status == 403
-        raise Error, 'Load scenario stop rejected (status=403): load generation is disabled ' \
-                     '(set loadGenerationEnabled=true on the server to enable it)'
+    # @param name [String] the unique scenario name
+    # @return [Hash] parsed scenario entry { "name" => ..., "state" => ..., "definition" => ..., "status" => ... }
+    # @raise [Error] if the scenario does not exist (404) or another failure occurs
+    def get_load_scenario(name)
+      status, response_body = request('GET', "/mockserver/loadScenario/#{encode_path_segment(name)}")
+      if status == 404
+        raise Error, "Load scenario not found (status=404): #{name}"
       end
       if status >= 400
-        raise Error, "Failed to stop load scenario (status=#{status}): #{response_body}"
+        raise Error, "Failed to get load scenario (status=#{status}): #{response_body}"
       end
 
       response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Remove a single registered load scenario by name.
+    #
+    # @param name [String] the unique scenario name
+    # @return [Hash] parsed response (may be empty)
+    def delete_load_scenario(name)
+      status, response_body = request('DELETE', "/mockserver/loadScenario/#{encode_path_segment(name)}")
+      if status >= 400
+        raise Error, "Failed to delete load scenario (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Clear all registered load scenarios.
+    #
+    # @return [Hash] parsed response (may be empty)
+    def clear_load_scenarios
+      status, response_body = request('DELETE', '/mockserver/loadScenario')
+      if status >= 400
+        raise Error, "Failed to clear load scenarios (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Start one or more registered scenarios.
+    #
+    # +names+ may be a single scenario name (String) or an Array of names; it is
+    # always sent as { "names" => [...] }. Honours each scenario's
+    # +startDelayMillis+. Requires +loadGenerationEnabled+ on the server; a 403
+    # response raises a clear error explaining the feature is disabled.
+    #
+    # @param names [String, Array<String>] scenario name(s) to start
+    # @return [Hash] parsed response of the form
+    #   { "started" => [ { "name" => ..., "state" => ... }, ... ], "status" => ... }
+    def start_load_scenarios(names)
+      payload = { 'names' => Array(names) }
+      body = JSON.generate(payload)
+      status, response_body = request('PUT', '/mockserver/loadScenario/start', body)
+      if status == 403
+        raise Error, 'Load scenario start rejected (status=403): load generation is disabled ' \
+                     '(set loadGenerationEnabled=true on the server to enable it)'
+      end
+      if status == 404
+        raise Error, "Load scenario not found (status=404): #{response_body}"
+      end
+      if status >= 400
+        raise Error, "Failed to start load scenarios (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Stop running scenarios.
+    #
+    # +names+ may be:
+    #   * a single scenario name (String) -> { "names" => ["a"] }
+    #   * an Array of names                -> { "names" => ["a", "b"] }
+    #   * nil (the default)                -> empty body, which stops all running scenarios
+    #
+    # @param names [String, Array<String>, nil] scenario name(s) to stop, or nil for all
+    # @return [Hash] parsed response of the form
+    #   { "stopped" => [ ... ], "status" => ... }
+    def stop_load_scenarios(names = nil)
+      body = names.nil? ? nil : JSON.generate({ 'names' => Array(names) })
+      status, response_body = request('PUT', '/mockserver/loadScenario/stop', body)
+      if status >= 400
+        raise Error, "Failed to stop load scenarios (status=#{status}): #{response_body}"
+      end
+
+      response_body && !response_body.empty? ? JSON.parse(response_body) : {}
+    end
+
+    # Convenience: register a scenario then immediately start it.
+    #
+    # Equivalent to calling {#load_scenario} followed by {#start_load_scenarios}
+    # for the scenario's name. Requires +loadGenerationEnabled+ on the server for
+    # the start step.
+    #
+    # @param scenario [LoadScenario, Hash] the scenario to register and run
+    # @return [Hash] parsed response from the start call
+    def run_load_scenario(scenario)
+      payload = scenario.respond_to?(:to_h) ? scenario.to_h : scenario
+      name = payload.respond_to?(:[]) ? (payload['name'] || payload[:name]) : nil
+      if name.nil? || name.to_s.empty?
+        raise ArgumentError, 'scenario must carry a non-empty name to run'
+      end
+
+      load_scenario(payload)
+      start_load_scenarios(name)
     end
 
     # -------------------------------------------------------------------
@@ -919,6 +1007,15 @@ module MockServer
     def request(method, path, body = nil,
                 content_type: 'application/json; charset=utf-8')
       do_request(method, path, body, nil, content_type: content_type)
+    end
+
+    # @api private
+    # Percent-encode a single URL path segment (e.g. a scenario name) so that
+    # spaces, slashes, and other reserved characters are transmitted safely.
+    def encode_path_segment(value)
+      raise ArgumentError, 'name must not be nil or empty' if value.nil? || value.to_s.empty?
+
+      URI.encode_www_form_component(value.to_s).gsub('+', '%20')
     end
 
     # @api private

@@ -151,16 +151,44 @@ fn test_load_profile_rate_stage_shape() {
 }
 
 #[test]
-fn test_set_load_scenario_sends_put_to_load_scenario() {
-    let (client, rx) = stub(200, r#"{"status":"started","name":"s","steps":1}"#);
+fn test_load_scenario_serializes_start_delay_millis() {
+    let scenario = LoadScenario::new(
+        "delayed",
+        LoadProfile::constant(1, 1000),
+        vec![LoadStep::new(HttpRequest::new().method("GET").path("/x"))],
+    )
+    .start_delay_millis(2500);
+    let json = serde_json::to_value(&scenario).unwrap();
+    assert_eq!(json["startDelayMillis"], 2500);
+}
+
+#[test]
+fn test_load_scenario_omits_start_delay_millis_when_unset() {
+    let scenario = LoadScenario::new(
+        "s",
+        LoadProfile::constant(1, 1000),
+        vec![LoadStep::new(HttpRequest::new().method("GET").path("/x"))],
+    );
+    let json = serde_json::to_value(&scenario).unwrap();
+    assert!(json.get("startDelayMillis").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Load scenario registry — HTTP plumbing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_load_scenario_registers_with_put() {
+    let (client, rx) = stub(200, r#"{"name":"s","state":"LOADED"}"#);
     let scenario = LoadScenario::new(
         "s",
         LoadProfile::constant(1, 1000),
         vec![LoadStep::new(HttpRequest::new().method("GET").path("/x"))],
     );
 
-    let result = client.set_load_scenario(&scenario).unwrap();
-    assert_eq!(result["status"], "started");
+    let result = client.load_scenario(&scenario).unwrap();
+    assert_eq!(result["name"], "s");
+    assert_eq!(result["state"], "LOADED");
 
     let cap = rx.recv().unwrap();
     assert_eq!(cap.method, "PUT");
@@ -172,37 +200,161 @@ fn test_set_load_scenario_sends_put_to_load_scenario() {
 }
 
 #[test]
-fn test_load_scenario_status_sends_get() {
-    let (client, rx) = stub(200, r#"{"state":"running","currentVus":3}"#);
-    let result = client.load_scenario_status().unwrap();
-    assert_eq!(result["state"], "running");
+fn test_load_scenarios_lists_with_get() {
+    let (client, rx) = stub(200, r#"{"scenarios":[{"name":"s","state":"LOADED"}]}"#);
+    let result = client.load_scenarios().unwrap();
+    assert_eq!(result["scenarios"][0]["name"], "s");
     let cap = rx.recv().unwrap();
     assert_eq!(cap.method, "GET");
     assert_eq!(cap.url, "/mockserver/loadScenario");
 }
 
 #[test]
-fn test_stop_load_scenario_sends_delete() {
-    let (client, rx) = stub(200, r#"{"status":"stopped"}"#);
-    let result = client.stop_load_scenario().unwrap();
-    assert_eq!(result["status"], "stopped");
+fn test_get_load_scenario_sends_get_to_named_path() {
+    let (client, rx) = stub(200, r#"{"name":"checkout","state":"RUNNING"}"#);
+    let result = client.get_load_scenario("checkout").unwrap();
+    assert_eq!(result["state"], "RUNNING");
+    let cap = rx.recv().unwrap();
+    assert_eq!(cap.method, "GET");
+    assert_eq!(cap.url, "/mockserver/loadScenario/checkout");
+}
+
+#[test]
+fn test_get_load_scenario_404_is_not_found() {
+    let (client, _rx) = stub(404, r#"{"error":"no scenario named bogus"}"#);
+    match client.get_load_scenario("bogus") {
+        Err(Error::NotFound(msg)) => assert!(msg.contains("bogus")),
+        other => panic!("expected NotFound, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_delete_load_scenario_sends_delete_to_named_path() {
+    let (client, rx) = stub(200, r#"{"name":"checkout","state":"STOPPED"}"#);
+    let result = client.delete_load_scenario("checkout").unwrap();
+    assert_eq!(result["name"], "checkout");
+    let cap = rx.recv().unwrap();
+    assert_eq!(cap.method, "DELETE");
+    assert_eq!(cap.url, "/mockserver/loadScenario/checkout");
+}
+
+#[test]
+fn test_clear_load_scenarios_sends_delete_to_collection() {
+    let (client, rx) = stub(200, "");
+    let result = client.clear_load_scenarios().unwrap();
+    assert!(result.is_null());
     let cap = rx.recv().unwrap();
     assert_eq!(cap.method, "DELETE");
     assert_eq!(cap.url, "/mockserver/loadScenario");
 }
 
 #[test]
-fn test_set_load_scenario_403_is_feature_disabled() {
-    let (client, _rx) = stub(403, r#"{"error":"load generation not enabled"}"#);
-    let scenario = LoadScenario::new(
-        "s",
-        LoadProfile::constant(1, 1000),
-        vec![LoadStep::new(HttpRequest::new().method("GET").path("/x"))],
+fn test_start_load_scenarios_sends_put_with_names() {
+    let (client, rx) = stub(
+        200,
+        r#"{"started":[{"name":"a","state":"PENDING"}],"status":"started"}"#,
     );
-    match client.set_load_scenario(&scenario) {
+    let result = client.start_load_scenarios(&["a", "b"]).unwrap();
+    assert_eq!(result["status"], "started");
+    let cap = rx.recv().unwrap();
+    assert_eq!(cap.method, "PUT");
+    assert_eq!(cap.url, "/mockserver/loadScenario/start");
+    let sent: serde_json::Value = serde_json::from_str(&cap.body).unwrap();
+    assert_eq!(sent["names"][0], "a");
+    assert_eq!(sent["names"][1], "b");
+}
+
+#[test]
+fn test_start_load_scenarios_403_is_feature_disabled() {
+    let (client, _rx) = stub(403, r#"{"error":"load generation not enabled"}"#);
+    match client.start_load_scenarios(&["a"]) {
         Err(Error::FeatureDisabled(msg)) => assert!(msg.contains("not enabled")),
         other => panic!("expected FeatureDisabled, got {other:?}"),
     }
+}
+
+#[test]
+fn test_start_load_scenarios_404_is_not_found() {
+    let (client, _rx) = stub(404, r#"{"error":"unknown scenario nope"}"#);
+    match client.start_load_scenarios(&["nope"]) {
+        Err(Error::NotFound(msg)) => assert!(msg.contains("nope")),
+        other => panic!("expected NotFound, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_stop_load_scenarios_with_names_sends_names_body() {
+    let (client, rx) = stub(200, r#"{"stopped":["a"],"status":"stopped"}"#);
+    let result = client.stop_load_scenarios(&["a"]).unwrap();
+    assert_eq!(result["status"], "stopped");
+    let cap = rx.recv().unwrap();
+    assert_eq!(cap.method, "PUT");
+    assert_eq!(cap.url, "/mockserver/loadScenario/stop");
+    let sent: serde_json::Value = serde_json::from_str(&cap.body).unwrap();
+    assert_eq!(sent["names"][0], "a");
+}
+
+#[test]
+fn test_stop_load_scenarios_empty_sends_empty_body() {
+    let (client, rx) = stub(200, r#"{"stopped":["a","b"],"status":"stopped"}"#);
+    let empty: &[&str] = &[];
+    let result = client.stop_load_scenarios(empty).unwrap();
+    assert_eq!(result["status"], "stopped");
+    let cap = rx.recv().unwrap();
+    assert_eq!(cap.method, "PUT");
+    assert_eq!(cap.url, "/mockserver/loadScenario/stop");
+    assert_eq!(cap.body, "");
+}
+
+#[test]
+fn test_run_load_scenario_registers_then_starts() {
+    // Two requests: PUT register, then PUT start. Use a two-shot stub.
+    let server = tiny_http::Server::http("127.0.0.1:0").expect("bind stub server");
+    let port = match server.server_addr() {
+        tiny_http::ListenAddr::IP(addr) => addr.port(),
+        #[allow(unreachable_patterns)]
+        _ => panic!("expected IP listen address"),
+    };
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        for (i, body) in [
+            r#"{"name":"run-me","state":"LOADED"}"#,
+            r#"{"started":[{"name":"run-me","state":"PENDING"}],"status":"started"}"#,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut request = server.recv().expect("stub recv");
+            let method = request.method().as_str().to_string();
+            let url = request.url().to_string();
+            let mut req_body = String::new();
+            request.as_reader().read_to_string(&mut req_body).ok();
+            tx.send((i, method, url, req_body)).ok();
+            request
+                .respond(tiny_http::Response::from_string(*body))
+                .ok();
+        }
+    });
+    let client = ClientBuilder::new("127.0.0.1", port)
+        .build()
+        .expect("build client");
+
+    let scenario = LoadScenario::new(
+        "run-me",
+        LoadProfile::constant(1, 1000),
+        vec![LoadStep::new(HttpRequest::new().method("GET").path("/x"))],
+    );
+    let result = client.run_load_scenario(&scenario).unwrap();
+    assert_eq!(result["status"], "started");
+
+    let (_, m0, u0, _) = rx.recv().unwrap();
+    assert_eq!(m0, "PUT");
+    assert_eq!(u0, "/mockserver/loadScenario");
+    let (_, m1, u1, b1) = rx.recv().unwrap();
+    assert_eq!(m1, "PUT");
+    assert_eq!(u1, "/mockserver/loadScenario/start");
+    let sent: serde_json::Value = serde_json::from_str(&b1).unwrap();
+    assert_eq!(sent["names"][0], "run-me");
 }
 
 // ---------------------------------------------------------------------------

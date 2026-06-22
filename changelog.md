@@ -117,9 +117,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Load scenario + SRE control plane across all client libraries -->
 - **Load-scenario (load injection) support in all client libraries, and SRE control-plane parity for the
-  remaining clients.** Every client (Java, Node, Python, Ruby, Go, .NET, Rust, PHP) gains start / status / stop
-  for load scenarios (`PUT/GET/DELETE /mockserver/loadScenario`), surfacing the off-by-default `403` as a clear,
-  catchable error. The four clients that previously had no SRE control plane (Go, .NET, Rust, PHP) additionally
+  remaining clients.** Every client (Java, Node, Python, Ruby, Go, .NET, Rust, PHP) gains the full load-scenario
+  **registry** API — register (`loadScenario`), list (`loadScenarios`), get/delete by name, clear, start one or
+  many by name (`startLoadScenarios`), stop (`stopLoadScenarios`, names or all), and a `runLoadScenario`
+  convenience that registers then starts — mirroring `PUT/GET/DELETE /mockserver/loadScenario`,
+  `/loadScenario/start` and `/loadScenario/stop`. Registration is allowed when load generation is disabled;
+  starting surfaces the off-by-default `403` as a clear, catchable error. Scenario definitions carry the new
+  `startDelayMillis`. The four clients that previously had no SRE control plane (Go, .NET, Rust, PHP) additionally
   gain idiomatic methods for service chaos (`/serviceChaos`), SLO verdicts (`/verifySLO`, with the 200 PASS /
   406 FAIL / 400 status semantics preserved so the verdict stays readable), preemption (`/preemption`), and
   chaos experiments (`/chaosExperiment`). All request bodies are camelCase-on-the-wire and were verified against
@@ -141,6 +145,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single combined chart plots RPS / active VUs / in-flight / p50 / p95 / p99 / error-rate with per-series toggles
   to fit the available space. Cross-links the Metrics tab (`mock_server_load_*`). The dashboard is bundled into the
   `mockserver-netty` jar at build time, so a running server shows the new tab after rebuilding from this change.
+- **Performance panel: load-scenario registry UX and a Code view** (`mockserver-ui`). The panel now works with the
+  named-scenario registry: a list of all registered scenarios with their lifecycle-state badge, multi-select to
+  start several at once, and a "Running now" view that shows every concurrently-running scenario with its own live
+  metrics and an individual Stop. The author form gains a "Start delay (ms)" field and split **Load** (register
+  only) / **Load & Run** actions, plus per-scenario delete and a Clear-all. A new **Code** tab — matching the Mocks
+  and Verification panels — generates register-and-start snippets for the current scenario across Java, Node,
+  Python, Go, C#, Ruby, Rust, JSON and curl.
 
 <!-- First-class load-injection metrics (Prometheus + OTEL) -->
 - **First-class metrics for load injection (load scenarios)** (`mockserver-core`). A load run now exposes a

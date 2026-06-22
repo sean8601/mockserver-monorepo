@@ -8,7 +8,7 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioStatus, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
+import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioStatus, LoadScenarioEntry, LoadScenarioList, LoadScenarioRegistration, LoadScenarioStartResult, LoadScenarioStopResult, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
 import {Llm, LlmConversationBuilder, LlmFailoverBuilder, LlmMockBuilder} from './llm';
 import {McpMockBuilder} from './mcpMockBuilder';
 
@@ -180,11 +180,21 @@ export interface MockServerClient {
 
     serviceChaosStatus(): Promise<{ services: { [host: string]: HttpChaosProfile } }>;
 
-    loadScenario(scenario: LoadScenario): Promise<RequestResponse>;
+    loadScenario(scenario: LoadScenario): Promise<LoadScenarioRegistration>;
 
-    loadScenarioStatus(): Promise<LoadScenarioStatus>;
+    loadScenarios(): Promise<LoadScenarioList>;
 
-    stopLoadScenario(): Promise<RequestResponse>;
+    getLoadScenario(name: string): Promise<LoadScenarioEntry>;
+
+    deleteLoadScenario(name: string): Promise<RequestResponse>;
+
+    clearLoadScenarios(): Promise<RequestResponse>;
+
+    startLoadScenarios(names: string | string[]): Promise<LoadScenarioStartResult>;
+
+    stopLoadScenarios(names?: string | string[]): Promise<LoadScenarioStopResult>;
+
+    runLoadScenario(scenario: LoadScenario): Promise<LoadScenarioStartResult>;
 
     /**
      * Obtain a handle to a named stateful scenario, exposing typed helpers over

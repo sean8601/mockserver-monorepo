@@ -58,7 +58,7 @@ class MockServerClientSreTest extends TestCase
     {
         $history = [];
         $client = $this->createClientWithMock([
-            new Response(200, [], json_encode(['status' => 'started', 'name' => 'checkout-load', 'steps' => 1])),
+            new Response(200, [], json_encode(['name' => 'checkout-load', 'state' => 'LOADED'])),
         ], $history);
 
         $scenario = LoadScenario::scenario('checkout-load')
@@ -116,8 +116,8 @@ class MockServerClientSreTest extends TestCase
         $this->assertSame('fetch-item', $step['name']);
         $this->assertSame(['route' => 'item'], $step['labels']);
 
-        $this->assertSame('started', $result['status']);
-        $this->assertSame(1, $result['steps']);
+        $this->assertSame('checkout-load', $result['name']);
+        $this->assertSame('LOADED', $result['state']);
     }
 
     public function testLinearLoadProfileShape(): void
@@ -196,7 +196,170 @@ class MockServerClientSreTest extends TestCase
         $this->assertSame('/raw', $body['steps'][0]['request']['path']);
     }
 
-    public function testLoadScenarioThrowsFeatureNotEnabledOn403(): void
+    public function testLoadScenarioRegistersAndReturnsRef(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], json_encode(['name' => 'x', 'state' => 'LOADED'])),
+        ], $history);
+
+        $result = $client->loadScenario(LoadScenario::scenario('x')
+            ->profile(LoadProfile::constant(1, 1000))
+            ->addStep(HttpRequest::request()->path('/x')));
+
+        $request = $history[0]['request'];
+        $this->assertSame('PUT', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario', $request->getUri()->getPath());
+        $this->assertSame('x', $result['name']);
+        $this->assertSame('LOADED', $result['state']);
+    }
+
+    public function testLoadScenarioSerialisesStartDelayMillis(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->loadScenario(
+            LoadScenario::scenario('delayed')
+                ->startDelayMillis(250)
+                ->profile(LoadProfile::constant(1, 1000))
+                ->addStep(HttpRequest::request()->path('/x'))
+        );
+
+        $body = json_decode((string) $history[0]['request']->getBody(), true);
+        // PHP json_encode renders whole-number floats as ints; assertEquals (not assertSame).
+        $this->assertEquals(250, $body['startDelayMillis']);
+    }
+
+    public function testLoadScenarioRegistrationAllowedWhenGenerationDisabled(): void
+    {
+        // Registration is NOT gated — a 403 is surfaced generically, not as
+        // FeatureNotEnabledException, because the registration endpoint never
+        // gates on loadGenerationEnabled.
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], json_encode(['name' => 'x', 'state' => 'LOADED'])),
+        ], $history);
+
+        $result = $client->loadScenario(LoadScenario::scenario('x')
+            ->profile(LoadProfile::constant(1, 1000))
+            ->addStep(HttpRequest::request()->path('/x')));
+
+        $this->assertSame('LOADED', $result['state']);
+    }
+
+    public function testLoadScenariosListsAllViaGet(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], json_encode([
+                'scenarios' => [
+                    ['name' => 'a', 'state' => 'RUNNING'],
+                    ['name' => 'b', 'state' => 'LOADED'],
+                ],
+            ])),
+        ], $history);
+
+        $result = $client->loadScenarios();
+
+        $request = $history[0]['request'];
+        $this->assertSame('GET', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario', $request->getUri()->getPath());
+        $this->assertCount(2, $result['scenarios']);
+        $this->assertSame('a', $result['scenarios'][0]['name']);
+        $this->assertSame('RUNNING', $result['scenarios'][0]['state']);
+    }
+
+    public function testGetLoadScenarioUsesNamedGet(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], json_encode(['name' => 'check out', 'state' => 'COMPLETED'])),
+        ], $history);
+
+        $result = $client->getLoadScenario('check out');
+
+        $request = $history[0]['request'];
+        $this->assertSame('GET', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario/check%20out', $request->getUri()->getPath());
+        $this->assertSame('COMPLETED', $result['state']);
+    }
+
+    public function testGetLoadScenarioThrowsOn404(): void
+    {
+        $client = $this->createClientWithMock([
+            new Response(404, [], 'no such scenario'),
+        ]);
+
+        $this->expectException(InvalidRequestException::class);
+        $client->getLoadScenario('missing');
+    }
+
+    public function testDeleteLoadScenarioUsesNamedDelete(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->deleteLoadScenario('checkout-load');
+
+        $request = $history[0]['request'];
+        $this->assertSame('DELETE', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario/checkout-load', $request->getUri()->getPath());
+    }
+
+    public function testClearLoadScenariosUsesUnscopedDelete(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->clearLoadScenarios();
+
+        $request = $history[0]['request'];
+        $this->assertSame('DELETE', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario', $request->getUri()->getPath());
+    }
+
+    public function testStartLoadScenariosWithSingleNameSendsNamesArray(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], json_encode([
+                'started' => [['name' => 'a', 'state' => 'RUNNING']],
+                'status' => 'started',
+            ])),
+        ], $history);
+
+        $result = $client->startLoadScenarios('a');
+
+        $request = $history[0]['request'];
+        $this->assertSame('PUT', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario/start', $request->getUri()->getPath());
+        $body = json_decode((string) $request->getBody(), true);
+        $this->assertSame(['names' => ['a']], $body);
+        $this->assertSame('started', $result['status']);
+        $this->assertSame('a', $result['started'][0]['name']);
+    }
+
+    public function testStartLoadScenariosWithArraySendsNamesArray(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->startLoadScenarios(['a', 'b']);
+
+        $body = json_decode((string) $history[0]['request']->getBody(), true);
+        $this->assertSame(['names' => ['a', 'b']], $body);
+    }
+
+    public function testStartLoadScenariosThrowsFeatureNotEnabledOn403(): void
     {
         $client = $this->createClientWithMock([
             new Response(403, [], 'load generation disabled'),
@@ -205,50 +368,110 @@ class MockServerClientSreTest extends TestCase
         $this->expectException(FeatureNotEnabledException::class);
         $this->expectExceptionMessage('loadGenerationEnabled=true');
 
-        $client->loadScenario(LoadScenario::scenario('x')
-            ->profile(LoadProfile::constant(1, 1000))
-            ->addStep(HttpRequest::request()->path('/x')));
+        $client->startLoadScenarios('a');
     }
 
-    public function testLoadScenarioStatusUsesGet(): void
+    public function testStartLoadScenariosThrowsOn404UnknownName(): void
+    {
+        $client = $this->createClientWithMock([
+            new Response(404, [], 'unknown scenario'),
+        ]);
+
+        $this->expectException(InvalidRequestException::class);
+        $client->startLoadScenarios('ghost');
+    }
+
+    public function testStopLoadScenariosWithNoArgsStopsAllWithEmptyBody(): void
     {
         $history = [];
         $client = $this->createClientWithMock([
-            new Response(200, [], json_encode(['state' => 'running', 'currentVus' => 10])),
+            new Response(200, [], json_encode(['stopped' => [], 'status' => 'stopped'])),
         ], $history);
 
-        $result = $client->loadScenarioStatus();
+        $result = $client->stopLoadScenarios();
 
         $request = $history[0]['request'];
-        $this->assertSame('GET', $request->getMethod());
-        $this->assertSame('/mockserver/loadScenario', $request->getUri()->getPath());
-        $this->assertSame('running', $result['state']);
-        $this->assertSame(10, $result['currentVus']);
-    }
-
-    public function testStopLoadScenarioUsesDelete(): void
-    {
-        $history = [];
-        $client = $this->createClientWithMock([
-            new Response(200, [], json_encode(['status' => 'stopped'])),
-        ], $history);
-
-        $result = $client->stopLoadScenario();
-
-        $request = $history[0]['request'];
-        $this->assertSame('DELETE', $request->getMethod());
-        $this->assertSame('/mockserver/loadScenario', $request->getUri()->getPath());
+        $this->assertSame('PUT', $request->getMethod());
+        $this->assertSame('/mockserver/loadScenario/stop', $request->getUri()->getPath());
+        $this->assertSame('', (string) $request->getBody());
         $this->assertSame('stopped', $result['status']);
     }
 
-    public function testLoadScenarioStatusThrowsFeatureNotEnabledOn403(): void
+    public function testStopLoadScenariosWithNamesSendsNamesArray(): void
     {
+        $history = [];
         $client = $this->createClientWithMock([
-            new Response(403, [], 'disabled'),
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->stopLoadScenarios(['a', 'b']);
+
+        $request = $history[0]['request'];
+        $this->assertSame('/mockserver/loadScenario/stop', $request->getUri()->getPath());
+        $body = json_decode((string) $request->getBody(), true);
+        $this->assertSame(['names' => ['a', 'b']], $body);
+    }
+
+    public function testStopLoadScenariosWithSingleNameSendsNamesArray(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->stopLoadScenarios('a');
+
+        $body = json_decode((string) $history[0]['request']->getBody(), true);
+        $this->assertSame(['names' => ['a']], $body);
+    }
+
+    public function testRunLoadScenarioRegistersThenStarts(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], json_encode(['name' => 'run-me', 'state' => 'LOADED'])),
+            new Response(200, [], json_encode([
+                'started' => [['name' => 'run-me', 'state' => 'RUNNING']],
+                'status' => 'started',
+            ])),
+        ], $history);
+
+        $result = $client->runLoadScenario(
+            LoadScenario::scenario('run-me')
+                ->profile(LoadProfile::constant(1, 1000))
+                ->addStep(HttpRequest::request()->path('/x'))
+        );
+
+        $this->assertCount(2, $history);
+        $register = $history[0]['request'];
+        $this->assertSame('PUT', $register->getMethod());
+        $this->assertSame('/mockserver/loadScenario', $register->getUri()->getPath());
+
+        $start = $history[1]['request'];
+        $this->assertSame('PUT', $start->getMethod());
+        $this->assertSame('/mockserver/loadScenario/start', $start->getUri()->getPath());
+        $startBody = json_decode((string) $start->getBody(), true);
+        $this->assertSame(['names' => ['run-me']], $startBody);
+
+        $this->assertSame('started', $result['status']);
+    }
+
+    public function testRunLoadScenarioAcceptsPlainArrayAndStartsByName(): void
+    {
+        $history = [];
+        $client = $this->createClientWithMock([
+            new Response(200, [], '{}'),
+            new Response(200, [], '{}'),
+        ], $history);
+
+        $client->runLoadScenario([
+            'name' => 'raw-run',
+            'profile' => ['stages' => [['type' => 'VU', 'vus' => 1, 'durationMillis' => 1000]]],
+            'steps' => [['request' => ['method' => 'GET', 'path' => '/raw']]],
         ]);
 
-        $this->expectException(FeatureNotEnabledException::class);
-        $client->loadScenarioStatus();
+        $startBody = json_decode((string) $history[1]['request']->getBody(), true);
+        $this->assertSame(['names' => ['raw-run']], $startBody);
     }
 
     // -----------------------------------------------------------------

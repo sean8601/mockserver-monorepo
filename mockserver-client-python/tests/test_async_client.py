@@ -613,6 +613,7 @@ class TestAsyncLoadScenario:
     def _scenario(self) -> LoadScenario:
         return LoadScenario(
             name="checkout-flow",
+            start_delay_millis=2000,
             profile=LoadProfile(stages=[LoadStage.vu_stage(30000, vus=5)]),
             steps=[
                 LoadStep(request=HttpRequest(method="GET", path="/health")),
@@ -620,42 +621,146 @@ class TestAsyncLoadScenario:
         )
 
     @pytest.mark.asyncio
-    async def test_load_scenario(self, mock_server):
-        MockHandler.response_body = json.dumps({"status": "running"})
+    async def test_load_scenario_registers(self, mock_server):
+        MockHandler.response_body = json.dumps({"name": "checkout-flow", "state": "LOADED"})
         client = AsyncMockServerClient("127.0.0.1", mock_server)
         result = await client.load_scenario(self._scenario())
         assert MockHandler.last_method == "PUT"
         assert MockHandler.last_path == "/mockserver/loadScenario"
         sent = json.loads(MockHandler.last_request_body)
         assert sent["name"] == "checkout-flow"
+        assert sent["startDelayMillis"] == 2000
         assert sent["profile"]["stages"][0]["vus"] == 5
-        assert result["status"] == "running"
+        assert result == {"name": "checkout-flow", "state": "LOADED"}
 
     @pytest.mark.asyncio
-    async def test_load_scenario_status(self, mock_server):
-        MockHandler.response_body = json.dumps({"status": "running"})
+    async def test_load_scenario_register_allowed_when_disabled(self, mock_server):
+        # registration does NOT require loadGenerationEnabled
+        MockHandler.response_body = json.dumps({"name": "checkout-flow", "state": "LOADED"})
         client = AsyncMockServerClient("127.0.0.1", mock_server)
-        result = await client.load_scenario_status()
+        result = await client.load_scenario(self._scenario())
+        assert result["state"] == "LOADED"
+
+    @pytest.mark.asyncio
+    async def test_load_scenarios_list(self, mock_server):
+        MockHandler.response_body = json.dumps(
+            {"scenarios": [{"name": "checkout-flow", "state": "RUNNING"}]}
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.load_scenarios()
         assert MockHandler.last_method == "GET"
         assert MockHandler.last_path == "/mockserver/loadScenario"
-        assert result["status"] == "running"
+        assert result["scenarios"][0]["name"] == "checkout-flow"
 
     @pytest.mark.asyncio
-    async def test_stop_load_scenario(self, mock_server):
-        MockHandler.response_body = json.dumps({"status": "stopped"})
+    async def test_get_load_scenario(self, mock_server):
+        MockHandler.response_body = json.dumps({"name": "checkout-flow", "state": "LOADED"})
         client = AsyncMockServerClient("127.0.0.1", mock_server)
-        result = await client.stop_load_scenario()
+        result = await client.get_load_scenario("checkout-flow")
+        assert MockHandler.last_method == "GET"
+        assert MockHandler.last_path == "/mockserver/loadScenario/checkout-flow"
+        assert result["state"] == "LOADED"
+
+    @pytest.mark.asyncio
+    async def test_get_load_scenario_not_found(self, mock_server):
+        MockHandler.response_status = 404
+        MockHandler.response_body = '{"error": "no such scenario"}'
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="not found"):
+            await client.get_load_scenario("missing")
+
+    @pytest.mark.asyncio
+    async def test_delete_load_scenario(self, mock_server):
+        MockHandler.response_body = json.dumps({"name": "checkout-flow", "state": "STOPPED"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.delete_load_scenario("checkout-flow")
+        assert MockHandler.last_method == "DELETE"
+        assert MockHandler.last_path == "/mockserver/loadScenario/checkout-flow"
+        assert result["state"] == "STOPPED"
+
+    @pytest.mark.asyncio
+    async def test_clear_load_scenarios(self, mock_server):
+        MockHandler.response_body = json.dumps({"cleared": True})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.clear_load_scenarios()
         assert MockHandler.last_method == "DELETE"
         assert MockHandler.last_path == "/mockserver/loadScenario"
-        assert result["status"] == "stopped"
+        assert result["cleared"] is True
 
     @pytest.mark.asyncio
-    async def test_load_scenario_forbidden_when_disabled(self, mock_server):
+    async def test_start_load_scenarios_single_name(self, mock_server):
+        MockHandler.response_body = json.dumps(
+            {"started": [{"name": "checkout-flow", "state": "RUNNING"}], "status": "ok"}
+        )
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        result = await client.start_load_scenarios("checkout-flow")
+        assert MockHandler.last_method == "PUT"
+        assert MockHandler.last_path == "/mockserver/loadScenario/start"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {"names": ["checkout-flow"]}
+        assert result["started"][0]["state"] == "RUNNING"
+
+    @pytest.mark.asyncio
+    async def test_start_load_scenarios_list(self, mock_server):
+        MockHandler.response_body = json.dumps({"started": [], "status": "ok"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.start_load_scenarios(["a", "b"])
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {"names": ["a", "b"]}
+
+    @pytest.mark.asyncio
+    async def test_start_load_scenarios_forbidden_when_disabled(self, mock_server):
         MockHandler.response_status = 403
         MockHandler.response_body = '{"error": "disabled"}'
         client = AsyncMockServerClient("127.0.0.1", mock_server)
         with pytest.raises(MockServerError, match="load generation is disabled"):
-            await client.load_scenario(self._scenario())
+            await client.start_load_scenarios("checkout-flow")
+
+    @pytest.mark.asyncio
+    async def test_start_load_scenarios_unknown_name(self, mock_server):
+        MockHandler.response_status = 404
+        MockHandler.response_body = '{"error": "unknown"}'
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        with pytest.raises(MockServerError, match="Unknown load scenario"):
+            await client.start_load_scenarios("missing")
+
+    @pytest.mark.asyncio
+    async def test_stop_load_scenarios_named(self, mock_server):
+        MockHandler.response_body = json.dumps({"stopped": ["a"], "status": "ok"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.stop_load_scenarios(["a"])
+        assert MockHandler.last_method == "PUT"
+        assert MockHandler.last_path == "/mockserver/loadScenario/stop"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {"names": ["a"]}
+
+    @pytest.mark.asyncio
+    async def test_stop_load_scenarios_single_string(self, mock_server):
+        MockHandler.response_body = json.dumps({"stopped": ["a"], "status": "ok"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.stop_load_scenarios("a")
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {"names": ["a"]}
+
+    @pytest.mark.asyncio
+    async def test_stop_load_scenarios_all(self, mock_server):
+        MockHandler.response_body = json.dumps({"stopped": ["a", "b"], "status": "ok"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.stop_load_scenarios()
+        assert MockHandler.last_path == "/mockserver/loadScenario/stop"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {}
+
+    @pytest.mark.asyncio
+    async def test_run_load_scenario_registers_then_starts(self, mock_server):
+        # the mock handler returns the same body for both the register PUT and
+        # the start PUT; assert the final call is the start endpoint
+        MockHandler.response_body = json.dumps({"name": "checkout-flow", "state": "LOADED"})
+        client = AsyncMockServerClient("127.0.0.1", mock_server)
+        await client.run_load_scenario(self._scenario())
+        assert MockHandler.last_path == "/mockserver/loadScenario/start"
+        sent = json.loads(MockHandler.last_request_body)
+        assert sent == {"names": ["checkout-flow"]}
 
 
 class TestAsyncScenario:

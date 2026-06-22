@@ -13,6 +13,10 @@ namespace MockServer;
  * variation. It is a pure SLI producer: each completed request records a
  * latency/error sample that {@see MockServerClient::verifySlo()} can read.
  *
+ * Each scenario carries a unique {@code name} that the server's registry keys it
+ * by. {@see MockServerClient::loadScenario()} only registers (loads) the
+ * scenario; {@see MockServerClient::startLoadScenarios()} drives the load.
+ *
  * This object is optional — {@see MockServerClient::loadScenario()} also accepts
  * a plain associative array in the same camelCase shape — but it gives a typed,
  * discoverable builder that emits the correct JSON.
@@ -35,6 +39,7 @@ class LoadScenario implements \JsonSerializable
     private string $name;
     private ?string $templateType = null;
     private ?int $maxRequests = null;
+    private ?int $startDelayMillis = null;
     private ?LoadProfile $profile = null;
     /** @var array<int, array<string, mixed>> */
     private array $steps = [];
@@ -55,6 +60,14 @@ class LoadScenario implements \JsonSerializable
     }
 
     /**
+     * The unique name this scenario is registered under.
+     */
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    /**
      * Set the template engine used to render per-iteration paths and bodies.
      *
      * Only VELOCITY (default) and MUSTACHE are supported for load steps.
@@ -72,6 +85,18 @@ class LoadScenario implements \JsonSerializable
     public function maxRequests(int $maxRequests): self
     {
         $this->maxRequests = $maxRequests;
+
+        return $this;
+    }
+
+    /**
+     * Set an optional delay (in milliseconds) applied after the scenario is
+     * started before it begins driving load. Honoured by
+     * {@see MockServerClient::startLoadScenarios()}.
+     */
+    public function startDelayMillis(int $startDelayMillis): self
+    {
+        $this->startDelayMillis = $startDelayMillis;
 
         return $this;
     }
@@ -147,6 +172,9 @@ class LoadScenario implements \JsonSerializable
         }
         if ($this->maxRequests !== null) {
             $result['maxRequests'] = $this->maxRequests;
+        }
+        if ($this->startDelayMillis !== null) {
+            $result['startDelayMillis'] = $this->startDelayMillis;
         }
         if ($this->labels !== []) {
             $result['labels'] = $this->labels;

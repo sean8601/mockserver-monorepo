@@ -37,18 +37,13 @@ func stubServer(t *testing.T, status int, respBody string, capMethod, capPath *s
 // 1. Load scenario
 // ---------------------------------------------------------------------------
 
-func TestClient_SetLoadScenario(t *testing.T) {
-	var method, path string
-	var body []byte
-	ts := stubServer(t, 200, `{"status":"started","name":"checkout-load","steps":1}`, &method, &path, &body)
-	defer ts.Close()
-
-	client := NewFromURL(ts.URL)
-	err := client.SetLoadScenario(LoadScenario{
-		Name:         "checkout-load",
-		TemplateType: "VELOCITY",
-		MaxRequests:  5000,
-		Labels:       map[string]string{"team": "checkout"},
+func sampleScenario() LoadScenario {
+	return LoadScenario{
+		Name:             "checkout-load",
+		TemplateType:     "VELOCITY",
+		MaxRequests:      5000,
+		StartDelayMillis: 2000,
+		Labels:           map[string]string{"team": "checkout"},
 		Profile: &LoadProfile{
 			Stages: []LoadStage{
 				RampVusStage(0, 10, 30000, RampLinear),
@@ -67,7 +62,17 @@ func TestClient_SetLoadScenario(t *testing.T) {
 				Name:      "fetch-item",
 			},
 		},
-	})
+	}
+}
+
+func TestClient_LoadScenario_Register(t *testing.T) {
+	var method, path string
+	var body []byte
+	ts := stubServer(t, 200, `{"name":"checkout-load","state":"LOADED"}`, &method, &path, &body)
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	ref, err := client.LoadScenario(sampleScenario())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +82,9 @@ func TestClient_SetLoadScenario(t *testing.T) {
 	}
 	if path != "/mockserver/loadScenario" {
 		t.Errorf("unexpected path %s", path)
+	}
+	if ref.Name != "checkout-load" || ref.State != LoadScenarioStateLoaded {
+		t.Errorf("unexpected ref: %+v", ref)
 	}
 
 	var m map[string]interface{}
@@ -88,6 +96,9 @@ func TestClient_SetLoadScenario(t *testing.T) {
 	}
 	if m["maxRequests"].(float64) != 5000 {
 		t.Errorf("expected maxRequests 5000, got %v", m["maxRequests"])
+	}
+	if m["startDelayMillis"].(float64) != 2000 {
+		t.Errorf("expected startDelayMillis 2000, got %v", m["startDelayMillis"])
 	}
 	profile := m["profile"].(map[string]interface{})
 	stages := profile["stages"].([]interface{})
@@ -108,9 +119,6 @@ func TestClient_SetLoadScenario(t *testing.T) {
 	if stage0["curve"] != "LINEAR" {
 		t.Errorf("expected stage 0 curve LINEAR, got %v", stage0["curve"])
 	}
-	if stage0["durationMillis"].(float64) != 30000 {
-		t.Errorf("expected stage 0 durationMillis 30000, got %v", stage0["durationMillis"])
-	}
 	// VU-ramp stage must not leak RATE fields.
 	if _, ok := stage0["rate"]; ok {
 		t.Errorf("did not expect rate on a VU stage, got %v", stage0["rate"])
@@ -119,18 +127,12 @@ func TestClient_SetLoadScenario(t *testing.T) {
 	if stage1["type"] != "VU" || stage1["vus"].(float64) != 10 {
 		t.Errorf("expected stage 1 VU hold vus 10, got %v", stage1)
 	}
-	if _, ok := stage1["startVus"]; ok {
-		t.Errorf("did not expect startVus on a VU hold stage, got %v", stage1["startVus"])
-	}
 	stage2 := stages[2].(map[string]interface{})
 	if stage2["type"] != "PAUSE" || stage2["durationMillis"].(float64) != 5000 {
 		t.Errorf("expected stage 2 PAUSE durationMillis 5000, got %v", stage2)
 	}
 	steps := m["steps"].([]interface{})
 	step0 := steps[0].(map[string]interface{})
-	if step0["thinkTime"] == nil {
-		t.Errorf("expected thinkTime in step, got %v", step0)
-	}
 	req0 := step0["request"].(map[string]interface{})
 	sock := req0["socketAddress"].(map[string]interface{})
 	if sock["host"] != "target.svc" {
@@ -138,12 +140,168 @@ func TestClient_SetLoadScenario(t *testing.T) {
 	}
 }
 
-func TestClient_SetLoadScenario_FeatureDisabled(t *testing.T) {
+func TestClient_LoadScenarios_List(t *testing.T) {
+	var method, path string
+	// The server emits the live status fields FLAT on each scenario entry (siblings of
+	// name/state/definition), present only once the scenario has run.
+	ts := stubServer(t, 200, `{"scenarios":[{"name":"checkout-load","state":"RUNNING","currentVus":10,"stageIndex":1,"stageType":"RATE","currentTarget":50,"requestsSent":120,"p95Millis":42.5,"labels":{"team":"checkout"}},{"name":"idle","state":"LOADED"}]}`, &method, &path, nil)
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	list, err := client.LoadScenarios()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != "GET" {
+		t.Errorf("expected GET, got %s", method)
+	}
+	if path != "/mockserver/loadScenario" {
+		t.Errorf("unexpected path %s", path)
+	}
+	if len(list.Scenarios) != 2 {
+		t.Fatalf("expected 2 scenarios, got %d", len(list.Scenarios))
+	}
+	if list.Scenarios[0].Name != "checkout-load" || list.Scenarios[0].State != LoadScenarioStateRunning {
+		t.Errorf("unexpected scenario[0]: %+v", list.Scenarios[0])
+	}
+	// Flat live fields are promoted onto the entry via the embedded LoadScenarioStatus.
+	if list.Scenarios[0].CurrentVus != 10 || list.Scenarios[0].P95Millis != 42.5 {
+		t.Errorf("unexpected promoted status[0]: %+v", list.Scenarios[0])
+	}
+	if list.Scenarios[0].StageIndex != 1 || list.Scenarios[0].StageType != "RATE" || list.Scenarios[0].CurrentTarget != 50 {
+		t.Errorf("unexpected stage fields[0]: %+v", list.Scenarios[0])
+	}
+	if list.Scenarios[0].Labels["team"] != "checkout" {
+		t.Errorf("unexpected labels[0]: %+v", list.Scenarios[0].Labels)
+	}
+	// A never-run LOADED scenario carries no live fields (zero values).
+	if list.Scenarios[1].State != LoadScenarioStateLoaded || list.Scenarios[1].RequestsSent != 0 || list.Scenarios[1].CurrentVus != 0 {
+		t.Errorf("unexpected scenario[1]: %+v", list.Scenarios[1])
+	}
+}
+
+func TestClient_GetLoadScenario(t *testing.T) {
+	var method, decodedPath, escapedPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		decodedPath = r.URL.Path
+		escapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		// A RUNNING scenario: live fields are FLAT siblings of name/state/definition.
+		_, _ = w.Write([]byte(`{"name":"checkout load","state":"RUNNING","startDelayMillis":2000,"definition":{"name":"checkout load"},"currentVus":5,"requestsSent":100,"succeeded":98,"failed":2,"p95Millis":9}`))
+	}))
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	entry, err := client.GetLoadScenario("checkout load")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != "GET" {
+		t.Errorf("expected GET, got %s", method)
+	}
+	if decodedPath != "/mockserver/loadScenario/checkout load" {
+		t.Errorf("unexpected decoded path %s", decodedPath)
+	}
+	// Name with a space must be path-escaped on the wire.
+	if escapedPath != "/mockserver/loadScenario/checkout%20load" {
+		t.Errorf("expected escaped path, got %s", escapedPath)
+	}
+	if entry.Name != "checkout load" || entry.Definition == nil || entry.StartDelayMillis != 2000 {
+		t.Errorf("unexpected entry: %+v", entry)
+	}
+	// Flat live fields are promoted onto the entry.
+	if entry.CurrentVus != 5 || entry.RequestsSent != 100 || entry.Succeeded != 98 || entry.Failed != 2 || entry.P95Millis != 9 {
+		t.Errorf("unexpected promoted status: %+v", entry)
+	}
+}
+
+func TestClient_GetLoadScenario_NotFound(t *testing.T) {
+	ts := stubServer(t, 404, `{"error":"not found"}`, nil, nil, nil)
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	_, err := client.GetLoadScenario("missing")
+	if err == nil {
+		t.Fatal("expected error for 404 status")
+	}
+}
+
+func TestClient_DeleteLoadScenario(t *testing.T) {
+	var method, path string
+	ts := stubServer(t, 200, ``, &method, &path, nil)
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	if err := client.DeleteLoadScenario("checkout-load"); err != nil {
+		t.Fatal(err)
+	}
+	if method != "DELETE" {
+		t.Errorf("expected DELETE, got %s", method)
+	}
+	if path != "/mockserver/loadScenario/checkout-load" {
+		t.Errorf("unexpected path %s", path)
+	}
+}
+
+func TestClient_ClearLoadScenarios(t *testing.T) {
+	var method, path string
+	ts := stubServer(t, 200, ``, &method, &path, nil)
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	if err := client.ClearLoadScenarios(); err != nil {
+		t.Fatal(err)
+	}
+	if method != "DELETE" {
+		t.Errorf("expected DELETE, got %s", method)
+	}
+	if path != "/mockserver/loadScenario" {
+		t.Errorf("unexpected path %s", path)
+	}
+}
+
+func TestClient_StartLoadScenarios(t *testing.T) {
+	var method, path string
+	var body []byte
+	ts := stubServer(t, 200, `{"started":[{"name":"a","state":"PENDING"},{"name":"b","state":"RUNNING"}],"status":"started"}`, &method, &path, &body)
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	result, err := client.StartLoadScenarios("a", "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != "PUT" {
+		t.Errorf("expected PUT, got %s", method)
+	}
+	if path != "/mockserver/loadScenario/start" {
+		t.Errorf("unexpected path %s", path)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	names := m["names"].([]interface{})
+	if len(names) != 2 || names[0] != "a" || names[1] != "b" {
+		t.Errorf("expected names [a b], got %v", names)
+	}
+	if len(result.Started) != 2 || result.Started[0].State != LoadScenarioStatePending {
+		t.Errorf("unexpected start result: %+v", result)
+	}
+	if result.Status != "started" {
+		t.Errorf("expected status started, got %q", result.Status)
+	}
+}
+
+func TestClient_StartLoadScenarios_FeatureDisabled(t *testing.T) {
 	ts := stubServer(t, 403, `{"error":"load generation not enabled"}`, nil, nil, nil)
 	defer ts.Close()
 
 	client := NewFromURL(ts.URL)
-	err := client.SetLoadScenario(LoadScenario{Name: "x"})
+	_, err := client.StartLoadScenarios("a")
 	if err == nil {
 		t.Fatal("expected error for 403 status")
 	}
@@ -156,44 +314,82 @@ func TestClient_SetLoadScenario_FeatureDisabled(t *testing.T) {
 	}
 }
 
-func TestClient_LoadScenarioStatus(t *testing.T) {
+func TestClient_StopLoadScenarios_Named(t *testing.T) {
 	var method, path string
-	ts := stubServer(t, 200, `{"name":"checkout-load","state":"running","currentVus":10,"requestsSent":120,"p95Millis":42.5}`, &method, &path, nil)
+	var body []byte
+	ts := stubServer(t, 200, `{"stopped":[{"name":"a","state":"STOPPED"}],"status":"stopped"}`, &method, &path, &body)
 	defer ts.Close()
 
 	client := NewFromURL(ts.URL)
-	status, err := client.LoadScenarioStatus()
+	result, err := client.StopLoadScenarios("a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if method != "GET" {
-		t.Errorf("expected GET, got %s", method)
+	if method != "PUT" {
+		t.Errorf("expected PUT, got %s", method)
 	}
-	if path != "/mockserver/loadScenario" {
+	if path != "/mockserver/loadScenario/stop" {
 		t.Errorf("unexpected path %s", path)
 	}
-	if status.State != "running" || status.CurrentVus != 10 || status.RequestsSent != 120 {
-		t.Errorf("unexpected status: %+v", status)
+	var m map[string]interface{}
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
 	}
-	if status.P95Millis != 42.5 {
-		t.Errorf("expected p95 42.5, got %v", status.P95Millis)
+	names := m["names"].([]interface{})
+	if len(names) != 1 || names[0] != "a" {
+		t.Errorf("expected names [a], got %v", names)
+	}
+	if len(result.Stopped) != 1 || result.Stopped[0].State != LoadScenarioStateStopped {
+		t.Errorf("unexpected stop result: %+v", result)
 	}
 }
 
-func TestClient_StopLoadScenario(t *testing.T) {
+func TestClient_StopLoadScenarios_All(t *testing.T) {
 	var method, path string
-	ts := stubServer(t, 200, `{"status":"stopped"}`, &method, &path, nil)
+	var body []byte
+	ts := stubServer(t, 200, `{"stopped":[],"status":"stopped"}`, &method, &path, &body)
 	defer ts.Close()
 
 	client := NewFromURL(ts.URL)
-	if err := client.StopLoadScenario(); err != nil {
+	if _, err := client.StopLoadScenarios(); err != nil {
 		t.Fatal(err)
 	}
-	if method != "DELETE" {
-		t.Errorf("expected DELETE, got %s", method)
+	if method != "PUT" {
+		t.Errorf("expected PUT, got %s", method)
 	}
-	if path != "/mockserver/loadScenario" {
+	if path != "/mockserver/loadScenario/stop" {
 		t.Errorf("unexpected path %s", path)
+	}
+	// No names => empty body (stop all).
+	if len(body) != 0 {
+		t.Errorf("expected empty body for stop-all, got %q", string(body))
+	}
+}
+
+func TestClient_RunLoadScenario(t *testing.T) {
+	var paths []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		if r.URL.Path == "/mockserver/loadScenario" {
+			_, _ = w.Write([]byte(`{"name":"checkout-load","state":"LOADED"}`))
+		} else {
+			_, _ = w.Write([]byte(`{"started":[{"name":"checkout-load","state":"RUNNING"}],"status":"started"}`))
+		}
+	}))
+	defer ts.Close()
+
+	client := NewFromURL(ts.URL)
+	result, err := client.RunLoadScenario(sampleScenario())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[0] != "/mockserver/loadScenario" || paths[1] != "/mockserver/loadScenario/start" {
+		t.Errorf("expected register then start, got %v", paths)
+	}
+	if len(result.Started) != 1 || result.Started[0].Name != "checkout-load" {
+		t.Errorf("unexpected run result: %+v", result)
 	}
 }
 

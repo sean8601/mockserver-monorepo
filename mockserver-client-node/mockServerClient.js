@@ -1758,16 +1758,22 @@ var mockServerClient;
         // Load scenario (load injection) management
         // -------------------------------------------------------------------
 
+        // Normalise a name-or-array argument into an array of scenario names.
+        var toNamesArray = function (names) {
+            if (names === undefined || names === null) {
+                return [];
+            }
+            return Array.isArray(names) ? names : [names];
+        };
+
         /**
-         * Start a load scenario (load injection) on the MockServer. The server
-         * drives the scenario's traffic profile against the configured steps.
-         *
-         * Requires the server to be started with `loadGenerationEnabled=true`;
-         * otherwise the server responds 403 and this promise rejects with a
-         * clear message explaining how to enable it.
+         * Register (load) a load scenario in the MockServer's scenario registry.
+         * This does NOT run the scenario - call startLoadScenarios(name) to run
+         * it. Registration is allowed even when the server was started without
+         * `loadGenerationEnabled=true` (only starting requires that flag).
          *
          * @param scenario the LoadScenario definition ({name, profile, steps, ...})
-         * @return promise resolving to the request response, or rejecting on 403
+         * @return promise resolving to the parsed registration JSON ({name, state})
          */
         var loadScenario = function (scenario) {
             return {
@@ -1775,28 +1781,23 @@ var mockServerClient;
                     makeRequest(host, port, "/mockserver/loadScenario", scenario)
                         .then(function (result) {
                             if (sucess) {
-                                sucess(result);
+                                sucess(result.body ? JSON.parse(result.body) : result);
                             }
                         }, function (err) {
                             if (error) {
-                                var message = (typeof err === "string") ? err : "";
-                                if (message.indexOf("load generation not enabled") !== -1) {
-                                    error("load generation is not enabled on this MockServer - start it with loadGenerationEnabled=true to use load scenarios");
-                                } else {
-                                    error(err);
-                                }
+                                error(err);
                             }
                         });
                 }
             };
         };
         /**
-         * Query the current load scenario status.
+         * List all registered load scenarios.
          *
-         * @return promise resolving to the parsed status JSON (e.g. {state, name,
-         *         requestsSent, p95Millis, ...}, or {state: 'none'} when idle)
+         * @return promise resolving to the parsed JSON
+         *         ({scenarios: [{name, state, definition, status?}, ...]})
          */
-        var loadScenarioStatus = function () {
+        var loadScenarios = function () {
             return {
                 then: function (sucess, error) {
                     makeGetRequest(host, port, "/mockserver/loadScenario")
@@ -1809,12 +1810,121 @@ var mockServerClient;
             };
         };
         /**
-         * Stop any running load scenario.
+         * Retrieve a single registered load scenario by name.
+         *
+         * @param name the unique scenario name
+         * @return promise resolving to the parsed scenario JSON
+         *         ({name, state, definition, status?}), or rejecting 404 if absent
+         */
+        var getLoadScenario = function (name) {
+            return {
+                then: function (sucess, error) {
+                    makeGetRequest(host, port, "/mockserver/loadScenario/" + encodeURIComponent(name))
+                        .then(function (result) {
+                            sucess(result.body && JSON.parse(result.body));
+                        }, function (err) {
+                            error(err);
+                        });
+                }
+            };
+        };
+        /**
+         * Remove a single registered load scenario by name (stopping it first if
+         * it is currently running).
+         *
+         * @param name the unique scenario name
+         * @return promise resolving to the request response
+         */
+        var deleteLoadScenario = function (name) {
+            return makeDeleteRequest(host, port, "/mockserver/loadScenario/" + encodeURIComponent(name));
+        };
+        /**
+         * Clear (remove) all registered load scenarios.
          *
          * @return promise resolving to the request response
          */
-        var stopLoadScenario = function () {
+        var clearLoadScenarios = function () {
             return makeDeleteRequest(host, port, "/mockserver/loadScenario");
+        };
+        /**
+         * Start one or more registered load scenarios. Each scenario must already
+         * be registered (404 otherwise). Each scenario's `startDelayMillis` is
+         * honoured by the server.
+         *
+         * Requires the server to be started with `loadGenerationEnabled=true`;
+         * otherwise the server responds 403 and this promise rejects with a clear
+         * message explaining how to enable it.
+         *
+         * @param names a single scenario name or an array of scenario names
+         * @return promise resolving to the parsed JSON
+         *         ({started: [{name, state}, ...], status: "started"})
+         */
+        var startLoadScenarios = function (names) {
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/loadScenario/start", {names: toNamesArray(names)})
+                        .then(function (result) {
+                            if (sucess) {
+                                sucess(result.body ? JSON.parse(result.body) : result);
+                            }
+                        }, function (err) {
+                            if (error) {
+                                var message = (typeof err === "string") ? err : "";
+                                if (message.toLowerCase().indexOf("load generation not enabled") !== -1) {
+                                    error("load generation is not enabled on this MockServer - start it with loadGenerationEnabled=true to use load scenarios");
+                                } else {
+                                    error(err);
+                                }
+                            }
+                        });
+                }
+            };
+        };
+        /**
+         * Stop running load scenarios. Pass a single name, an array of names, or
+         * nothing to stop all currently running scenarios.
+         *
+         * @param names a single scenario name, an array of names, or undefined
+         *        (stop all running scenarios)
+         * @return promise resolving to the parsed JSON
+         *         ({stopped: [...], status: "stopped"})
+         */
+        var stopLoadScenarios = function (names) {
+            var scenarioNames = toNamesArray(names);
+            var body = scenarioNames.length > 0 ? {names: scenarioNames} : {};
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/loadScenario/stop", body)
+                        .then(function (result) {
+                            if (sucess) {
+                                sucess(result.body ? JSON.parse(result.body) : result);
+                            }
+                        }, function (err) {
+                            if (error) {
+                                error(err);
+                            }
+                        });
+                }
+            };
+        };
+        /**
+         * Convenience: register a scenario then immediately start it.
+         *
+         * Requires the server to be started with `loadGenerationEnabled=true`.
+         *
+         * @param scenario the LoadScenario definition (must carry a unique `name`)
+         * @return promise resolving to the parsed start JSON
+         *         ({started: [{name, state}, ...], status: "started"})
+         */
+        var runLoadScenario = function (scenario) {
+            return {
+                then: function (sucess, error) {
+                    loadScenario(scenario)
+                        .then(function () {
+                            startLoadScenarios(scenario.name).then(sucess, error);
+                        }, error);
+                }
+            };
         };
 
         // -------------------------------------------------------------------
@@ -2204,10 +2314,15 @@ var mockServerClient;
             clearServiceChaos: clearServiceChaos,
             serviceChaosStatus: serviceChaosStatus,
             loadScenario: loadScenario,
-            loadScenarioStatus: loadScenarioStatus,
-            stopLoadScenario: stopLoadScenario,
             scenario: scenario,
             scenarios: scenarios,
+            loadScenarios: loadScenarios,
+            getLoadScenario: getLoadScenario,
+            deleteLoadScenario: deleteLoadScenario,
+            clearLoadScenarios: clearLoadScenarios,
+            startLoadScenarios: startLoadScenarios,
+            stopLoadScenarios: stopLoadScenarios,
+            runLoadScenario: runLoadScenario,
             bind: bind,
             retrieveRecordedRequests: retrieveRecordedRequests,
             retrieveRecordedRequestsAndResponses: retrieveRecordedRequestsAndResponses,
