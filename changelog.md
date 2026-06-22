@@ -250,6 +250,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/mockserver/chaosExperiment/profiles` (+ `/apply/{name}`) and `/mockserver/contractTest`, so the generated
   Bruno and Postman example collections now cover them.
 
+<!-- Dashboard UI documentation + screenshot refresh -->
+- **Dashboard UI documentation refreshed to cover all seventeen views** (`jekyll-www.mock-server.com`,
+  `mockserver-ui`). Regenerated every dashboard screenshot against the current UI and documented the five
+  views `mockserver_ui.html` was missing — Performance (load scenarios), LLM Optimise, gRPC Services,
+  Contract, and Cluster — taking the page from twelve to seventeen documented views. Added a repeatable
+  screenshot-generation skill (`.opencode/skills/ui-screenshots`, with
+  `mockserver-ui/scripts/capture-dashboard-screenshots.mjs` and `capture-docs-screenshots.sh`) that drives the
+  demo dashboard with headless Chromium to capture each tab at a consistent Retina resolution, plus a
+  `--load-generation` flag on the demo launcher (`mockserver-ui/scripts/launch-with-demo-data.sh`) that enables
+  the load-generation control plane without auto-starting the heavy demo scenarios.
+
 <!-- Runnable data-plane example code for recently-shipped features -->
 - **Runnable example code for recently-added data-plane features** (`examples`, `mockserver-core`). Added
   worked, server-validated examples under `examples/` for features that previously had none: LLM response
