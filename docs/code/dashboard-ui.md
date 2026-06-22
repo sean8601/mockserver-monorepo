@@ -168,7 +168,7 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 | `composer` | Mocks | `ComposerView.tsx` | Unified expectation creator/editor for Standard HTTP and LLM Conversation expectations |
 | `library` | Library | `LibraryView.tsx` | Fixture cassettes, run comparison, and export (HAR / OpenAPI / Postman / Bruno) |
 | `chaos` | Chaos | `ServiceChaosPanel.tsx` | Service-scoped HTTP chaos registration, live TTL countdown, and clear-all |
-| `performance` | Performance | `LoadScenarioPanel.tsx` | Create and run load scenarios: stage-builder (VU / RATE / PAUSE stages with ramp curves), live run status (stageIndex / stageType / currentTarget / active VUs), and a toggleable latency+throughput metrics graph (see [Performance View](#performance-view)) |
+| `performance` | Performance | `LoadScenarioPanel.tsx` | Create and run load scenarios: stage-builder (VU / RATE / PAUSE stages with ramp curves), live run status (stageIndex / stageType / currentTarget / active VUs), and a live latency+throughput graph with per-metric and per-scenario toggles plus an all-scenarios total (see [Performance View](#performance-view)) |
 | `drift` | Drift | `DriftPanel.tsx` | Mock drift detection results: divergence records between forwarded responses and stub expectations |
 | `verification` | Verify | `VerificationView.tsx` | Build and run verifications — request matchers, expected counts (atLeast/atMost/exactly/between), or an ordered sequence — against received requests |
 | `async` | Async | `AsyncApiPanel.tsx` | AsyncAPI broker mock status: loaded spec, channels/topics, publisher/subscriber summary, and recorded broker messages |
@@ -289,14 +289,19 @@ Ramp curves offered: `LINEAR` / `QUADRATIC` / `EXPONENTIAL`. The builder prevent
 | `requestsSent`, `succeeded`, `failed` | Cumulative counters |
 | `p50Millis`, `p95Millis`, `p99Millis` | Latency percentiles from the histogram |
 
-**Metrics graph.** A toggleable `@mui/x-charts` `AreaChart` drawn from the `mock_server_load_*` Prometheus family (scraped from `GET /mockserver/metrics`). Shows throughput (requests/second) and p95 latency over the run's lifetime. Requires `metricsEnabled=true`; when metrics are off, the graph area shows a prompt to enable them.
+**Metrics graph.** A live `@mui/x-charts` `LineChart` built entirely from the polled scenario status — no Prometheus dependency, so it works with `metricsEnabled` off. Each registry poll appends a *frame* to a shared timeline, capturing a snapshot of every scenario running at that instant (keyed by scenario name); the legacy single-run status is folded in too, so older single-run servers still chart. The graph has two independent sets of toggles:
+
+- **Metric toggles** — which series to plot: RPS, Active VUs, In-flight, p50/p95/p99 ms, Error rate % (default subset: RPS + p95 + Active VUs). RPS and error rate are derived per series (Δsent/Δt and failed/sent).
+- **Scenario toggles** — which scenarios to include (shown only when more than one scenario has data; **all enabled by default**). Hiding a scenario removes its lines and drops it from the total.
+
+When two or more scenarios are enabled the chart draws, for each visible metric, **a line per scenario plus an aggregate "All scenarios" total** — counts/VUs/in-flight summed across scenarios, latency percentiles taken as the worst (max) case. A scenario that starts or stops mid-run leaves a null gap in its line rather than distorting the others. With a single scenario it falls back to clean one-line-per-metric labels.
 
 **Refresh mechanism:**
 
 | Panel area | Mechanism |
 |-----------|-----------|
-| Live status | `useAutoRefresh` polling `GET /mockserver/loadScenario` (default 1 s) |
-| Metrics graph | `usePolling` scraping `GET /mockserver/metrics` (default 3 s, shared interval with `MetricsView`) |
+| Live status (legacy single run) | poll of `GET /mockserver/loadScenario` (1 s while running, 5 s idle) |
+| Registry list + chart frames | poll of `GET /mockserver/loadScenario` listing (1 s while any scenario runs, 5 s idle) |
 
 When `loadGenerationEnabled=false` the panel renders a configuration prompt (property name + environment variable) instead of the stage builder.
 

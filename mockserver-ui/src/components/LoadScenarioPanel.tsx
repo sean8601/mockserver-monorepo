@@ -406,6 +406,16 @@ interface SeriesDef {
   format: (v: number) => string;
   /** derive this series' value array from the accumulated samples. */
   derive: (samples: Sample[]) => number[];
+  /**
+   * How the "all scenarios" total combines the per-scenario lines:
+   *  - 'sum'   additive metrics (RPS, VUs, in-flight) — element-wise sum of the per-scenario series.
+   *            (Summing the per-scenario RATES, rather than differencing the pooled counter, avoids a
+   *            one-frame spike when a scenario joins mid-run: a joiner contributes 0 on its first frame.)
+   *  - 'max'   latency percentiles — element-wise worst case (percentiles cannot be summed).
+   *  - 'ratio' error rate — pooled Σfailed/Σsent, which can't be recovered from per-scenario rates,
+   *            so it is derived from the aggregated snapshot instead.
+   */
+  combine: 'sum' | 'max' | 'ratio';
 }
 
 /** RPS for each sample as Δsent / Δt against the previous sample (first point = 0). */
@@ -420,17 +430,101 @@ function ratePerSecond(samples: Sample[]): number[] {
 }
 
 const SERIES_DEFS: SeriesDef[] = [
-  { key: 'rps', label: 'RPS', format: (v) => `${v.toFixed(1)}/s`, derive: ratePerSecond },
-  { key: 'vus', label: 'Active VUs', format: (v) => Math.round(v).toLocaleString(), derive: (s) => s.map((x) => x.currentVus) },
-  { key: 'inFlight', label: 'In-flight', format: (v) => Math.round(v).toLocaleString(), derive: (s) => s.map((x) => x.inFlight) },
-  { key: 'p50', label: 'p50 ms', format: (v) => `${v.toFixed(0)} ms`, derive: (s) => s.map((x) => x.p50) },
-  { key: 'p95', label: 'p95 ms', format: (v) => `${v.toFixed(0)} ms`, derive: (s) => s.map((x) => x.p95) },
-  { key: 'p99', label: 'p99 ms', format: (v) => `${v.toFixed(0)} ms`, derive: (s) => s.map((x) => x.p99) },
-  { key: 'errorRate', label: 'Error rate %', format: (v) => `${v.toFixed(1)}%`, derive: (s) => s.map((x) => (x.requestsSent > 0 ? (x.failed / x.requestsSent) * 100 : 0)) },
+  { key: 'rps', label: 'RPS', format: (v) => `${v.toFixed(1)}/s`, derive: ratePerSecond, combine: 'sum' },
+  { key: 'vus', label: 'Active VUs', format: (v) => Math.round(v).toLocaleString(), derive: (s) => s.map((x) => x.currentVus), combine: 'sum' },
+  { key: 'inFlight', label: 'In-flight', format: (v) => Math.round(v).toLocaleString(), derive: (s) => s.map((x) => x.inFlight), combine: 'sum' },
+  { key: 'p50', label: 'p50 ms', format: (v) => `${v.toFixed(0)} ms`, derive: (s) => s.map((x) => x.p50), combine: 'max' },
+  { key: 'p95', label: 'p95 ms', format: (v) => `${v.toFixed(0)} ms`, derive: (s) => s.map((x) => x.p95), combine: 'max' },
+  { key: 'p99', label: 'p99 ms', format: (v) => `${v.toFixed(0)} ms`, derive: (s) => s.map((x) => x.p99), combine: 'max' },
+  { key: 'errorRate', label: 'Error rate %', format: (v) => `${v.toFixed(1)}%`, derive: (s) => s.map((x) => (x.requestsSent > 0 ? (x.failed / x.requestsSent) * 100 : 0)), combine: 'ratio' },
 ];
 
 // Default-visible subset — RPS + p95 + active VUs (per the brief).
 const DEFAULT_VISIBLE: SeriesKey[] = ['rps', 'p95', 'vus'];
+
+// --- Multi-scenario chart timeline ---
+//
+// The chart plots every concurrently-running scenario, split by scenario, plus an aggregate
+// "all scenarios" total. We accumulate a shared timeline of frames (one per registry poll):
+// each frame holds a snapshot of every scenario running at that instant, keyed by scenario
+// name. A scenario absent from a frame leaves a null gap in its line, so lines start and stop
+// independently as scenarios come and go.
+
+/** A point on the shared timeline: each running scenario's snapshot, keyed by scenario name. */
+interface Frame {
+  at: number;
+  tracks: Record<string, Sample>;
+}
+
+/** Legend/toggle label for the aggregate "all scenarios" line. */
+const TOTAL_TRACK = 'All scenarios';
+
+/** Build a chart Sample from a live status snapshot (a registry entry or the legacy run). */
+function sampleOf(status: LoadScenarioStatus, at: number): Sample {
+  const sent = status.requestsSent ?? 0;
+  const succeeded = status.succeeded ?? 0;
+  const failed = status.failed ?? 0;
+  return {
+    at,
+    requestsSent: sent,
+    succeeded,
+    failed,
+    currentVus: status.currentVus ?? 0,
+    // in-flight ≈ requests dispatched but not yet completed.
+    inFlight: Math.max(0, sent - succeeded - failed),
+    p50: status.p50Millis ?? 0,
+    p95: status.p95Millis ?? 0,
+    p99: status.p99Millis ?? 0,
+  };
+}
+
+/**
+ * Pool several scenarios' snapshots into a single "all scenarios" sample for one frame: counts /
+ * VUs / in-flight sum across scenarios; latency percentiles take the worst (max) case, since
+ * percentiles cannot be summed. Used to back the pooled error-rate total (Σfailed / Σsent), which —
+ * unlike the additive and latency totals — cannot be recombined from the per-scenario lines. The
+ * additive (sum) and latency (max) totals are instead built element-wise from those lines, so a
+ * scenario joining mid-run contributes 0 to the additive total on its first frame (no spike).
+ */
+function aggregateSamples(samples: Sample[], at: number): Sample {
+  return samples.reduce<Sample>(
+    (acc, s) => ({
+      at,
+      requestsSent: acc.requestsSent + s.requestsSent,
+      succeeded: acc.succeeded + s.succeeded,
+      failed: acc.failed + s.failed,
+      currentVus: acc.currentVus + s.currentVus,
+      inFlight: acc.inFlight + s.inFlight,
+      p50: Math.max(acc.p50, s.p50),
+      p95: Math.max(acc.p95, s.p95),
+      p99: Math.max(acc.p99, s.p99),
+    }),
+    { at, requestsSent: 0, succeeded: 0, failed: 0, currentVus: 0, inFlight: 0, p50: 0, p95: 0, p99: 0 },
+  );
+}
+
+/**
+ * Derive one metric's line for a single track across the whole frame timeline. `aligned[i]` is the
+ * track's snapshot at frame `i`, or null when the track was not running then. The metric is derived
+ * over only the present snapshots (so RPS deltas use consecutive samples of THIS track) and scattered
+ * back to their frame positions, leaving null gaps where the track was idle.
+ */
+function deriveTrackSeries(aligned: (Sample | null)[], def: SeriesDef): (number | null)[] {
+  const indices: number[] = [];
+  const present: Sample[] = [];
+  aligned.forEach((s, i) => {
+    if (s) {
+      indices.push(i);
+      present.push(s);
+    }
+  });
+  const derived = def.derive(present);
+  const out: (number | null)[] = new Array(aligned.length).fill(null);
+  indices.forEach((frameIndex, k) => {
+    out[frameIndex] = derived[k] ?? null;
+  });
+  return out;
+}
 
 export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPanelProps) {
   const setView = useDashboardStore((s) => s.setView);
@@ -454,6 +548,16 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   // The runId whose samples are currently accumulated — reset when a new run starts.
   const sampleRunId = useRef<string | null>(null);
 
+  // Multi-scenario chart timeline: one frame per registry poll, each holding every running
+  // scenario's snapshot. Scenarios the user has hidden from the chart (default: none → all shown).
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [hiddenScenarios, setHiddenScenarios] = useState<Set<string>>(() => new Set());
+  // Whether any scenario was running on the previous registry poll — lets a new batch of runs
+  // start a fresh timeline instead of appending to a stale one.
+  const framesActiveRef = useRef(false);
+  // Latest legacy single-run status, read by the registry poll so a legacy-only run still charts.
+  const latestStatusRef = useRef<LoadScenarioStatus | null>(null);
+
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
   // Poll the load scenario status. Fast (1s) while running, slower when idle.
@@ -467,6 +571,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
         const result = await fetchLoadScenario(connectionParams, controller.signal);
         if (cancelled) return;
         setStatus(result);
+        latestStatusRef.current = result;
         setDisabled(false);
         setLoadError(null);
         // Accumulate a sample only while a run is active and identifiable.
@@ -475,22 +580,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
             const fresh = sampleRunId.current !== result.runId;
             if (fresh) sampleRunId.current = result.runId ?? null;
             const base = fresh ? [] : prev;
-            const sent = result.requestsSent ?? 0;
-            const succeeded = result.succeeded ?? 0;
-            const failed = result.failed ?? 0;
-            const sample: Sample = {
-              at: Date.now(),
-              requestsSent: sent,
-              succeeded,
-              failed,
-              currentVus: result.currentVus ?? 0,
-              // in-flight ≈ requests dispatched but not yet completed.
-              inFlight: Math.max(0, sent - succeeded - failed),
-              p50: result.p50Millis ?? 0,
-              p95: result.p95Millis ?? 0,
-              p99: result.p99Millis ?? 0,
-            };
-            return [...base, sample].slice(-MAX_SAMPLES);
+            return [...base, sampleOf(result, Date.now())].slice(-MAX_SAMPLES);
           });
         }
       } catch (e) {
@@ -518,9 +608,9 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     // status?.state intentionally drives the poll cadence (running → 1s).
   }, [connectionParams, refreshTick, status?.state]);
 
-  // Poll the registry listing. Faster while any scenario is RUNNING/PENDING so the
-  // concurrent-running view and state badges stay live.
-  const anyActive = registry.some((s) => s.state === 'RUNNING' || s.state === 'PENDING');
+  // Poll the registry listing. Faster while any scenario is RUNNING/PENDING (or a legacy run is
+  // active) so the concurrent-running view, state badges, and live chart stay live.
+  const anyActive = registry.some((s) => s.state === 'RUNNING' || s.state === 'PENDING') || status?.state === 'running';
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -537,6 +627,24 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
           const next = new Set([...prev].filter((n) => names.has(n)));
           return next.size === prev.size ? prev : next;
         });
+        // Accumulate a chart frame from every actively-running scenario, plus the legacy run
+        // when it is not already represented by a registry entry (older single-run servers).
+        const now = Date.now();
+        const tracks: Record<string, Sample> = {};
+        for (const entry of list) {
+          if (entry.state === 'RUNNING' && entry.status) tracks[entry.name] = sampleOf(entry.status, now);
+        }
+        const legacy = latestStatusRef.current;
+        if (legacy?.state === 'running') {
+          const key = legacy.name && legacy.name.length > 0 ? legacy.name : 'current run';
+          if (!(key in tracks)) tracks[key] = sampleOf(legacy, now);
+        }
+        const active = Object.keys(tracks).length > 0;
+        const wasActive = framesActiveRef.current;
+        framesActiveRef.current = active;
+        if (active) {
+          setFrames((prev) => [...(wasActive ? prev : []), { at: now, tracks }].slice(-MAX_SAMPLES));
+        }
       } catch {
         // Registry listing failures are non-fatal — the legacy status poll surfaces
         // the disabled/error states. Leave the last-known registry in place.
@@ -737,12 +845,70 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
       return next;
     });
 
-  // Build the chart series from the accumulated samples, only for visible keys.
-  const chartSeries = useMemo(
-    () => SERIES_DEFS.filter((d) => visible.has(d.key)).map((d) => ({ label: d.label, data: d.derive(samples) })),
-    [samples, visible],
+  const toggleScenario = (name: string) =>
+    setHiddenScenarios((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const chartTimestamps = useMemo(() => frames.map((f) => f.at), [frames]);
+
+  // Every scenario that has appeared on the timeline, in stable sorted order — drives the
+  // per-scenario toggles. A scenario is shown unless the user has explicitly hidden it.
+  const scenarioNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const f of frames) for (const n of Object.keys(f.tracks)) names.add(n);
+    return [...names].sort();
+  }, [frames]);
+  const enabledScenarios = useMemo(
+    () => scenarioNames.filter((n) => !hiddenScenarios.has(n)),
+    [scenarioNames, hiddenScenarios],
   );
-  const chartTimestamps = useMemo(() => samples.map((s) => s.at), [samples]);
+
+  // Build the chart lines: one per (visible metric × enabled scenario), plus an aggregate
+  // "all scenarios" line per metric when 2+ scenarios are enabled (with a single scenario the
+  // total would just duplicate it). Scenarios that come and go leave null gaps in their lines.
+  const chartSeries = useMemo(() => {
+    const visibleDefs = SERIES_DEFS.filter((d) => visible.has(d.key));
+    if (frames.length === 0 || visibleDefs.length === 0 || enabledScenarios.length === 0) return [];
+    const showTotal = enabledScenarios.length > 1;
+    const series: { label: string; data: (number | null)[] }[] = [];
+    for (const def of visibleDefs) {
+      // Per-scenario lines first — also reused to build the additive/max total.
+      const perScenario = enabledScenarios.map((name) => ({
+        name,
+        data: deriveTrackSeries(frames.map((f) => f.tracks[name] ?? null), def),
+      }));
+      if (showTotal) {
+        let totalData: (number | null)[];
+        if (def.combine === 'ratio') {
+          // Error rate of the pooled totals (Σfailed/Σsent) — not recoverable from per-scenario rates.
+          const totalAligned = frames.map((f) => {
+            const present = enabledScenarios.map((n) => f.tracks[n]).filter((s): s is Sample => !!s);
+            return present.length > 0 ? aggregateSamples(present, f.at) : null;
+          });
+          totalData = deriveTrackSeries(totalAligned, def);
+        } else {
+          // Sum (counts/rates) or max (latencies) the per-scenario lines element-wise; null where
+          // no enabled scenario was running in that frame.
+          totalData = frames.map((_, i) => {
+            const vals = perScenario.map((p) => p.data[i]).filter((v): v is number => v != null);
+            if (vals.length === 0) return null;
+            return def.combine === 'max' ? Math.max(...vals) : vals.reduce((a, b) => a + b, 0);
+          });
+        }
+        series.push({ label: `${def.label} · ${TOTAL_TRACK}`, data: totalData });
+      }
+      for (const p of perScenario) {
+        // Suffix the scenario only when more than one line shares this metric, so a single-scenario
+        // chart keeps the clean legacy labels ("RPS", "p95 ms", …).
+        series.push({ label: showTotal ? `${def.label} · ${p.name}` : def.label, data: p.data });
+      }
+    }
+    return series;
+  }, [frames, visible, enabledScenarios]);
 
   const baseUrl = useMemo(() => buildBaseUrl(connectionParams), [connectionParams]);
 
@@ -998,13 +1164,16 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
         </Paper>
       )}
 
-      {/* Combined live chart with toggleable series */}
-      {(running || samples.length > 0) && (
+      {/* Live chart — total across scenarios + a line per scenario, with metric and scenario toggles */}
+      {frames.length > 0 && (
         <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }} data-testid="load-chart">
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">Live throughput &amp; latency</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Live throughput &amp; latency{enabledScenarios.length > 1 ? ' — total + per scenario' : ''}
+            </Typography>
           </Box>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.5 }} role="group" aria-label="Chart series toggles">
+          {/* Metric-type toggles (which series to plot) */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: scenarioNames.length > 1 ? 0.25 : 0.5 }} role="group" aria-label="Chart metric toggles">
             {SERIES_DEFS.map((d) => (
               <FormControlLabel
                 key={d.key}
@@ -1020,12 +1189,32 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
               />
             ))}
           </Box>
+          {/* Per-scenario toggles — only when more than one scenario has data to compare */}
+          {scenarioNames.length > 1 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 0.5, alignItems: 'center' }} role="group" aria-label="Chart scenario toggles">
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>Scenarios:</Typography>
+              {scenarioNames.map((name) => (
+                <FormControlLabel
+                  key={name}
+                  sx={{ mr: 1 }}
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={!hiddenScenarios.has(name)}
+                      onChange={() => toggleScenario(name)}
+                    />
+                  }
+                  label={<Typography variant="caption">{name}</Typography>}
+                />
+              ))}
+            </Box>
+          )}
           {chartSeries.length === 0 ? (
             <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-              Select at least one series to plot.
+              {visible.size === 0 ? 'Select at least one metric to plot.' : 'Select at least one scenario to plot.'}
             </Typography>
           ) : (
-            <MetricsLineChart series={chartSeries} timestamps={chartTimestamps} height={220} />
+            <MetricsLineChart series={chartSeries} timestamps={chartTimestamps} height={240} />
           )}
         </Paper>
       )}

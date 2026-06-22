@@ -474,6 +474,45 @@ describe('LoadScenarioPanel', () => {
     expect(within(r1).getByText('3')).toBeInTheDocument();
   });
 
+  it('renders the live chart with a per-scenario toggle for each running scenario plus a total', async () => {
+    stubRegistry([
+      { name: 'r1', state: 'RUNNING', requestsSent: 100, succeeded: 100, failed: 0, currentVus: 3, p95Millis: 40 },
+      { name: 'r2', state: 'RUNNING', requestsSent: 200, succeeded: 200, failed: 0, currentVus: 6, p95Millis: 60 },
+    ]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-chart')).toBeInTheDocument());
+
+    // Metric-type toggles are present (as before), defaulting to the RPS/p95/VUs subset.
+    const metricGroup = screen.getByRole('group', { name: 'Chart metric toggles' });
+    expect((within(metricGroup).getByRole('checkbox', { name: 'RPS' }) as HTMLInputElement).checked).toBe(true);
+
+    // A scenario-toggle group appears with one checkbox per scenario, all enabled by default.
+    const scenarioGroup = screen.getByRole('group', { name: 'Chart scenario toggles' });
+    const r1Toggle = within(scenarioGroup).getByRole('checkbox', { name: 'r1' }) as HTMLInputElement;
+    const r2Toggle = within(scenarioGroup).getByRole('checkbox', { name: 'r2' }) as HTMLInputElement;
+    expect(r1Toggle.checked).toBe(true);
+    expect(r2Toggle.checked).toBe(true);
+
+    // With 2+ scenarios enabled the chart advertises the total + per-scenario split.
+    expect(screen.getByTestId('load-chart')).toHaveTextContent('total + per scenario');
+
+    // Disabling a scenario unchecks it (removing its line + recomputing the total).
+    fireEvent.click(r1Toggle);
+    expect((within(screen.getByRole('group', { name: 'Chart scenario toggles' }))
+      .getByRole('checkbox', { name: 'r1' }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('hides per-scenario toggles when only one scenario is running', async () => {
+    stubRegistry([
+      { name: 'solo', state: 'RUNNING', requestsSent: 50, succeeded: 50, failed: 0, currentVus: 2, p95Millis: 30 },
+    ]);
+    render(<LoadScenarioPanel connectionParams={params} />);
+    await waitFor(() => expect(screen.getByTestId('load-chart')).toBeInTheDocument());
+    // One scenario → no scenario toggles and no "total" framing (the single line speaks for itself).
+    expect(screen.queryByRole('group', { name: 'Chart scenario toggles' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('load-chart')).not.toHaveTextContent('total + per scenario');
+  });
+
   it('deletes one registered scenario via DELETE /loadScenario/{name}', async () => {
     const { calls } = stubRegistry([{ name: 'gone', state: 'LOADED' }]);
     render(<LoadScenarioPanel connectionParams={params} />);
