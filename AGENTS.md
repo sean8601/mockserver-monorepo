@@ -25,6 +25,8 @@ MockServer is an open-source HTTP(S) mock server and proxy for testing, written 
 - `DockerClientFactory.instance().isDockerAvailable()` is the canonical availability probe; Testcontainers is the preferred harness. The probe works correctly with Testcontainers 1.21.4+ (docker-java 3.4.2) on Docker Desktop 4.67 / Engine 29.x / API 1.54. (Earlier versions — Testcontainers 1.20.6 / docker-java 3.4.1 — got a 400 on the info endpoint and the probe returned false even though Docker worked.)
 - `docker` CLI commands (`docker build`, `docker run`) are also available for Dockerfile smoke checks in the commit workflow.
 
+**Behind a corporate TLS-inspection proxy?** If local dependency downloads fail with TLS / `certificate verify failed` errors, every toolchain needs to trust the corporate root CA (via a combined bundle), configured ONLY in your user/shell environment — never in repo or pipeline files. Set `LOCAL_DOCKER_CA_BUNDLE` for anything run through `.buildkite/scripts/run-in-docker.sh`, and per-toolchain env / `~/.npmrc` for host builds. Full reusable setup (new-laptop checklist + per-toolchain table): [docs/operations/build-system.md → Local Development Behind a Corporate TLS-Inspection Proxy](docs/operations/build-system.md#local-development-behind-a-corporate-tls-inspection-proxy).
+
 ### Project Documentation
 
 Comprehensive internal documentation is maintained in `docs/`. **Always consult these docs before making changes** to understand architecture, conventions, and dependencies:
