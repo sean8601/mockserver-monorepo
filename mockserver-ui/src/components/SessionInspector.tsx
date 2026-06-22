@@ -27,7 +27,6 @@ import {
 } from './ConversationView';
 import AgentRunGraph from './AgentRunGraph';
 import { CompareRunsBody } from './CompareRunsDialog';
-import ScenarioPanel from './ScenarioPanel';
 import { monospaceFontFamily, transitions } from '../theme';
 
 // ---------------------------------------------------------------------------
@@ -499,7 +498,6 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
           sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, typography: 'body2' } }}
         >
           <Tab label="Traces" />
-          <Tab label="Scenarios" />
           <Tab label="Compare" />
         </Tabs>
 
@@ -577,12 +575,6 @@ export default function SessionInspector({ connectionParams }: SessionInspectorP
         )}
 
         {tab === 1 && (
-          <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, p: 1 }}>
-            <ScenarioPanel connectionParams={connectionParams} />
-          </Box>
-        )}
-
-        {tab === 2 && (
           <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, p: 2 }}>
             <CompareRunsBody />
           </Box>

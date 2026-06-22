@@ -248,7 +248,7 @@ export function CompareRunsBody() {
       {/* Session selectors */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
-          label="Run A"
+          label="Trace A"
           size="small"
           select
           fullWidth
@@ -259,7 +259,7 @@ export function CompareRunsBody() {
             inputLabel: { shrink: true },
           }}
         >
-          <option value="">— select a session —</option>
+          <option value="">— select a trace —</option>
           {sessions.map((s) => (
             <option key={sessionKey(s)} value={sessionKey(s)}>
               {sessionLabel(s)}
@@ -267,7 +267,7 @@ export function CompareRunsBody() {
           ))}
         </TextField>
         <TextField
-          label="Run B"
+          label="Trace B"
           size="small"
           select
           fullWidth
@@ -278,7 +278,7 @@ export function CompareRunsBody() {
             inputLabel: { shrink: true },
           }}
         >
-          <option value="">— select a session —</option>
+          <option value="">— select a trace —</option>
           {sessions.map((s) => (
             <option key={sessionKey(s)} value={sessionKey(s)}>
               {sessionLabel(s)}
@@ -291,9 +291,9 @@ export function CompareRunsBody() {
       {(!runA || !runB) && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <Typography variant="body2" color="text.secondary">
-            {!runA && !runB && 'Choose two captured sessions to compare.'}
-            {runA && !runB && 'Run A selected — choose Run B to compare.'}
-            {!runA && runB && 'Run B selected — choose Run A to compare.'}
+            {!runA && !runB && 'Choose two captured traces to compare.'}
+            {runA && !runB && 'Trace A selected — choose Trace B to compare.'}
+            {!runA && runB && 'Trace B selected — choose Trace A to compare.'}
           </Typography>
         </Box>
       )}

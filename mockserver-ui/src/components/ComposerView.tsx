@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import RadioGroup from '@mui/material/RadioGroup';
@@ -83,6 +85,7 @@ import {
   type CaptureSource,
 } from '../lib/standardCodegen';
 import McpToolsPanel from './McpToolsPanel';
+import ScenarioPanel from './ScenarioPanel';
 import ImportForm from './ImportForm';
 import JsonEditor from './JsonEditor';
 import SnippetPalette from './SnippetPalette';
@@ -3570,6 +3573,11 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
 
   const [mode, setMode] = useState<ComposerMode>(getInitialMode);
 
+  // Top-level tab on the Mocks page: 0 = Compose (the expectation builder),
+  // 1 = Scenarios (the stateful mock state-machine panel, moved here from the
+  // Trace page where it never belonged).
+  const [composerTab, setComposerTab] = useState(0);
+
   const [kind, setKind] = useState<ExpectationKind>('standard');
   const [actionType, setActionType] = useState<ActionType>('static');
   const [matcher, setMatcher] = useState<MatcherState>(emptyMatcher);
@@ -3955,7 +3963,31 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
   );
 
   return (
-    <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      <Tabs
+        value={composerTab}
+        onChange={(_, v: number) => setComposerTab(v)}
+        sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, typography: 'body2' } }}
+      >
+        <Tab label="Compose" />
+        <Tab label="Scenarios" />
+      </Tabs>
+
+      {composerTab === 1 && (
+        <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, p: 1 }}>
+          <ScenarioPanel connectionParams={connectionParams} />
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          p: 2,
+          minHeight: 0,
+          display: composerTab === 0 ? 'block' : 'none',
+        }}
+      >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Typography variant="h5">
@@ -4716,6 +4748,7 @@ export default function ComposerView({ connectionParams }: ComposerViewProps) {
         {error && (
           <HumanErrorAlert error={error} variant="outlined" data-testid="register-error" />
         )}
+      </Box>
       </Box>
       <Snackbar
         open={snackMessage !== null}

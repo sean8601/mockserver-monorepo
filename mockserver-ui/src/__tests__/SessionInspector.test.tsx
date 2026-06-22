@@ -193,20 +193,23 @@ describe('SessionInspector', () => {
     expect(screen.queryByText(/chat \/ agent-B/)).not.toBeInTheDocument();
   });
 
-  it('exposes a Compare tab that switches to the session comparison view', async () => {
+  it('exposes a Compare tab that switches to the trace comparison view', async () => {
     const user = userEvent.setup();
     renderInspector();
 
+    // The Trace page now has exactly two tabs: Traces and Compare.
+    // (Scenarios moved to the Mocks page.)
     const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(2);
     expect(tabs[0]).toHaveTextContent('Traces');
-    expect(tabs[1]).toHaveTextContent('Scenarios');
-    expect(tabs[2]).toHaveTextContent('Compare');
+    expect(tabs[1]).toHaveTextContent('Compare');
+    expect(screen.queryByRole('tab', { name: 'Scenarios' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Compare' }));
 
-    // The Compare (session comparison) view exposes Run A / Run B selectors.
-    expect(screen.getByLabelText('Run A')).toBeInTheDocument();
-    expect(screen.getByLabelText('Run B')).toBeInTheDocument();
+    // The Compare (trace comparison) view exposes Trace A / Trace B selectors.
+    expect(screen.getByLabelText('Trace A')).toBeInTheDocument();
+    expect(screen.getByLabelText('Trace B')).toBeInTheDocument();
   });
 
   it('renders unscoped session with upstream host for proxy traffic without isolation', () => {
