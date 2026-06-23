@@ -563,4 +563,124 @@ public class HttpStateLoadScenarioEndpointTest {
         assertThat(response.getStatusCode(), is(400));
         assertThat(body(response).get("error").asText(), containsString("specUrlOrPayload"));
     }
+
+    // --- GENERATE FROM RECORDING ---
+
+    private HttpResponse generateFromRecording(String body) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        HttpRequest req = request("/mockserver/loadScenario/generateFromRecording").withMethod("PUT");
+        if (body != null) {
+            req.withBody(body);
+        }
+        assertThat("route handled", httpState.handle(req, rw, false), is(true));
+        return rw.response;
+    }
+
+    /** Record a request into the event log exactly as the proxy/recording path does (a RECEIVED_REQUEST entry). */
+    private void record(HttpRequest recordedRequest) {
+        httpState.getMockServerLog().add(
+            new org.mockserver.log.model.LogEntry()
+                .setType(org.mockserver.log.model.LogEntry.LogMessageType.RECEIVED_REQUEST)
+                .setHttpRequest(recordedRequest)
+        );
+    }
+
+    @Test
+    public void generateFromRecordingRegistersScenarioAndReturnsIt() throws Exception {
+        record(request().withMethod("GET").withPath("/orders/1"));
+        record(request().withMethod("POST").withPath("/orders").withBody("{}"));
+
+        HttpResponse response = generateFromRecording("{ \"name\": \"from-rec\" }");
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode b = body(response);
+        assertThat(b.get("status").asText(), is("loaded"));
+        assertThat(b.get("name").asText(), is("from-rec"));
+        assertThat(b.get("state").asText(), is("LOADED"));
+
+        // VERBATIM by default: one step per recorded request, in order
+        JsonNode steps = b.get("scenario").get("steps");
+        assertThat(steps.size(), is(2));
+        assertThat(steps.get(0).get("request").get("path").asText(), is("/orders/1"));
+        assertThat(steps.get(1).get("request").get("path").asText(), is("/orders"));
+
+        // it now appears in GET /loadScenario
+        boolean found = false;
+        for (JsonNode s : body(get()).get("scenarios")) {
+            if ("from-rec".equals(s.get("name").asText())) {
+                found = true;
+                assertThat(s.get("state").asText(), is("LOADED"));
+            }
+        }
+        assertThat("generated scenario is registered", found, is(true));
+        // generating does not start a run
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("from-rec"), is(false));
+    }
+
+    @Test
+    public void generateFromRecordingTemplatizedDedupesIdRoutes() throws Exception {
+        record(request().withMethod("GET").withPath("/orders/1"));
+        record(request().withMethod("GET").withPath("/orders/2"));
+        record(request().withMethod("GET").withPath("/orders/3"));
+
+        HttpResponse response = generateFromRecording("{ \"name\": \"templatized\", \"mode\": \"TEMPLATIZED\" }");
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode steps = body(response).get("scenario").get("steps");
+        assertThat(steps.size(), is(1));
+        assertThat(steps.get(0).get("name").asText(), is("GET /orders/{id}"));
+    }
+
+    @Test
+    public void generateFromRecordingAllowedWhenGenerationDisabled() throws Exception {
+        rebuildHttpState(false);
+        record(request().withMethod("GET").withPath("/health"));
+        HttpResponse response = generateFromRecording("{ \"name\": \"disabled-rec\" }");
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(response).get("status").asText(), is("loaded"));
+    }
+
+    @Test
+    public void generateFromRecordingAppliesTargetOverride() throws Exception {
+        record(request().withMethod("GET").withPath("/a"));
+        HttpResponse response = generateFromRecording(
+            "{ \"name\": \"targeted-rec\", \"target\": { \"host\": \"localhost\", \"port\": 1080, \"scheme\": \"http\" } }");
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode firstRequest = body(response).get("scenario").get("steps").get(0).get("request");
+        assertThat(firstRequest.get("headers").get("Host").get(0).asText(), is("localhost:1080"));
+    }
+
+    @Test
+    public void generateFromRecordingHonoursRequestFilter() throws Exception {
+        record(request().withMethod("GET").withPath("/orders/1"));
+        record(request().withMethod("GET").withPath("/products/2"));
+
+        HttpResponse response = generateFromRecording(
+            "{ \"name\": \"filtered\", \"requestFilter\": { \"path\": \"/orders/.*\" } }");
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode steps = body(response).get("scenario").get("steps");
+        assertThat(steps.size(), is(1));
+        assertThat(steps.get(0).get("request").get("path").asText(), is("/orders/1"));
+    }
+
+    @Test
+    public void generateFromRecordingReturns400WhenNoRecordings() throws Exception {
+        HttpResponse response = generateFromRecording("{ \"name\": \"empty-rec\" }");
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(body(response).get("error").asText(), containsString("no recorded requests"));
+    }
+
+    @Test
+    public void generateFromRecordingReturns400WhenNameMissing() throws Exception {
+        record(request().withMethod("GET").withPath("/a"));
+        HttpResponse response = generateFromRecording("{ }");
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(body(response).get("error").asText(), containsString("name"));
+    }
+
+    @Test
+    public void generateFromRecordingReturns400ForInvalidMode() throws Exception {
+        record(request().withMethod("GET").withPath("/a"));
+        HttpResponse response = generateFromRecording("{ \"name\": \"bad-mode\", \"mode\": \"SIDEWAYS\" }");
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(body(response).get("error").asText(), containsString("mode"));
+    }
 }

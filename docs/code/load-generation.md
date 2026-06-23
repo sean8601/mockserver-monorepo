@@ -255,6 +255,7 @@ All endpoints are control-plane endpoints (subject to `controlPlaneRequestAuthen
 |------|------|-----------|
 | `PUT` | `/mockserver/loadScenario` | **Load/register** a scenario by `name` (does NOT run). Allowed even when `loadGenerationEnabled=false`. `400 {error}` when invalid or a cap is exceeded; `200 {status:loaded, name, state:LOADED}` otherwise. Loading the same name replaces. |
 | `PUT` | `/mockserver/loadScenario/generateFromOpenAPI` | **Seed** a scenario from an OpenAPI spec, then load/register it (does NOT run, allowed when disabled). Body `{name, specUrlOrPayload, target?, profile?}`. One step per operation; returns the generated scenario for editing. See [Seed a scenario from an OpenAPI spec](#seed-a-scenario-from-an-openapi-spec). |
+| `PUT` | `/mockserver/loadScenario/generateFromRecording` | **Seed** a scenario from recorded proxy traffic, then load/register it (does NOT run, allowed when disabled). Body `{name, mode?, requestFilter?, maxSteps?, target?, profile?}`. `VERBATIM` (default) = one step per recorded request; `TEMPLATIZED` = one step per unique route. Returns the generated scenario for editing. See [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic). |
 | `GET` | `/mockserver/loadScenario` | List ALL registered scenarios: `{ scenarios:[ { name, state, startDelayMillis, definition, ...live status fields when active/run } ] }`. State ∈ `LOADED/PENDING/RUNNING/COMPLETED/STOPPED`. |
 | `GET` | `/mockserver/loadScenario/{name}` | One scenario (definition + state + status); `404` if not registered. |
 | `GET` | `/mockserver/loadScenario/{name}/report` | **End-of-run summary report** for the run (live snapshot if running, retained terminal snapshot if finished). JSON by default; `?format=junit` returns a JUnit-XML `<testsuite>` with `application/xml`. `404` if the scenario never ran. See [Summary report](#summary-report). |
@@ -390,6 +391,76 @@ curl -X PUT http://localhost:1080/mockserver/loadScenario/start -d '{ "name": "p
 
 A missing `name`/`specUrlOrPayload`, an unparseable spec, a spec with no operations, or a generated
 scenario that fails validation all return `400 {error}`.
+
+## Seed a scenario from recorded traffic
+
+`PUT /mockserver/loadScenario/generateFromRecording` turns traffic **previously recorded by MockServer
+in proxy/recording mode** into an editable, immediately-runnable `LoadScenario` and registers it in the
+`LOADED` state — it generates **no traffic** and (like `PUT /loadScenario`) is allowed even when
+`loadGenerationEnabled=false`. The generated scenario is returned so a client/UI can show and edit it
+before triggering a run. This is the **record-to-load** flow: capture real traffic through the proxy,
+then replay its shape as a load test.
+
+`LoadScenarioFromRecording.generate(...)` reuses the **same recorded-request retrieval** the recorded-
+requests control plane uses (`MockServerEventLog.retrieveRequests`, the `RECEIVED_REQUEST` entries),
+optionally narrowed by a `requestFilter`, and the **same route templatizer** the metrics layer uses
+(`MetricLabels.routeOf`).
+
+### Modes
+
+| Mode | Steps produced |
+|------|----------------|
+| `VERBATIM` (default) | One `LoadStep` per recorded request, **in recorded order**, preserving the concrete path, body and headers. An optional `maxSteps` keeps only the first N recorded requests (the orchestrator's `loadGenerationMaxSteps` also caps). |
+| `TEMPLATIZED` | Recorded requests are **deduplicated by `(method, templatised-path)`** — id-shaped segments such as `/orders/123` collapse to `/orders/{id}` — keeping one representative example per unique route, **ordered by descending hit frequency** (most-hit routes first). One step per unique route. No per-step weight is added. |
+
+### Request body
+
+```json
+{
+  "name": "replay-prod-traffic",
+  "mode": "TEMPLATIZED",
+  "requestFilter": { "path": "/orders/.*" },
+  "maxSteps": 100,
+  "target": { "host": "staging.svc", "port": 8080, "scheme": "http" },
+  "profile": { "stages": [ { "type": "VU", "vus": 5, "durationMillis": 30000 } ] }
+}
+```
+
+All fields except `name` are optional. `requestFilter` is a standard **HttpRequest matcher** — when
+present only the recorded requests it matches are converted; when absent **all** recorded requests are
+used. `maxSteps` applies to `VERBATIM` (`TEMPLATIZED` is naturally bounded by the number of unique routes).
+
+### Target precedence
+
+Each step's target is carried as the request's `Host` header and `secure` flag, resolved by this
+precedence:
+
+1. an explicit `target` (with a `host`) in the request body — applied to **every** step (its `Host`
+   header is replaced and the `secure` flag set from the scheme);
+2. otherwise each recorded request's **own routing is left untouched** — recorded proxied requests
+   already carry their upstream target.
+
+### Default profile
+
+When no `profile` is supplied the same conservative default as the OpenAPI seeder is applied — a single
+short constant-VU stage (5 VUs for 30s) — so the scenario runs out of the box yet stays safe. Edit the
+returned profile before scaling up.
+
+```bash
+# record some traffic through the proxy first, then:
+curl -X PUT http://localhost:1080/mockserver/loadScenario/generateFromRecording \
+  -d '{ "name": "replay-prod-traffic", "mode": "TEMPLATIZED" }'
+#  -> { "status":"loaded", "name":"replay-prod-traffic", "state":"LOADED", "scenario": { ...editable... } }
+
+# then edit if needed and trigger as usual
+curl -X PUT http://localhost:1080/mockserver/loadScenario/start -d '{ "name": "replay-prod-traffic" }'
+```
+
+A missing `name`, no recorded requests to convert (none recorded, or none matching `requestFilter`), an
+invalid `mode`, or a generated scenario that fails validation all return `400 {error}`.
+
+> Frequency-proportional **weighting** of routes (firing hotter routes more often within a run) is a
+> separate weighted-flows enhancement — `TEMPLATIZED` today emits ordered, unweighted steps.
 
 ## Timing and concurrency
 
@@ -630,5 +701,12 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
 ## Deferred
 
 - Distributed / multi-node load.
-- Seeding scenario *definitions* from recorded traffic (preloading from a JSON file is supported via `loadScenarioInitializationJsonPath`; seeding from an OpenAPI spec is supported via [`PUT /mockserver/loadScenario/generateFromOpenAPI`](#seed-a-scenario-from-an-openapi-spec)).
-- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field.
+- Frequency-proportional **weighting** of routes within a run (a weighted-flows enhancement; the
+  `TEMPLATIZED` recording seeder today emits ordered, unweighted steps — see
+  [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic)).
+- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field and the [`generateFromRecording`](#seed-a-scenario-from-recorded-traffic) seeder.
+
+> Seeding scenario *definitions* from recorded traffic **is now supported** via
+> [`PUT /mockserver/loadScenario/generateFromRecording`](#seed-a-scenario-from-recorded-traffic) (preloading
+> from a JSON file via `loadScenarioInitializationJsonPath`, and seeding from an OpenAPI spec via
+> [`PUT /mockserver/loadScenario/generateFromOpenAPI`](#seed-a-scenario-from-an-openapi-spec), remain available too).

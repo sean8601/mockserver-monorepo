@@ -2985,6 +2985,99 @@ paths:
                 scheme: http
         description: the scenario name plus the OpenAPI spec (with optional target and profile)
         required: true
+  /mockserver/loadScenario/generateFromRecording:
+    put:
+      tags:
+        - loadgen
+      summary: seed a load scenario from recorded proxy traffic
+      description: >-
+        Generates an editable load scenario from traffic previously recorded by MockServer in
+        proxy/recording mode (the requests held by the event log) and loads (registers) it into the
+        registry under "name" in the LOADED state — exactly like PUT /mockserver/loadScenario, it
+        generates no traffic and is allowed even when loadGenerationEnabled is false. Two modes control
+        how recorded requests become steps. VERBATIM (the default) emits one step per recorded request,
+        in recorded order, preserving the concrete path, body and headers — with an optional "maxSteps"
+        cap. TEMPLATIZED deduplicates recorded requests by (method, templatised-path) — id-shaped path
+        segments such as /orders/123 collapse to /orders/{id} — keeping one representative example per
+        unique route, ordered by descending hit frequency (most-hit routes first); no per-step weight is
+        added. An optional "requestFilter" (an HttpRequest matcher) selects which recorded requests to
+        include; absent means all recorded requests. An optional "target" is applied to every step
+        (overriding each recorded request's own Host/secure routing); absent leaves each recorded
+        request's routing untouched. When no "profile" is supplied a conservative default is applied (one
+        short constant-VU stage) so the scenario is immediately runnable yet safe — the operator edits it
+        before scaling up. The generated scenario is returned so a client/UI can show and edit it before
+        triggering a run.
+      responses:
+        '200':
+          description: load scenario generated and loaded (registered)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [loaded]
+                  name:
+                    type: string
+                  state:
+                    type: string
+                    enum: [LOADED, PENDING, RUNNING, COMPLETED, STOPPED]
+                  scenario:
+                    $ref: "#/components/schemas/LoadScenario"
+        '400':
+          description: missing name, no recorded requests to convert, an invalid mode, or a generated scenario that fails validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: the generated scenario name (the unique registry key)
+                mode:
+                  type: string
+                  enum: [VERBATIM, TEMPLATIZED]
+                  default: VERBATIM
+                  description: VERBATIM = one step per recorded request; TEMPLATIZED = one step per unique (method, templatised-path) route, ordered by descending frequency
+                requestFilter:
+                  $ref: "#/components/schemas/HttpRequest"
+                maxSteps:
+                  type: integer
+                  description: optional cap on the number of VERBATIM steps (keeps the first N recorded requests)
+                target:
+                  type: object
+                  description: explicit network target applied to every generated step (overrides each recorded request's own Host/secure routing)
+                  properties:
+                    host:
+                      type: string
+                    port:
+                      type: integer
+                    scheme:
+                      type: string
+                      enum: [http, https]
+                profile:
+                  $ref: "#/components/schemas/LoadProfile"
+            example:
+              name: replay-prod-traffic
+              mode: TEMPLATIZED
+              target:
+                host: staging.svc
+                port: 8080
+                scheme: http
+        description: the scenario name plus optional mode, requestFilter, maxSteps, target and profile
+        required: true
   /mockserver/loadScenario/start:
     put:
       tags:

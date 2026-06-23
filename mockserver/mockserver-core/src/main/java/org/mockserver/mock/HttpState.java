@@ -2280,6 +2280,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario/generateFromRecording", "/loadScenario/generateFromRecording")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioGenerateFromRecording(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -3647,6 +3654,121 @@ public class HttpState {
         Integer port = targetNode.hasNonNull("port") ? targetNode.get("port").asInt() : null;
         String scheme = targetNode.hasNonNull("scheme") ? targetNode.get("scheme").asText() : null;
         return new org.mockserver.load.LoadScenarioFromOpenAPI.Target(host, port, scheme);
+    }
+
+    /**
+     * Handle {@code PUT /mockserver/loadScenario/generateFromRecording}: seed an editable
+     * {@link org.mockserver.load.LoadScenario} from traffic previously recorded by the proxy (the
+     * {@code RECEIVED_REQUEST} entries held by the event log) and <em>load</em> (register) it in the
+     * {@code LOADED} state — exactly like {@code PUT /mockserver/loadScenario}, this generates no traffic
+     * and is allowed even when {@code loadGenerationEnabled} is false. The generated scenario is returned
+     * so a client/UI can show and edit it before triggering a run.
+     *
+     * <p>Body (JSON): {@code { "name": "...", "mode": "VERBATIM"|"TEMPLATIZED" (default VERBATIM),
+     * "requestFilter": <HttpRequest matcher> (optional — selects which recorded requests to include),
+     * "maxSteps": <int> (optional, VERBATIM only), "target": { "host":..., "port":..., "scheme":... }
+     * (optional, applied to every step), "profile": <LoadProfile> (optional) }}. Returns
+     * {@code 200 { status:"loaded", name, state:"LOADED", scenario:<generated LoadScenario> }} on
+     * success, or {@code 400 { error }} when the name is missing or there are no recorded requests to
+     * convert.
+     */
+    private HttpResponse handleLoadScenarioGenerateFromRecording(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return loadScenarioError(objectMapper, "request body is required with a name");
+            }
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(body);
+            String name = root.path("name").isMissingNode() ? null : root.path("name").asText(null);
+            if (isBlank(name)) {
+                return loadScenarioError(objectMapper, "'name' is required");
+            }
+
+            org.mockserver.load.LoadScenarioFromRecording.Mode mode = org.mockserver.load.LoadScenarioFromRecording.Mode.VERBATIM;
+            if (root.hasNonNull("mode")) {
+                String modeText = root.get("mode").asText();
+                try {
+                    mode = org.mockserver.load.LoadScenarioFromRecording.Mode.valueOf(modeText.trim().toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    return loadScenarioError(objectMapper, "invalid 'mode' (expected VERBATIM or TEMPLATIZED): " + modeText);
+                }
+            }
+            Integer maxSteps = root.hasNonNull("maxSteps") ? root.get("maxSteps").asInt() : null;
+            org.mockserver.load.LoadScenarioFromRecording.Target target = readRecordingTarget(root);
+            org.mockserver.load.LoadProfile profile = null;
+            if (root.has("profile") && !root.get("profile").isNull()) {
+                org.mockserver.serialization.model.LoadProfileDTO profileDTO =
+                    objectMapper.treeToValue(root.get("profile"), org.mockserver.serialization.model.LoadProfileDTO.class);
+                profile = profileDTO != null ? profileDTO.buildObject() : null;
+            }
+
+            // Optional requestFilter narrows which recorded requests are converted; absent = all recorded.
+            org.mockserver.model.RequestDefinition requestFilter = null;
+            if (root.has("requestFilter") && !root.get("requestFilter").isNull()) {
+                requestFilter = getHttpRequestSerializer().deserialize(objectMapper.writeValueAsString(root.get("requestFilter")));
+            }
+
+            // Pull the recorded (RECEIVED_REQUEST) requests from the event log, reusing the same
+            // retrieval the recorded-requests control plane uses. retrieveRequests resolves on the event
+            // log's disruptor thread, so block on the future to obtain the list synchronously here.
+            java.util.concurrent.CompletableFuture<java.util.List<org.mockserver.model.RequestDefinition>> recordedFuture =
+                new java.util.concurrent.CompletableFuture<>();
+            mockServerLog.retrieveRequests(requestFilter, recordedFuture::complete);
+            java.util.List<org.mockserver.model.RequestDefinition> recordedRequests =
+                recordedFuture.get(configuration.maxFutureTimeoutInMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+
+            org.mockserver.load.LoadScenario scenario;
+            try {
+                scenario = org.mockserver.load.LoadScenarioFromRecording.generate(name, recordedRequests, mode, maxSteps, target, profile);
+            } catch (IllegalArgumentException e) {
+                return loadScenarioError(objectMapper, "failed to generate load scenario from recording: " + e.getMessage());
+            }
+
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.setConfiguration(configuration);
+            String error = orchestrator.validate(scenario);
+            if (error != null) {
+                return loadScenarioError(objectMapper, error);
+            }
+            String serializedScenario = getLoadScenarioSerializer().serialize(scenario);
+            com.fasterxml.jackson.databind.JsonNode definition = objectMapper.readTree(serializedScenario);
+            loadScenarioRegistry.load(scenario.getName(), definition);
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("generated and loaded load scenario:{}from recorded traffic with {}steps")
+                        .setArguments(scenario.getName(), scenario.getSteps().size())
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "loaded");
+            result.put("name", scenario.getName());
+            result.put("state", loadScenarioStateFor(scenario.getName()).name());
+            result.set("scenario", definition);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return loadScenarioError(objectMapper, "invalid generate-from-recording request: " + e.getMessage());
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to process generate-from-recording request: " + e.getMessage());
+        }
+    }
+
+    /** Reads the optional {@code target} object ({@code host}/{@code port}/{@code scheme}) from a generate-from-recording request. */
+    private org.mockserver.load.LoadScenarioFromRecording.Target readRecordingTarget(com.fasterxml.jackson.databind.JsonNode root) {
+        com.fasterxml.jackson.databind.JsonNode targetNode = root.get("target");
+        if (targetNode == null || targetNode.isNull() || !targetNode.isObject()) {
+            return null;
+        }
+        String host = targetNode.hasNonNull("host") ? targetNode.get("host").asText() : null;
+        Integer port = targetNode.hasNonNull("port") ? targetNode.get("port").asInt() : null;
+        String scheme = targetNode.hasNonNull("scheme") ? targetNode.get("scheme").asText() : null;
+        return new org.mockserver.load.LoadScenarioFromRecording.Target(host, port, scheme);
     }
 
     /**
