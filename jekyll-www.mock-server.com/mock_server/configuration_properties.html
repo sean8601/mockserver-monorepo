@@ -758,8 +758,9 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 <button id="button_configuration_attach_mismatch_diagnostic_to_response" class="accordion title"><strong>Attach Mismatch Diagnostic To Unmatched Response</strong></button>
 <div class="panel title">
-    <p>When enabled, if no expectation matches an incoming request the 404 response carries the closest-match diagnostic: an <span class="inline_code">x-mockserver-closest-match</span> header plus a JSON body describing which expectation came closest to matching and which fields differed. This lets you see why a mock did not match directly from the response, without checking the MockServer logs or dashboard.</p>
-    <p>Useful when debugging in test environments. Leave it disabled (the default) for any production-facing use, as the diagnostic exposes expectation internals in the response.</p>
+    <p>When enabled, if no expectation matches an incoming request the 404 response carries the <strong>verbose</strong> closest-match diagnostic: an <span class="inline_code">x-mockserver-closest-match</span> header plus a JSON body describing which expectation came closest to matching and which fields differed. This lets you see why a mock did not match directly from the response, without checking the MockServer logs or dashboard.</p>
+    <p>Useful when debugging in test environments. Leave it disabled (the default) for any production-facing use, as the diagnostic exposes expectation internals in the response body.</p>
+    <p>This is the verbose, opt-in counterpart of <span class="inline_code">closestMatchHintEnabled</span> (a compact, header-only hint that is <em>on by default</em>). The two use different header names and are independent: if both are enabled an unmatched 404 carries <strong>both</strong> headers (<span class="inline_code">x-mockserver-closest-match</span> with the JSON body, and <span class="inline_code">x-mockserver-closest-match-hint</span> with the one-line summary).</p>
     <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.attachMismatchDiagnosticToResponse(boolean enable)</code></pre>
@@ -771,6 +772,24 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.attachMismatchDiagnosticToResponse=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.attachMismatchDiagnosticToResponse="true"</code></pre>
+</div>
+
+<button id="button_configuration_closest_match_hint_enabled" class="accordion title"><strong>Closest Match Hint On Unmatched Response</strong></button>
+<div class="panel title">
+    <p>When enabled (the default), if no expectation matches an incoming request the 404 response carries a single concise <span class="inline_code">x-mockserver-closest-match-hint</span> header naming the closest expectation and the first field that differed (for example <span class="inline_code">expectation 1a2b: method did not match (expected POST but was GET)</span>). This answers &ldquo;why didn&rsquo;t my mock match?&rdquo; straight from the response, without opening the MockServer logs or dashboard.</p>
+    <p>The hint is <strong>header-only and length-bounded</strong> &mdash; it never adds a response body, so it cannot leak large or sensitive expectation contents. That is what makes it safe to enable by default. Its verbose counterpart, <span class="inline_code">attachMismatchDiagnosticToResponse</span> (off by default), additionally writes a full JSON diff body under a different header (<span class="inline_code">x-mockserver-closest-match</span>); the two are independent, so enabling both yields <strong>both</strong> headers on an unmatched 404.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Set this to <span class="inline_code">false</span> if you need unmatched 404 responses to be byte-for-byte free of the extra header (for example a test that asserts the exact response).</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.closestMatchHintEnabled(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.closestMatchHintEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_CLOSEST_MATCH_HINT_ENABLED=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.closestMatchHintEnabled=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.closestMatchHintEnabled="true"</code></pre>
 </div>
 
 <button id="button_configuration_forward_proxy_block_private_networks" class="accordion title"><strong>Block Forwarding To Private Networks (SSRF Protection)</strong></button>

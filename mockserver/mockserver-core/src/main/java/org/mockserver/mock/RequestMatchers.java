@@ -1345,21 +1345,67 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     }
 
     public Map<MatchDifference.Field, List<String>> findClosestMatchDiff(HttpRequest httpRequest) {
+        ClosestMatchHint hint = findClosestMatchHint(httpRequest);
+        return hint == null ? null : hint.getDifferences();
+    }
+
+    /**
+     * Compact closest-match diagnostic used by the unmatched-404 hint header
+     * ({@code closestMatchHintEnabled}). Holds the id of the closest non-matching
+     * expectation and the field differences that kept it from matching, so the
+     * caller can render a short, safe one-line hint (expectation id + first
+     * differing field + reason) without serialising the whole expectation.
+     */
+    public static final class ClosestMatchHint {
+        private final String expectationId;
+        private final Map<MatchDifference.Field, List<String>> differences;
+
+        public ClosestMatchHint(String expectationId, Map<MatchDifference.Field, List<String>> differences) {
+            this.expectationId = expectationId;
+            this.differences = differences;
+        }
+
+        public String getExpectationId() {
+            return expectationId;
+        }
+
+        public Map<MatchDifference.Field, List<String>> getDifferences() {
+            return differences;
+        }
+    }
+
+    /**
+     * Find the expectation that came closest to matching the request (fewest field
+     * differences) together with its id and field diff. Cold-path only — invoked when
+     * a request matched nothing and a diagnostic is being produced. Returns {@code null}
+     * when there are no expectations (or none produced a usable diff).
+     */
+    public ClosestMatchHint findClosestMatchHint(HttpRequest httpRequest) {
         int closestMatchFailures = Integer.MAX_VALUE;
         Map<MatchDifference.Field, List<String>> closestDifferences = null;
+        String closestExpectationId = null;
 
         for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
-            MatchDifference matchDifference = new MatchDifference(true, httpRequest);
+            // suppressMatchResultLogging: this is a read-only diagnostic re-evaluation (it runs
+            // AFTER the request already failed to match), so it must NOT emit a second round of
+            // EXPECTATION_NOT_MATCHED events into the event log — those would be uncorrelated and
+            // would shift/duplicate the recorded log sequence. Especially important now the hint
+            // header is on by default, so this scan runs on the common no-match path.
+            MatchDifference matchDifference = new MatchDifference(true, httpRequest).suppressMatchResultLogging();
             if (!httpRequestMatcher.matches(matchDifference, httpRequest)) {
                 Map<MatchDifference.Field, List<String>> differences = matchDifference.getAllDifferences();
                 int failures = differences.size();
                 if (failures < closestMatchFailures && httpRequestMatcher.getExpectation() != null) {
                     closestMatchFailures = failures;
                     closestDifferences = differences;
+                    closestExpectationId = httpRequestMatcher.getExpectation().getId();
                 }
             }
         }
-        return closestDifferences;
+        if (closestDifferences == null) {
+            return null;
+        }
+        return new ClosestMatchHint(closestExpectationId, closestDifferences);
     }
 
     public boolean isEmpty() {

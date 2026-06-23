@@ -675,6 +675,13 @@ public class HttpState {
         return requestMatchers.findClosestMatchDiff(request);
     }
 
+    public RequestMatchers.ClosestMatchHint findClosestMatchHint(HttpRequest request) {
+        if (requestMatchers.isEmpty()) {
+            return null;
+        }
+        return requestMatchers.findClosestMatchHint(request);
+    }
+
     private static final int DEBUG_MISMATCH_MAX_EXPECTATIONS = 100;
 
     public HttpResponse debugMismatch(HttpRequest request) {

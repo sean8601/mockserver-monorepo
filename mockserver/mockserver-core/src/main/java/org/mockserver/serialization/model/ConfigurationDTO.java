@@ -94,6 +94,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
     private Boolean attachMismatchDiagnosticToResponse;
+    private Boolean closestMatchHintEnabled;
 
     private Boolean attemptToProxyIfNoMatchingExpectation;
     private String forwardHttpProxy;
@@ -342,6 +343,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
             this.maximumNumberOfRequestToReturnInVerificationFailure = configuration.maximumNumberOfRequestToReturnInVerificationFailure();
             this.attachMismatchDiagnosticToResponse = configuration.attachMismatchDiagnosticToResponse();
+            this.closestMatchHintEnabled = configuration.closestMatchHintEnabled();
 
             this.attemptToProxyIfNoMatchingExpectation = configuration.attemptToProxyIfNoMatchingExpectation();
             InetSocketAddress httpProxy = configuration.forwardHttpProxy();
@@ -636,6 +638,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
         configuration.maximumNumberOfRequestToReturnInVerificationFailure(maximumNumberOfRequestToReturnInVerificationFailure);
         configuration.attachMismatchDiagnosticToResponse(attachMismatchDiagnosticToResponse);
+        configuration.closestMatchHintEnabled(closestMatchHintEnabled);
 
         configuration.attemptToProxyIfNoMatchingExpectation(attemptToProxyIfNoMatchingExpectation);
         if (forwardHttpProxy != null) {
@@ -1019,6 +1022,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (attachMismatchDiagnosticToResponse != null) {
             target.attachMismatchDiagnosticToResponse(attachMismatchDiagnosticToResponse);
+        }
+        if (closestMatchHintEnabled != null) {
+            target.closestMatchHintEnabled(closestMatchHintEnabled);
         }
         if (attemptToProxyIfNoMatchingExpectation != null) {
             target.attemptToProxyIfNoMatchingExpectation(attemptToProxyIfNoMatchingExpectation);
@@ -2086,6 +2092,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setAttachMismatchDiagnosticToResponse(Boolean attachMismatchDiagnosticToResponse) {
         this.attachMismatchDiagnosticToResponse = attachMismatchDiagnosticToResponse;
+        return this;
+    }
+
+    public Boolean getClosestMatchHintEnabled() {
+        return closestMatchHintEnabled;
+    }
+
+    public ConfigurationDTO setClosestMatchHintEnabled(Boolean closestMatchHintEnabled) {
+        this.closestMatchHintEnabled = closestMatchHintEnabled;
         return this;
     }
 

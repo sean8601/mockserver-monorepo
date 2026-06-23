@@ -273,6 +273,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_MAXIMUM_NUMBER_OF_REQUESTS_TO_RETURN_IN_VERIFICATION_FAILURE = "mockserver.maximumNumberOfRequestToReturnInVerificationFailure";
     private static final String MOCKSERVER_DETAILED_VERIFICATION_FAILURES = "mockserver.detailedVerificationFailures";
     private static final String MOCKSERVER_ATTACH_MISMATCH_DIAGNOSTIC_TO_RESPONSE = "mockserver.attachMismatchDiagnosticToResponse";
+    private static final String MOCKSERVER_CLOSEST_MATCH_HINT_ENABLED = "mockserver.closestMatchHintEnabled";
 
     // proxy
     private static final String MOCKSERVER_ATTEMPT_TO_PROXY_IF_NO_MATCHING_EXPECTATION = "mockserver.attemptToProxyIfNoMatchingExpectation";
@@ -3518,6 +3519,22 @@ public class ConfigurationProperties {
      */
     public static void attachMismatchDiagnosticToResponse(boolean enable) {
         setProperty(MOCKSERVER_ATTACH_MISMATCH_DIAGNOSTIC_TO_RESPONSE, "" + enable);
+    }
+
+    public static boolean closestMatchHintEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_CLOSEST_MATCH_HINT_ENABLED, "MOCKSERVER_CLOSEST_MATCH_HINT_ENABLED", "" + true));
+    }
+
+    /**
+     * If true (the default), when no expectation matches an incoming request the data-plane 404 response carries a
+     * single concise diagnostic header (x-mockserver-closest-match-hint) naming the closest expectation and the first
+     * field that differed. The hint is header-only and length-bounded — no expectation body is leaked. Set to false to
+     * suppress it (for example if a test asserts unmatched 404 responses byte-for-byte).
+     *
+     * @param enable enable the closest-match hint header on unmatched 404 responses
+     */
+    public static void closestMatchHintEnabled(boolean enable) {
+        setProperty(MOCKSERVER_CLOSEST_MATCH_HINT_ENABLED, "" + enable);
     }
 
     // proxy
