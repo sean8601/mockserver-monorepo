@@ -1556,6 +1556,37 @@ new MockServerClient("localhost", 1080)
 
 <p>This experiment waits until the next 02:00 (server local time), then injects 503s into <code class="inline code">payments.svc</code> for 10 minutes &mdash; useful for rehearsing an off-peak incident without staying up to trigger it.</p>
 
+<h3>Asserting an SLO during the experiment (pass/fail verdict)</h3>
+
+<p>An experiment can carry an optional <code class="inline code">sloCriteria</code> block &mdash; the same shape the <a href="#slo_resilience_verdicts">SLO Resilience Verdicts</a> endpoint accepts (a list of objectives such as error-rate or latency percentile, each with a threshold). When present, MockServer turns the experiment into a self-checking resilience test:</p>
+
+<ul>
+    <li><strong>Terminal verdict</strong> &mdash; when the experiment ends, MockServer evaluates the SLO over the experiment's own time window and attaches an <code class="inline code">experimentVerdict</code> to the status. The result is one of <code class="inline code">PASS</code> (every objective held for the whole experiment), <code class="inline code">FAIL</code> (an objective was breached at any point, or the experiment was auto-halted), or <code class="inline code">INCONCLUSIVE</code> (fewer samples than the criteria's <code class="inline code">minimumSampleCount</code>).</li>
+    <li><strong>Automatic halt on breach</strong> &mdash; if an objective is actually breached <em>while the experiment runs</em>, MockServer stops the experiment immediately with status <code class="inline code">halted_by_slo_breach</code> and a <code class="inline code">FAIL</code> verdict, so a chaos run that pushes the system past its SLO doesn't keep degrading it.</li>
+</ul>
+
+<p>The SLO window is scoped to the experiment automatically &mdash; you do not need to set the window in <code class="inline code">sloCriteria</code>; MockServer measures from the experiment's start to its end (or to "now" for the live breach check). SLO sample tracking must be enabled (<code class="inline code">sloTrackingEnabled=true</code>) so the proxy records the upstream traffic the verdict is computed from. Omitting <code class="inline code">sloCriteria</code> keeps the original behaviour exactly &mdash; no verdict, no extra checking.</p>
+
+<pre class="code"><code class="code">curl -sf -X PUT http://mockserver:1080/mockserver/chaosExperiment \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "payments-resilience-check",
+    "stages": [
+      {"durationMillis": 120000, "profiles": {"payments.svc": {"errorStatus": 503, "errorProbability": 0.2}}}
+    ],
+    "sloCriteria": {
+      "minimumSampleCount": 20,
+      "objectives": [
+        {"sli": "ERROR_RATE", "comparator": "LESS_THAN", "threshold": 0.25},
+        {"sli": "LATENCY_P95", "comparator": "LESS_THAN", "threshold": 800}
+      ]
+    }
+  }'
+
+# GET status after it ends includes the verdict:
+# {"name":"payments-resilience-check","status":"completed", ... ,
+#  "experimentVerdict":{"result":"PASS","objectiveResults":[ ... ]}}</code></pre>
+
 <h3>Safety limits</h3>
 
 <ul>
@@ -1564,6 +1595,7 @@ new MockServerClient("localhost", 1080)
     <li><strong>Maximum 7 days</strong> for a deferred <code class="inline code">startDelayMillis</code></li>
     <li><strong>Only one experiment at a time</strong> &mdash; starting a new experiment stops the previous one</li>
     <li><strong>Auto-halt integration</strong> &mdash; if the <a href="#chaos_auto_halt">auto-halt circuit-breaker</a> fires while an experiment is running, the experiment stops immediately (status: <code class="inline code">halted_by_auto_halt</code>)</li>
+    <li><strong>SLO-breach halt</strong> &mdash; for an experiment with <code class="inline code">sloCriteria</code>, breaching an objective mid-run stops it immediately (status: <code class="inline code">halted_by_slo_breach</code>, verdict <code class="inline code">FAIL</code>)</li>
 </ul>
 
 <h3>Monitoring</h3>
@@ -1575,7 +1607,7 @@ new MockServerClient("localhost", 1080)
 #     "totalStages":3,"stageElapsedMillis":15000,"stageRemainingMillis":45000,
 #     "loopIteration":0,"totalElapsedMillis":75000,"experiment":{...}}</code></pre>
 
-<p>The <code class="inline code">status</code> field is one of: <code class="inline code">scheduled</code> (a delayed/cron start is pending &mdash; the status also carries <code class="inline code">startRemainingMillis</code>), <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, or <code class="inline code">halted_by_auto_halt</code>.</p>
+<p>The <code class="inline code">status</code> field is one of: <code class="inline code">scheduled</code> (a delayed/cron start is pending &mdash; the status also carries <code class="inline code">startRemainingMillis</code>), <code class="inline code">running</code>, <code class="inline code">completed</code>, <code class="inline code">stopped</code>, <code class="inline code">halted_by_auto_halt</code>, or <code class="inline code">halted_by_slo_breach</code>. For an experiment that carried an <code class="inline code">sloCriteria</code>, the status also includes an <code class="inline code">experimentVerdict</code> (<code class="inline code">PASS</code> / <code class="inline code">FAIL</code> / <code class="inline code">INCONCLUSIVE</code>) once the experiment ends.</p>
 
 <h3>Stopping</h3>
 
