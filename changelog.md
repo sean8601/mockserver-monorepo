@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OpenAPI `format: date`/`date-time` examples render as ISO strings again** ([#2370](https://github.com/mock-server/mockserver-monorepo/issues/2370)).
+  An inline `example: '2021-01-30'` on a `type: string, format: date` property was serialised in generated
+  responses as epoch-millis (`1611964800000`) instead of the ISO string, because swagger-parser deserialises
+  the example into a `java.util.Date` that the explicit-example path handed straight to Jackson. Date/date-time
+  examples are now normalised back to their schema string form before serialisation (regression since 6.0.0).
 - **Dashboard LLM pricing corrected.** The dashboard cost estimates were ~1 year stale and up to ~3× too high
   (e.g. Opus 4.8 shown at 15/75 instead of 5/25); the table is now synced to the server's pricing and guarded
   by a drift test.
