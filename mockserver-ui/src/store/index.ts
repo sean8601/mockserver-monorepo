@@ -10,7 +10,7 @@ import type {
 } from '../types';
 import { ACTION_TYPES, LLM_PROVIDERS } from '../lib/clientFilters';
 
-export type ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'performance' | 'metrics' | 'drift' | 'verification' | 'async' | 'grpc' | 'breakpoints' | 'contract' | 'cluster' | 'optimise' | 'get-started';
+export type ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'performance' | 'metrics' | 'drift' | 'verification' | 'slo' | 'async' | 'grpc' | 'breakpoints' | 'contract' | 'cluster' | 'optimise' | 'get-started';
 
 /** Map legacy/removed ViewMode values to their replacement. */
 const VIEW_MIGRATION: Record<string, ViewMode> = {
@@ -20,7 +20,7 @@ const VIEW_MIGRATION: Record<string, ViewMode> = {
 /** Every valid ViewMode, used to validate persisted/hash-derived values. */
 const ALL_VIEWS: readonly ViewMode[] = [
   'dashboard', 'traffic', 'sessions', 'composer', 'library', 'chaos', 'performance',
-  'metrics', 'drift', 'verification', 'async', 'grpc', 'breakpoints', 'contract',
+  'metrics', 'drift', 'verification', 'slo', 'async', 'grpc', 'breakpoints', 'contract',
   'cluster', 'optimise', 'get-started',
 ];
 

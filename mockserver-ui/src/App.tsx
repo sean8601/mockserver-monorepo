@@ -24,6 +24,7 @@ import SessionInspector from './components/SessionInspector';
 import LibraryView from './components/LibraryView';
 import ServiceChaosPanel from './components/ServiceChaosPanel';
 import DriftPanel from './components/DriftPanel';
+import SloPanel from './components/SloPanel';
 import VerificationView from './components/VerificationView';
 import AsyncApiPanel from './components/AsyncApiPanel';
 import GrpcServicesPanel from './components/GrpcServicesPanel';
@@ -256,6 +257,7 @@ export default function App() {
             )}
             {view === 'drift' && <DriftPanel connectionParams={params} />}
             {view === 'verification' && <VerificationView connectionParams={params} />}
+            {view === 'slo' && <SloPanel connectionParams={params} />}
             {view === 'async' && <AsyncApiPanel connectionParams={params} />}
             {view === 'grpc' && <GrpcServicesPanel connectionParams={params} />}
             {view === 'breakpoints' && <BreakpointsPanel connectionParams={params} />}

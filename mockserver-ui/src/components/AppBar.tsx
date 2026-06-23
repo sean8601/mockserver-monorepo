@@ -38,6 +38,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
+import VerifiedIcon from '@mui/icons-material/Verified';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import PanToolIcon from '@mui/icons-material/PanTool';
@@ -156,6 +157,7 @@ const NAV_TABS: NavTab[] = [
   { value: 'library', label: 'Library', ariaLabel: 'Library of captured content', description: 'Browse and reuse captured requests, responses, and content.', icon: <Inventory2Icon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'drift', label: 'Drift', ariaLabel: 'Drift detection view', description: 'Detect when your mocks drift away from the real API they stand in for.', icon: <CompareArrowsIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'verification', label: 'Verify', ariaLabel: 'Verification view', description: 'Assert which requests were — or were not — received.', icon: <PlaylistAddCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
+  { value: 'slo', label: 'SLO', ariaLabel: 'SLO verification view', description: 'Assert service-level objectives — latency percentiles and error rate — against recorded traffic.', icon: <VerifiedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'contract', label: 'Contract', ariaLabel: 'Contract test view', description: 'Validate mocks and traffic against an OpenAPI contract.', icon: <FactCheckIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'cluster', label: 'Cluster', ariaLabel: 'Cluster status view', description: 'Monitor MockServer cluster nodes and shared state.', icon: <HubOutlinedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
   { value: 'metrics', label: 'Metrics', ariaLabel: 'Metrics view', description: 'Prometheus metrics plus memory and performance monitoring.', icon: <SpeedIcon sx={{ fontSize: '0.875rem', mr: 0.5 }} /> },
