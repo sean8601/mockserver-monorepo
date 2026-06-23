@@ -63,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The Helm chart now ships commented `resources` and `app.jvmOptions` examples.
 - **Generated TLS certificate validity extended to 10 years** (was 365 days) for the dynamically generated CA,
   leaf/server, and HTTP/3 self-signed certificates, so pinned-CA test setups no longer expire after a year.
+- **Dashboard navigation reorganised into grouped menus.** The dashboard's views are now organised into six
+  groups (Mock / Observe / Verify / Resilience / AI / Inspect) with submenus, replacing the flat overflow tab
+  bar, so features are easier to discover.
 
 ### Fixed
 
