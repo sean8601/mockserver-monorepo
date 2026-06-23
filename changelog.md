@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   responses as epoch-millis (`1611964800000`) instead of the ISO string, because swagger-parser deserialises
   the example into a `java.util.Date` that the explicit-example path handed straight to Jackson. Date/date-time
   examples are now normalised back to their schema string form before serialisation (regression since 6.0.0).
+- **Spring `@MockServerTest` works with JUnit 5 `@Nested` classes again** ([#2371](https://github.com/mock-server/mockserver-monorepo/issues/2371)).
+  Injecting the `MockServerClient` declared on an outer test class into a `@Nested` inner test instance threw
+  `IllegalArgumentException` because the field was set on the inner instance rather than the enclosing instance
+  that declares it. Injection now resolves the correct enclosing instance via the synthetic outer reference
+  (regression since 6.0.0).
 - **Dashboard LLM pricing corrected.** The dashboard cost estimates were ~1 year stale and up to ~3× too high
   (e.g. Opus 4.8 shown at 15/75 instead of 5/25); the table is now synced to the server's pricing and guarded
   by a drift test.
