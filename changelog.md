@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `trafficValidate(spec)`, `pactImport(json)`, `pactExport(consumer, provider)`, and `pactVerify(json)`. The
   contract-test and traffic-validation reports parse into typed `ContractReport` / `ContractResult` objects so
   callers no longer hand-roll raw HTTP.
+- **Chaos experiments can assert an SLO and emit a verdict.** A chaos experiment may now carry an optional
+  `sloCriteria`; on termination MockServer attaches a terminal `experimentVerdict` (`PASS` / `FAIL` /
+  `INCONCLUSIVE`) evaluated strictly over the experiment's window — `PASS` only if every objective held
+  throughout, `FAIL` on any breach or auto-halt, `INCONCLUSIVE` below the minimum sample count. Turns
+  "inject faults" into "verify resilience held."
+- **SLO-breach auto-halt for chaos experiments.** An experiment carrying `sloCriteria` is halted immediately
+  (status `halted_by_slo_breach`, verdict `FAIL`) when an SLO objective is breached mid-run. No behaviour
+  change when `sloCriteria` is absent.
 - **Closest-match hint on unmatched requests** (`closestMatchHintEnabled`, default **on**). When a request
   matches no expectation, the `404` response now carries a compact, length-bounded
   `x-mockserver-closest-match-hint` header naming the closest expectation and the first field that differed —
