@@ -1068,8 +1068,11 @@ public class HttpActionHandler {
                                 );
                             }
                             returnBadGateway(responseWriter, request, "failed to connect to proxied socket due to exploratory HTTP proxy");
-                            // SSL/decoder faults are surfaced by this sslHandshakeException branch
-                            // (richer TLS diagnostics) rather than a generic isSslOrDecoderFault branch.
+                            // SSLException-family faults are surfaced by this sslHandshakeException
+                            // branch (richer TLS diagnostics). A plain DecoderException is NOT matched
+                            // here; it falls through to the !connectionClosedException ERROR branch
+                            // below, so it is still logged (never silently dropped) - no generic
+                            // isSslOrDecoderFault branch is needed.
                         } else if (sslHandshakeException(throwable)) {
                             mockServerLogger.logEvent(
                                 new LogEntry()
@@ -1250,8 +1253,10 @@ public class HttpActionHandler {
                     );
                 }
                 returnBadGateway(responseWriter, originalRequest, "failed to connect to proxied socket due to exploratory HTTP proxy");
-                // SSL/decoder faults are surfaced by this sslHandshakeException branch
-                // (richer TLS diagnostics) rather than a generic isSslOrDecoderFault branch.
+                // SSLException-family faults are surfaced by this sslHandshakeException branch
+                // (richer TLS diagnostics). A plain DecoderException is NOT matched here; it falls
+                // through to the !connectionClosedException ERROR branch below, so it is still logged
+                // (never silently dropped) - no generic isSslOrDecoderFault branch is needed.
             } else if (sslHandshakeException(throwable)) {
                 mockServerLogger.logEvent(
                     new LogEntry()

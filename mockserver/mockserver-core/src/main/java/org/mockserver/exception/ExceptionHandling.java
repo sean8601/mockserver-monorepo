@@ -185,6 +185,10 @@ public class ExceptionHandling {
      * benign connection closes.
      */
     public static boolean isSslOrDecoderFault(Throwable throwable) {
+        // mirrors the SSL/decoder predicate at connectionClosedException line 123. The
+        // NotSslRecordException check is NOT redundant: it extends SSLException (not
+        // DecoderException), and the first check inspects getCause() rather than the throwable
+        // itself, so a directly-thrown NotSslRecordException (null/non-SSL cause) is only caught here.
         return throwable.getCause() instanceof SSLException
             || throwable instanceof DecoderException
             || throwable instanceof NotSslRecordException;
