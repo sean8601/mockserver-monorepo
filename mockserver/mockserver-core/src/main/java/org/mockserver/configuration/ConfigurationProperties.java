@@ -2466,9 +2466,28 @@ public class ConfigurationProperties {
      * Empty uses the OTLP exporter defaults ({@code http://localhost:4318}). A value
      * that already ends in {@code /v1/metrics} or {@code /v1/traces} is accepted and
      * normalised to the base.
+     * <p>
+     * When the MockServer-specific property/env ({@code mockserver.otelEndpoint} /
+     * {@code MOCKSERVER_OTEL_ENDPOINT}) is unset, the OpenTelemetry-standard
+     * {@code OTEL_EXPORTER_OTLP_ENDPOINT} environment variable is honoured as a
+     * fallback so existing OTel deployments work without extra configuration. The
+     * MockServer-specific value always takes precedence. A blank/whitespace-only
+     * {@code MOCKSERVER_OTEL_ENDPOINT} env var is treated as unset (per the
+     * {@code isNotBlank} env-var semantics in {@link #readPropertyHierarchically}),
+     * so the standard-env fallback still applies.
      */
     public static String otelEndpoint() {
-        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_ENDPOINT, "MOCKSERVER_OTEL_ENDPOINT", "");
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_OTEL_ENDPOINT, "MOCKSERVER_OTEL_ENDPOINT", otelEndpointFallbackDefault(System.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")));
+    }
+
+    /**
+     * The default returned by {@link #otelEndpoint()} when neither the MockServer-specific
+     * property nor env var is set: the OpenTelemetry-standard {@code OTEL_EXPORTER_OTLP_ENDPOINT}
+     * value when present, otherwise empty. Package-private and parameterised so the fallback
+     * precedence can be unit-tested without mutating the process environment.
+     */
+    static String otelEndpointFallbackDefault(String standardEndpointEnvValue) {
+        return isNotBlank(standardEndpointEnvValue) ? standardEndpointEnvValue : "";
     }
 
     public static void otelEndpoint(String endpoint) {
