@@ -144,6 +144,58 @@ public class LoadScenarioSerializerTest {
         assertThat(parsed.getSteps().get(0).getName(), is(nullValue()));
     }
 
+    @Test
+    public void roundTripsThresholdsAndAbortConfig() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("with-thresholds")
+            .withProfile(LoadProfile.constant(5, 30_000L))
+            .withAbortOnFail(true)
+            .withAbortGraceMillis(2_000L)
+            .withThresholds(
+                new org.mockserver.load.LoadThreshold()
+                    .withMetric(org.mockserver.load.LoadThreshold.Metric.LATENCY_P95)
+                    .withComparator(org.mockserver.slo.SloObjective.Comparator.LESS_THAN)
+                    .withThreshold(250.0),
+                new org.mockserver.load.LoadThreshold()
+                    .withMetric(org.mockserver.load.LoadThreshold.Metric.ERROR_RATE)
+                    .withComparator(org.mockserver.slo.SloObjective.Comparator.LESS_THAN_OR_EQUAL)
+                    .withThreshold(0.01))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        LoadScenario parsed = serializer.deserialize(serializer.serialize(scenario));
+
+        assertThat(parsed.isAbortOnFail(), is(true));
+        assertThat(parsed.getAbortGraceMillis(), is(2_000L));
+        assertThat(parsed.getThresholds(), hasSize(2));
+        org.mockserver.load.LoadThreshold latency = parsed.getThresholds().get(0);
+        assertThat(latency.getMetric(), is(org.mockserver.load.LoadThreshold.Metric.LATENCY_P95));
+        assertThat(latency.getComparator(), is(org.mockserver.slo.SloObjective.Comparator.LESS_THAN));
+        assertThat(latency.getThreshold(), is(250.0));
+        org.mockserver.load.LoadThreshold errorRate = parsed.getThresholds().get(1);
+        assertThat(errorRate.getMetric(), is(org.mockserver.load.LoadThreshold.Metric.ERROR_RATE));
+        assertThat(errorRate.getComparator(), is(org.mockserver.slo.SloObjective.Comparator.LESS_THAN_OR_EQUAL));
+        assertThat(errorRate.getThreshold(), is(0.01));
+    }
+
+    @Test
+    public void omitsThresholdsAndAbortDefaultsWhenAbsent() {
+        // backward compatible: a scenario with no thresholds and default abort config omits those keys.
+        LoadScenario scenario = new LoadScenario()
+            .withName("plain")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String json = serializer.serialize(scenario);
+        assertThat(json, not(containsString("\"thresholds\"")));
+        assertThat(json, not(containsString("\"abortOnFail\"")));
+        assertThat(json, not(containsString("\"abortGraceMillis\"")));
+
+        LoadScenario parsed = serializer.deserialize(json);
+        assertThat(parsed.getThresholds(), is(nullValue()));
+        assertThat(parsed.isAbortOnFail(), is(false));
+        assertThat(parsed.getAbortGraceMillis(), is(0L));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankBody() {
         serializer.deserialize("  ");

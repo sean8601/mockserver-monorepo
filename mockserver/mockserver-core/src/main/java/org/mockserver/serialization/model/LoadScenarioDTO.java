@@ -2,6 +2,7 @@ package org.mockserver.serialization.model;
 
 import org.mockserver.load.LoadScenario;
 import org.mockserver.load.LoadStep;
+import org.mockserver.load.LoadThreshold;
 import org.mockserver.model.HttpTemplate;
 import org.mockserver.model.ObjectWithReflectiveEqualsHashCodeToString;
 
@@ -22,6 +23,9 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private Integer maxRequests;
     private Long startDelayMillis;
     private Map<String, String> labels;
+    private List<LoadThresholdDTO> thresholds;
+    private Boolean abortOnFail;
+    private Long abortGraceMillis;
 
     public LoadScenarioDTO(LoadScenario scenario) {
         if (scenario != null) {
@@ -42,6 +46,18 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             if (scenario.getLabels() != null && !scenario.getLabels().isEmpty()) {
                 labels = new LinkedHashMap<>(scenario.getLabels());
             }
+            if (scenario.getThresholds() != null && !scenario.getThresholds().isEmpty()) {
+                thresholds = new ArrayList<>();
+                for (LoadThreshold threshold : scenario.getThresholds()) {
+                    thresholds.add(new LoadThresholdDTO(threshold));
+                }
+            }
+            if (scenario.isAbortOnFail()) {
+                abortOnFail = true;
+            }
+            if (scenario.getAbortGraceMillis() > 0) {
+                abortGraceMillis = scenario.getAbortGraceMillis();
+            }
         }
     }
 
@@ -61,9 +77,18 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withProfile(profile != null ? profile.buildObject() : null)
             .withTemplateType(templateType != null ? templateType : HttpTemplate.TemplateType.VELOCITY)
             .withMaxRequests(maxRequests)
-            .withStartDelayMillis(startDelayMillis != null ? startDelayMillis : 0L);
+            .withStartDelayMillis(startDelayMillis != null ? startDelayMillis : 0L)
+            .withAbortOnFail(abortOnFail != null && abortOnFail)
+            .withAbortGraceMillis(abortGraceMillis != null ? abortGraceMillis : 0L);
         if (labels != null && !labels.isEmpty()) {
             scenario.withLabels(labels);
+        }
+        if (thresholds != null && !thresholds.isEmpty()) {
+            List<LoadThreshold> builtThresholds = new ArrayList<>();
+            for (LoadThresholdDTO threshold : thresholds) {
+                builtThresholds.add(threshold.buildObject());
+            }
+            scenario.withThresholds(builtThresholds);
         }
         return scenario;
     }
@@ -128,6 +153,33 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public LoadScenarioDTO setLabels(Map<String, String> labels) {
         this.labels = labels;
+        return this;
+    }
+
+    public List<LoadThresholdDTO> getThresholds() {
+        return thresholds;
+    }
+
+    public LoadScenarioDTO setThresholds(List<LoadThresholdDTO> thresholds) {
+        this.thresholds = thresholds;
+        return this;
+    }
+
+    public Boolean getAbortOnFail() {
+        return abortOnFail;
+    }
+
+    public LoadScenarioDTO setAbortOnFail(Boolean abortOnFail) {
+        this.abortOnFail = abortOnFail;
+        return this;
+    }
+
+    public Long getAbortGraceMillis() {
+        return abortGraceMillis;
+    }
+
+    public LoadScenarioDTO setAbortGraceMillis(Long abortGraceMillis) {
+        this.abortGraceMillis = abortGraceMillis;
         return this;
     }
 }

@@ -4614,6 +4614,26 @@ components:
           additionalProperties:
             type: string
           description: "optional step-level custom annotation labels, merged over the scenario labels (step keys win); exported as OpenTelemetry attributes on every load measurement and as allowlisted Prometheus labels"
+    LoadThreshold:
+      description: "an in-run pass/fail threshold for a load scenario: a per-run metric compared against a value. All thresholds must hold for the run verdict to be PASS (logical AND); any breach makes the verdict FAIL. Evaluated from this run's own latency histogram and counters, not the global SLO sample store."
+      type: object
+      additionalProperties: false
+      required:
+        - metric
+        - comparator
+        - threshold
+      properties:
+        metric:
+          type: string
+          enum: [LATENCY_P50, LATENCY_P95, LATENCY_P99, LATENCY_P999, ERROR_RATE, THROUGHPUT_RPS]
+          description: "the per-run metric to evaluate: latency percentiles in milliseconds, ERROR_RATE as a 0.0-1.0 fraction, THROUGHPUT_RPS as requests/second over the run's elapsed time"
+        comparator:
+          type: string
+          enum: [LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL]
+          description: "how the observed per-run value is compared to the threshold"
+        threshold:
+          type: number
+          description: "the threshold value (milliseconds for latency metrics, a 0.0-1.0 fraction for ERROR_RATE, requests/second for THROUGHPUT_RPS)"
     LoadScenario:
       description: "an API-driven load scenario: ordered templated steps driven at a target concurrency. The name is the unique registry key — PUT loads (registers) it; PUT /loadScenario/start triggers it to run."
       type: object
@@ -4644,6 +4664,20 @@ components:
           additionalProperties:
             type: string
           description: "optional scenario-level custom annotation labels; exported as OpenTelemetry attributes on every load measurement and (for keys named in the loadGenerationMetricLabels allowlist) as extra Prometheus labels"
+        thresholds:
+          type: array
+          description: "optional in-run pass/fail thresholds; the run carries a PASS verdict iff all hold, FAIL otherwise. Empty/omitted means no verdict is computed."
+          items:
+            $ref: "#/components/schemas/LoadThreshold"
+        abortOnFail:
+          type: boolean
+          default: false
+          description: "when true, a FAIL verdict aborts the run early (terminal STOPPED state, abortedByThreshold set); default false (the run always finishes its stages and carries a final verdict)"
+        abortGraceMillis:
+          type: integer
+          format: int64
+          default: 0
+          description: "suppress abortOnFail for the first N milliseconds of the run so noisy startup samples cannot trigger a premature abort (thresholds are still evaluated and a verdict still reported during the grace window — only the abort action is deferred)"
         profile:
           $ref: "#/components/schemas/LoadProfile"
         steps:
@@ -4702,6 +4736,33 @@ components:
           type: integer
           format: int64
           description: "iterations that were due but never dispatched because a safety cap was hit (sum of rate_limit and inflight_cap throttles for this run)"
+        verdict:
+          type: string
+          enum: [PASS, FAIL]
+          description: "in-run threshold verdict: PASS (all thresholds satisfied) or FAIL (any breached); absent when the scenario has no thresholds or none has been evaluated yet. A terminal FAIL should be mapped by clients to a non-zero CI exit code."
+        abortedByThreshold:
+          type: boolean
+          default: false
+          description: "true when this run was terminated early by an abortOnFail threshold breach; absent means false"
+        thresholdResults:
+          type: array
+          description: "per-threshold results behind the verdict (present when thresholds were evaluated)"
+          items:
+            type: object
+            properties:
+              metric:
+                type: string
+                enum: [LATENCY_P50, LATENCY_P95, LATENCY_P99, LATENCY_P999, ERROR_RATE, THROUGHPUT_RPS]
+              comparator:
+                type: string
+                enum: [LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL]
+              threshold:
+                type: number
+              observed:
+                type: number
+                description: "the observed per-run value at evaluation time (latency ms, error-rate fraction, or requests/second)"
+              satisfied:
+                type: boolean
         runId:
           type: string
         startedAt:

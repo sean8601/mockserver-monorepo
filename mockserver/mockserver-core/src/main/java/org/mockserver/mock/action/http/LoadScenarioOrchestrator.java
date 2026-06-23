@@ -8,6 +8,7 @@ import org.mockserver.load.LoadStage;
 import org.mockserver.load.LoadScenarioState;
 import org.mockserver.load.LoadStageType;
 import org.mockserver.load.LoadStep;
+import org.mockserver.load.LoadThreshold;
 import org.mockserver.metrics.MetricLabels;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.Delay;
@@ -460,6 +461,31 @@ public class LoadScenarioOrchestrator {
                 run.targetVUs.set(0);
                 break;
         }
+
+        // Evaluate in-run thresholds from this run's per-run data and, when abortOnFail is set and the
+        // grace window has elapsed, abort the run early on a FAIL verdict (terminal STOPPED state via
+        // the existing stop path, marked aborted-by-threshold).
+        Boolean verdict = run.evaluateThresholds(now);
+        if (Boolean.FALSE.equals(verdict)
+            && run.scenario.isAbortOnFail()
+            && elapsed >= run.scenario.getAbortGraceMillis()) {
+            abortOnThresholdFail(run);
+        }
+    }
+
+    /**
+     * Abort a run because an {@code abortOnFail} threshold was breached after the grace window: mark it
+     * aborted-by-threshold and terminate it via the existing stop path (terminal STOPPED state). The
+     * FAIL verdict already recorded by {@link RunningScenario#evaluateThresholds(long)} is carried into
+     * the retained terminal status.
+     */
+    private void abortOnThresholdFail(RunningScenario run) {
+        run.abortedByThreshold = true;
+        if (runs.remove(run.scenario.getName(), run)) {
+            LOG.info("load scenario '{}' aborted by threshold breach ({} requests sent)",
+                run.scenario.getName(), run.requestsSent.get());
+            terminate(run, LoadScenarioState.STOPPED);
+        }
     }
 
     /**
@@ -546,6 +572,9 @@ public class LoadScenarioOrchestrator {
         // Atomically de-register this run iff it is still the current run for its name (a concurrent
         // re-trigger may have already replaced it). Only the winner records the terminal status.
         if (runs.remove(run.scenario.getName(), run)) {
+            // Final threshold evaluation so a normally-completed run carries PASS (all satisfied) or
+            // FAIL (any breached); a run with no thresholds keeps its null verdict.
+            run.evaluateThresholds(clock.getAsLong());
             terminate(run, LoadScenarioState.COMPLETED);
         }
     }
@@ -1026,6 +1055,18 @@ public class LoadScenarioOrchestrator {
         final Semaphore inFlight;
         final int maxRps;
 
+        /**
+         * Latest threshold verdict for this run: {@code Boolean.TRUE} = PASS (all thresholds hold),
+         * {@code Boolean.FALSE} = FAIL (any breached), {@code null} = not yet evaluated (no thresholds,
+         * or no request has been dispatched). Updated on the control tick (single scheduler thread) and read
+         * by {@link #snapshot}; volatile for cross-thread visibility.
+         */
+        volatile Boolean verdict;
+        /** Per-threshold results from the latest evaluation (empty until first evaluated). */
+        volatile List<ThresholdResult> thresholdResults = Collections.emptyList();
+        /** Set once when an {@code abortOnFail} FAIL terminates the run, surfaced in the status DTO. */
+        volatile boolean abortedByThreshold;
+
         // Arrival-rate (RATE stage) deficit accounting; only touched on the single scheduler thread.
         double rateDeficit;
         long lastRateTickMillis;
@@ -1071,6 +1112,81 @@ public class LoadScenarioOrchestrator {
         boolean maxRequestsReached() {
             Integer max = scenario.getMaxRequests();
             return max != null && max > 0 && requestsSent.get() >= max;
+        }
+
+        /**
+         * Evaluate this run's in-run thresholds from PER-RUN data (this run's HDR histogram and
+         * counters — never the global SLO sample store), recording the verdict and per-threshold
+         * results on the run. A null/empty threshold list leaves the verdict null (no change to
+         * existing behaviour). The verdict is also left null until at least one request has been dispatched,
+         * so a run is never failed on zero samples. Otherwise the verdict is PASS iff every threshold
+         * is satisfied, FAIL if any is breached.
+         *
+         * @param now the orchestrator-clock time to measure elapsed throughput against
+         * @return the freshly-computed verdict ({@code true}=PASS, {@code false}=FAIL, {@code null}=not
+         * evaluated)
+         */
+        Boolean evaluateThresholds(long now) {
+            List<LoadThreshold> thresholds = scenario.getThresholds();
+            if (thresholds == null || thresholds.isEmpty()) {
+                verdict = null;
+                thresholdResults = Collections.emptyList();
+                return null;
+            }
+            long sent = requestsSent.get();
+            if (sent <= 0) {
+                // No completed request yet: do not evaluate so a run is never failed on zero samples.
+                return verdict;
+            }
+            Histogram latencySnapshot = latencyHistogram.copy();
+            boolean haveLatency = latencySnapshot.getTotalCount() > 0;
+            // Error rate is a fraction in [0,1]. requestsSent is incremented at dispatch and failed at
+            // completion, so a lock-free read can momentarily see more completed failures than the
+            // earlier-read dispatch count; clamp so the observed rate never exceeds 1.0.
+            double errorRate = Math.min(1.0, failed.get() / (double) Math.max(1L, sent));
+            long elapsedMillis = Math.max(0L, now - startedAt);
+            double throughputRps = sent / Math.max(0.001, elapsedMillis / 1000.0);
+
+            List<ThresholdResult> results = new ArrayList<>(thresholds.size());
+            boolean allSatisfied = true;
+            for (LoadThreshold threshold : thresholds) {
+                LoadThreshold.Metric metric = threshold.getMetric();
+                double observed;
+                switch (metric) {
+                    case LATENCY_P50:
+                        observed = haveLatency ? latencySnapshot.getValueAtPercentile(50.0) : 0.0;
+                        break;
+                    case LATENCY_P95:
+                        observed = haveLatency ? latencySnapshot.getValueAtPercentile(95.0) : 0.0;
+                        break;
+                    case LATENCY_P99:
+                        observed = haveLatency ? latencySnapshot.getValueAtPercentile(99.0) : 0.0;
+                        break;
+                    case LATENCY_P999:
+                        observed = haveLatency ? latencySnapshot.getValueAtPercentile(99.9) : 0.0;
+                        break;
+                    case ERROR_RATE:
+                        observed = errorRate;
+                        break;
+                    case THROUGHPUT_RPS:
+                        observed = throughputRps;
+                        break;
+                    default:
+                        observed = 0.0;
+                        break;
+                }
+                boolean satisfied = threshold.satisfiedBy(observed);
+                allSatisfied = allSatisfied && satisfied;
+                results.add(new ThresholdResult(
+                    metric != null ? metric.name() : null,
+                    threshold.getComparator() != null ? threshold.getComparator().name() : null,
+                    threshold.getThreshold(),
+                    observed,
+                    satisfied));
+            }
+            thresholdResults = Collections.unmodifiableList(results);
+            verdict = allSatisfied;
+            return verdict;
         }
 
         synchronized boolean tryAcquireRpsToken(long now) {
@@ -1206,8 +1322,36 @@ public class LoadScenarioOrchestrator {
                 running ? idx : -1,
                 running && stageType != null ? stageType.name() : null,
                 currentTarget,
-                scenario.getStartDelayMillis()
+                scenario.getStartDelayMillis(),
+                verdict == null ? null : (verdict ? "PASS" : "FAIL"),
+                abortedByThreshold,
+                thresholdResults
             );
+        }
+    }
+
+    /**
+     * One per-threshold evaluation result, surfaced in the status DTO so a client/dashboard can show
+     * which thresholds passed or breached and the observed value behind the verdict.
+     */
+    public static final class ThresholdResult {
+        /** The {@link LoadThreshold.Metric} name (e.g. {@code LATENCY_P95}). */
+        public final String metric;
+        /** The {@link org.mockserver.slo.SloObjective.Comparator} name (e.g. {@code LESS_THAN}). */
+        public final String comparator;
+        /** The configured threshold value. */
+        public final double threshold;
+        /** The observed per-run value at evaluation time (latency ms, error-rate fraction, or rps). */
+        public final double observed;
+        /** True when {@code observed} satisfied the comparator against {@code threshold}. */
+        public final boolean satisfied;
+
+        public ThresholdResult(String metric, String comparator, double threshold, double observed, boolean satisfied) {
+            this.metric = metric;
+            this.comparator = comparator;
+            this.threshold = threshold;
+            this.observed = observed;
+            this.satisfied = satisfied;
         }
     }
 
@@ -1259,6 +1403,17 @@ public class LoadScenarioOrchestrator {
         public final double currentTarget;
         /** The configured start delay in milliseconds (0 when none). */
         public final long startDelayMillis;
+        /**
+         * In-run threshold verdict: {@code "PASS"} (all thresholds satisfied), {@code "FAIL"} (any
+         * breached), or {@code null} when the scenario has no thresholds or none has been evaluated yet
+         * (no request has been dispatched). A terminal {@code "FAIL"} should be mapped by clients to a
+         * non-zero CI exit code.
+         */
+        public final String verdict;
+        /** True when this run was terminated early by an {@code abortOnFail} threshold breach. */
+        public final boolean abortedByThreshold;
+        /** Per-threshold results behind the {@link #verdict} (empty when no thresholds / not evaluated). */
+        public final List<ThresholdResult> thresholdResults;
 
         public LoadScenarioStatus(String name, LoadScenarioState state, long elapsedMillis, int currentVus,
                                   long requestsSent, long succeeded, long failed,
@@ -1267,7 +1422,9 @@ public class LoadScenarioOrchestrator {
                                   String runId, long startedAtEpochMillis, Long endedAtEpochMillis,
                                   Map<String, String> labels, LoadScenario scenario,
                                   int stageIndex, String stageType, double currentTarget,
-                                  long startDelayMillis) {
+                                  long startDelayMillis,
+                                  String verdict, boolean abortedByThreshold,
+                                  List<ThresholdResult> thresholdResults) {
             this.name = name;
             this.state = state;
             this.elapsedMillis = elapsedMillis;
@@ -1289,6 +1446,9 @@ public class LoadScenarioOrchestrator {
             this.stageType = stageType;
             this.currentTarget = currentTarget;
             this.startDelayMillis = startDelayMillis;
+            this.verdict = verdict;
+            this.abortedByThreshold = abortedByThreshold;
+            this.thresholdResults = thresholdResults != null ? thresholdResults : Collections.emptyList();
         }
     }
 }

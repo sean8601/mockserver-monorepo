@@ -863,4 +863,231 @@ public class LoadScenarioOrchestratorTest {
         assertThat("an unconstrained run drops nothing",
             orchestrator.statusFor("dropped-none").droppedIterations, is(0L));
     }
+
+    // -- In-run thresholds (pass/fail verdicts + abort-on-fail) --
+
+    /** A synchronous fake sender that records every request and returns a fixed status code. */
+    private static final class StatusSender implements Function<HttpRequest, CompletableFuture<HttpResponse>> {
+        final ConcurrentLinkedQueue<HttpRequest> sent = new ConcurrentLinkedQueue<>();
+        private final int statusCode;
+
+        StatusSender(int statusCode) {
+            this.statusCode = statusCode;
+        }
+
+        @Override
+        public CompletableFuture<HttpResponse> apply(HttpRequest httpRequest) {
+            sent.add(httpRequest);
+            return CompletableFuture.completedFuture(response().withStatusCode(statusCode));
+        }
+    }
+
+    /** Poll until the named run reports a non-null verdict (or timeout). */
+    private boolean awaitVerdict(String name, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor(name);
+            if (status != null && status.verdict != null) {
+                return true;
+            }
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor(name);
+        return status != null && status.verdict != null;
+    }
+
+    @Test
+    public void thresholdSatisfiedYieldsPassVerdict() throws Exception {
+        // A fast instant sender keeps p95 latency far below a generous bound, so the verdict is PASS.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("threshold-pass")
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withThresholds(new org.mockserver.load.LoadThreshold()
+                .withMetric(org.mockserver.load.LoadThreshold.Metric.LATENCY_P95)
+                .withComparator(org.mockserver.slo.SloObjective.Comparator.LESS_THAN)
+                .withThreshold(10_000.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat("traffic flows", awaitAtLeast(sender, 10, 5_000L), is(true));
+        assertThat("a verdict is computed once requests complete",
+            awaitVerdict("threshold-pass", 5_000L), is(true));
+
+        LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor("threshold-pass");
+        assertThat(status.verdict, is("PASS"));
+        assertThat(status.abortedByThreshold, is(false));
+        assertThat(status.thresholdResults, hasSize(1));
+        assertThat(status.thresholdResults.get(0).metric, is("LATENCY_P95"));
+        assertThat(status.thresholdResults.get(0).comparator, is("LESS_THAN"));
+        assertThat(status.thresholdResults.get(0).threshold, is(10_000.0));
+        assertThat(status.thresholdResults.get(0).satisfied, is(true));
+        orchestrator.stop("threshold-pass");
+    }
+
+    @Test
+    public void thresholdBreachedYieldsFailVerdict() throws Exception {
+        // Every response is a 500, so the error rate is 1.0, breaching an error-rate < 0.1 threshold.
+        StatusSender sender = new StatusSender(500);
+        LoadScenario scenario = new LoadScenario()
+            .withName("threshold-fail")
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withThresholds(new org.mockserver.load.LoadThreshold()
+                .withMetric(org.mockserver.load.LoadThreshold.Metric.ERROR_RATE)
+                .withComparator(org.mockserver.slo.SloObjective.Comparator.LESS_THAN)
+                .withThreshold(0.1))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // Wait for failures to register (failed count rises on completion).
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (orchestrator.statusFor("threshold-fail") != null
+            && orchestrator.statusFor("threshold-fail").failed < 5
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        assertThat(awaitVerdict("threshold-fail", 5_000L), is(true));
+
+        LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor("threshold-fail");
+        assertThat(status.verdict, is("FAIL"));
+        assertThat(status.thresholdResults.get(0).metric, is("ERROR_RATE"));
+        assertThat(status.thresholdResults.get(0).observed, closeTo(1.0, 0.0001));
+        assertThat(status.thresholdResults.get(0).satisfied, is(false));
+        // abortOnFail was not set: the run keeps running despite the FAIL verdict.
+        assertThat(status.state, is(org.mockserver.load.LoadScenarioState.RUNNING));
+        orchestrator.stop("threshold-fail");
+    }
+
+    @Test
+    public void abortOnFailTerminatesRunAfterGraceWindow() throws Exception {
+        // A 500-only sender breaches an error-rate threshold. With abortOnFail and a grace window, the
+        // run must NOT abort before the grace elapses, then abort (STOPPED, abortedByThreshold) after.
+        StatusSender sender = new StatusSender(500);
+        LoadScenario scenario = new LoadScenario()
+            .withName("abort-on-fail")
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withAbortOnFail(true)
+            .withAbortGraceMillis(1_000L)
+            .withThresholds(new org.mockserver.load.LoadThreshold()
+                .withMetric(org.mockserver.load.LoadThreshold.Metric.ERROR_RATE)
+                .withComparator(org.mockserver.slo.SloObjective.Comparator.LESS_THAN)
+                .withThreshold(0.1))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        // Drive ticks at t < grace (clock starts at 10_000): a FAIL verdict is computed but no abort yet.
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (orchestrator.statusFor("abort-on-fail") != null
+            && (orchestrator.statusFor("abort-on-fail").verdict == null)
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        LoadScenarioOrchestrator.LoadScenarioStatus midRun = orchestrator.statusFor("abort-on-fail");
+        assertThat("verdict is FAIL before the grace window", midRun.verdict, is("FAIL"));
+        assertThat("run is NOT aborted before the grace window elapses",
+            midRun.state, is(org.mockserver.load.LoadScenarioState.RUNNING));
+        assertThat(midRun.abortedByThreshold, is(false));
+
+        // Advance the clock past the grace window and tick: now the FAIL verdict aborts the run.
+        clock.set(10_000L + 1_500L);
+        orchestrator.tickNow();
+        long abortDeadline = System.currentTimeMillis() + 5_000L;
+        while (orchestrator.statusFor("abort-on-fail") != null
+            && orchestrator.statusFor("abort-on-fail").state == org.mockserver.load.LoadScenarioState.RUNNING
+            && System.currentTimeMillis() < abortDeadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        LoadScenarioOrchestrator.LoadScenarioStatus terminal = orchestrator.statusFor("abort-on-fail");
+        assertThat(terminal.state, is(org.mockserver.load.LoadScenarioState.STOPPED));
+        assertThat(terminal.abortedByThreshold, is(true));
+        assertThat("the terminal status carries the FAIL verdict", terminal.verdict, is("FAIL"));
+    }
+
+    @Test
+    public void throughputThresholdEvaluatedFromPerRunRate() throws Exception {
+        // THROUGHPUT_RPS > 1000 is unreachable with a tiny RPS cap, so the verdict is FAIL on rate.
+        ConfigurationProperties.loadGenerationMaxInFlightRequests(1000);
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("throughput-threshold")
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withThresholds(new org.mockserver.load.LoadThreshold()
+                .withMetric(org.mockserver.load.LoadThreshold.Metric.THROUGHPUT_RPS)
+                .withComparator(org.mockserver.slo.SloObjective.Comparator.GREATER_THAN_OR_EQUAL)
+                .withThreshold(1.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 10, 5_000L), is(true));
+        // Advance the clock so a meaningful elapsed window exists, then evaluate.
+        clock.set(10_000L + 1_000L);
+        orchestrator.tickNow();
+        assertThat(awaitVerdict("throughput-threshold", 5_000L), is(true));
+
+        LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor("throughput-threshold");
+        assertThat(status.thresholdResults.get(0).metric, is("THROUGHPUT_RPS"));
+        // observed rps = requestsSent / elapsedSeconds; with >=10 requests over ~1s it clears >= 1.
+        assertThat(status.thresholdResults.get(0).observed, greaterThanOrEqualTo(1.0));
+        assertThat(status.verdict, is("PASS"));
+        orchestrator.stop("throughput-threshold");
+    }
+
+    @Test
+    public void noThresholdsLeavesVerdictNull() throws Exception {
+        // A scenario without thresholds carries a null verdict and empty thresholdResults (unchanged
+        // behaviour); the run completes normally.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("no-thresholds")
+            .withMaxRequests(15)
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 15, 5_000L), is(true));
+        long deadline = System.currentTimeMillis() + 2_000L;
+        while (orchestrator.getStatus() != null && org.mockserver.load.LoadScenarioState.RUNNING == orchestrator.getStatus().state
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor("no-thresholds");
+        assertThat(status.state, is(org.mockserver.load.LoadScenarioState.COMPLETED));
+        assertThat("no thresholds -> null verdict", status.verdict, is(nullValue()));
+        assertThat(status.abortedByThreshold, is(false));
+        assertThat(status.thresholdResults, is(empty()));
+    }
+
+    @Test
+    public void completedRunCarriesFinalVerdict() throws Exception {
+        // A bounded run with a satisfiable threshold completes and carries a final PASS verdict.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("final-verdict")
+            .withMaxRequests(15)
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withThresholds(new org.mockserver.load.LoadThreshold()
+                .withMetric(org.mockserver.load.LoadThreshold.Metric.LATENCY_P99)
+                .withComparator(org.mockserver.slo.SloObjective.Comparator.LESS_THAN_OR_EQUAL)
+                .withThreshold(60_000.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 15, 5_000L), is(true));
+        long deadline = System.currentTimeMillis() + 2_000L;
+        while (orchestrator.getStatus() != null && org.mockserver.load.LoadScenarioState.RUNNING == orchestrator.getStatus().state
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+        LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.statusFor("final-verdict");
+        assertThat(status.state, is(org.mockserver.load.LoadScenarioState.COMPLETED));
+        assertThat("a completed run carries a final verdict", status.verdict, is("PASS"));
+        assertThat(status.thresholdResults, hasSize(1));
+    }
 }

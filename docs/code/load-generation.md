@@ -297,6 +297,38 @@ traffic; the SLO feature owns *judging* it.
 > latency samples under `Scope.FORWARD` keyed by host. Scope or time-bound the verification window to exclude
 > synthetic load if you need to assert only on real traffic.
 
+## In-run thresholds (pass/fail verdicts)
+
+A scenario can carry **in-run thresholds** that are evaluated *while the run executes* and yield a
+PASS/FAIL verdict — independent of, and complementary to, post-run `verifySLO`. Use them to fail a CI
+load test the moment a metric breaches its budget.
+
+- **Model** — `LoadScenario.thresholds` is a list of `LoadThreshold`, each a `{metric, comparator,
+  threshold}` triple. `metric` is one of `LATENCY_P50/P95/P99/P999` (milliseconds), `ERROR_RATE` (a
+  0–1 fraction) or `THROUGHPUT_RPS` (requests/second). `comparator` reuses the SLO feature's
+  `SloObjective.Comparator` (`LESS_THAN`, `LESS_THAN_OR_EQUAL`, `GREATER_THAN`,
+  `GREATER_THAN_OR_EQUAL`). The verdict is **PASS iff every threshold holds, FAIL if any breaches**.
+- **Per-run evaluation, not the global SLO store** — thresholds are computed on each control tick from
+  *this run's own* data: latency percentiles from a `copy()` of the run's HDR `latencyHistogram`,
+  `ERROR_RATE = failed / max(1, requestsSent)`, and `THROUGHPUT_RPS = requestsSent /
+  max(0.001s, elapsed/1000)`. This deliberately does **not** read `SloSampleStore`, which aggregates
+  *all* forward traffic rather than this one run. The verdict stays `null` until at least one request
+  has completed (a run is never failed on zero samples), and is always `null` for a scenario with no
+  thresholds (unchanged behaviour).
+- **`abortOnFail` + `abortGraceMillis`** — when `abortOnFail` is true, a FAIL verdict stops the run
+  early (terminal `STOPPED` state, `abortedByThreshold` set) via the normal stop path, carrying the
+  final FAIL verdict and breach detail. `abortGraceMillis` suppresses the *abort action* for the first
+  N ms of the run so noisy startup samples cannot trigger a premature abort (analogous to k6's
+  `delayAbortEval`); thresholds are still evaluated and a verdict still reported during the grace
+  window. `abortOnFail` defaults to false (the run always finishes its stages); a normally-completed
+  run does a final evaluation so it carries PASS/FAIL.
+- **Status DTO** — `LoadScenarioStatus` (the `GET /mockserver/loadScenario` list entry) exposes
+  `verdict` (`"PASS"`/`"FAIL"`/absent), `abortedByThreshold`, and `thresholdResults` (each `{metric,
+  comparator, threshold, observed, satisfied}`).
+- **CI mapping** — clients should map a terminal `verdict == FAIL` to a non-zero process exit code so a
+  breached load test fails the pipeline. (The client convenience methods that do this are a later wave;
+  for now poll the status and inspect `verdict` directly.)
+
 ## Metrics & Observability
 
 Every completed load-scenario dispatch is recorded into the `mock_server_load_*` Prometheus metric family **and** mirrored over OTLP by `OtelMetricsExporter`. This gives a real-time view of the injector alongside your system-under-test in Grafana/Datadog/Tempo without any external load tool. The family is registered whenever `metricsEnabled=true` (the `loadGenerationEnabled` flag only gates the PUT endpoint, not metric registration).
@@ -429,7 +461,6 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
 ## Deferred
 
 - Distributed / multi-node load.
-- In-run thresholds (pass/fail decided during the run, as opposed to post-run `verifySLO`).
 - Seeding scenario *definitions* from recorded traffic or an OpenAPI spec (preloading from a JSON file is supported via `loadScenarioInitializationJsonPath`).
 - Programmatic cross-step capture (v1 uses template-side `$scenario.set/get`).
 - Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first).

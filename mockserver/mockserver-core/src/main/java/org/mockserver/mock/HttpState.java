@@ -3772,6 +3772,27 @@ public class HttpState {
             node.put("p99Millis", status.p99Millis);
             node.put("p999Millis", status.p999Millis);
             node.put("droppedIterations", status.droppedIterations);
+            if (status.verdict != null) {
+                node.put("verdict", status.verdict);
+            }
+            if (status.abortedByThreshold) {
+                node.put("abortedByThreshold", true);
+            }
+            if (status.thresholdResults != null && !status.thresholdResults.isEmpty()) {
+                com.fasterxml.jackson.databind.node.ArrayNode thresholdResultsNode = node.putArray("thresholdResults");
+                for (org.mockserver.mock.action.http.LoadScenarioOrchestrator.ThresholdResult result : status.thresholdResults) {
+                    com.fasterxml.jackson.databind.node.ObjectNode resultNode = thresholdResultsNode.addObject();
+                    if (result.metric != null) {
+                        resultNode.put("metric", result.metric);
+                    }
+                    if (result.comparator != null) {
+                        resultNode.put("comparator", result.comparator);
+                    }
+                    resultNode.put("threshold", result.threshold);
+                    resultNode.put("observed", result.observed);
+                    resultNode.put("satisfied", result.satisfied);
+                }
+            }
             node.put("runId", status.runId);
             node.put("startedAt", status.startedAtEpochMillis);
             if (status.endedAtEpochMillis != null) {

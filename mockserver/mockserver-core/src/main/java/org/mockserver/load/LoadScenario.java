@@ -47,6 +47,26 @@ public class LoadScenario extends ObjectWithJsonToString {
      * are merged on top of these for a given step, with step keys winning on conflict.
      */
     private Map<String, String> labels;
+    /**
+     * In-run pass/fail thresholds (nullable/empty = none). Evaluated on every control tick from this
+     * run's per-run latency histogram and counters; the run carries a {@code PASS} verdict iff ALL
+     * thresholds hold, {@code FAIL} otherwise (and a null verdict until the first request completes,
+     * or always-null when there are no thresholds). See {@link LoadThreshold}.
+     */
+    private List<LoadThreshold> thresholds;
+    /**
+     * When true, a {@code FAIL} verdict aborts the run early — the run transitions to the terminal
+     * {@code STOPPED} state and is marked aborted-by-threshold. Default {@code false} (the run always
+     * finishes its stages and carries a final verdict). See {@link #abortGraceMillis}.
+     */
+    private boolean abortOnFail;
+    /**
+     * Suppress {@code abortOnFail} for the first {@code N} milliseconds of the run, so noisy
+     * startup samples cannot trigger a premature abort (analogous to k6's {@code delayAbortEval}).
+     * Thresholds are still evaluated and a verdict still reported during the grace window — only the
+     * abort action is deferred until {@code elapsedMillis >= abortGraceMillis}. Default {@code 0}.
+     */
+    private long abortGraceMillis;
 
     public static LoadScenario loadScenario() {
         return new LoadScenario();
@@ -136,6 +156,50 @@ public class LoadScenario extends ObjectWithJsonToString {
             this.labels = new LinkedHashMap<>();
         }
         this.labels.put(name, value);
+        return this;
+    }
+
+    /**
+     * In-run pass/fail thresholds (may be null/empty). See {@link #thresholds}.
+     */
+    public List<LoadThreshold> getThresholds() {
+        return thresholds;
+    }
+
+    public LoadScenario withThresholds(LoadThreshold... thresholds) {
+        if (this.thresholds == null) {
+            this.thresholds = new ArrayList<>();
+        }
+        Collections.addAll(this.thresholds, thresholds);
+        return this;
+    }
+
+    public LoadScenario withThresholds(List<LoadThreshold> thresholds) {
+        this.thresholds = thresholds;
+        return this;
+    }
+
+    /**
+     * Whether a {@code FAIL} verdict aborts the run early (default {@code false}). See {@link #abortOnFail}.
+     */
+    public boolean isAbortOnFail() {
+        return abortOnFail;
+    }
+
+    public LoadScenario withAbortOnFail(boolean abortOnFail) {
+        this.abortOnFail = abortOnFail;
+        return this;
+    }
+
+    /**
+     * The abort grace window in milliseconds (default {@code 0}). See {@link #abortGraceMillis}.
+     */
+    public long getAbortGraceMillis() {
+        return abortGraceMillis;
+    }
+
+    public LoadScenario withAbortGraceMillis(long abortGraceMillis) {
+        this.abortGraceMillis = abortGraceMillis;
         return this;
     }
 }
