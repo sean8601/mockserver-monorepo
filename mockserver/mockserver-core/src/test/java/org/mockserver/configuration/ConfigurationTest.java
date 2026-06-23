@@ -1721,6 +1721,32 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetClosestMatchHintEnabled() {
+        boolean original = ConfigurationProperties.closestMatchHintEnabled();
+        try {
+            // then - default value (true)
+            assertThat(configuration.closestMatchHintEnabled(), equalTo(true));
+
+            // when - system property setter
+            ConfigurationProperties.closestMatchHintEnabled(false);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.closestMatchHintEnabled(), equalTo(false));
+            assertThat(System.getProperty("mockserver.closestMatchHintEnabled"), equalTo("false"));
+            assertThat(configuration.closestMatchHintEnabled(), equalTo(false));
+            ConfigurationProperties.closestMatchHintEnabled(original);
+
+            // when - setter
+            configuration.closestMatchHintEnabled(false);
+
+            // then - getter
+            assertThat(configuration.closestMatchHintEnabled(), equalTo(false));
+        } finally {
+            ConfigurationProperties.closestMatchHintEnabled(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetAttemptToProxyIfNoMatchingExpectation() {
         boolean original = ConfigurationProperties.attemptToProxyIfNoMatchingExpectation();
         try {

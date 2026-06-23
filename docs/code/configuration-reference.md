@@ -49,7 +49,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Category | Representative properties |
 |----------|--------------------------|
 | Ports & proxy | `serverPort`, `proxyRemoteHost`, `proxyRemotePort` |
-| Logging | `logLevel`, `disableSystemOut`, `detailedMatchFailures`, `compactLogFormat`, `metricsEnabled`, `slowRequestThresholdMillis`, `attachMismatchDiagnosticToResponse` |
+| Logging | `logLevel`, `disableSystemOut`, `detailedMatchFailures`, `compactLogFormat`, `metricsEnabled`, `slowRequestThresholdMillis`, `attachMismatchDiagnosticToResponse`, `closestMatchHintEnabled` |
 | Dev mode | `devMode` |
 | Memory usage | `maxExpectations`, `maxLogEntries`, `maxWebSocketExpectations`, `outputMemoryUsageCsv` |
 | HTTP behaviour | `nioEventLoopThreadCount`, `actionHandlerThreadCount`, `webSocketClientEventLoopThreadCount`, `clientNioEventLoopThreadCount`, `streamingResponsesEnabled`, `maxStreamingCaptureBytes` |

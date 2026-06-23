@@ -236,6 +236,7 @@ public class Configuration {
     private Integer maximumNumberOfRequestToReturnInVerificationFailure;
     private Boolean detailedVerificationFailures;
     private Boolean attachMismatchDiagnosticToResponse;
+    private Boolean closestMatchHintEnabled;
 
     // proxy
     // volatile: mutated at runtime via PUT /mockserver/mode (control-plane thread) and read on the
@@ -3299,6 +3300,26 @@ public class Configuration {
      */
     public Configuration attachMismatchDiagnosticToResponse(Boolean attachMismatchDiagnosticToResponse) {
         this.attachMismatchDiagnosticToResponse = attachMismatchDiagnosticToResponse;
+        return this;
+    }
+
+    public Boolean closestMatchHintEnabled() {
+        if (closestMatchHintEnabled == null) {
+            return ConfigurationProperties.closestMatchHintEnabled();
+        }
+        return closestMatchHintEnabled;
+    }
+
+    /**
+     * If true (the default), when no expectation matches an incoming request the data-plane 404 response carries a
+     * single concise diagnostic header (x-mockserver-closest-match-hint) naming the closest expectation and the first
+     * field that differed. The hint is header-only and length-bounded — no expectation body is leaked. Set to false to
+     * suppress it.
+     *
+     * @param closestMatchHintEnabled enable the closest-match hint header on unmatched 404 responses
+     */
+    public Configuration closestMatchHintEnabled(Boolean closestMatchHintEnabled) {
+        this.closestMatchHintEnabled = closestMatchHintEnabled;
         return this;
     }
 
