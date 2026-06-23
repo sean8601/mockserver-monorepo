@@ -66,10 +66,16 @@ public class ChaosExperimentOrchestratorTest {
     @After
     public void tearDown() {
         orchestrator.reset();
+        scheduler.shutdownNow();
+        try {
+            // Ensure no scheduled SLO probe outlives the test and mutates shared singletons.
+            scheduler.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         ServiceChaosRegistry.getInstance().reset();
         ChaosAutoHaltMonitor.getInstance().reset();
         SloSampleStore.getInstance().reset();
-        scheduler.shutdownNow();
         Metrics.resetAdditionalMetricsForTesting();
         ConfigurationProperties.chaosAutoHaltEnabled(originalAutoHaltEnabled);
         ConfigurationProperties.chaosAutoHaltErrorThreshold(originalAutoHaltThreshold);
@@ -985,4 +991,79 @@ public class ChaosExperimentOrchestratorTest {
         assertThat(def.toJson().has("sloCriteria"), is(false));
     }
 
+    // --- A2: SLO breach as an auto-halt trigger ---
+
+    @Test
+    public void shouldHaltExperimentWithFailVerdictWhenSloBreachesMidRun() {
+        // given - a long-running experiment with an error-rate SLO
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            60_000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "slo-halt", Arrays.asList(stage0), false, 0L, null, errorRateBelow(0.5));
+        orchestrator.start(def);
+        assertThat(orchestrator.getStatus().status, is("running"));
+        assertThat("chaos applied", ServiceChaosRegistry.getInstance().get("api.svc"), is(notNullValue()));
+
+        // and - the live error rate breaches the SLO (all errors)
+        SloSampleStore.getInstance().record(clock.get() + 100L, 50L, true, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 200L, 50L, true, Scope.FORWARD, "api.svc");
+        clock.addAndGet(300L);
+
+        // when - the live SLO probe runs (driven deterministically)
+        boolean halted = orchestrator.checkSloNow();
+
+        // then - the experiment is halted by the SLO breach with a FAIL verdict, chaos cleared
+        assertThat("SLO breach halted the experiment", halted, is(true));
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("halted_by_slo_breach"));
+        assertThat(status.experimentVerdict, is(notNullValue()));
+        assertThat(status.experimentVerdict.getResult(), is(SloVerdict.Result.FAIL));
+        assertThat("chaos cleared on SLO halt",
+            ServiceChaosRegistry.getInstance().entries().isEmpty(), is(true));
+    }
+
+    @Test
+    public void shouldNotSloHaltExperimentWithoutSloCriteria() {
+        // given - an experiment WITHOUT sloCriteria, with a high live error rate
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            60_000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition("no-slo-halt", Arrays.asList(stage0), false);
+        orchestrator.start(def);
+        SloSampleStore.getInstance().record(clock.get() + 100L, 50L, true, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 200L, 50L, true, Scope.FORWARD, "api.svc");
+        clock.addAndGet(300L);
+
+        // when - the SLO probe runs
+        boolean halted = orchestrator.checkSloNow();
+
+        // then - no SLO halt; the experiment keeps running, no verdict
+        assertThat("no SLO halt without sloCriteria", halted, is(false));
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("running"));
+        assertThat(status.experimentVerdict, is(nullValue()));
+        assertThat(ServiceChaosRegistry.getInstance().get("api.svc"), is(notNullValue()));
+    }
+
+    @Test
+    public void shouldNotSloHaltWhenSloHolds() {
+        // given - an experiment with an SLO that holds (no errors)
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            60_000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "slo-holds", Arrays.asList(stage0), false, 0L, null, errorRateBelow(0.5));
+        orchestrator.start(def);
+        SloSampleStore.getInstance().record(clock.get() + 100L, 50L, false, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 200L, 50L, false, Scope.FORWARD, "api.svc");
+        clock.addAndGet(300L);
+
+        // when
+        boolean halted = orchestrator.checkSloNow();
+
+        // then - the experiment is not halted and remains running
+        assertThat(halted, is(false));
+        assertThat(orchestrator.getStatus().status, is("running"));
+    }
 }
