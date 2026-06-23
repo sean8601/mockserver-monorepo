@@ -224,6 +224,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- HdrHistogram (authoritative per-run load-scenario latency percentiles) -->
+        <dependency>
+            <groupId>org.hdrhistogram</groupId>
+            <artifactId>HdrHistogram</artifactId>
+        </dependency>
+
         <!-- javascript (GraalVM polyglot) -->
         <dependency>
             <groupId>org.graalvm.polyglot</groupId>

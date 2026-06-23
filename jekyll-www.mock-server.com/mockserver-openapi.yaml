@@ -4695,6 +4695,13 @@ components:
           type: number
         p99Millis:
           type: number
+        p999Millis:
+          type: number
+          description: "99.9th-percentile coordinated-omission-corrected latency (ms), from the per-run HDR histogram; available even when metrics are disabled"
+        droppedIterations:
+          type: integer
+          format: int64
+          description: "iterations that were due but never dispatched because a safety cap was hit (sum of rate_limit and inflight_cap throttles for this run)"
         runId:
           type: string
         startedAt:

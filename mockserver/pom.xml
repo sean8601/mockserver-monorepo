@@ -84,6 +84,7 @@
         <netty-tcnative-boringssl-static.version>2.0.77.Final</netty-tcnative-boringssl-static.version>
         <protobuf.version>4.35.1</protobuf.version>
         <chicory.version>1.7.5</chicory.version>
+        <hdrhistogram.version>2.2.2</hdrhistogram.version>
         <jna.version>5.19.1</jna.version>
         <picocli.version>4.7.7</picocli.version>
     </properties>
@@ -832,6 +833,13 @@
                 <groupId>info.picocli</groupId>
                 <artifactId>picocli</artifactId>
                 <version>${picocli.version}</version>
+            </dependency>
+
+            <!-- HdrHistogram (zero-transitive-dependency latency histogram for load-scenario percentiles) -->
+            <dependency>
+                <groupId>org.hdrhistogram</groupId>
+                <artifactId>HdrHistogram</artifactId>
+                <version>${hdrhistogram.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -3770,6 +3770,8 @@ public class HttpState {
             node.put("p50Millis", status.p50Millis);
             node.put("p95Millis", status.p95Millis);
             node.put("p99Millis", status.p99Millis);
+            node.put("p999Millis", status.p999Millis);
+            node.put("droppedIterations", status.droppedIterations);
             node.put("runId", status.runId);
             node.put("startedAt", status.startedAtEpochMillis);
             if (status.endedAtEpochMillis != null) {

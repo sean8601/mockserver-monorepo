@@ -311,7 +311,7 @@ scenario, run_id, step, route, method, status_class
 
 | Metric name | Prom type | OTEL type | Labels | Description |
 |-------------|-----------|-----------|--------|-------------|
-| `mock_server_load_request_duration_seconds` | Histogram | DoubleHistogram | fixed + custom | Round-trip latency per dispatch; histogram buckets enable `histogram_quantile` at any percentile |
+| `mock_server_load_request_duration_seconds` | Histogram | DoubleHistogram | fixed + custom | Round-trip latency per dispatch, **coordinated-omission-corrected** — measured from the iteration's scheduled-due time (before the in-flight permit / RPS-token acquire), so it includes any queue wait the self-load guard imposes when the target is overloaded. Histogram buckets enable `histogram_quantile` at any percentile |
 | `mock_server_load_requests` | Counter | LongCounter | fixed + custom | Completed dispatches |
 | `mock_server_load_request_bytes` | Counter | LongCounter (`By`) | fixed + custom | Outbound request bytes |
 | `mock_server_load_response_bytes` | Counter | LongCounter (`By`) | fixed + custom | Inbound response bytes |
@@ -388,7 +388,11 @@ Then in the scenario JSON:
 
 ### Percentile queries
 
-The status DTO (`GET /mockserver/loadScenario`) returns `p50Millis`, `p95Millis`, and `p99Millis` computed from the histogram buckets. Any other percentile is queryable via PromQL without a pre-defined summary:
+The status DTO (`GET /mockserver/loadScenario`) returns `p50Millis`, `p95Millis`, `p99Millis`, and `p999Millis` read from a **per-run HDR histogram** (auto-resizing, ~3 significant digits, recording milliseconds). The HDR histogram is the authoritative percentile source, so these values are exact (not bucket-bounded) and are populated **even when Prometheus metrics are disabled**. The recorded latency is coordinated-omission-corrected (see the duration metric above), so the percentiles reflect real tail behaviour rather than a queue-wait-excluded best case.
+
+The DTO also returns `droppedIterations`: the count of iterations that were due but never dispatched because a safety cap was hit (the sum of the `rate_limit` and `inflight_cap` throttles for the run, across all three throttle sites — the RATE-stage VU-cap shortfall, the in-flight-permit miss, and the RPS-token miss). MockServer's caps are intentional, so dropped iterations are surfaced as a first-class truncated-distribution signal rather than hidden by fabricating synthetic latency samples — the percentiles describe only the iterations that actually ran.
+
+Any other percentile is queryable via PromQL against the coordinated-omission-corrected Prometheus histogram without a pre-defined summary:
 
 ```promql
 histogram_quantile(0.99,

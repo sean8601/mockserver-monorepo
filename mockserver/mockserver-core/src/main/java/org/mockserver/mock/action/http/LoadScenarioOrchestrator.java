@@ -21,6 +21,8 @@ import org.mockserver.templates.engine.TemplateEngine;
 import org.mockserver.templates.engine.mustache.MustacheTemplateEngine;
 import org.mockserver.templates.engine.velocity.VelocityTemplateEngine;
 import org.mockserver.time.TimeService;
+import org.HdrHistogram.ConcurrentHistogram;
+import org.HdrHistogram.Histogram;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -523,11 +525,15 @@ public class LoadScenarioOrchestrator {
             int shortfall = toStart - started;
             if (shortfall > 0) {
                 // The VU cap blocked the rate: drop the owed-but-unstartable iterations (so the deficit
-                // does not snowball) and record the shortfall as a rate_limit throttle.
+                // does not snowball) and record the shortfall as a rate_limit throttle. This is the
+                // dominant drop path for an overloaded open-model run, so the shortfall also feeds the
+                // per-run droppedIterations counter — keeping the invariant droppedIterations ==
+                // count(rate_limit) + count(inflight_cap) across all three throttle sites.
                 run.rateDeficit -= shortfall;
                 if (run.rateDeficit < 0) {
                     run.rateDeficit = 0;
                 }
+                run.droppedIterations.addAndGet(shortfall);
                 for (int i = 0; i < shortfall; i++) {
                     Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
                 }
@@ -592,6 +598,13 @@ public class LoadScenarioOrchestrator {
     }
 
     private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping) {
+        // Coordinated-omission correction: capture the scheduled-due timestamp at the very start of the
+        // dispatch path — BEFORE the in-flight permit and RPS-token acquire below — so the latency we
+        // record measures from the moment dispatch was requested, INCLUDING any queueing wait the
+        // self-load guard imposes when the system-under-test is overloaded. Measuring from after the
+        // acquire (the old behaviour) excluded that wait and made tail percentiles look far better than
+        // reality (the classic coordinated-omission error).
+        final long scheduledNanos = TimeService.nanoTime();
         if (run.stopped.get() || !isCurrent(run)) {
             endVu(run);
             return;
@@ -654,14 +667,17 @@ public class LoadScenarioOrchestrator {
         }
 
         // Self-load guard at dispatch: acquire an in-flight permit and an RPS token. Each skip is a
-        // distinct throttle reason so an operator can see why a scenario could not reach its setpoint.
+        // distinct throttle reason so an operator can see why a scenario could not reach its setpoint,
+        // and is counted as a dropped iteration (a due iteration the cap prevented from dispatching).
         if (!run.inFlight.tryAcquire()) {
+            run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
+            run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
@@ -669,7 +685,6 @@ public class LoadScenarioOrchestrator {
 
         run.requestsSent.incrementAndGet();
         run.inFlightCount.incrementAndGet();
-        final long startNanos = TimeService.nanoTime();
         final String host = hostOf(rendered);
         final String route = run.routeLabel(step, rendered);
         final String method = methodOf(rendered);
@@ -681,14 +696,14 @@ public class LoadScenarioOrchestrator {
         } catch (Exception e) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
-            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, startNanos, true, "connection");
+            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "connection");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
         if (future == null) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
-            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, startNanos, true, "null_response");
+            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "null_response");
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
             return;
         }
@@ -698,7 +713,7 @@ public class LoadScenarioOrchestrator {
             boolean error = throwable != null || response == null
                 || (response.getStatusCode() != null && response.getStatusCode() >= 500);
             String errorKind = classifyError(throwable, response);
-            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, response, startNanos, error, errorKind);
+            recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, response, scheduledNanos, error, errorKind);
             scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
         });
     }
@@ -739,13 +754,21 @@ public class LoadScenarioOrchestrator {
 
     private void recordResult(RunningScenario run, String host, String stepLabel, String route, String method,
                               long requestBytes, String traceId, Map<String, String> customLabels,
-                              HttpResponse response, long startNanos, boolean error, String errorKind) {
-        long latencyMillis = Math.max(0, (TimeService.nanoTime() - startNanos) / 1_000_000L);
+                              HttpResponse response, long scheduledNanos, boolean error, String errorKind) {
+        // Coordinated-omission-corrected latency: measured from the scheduled-due time captured at the
+        // start of the dispatch path (before the in-flight/RPS acquire), so any queueing wait the
+        // self-load guard imposed is INCLUDED. This single corrected value is the one recorded to the
+        // Prometheus histogram, the per-run HDR histogram and the SLO sample store — there is no
+        // competing post-acquire "service time" recorded to the same metric.
+        long latencyMillis = Math.max(0, (TimeService.nanoTime() - scheduledNanos) / 1_000_000L);
         if (error) {
             run.failed.incrementAndGet();
         } else {
             run.succeeded.incrementAndGet();
         }
+        // Record every completed iteration — successes AND failures (a failed request still has a
+        // latency) — into the authoritative per-run HDR histogram backing the status DTO's percentiles.
+        run.latencyHistogram.recordValue(latencyMillis);
         Integer statusCode = response != null ? response.getStatusCode() : null;
         double latencySeconds = latencyMillis / 1000.0;
         long responseBytes = bodyBytes(response != null ? response.getBodyAsRawBytes() : null);
@@ -986,6 +1009,20 @@ public class LoadScenarioOrchestrator {
         final AtomicLong requestsSent = new AtomicLong(0);
         final AtomicLong succeeded = new AtomicLong(0);
         final AtomicLong failed = new AtomicLong(0);
+        /**
+         * Iterations that were due but never dispatched because a safety cap was hit (the in-flight
+         * permit or RPS token could not be acquired, or the RATE-stage VU cap blocked the arrival
+         * rate). Surfaced as a first-class run statistic so the truncated-distribution signal is
+         * visible rather than hidden — the percentiles below describe only the iterations that ran.
+         */
+        final AtomicLong droppedIterations = new AtomicLong(0);
+        /**
+         * Authoritative per-run latency histogram (milliseconds, ~3 significant digits, auto-resizing).
+         * Every completed iteration's coordinated-omission-corrected latency is recorded here (successes
+         * and failures alike), and the status DTO's percentiles are read from a consistent {@code copy()}
+         * of it — so percentiles are correct AND available even when Prometheus metrics are disabled.
+         */
+        final ConcurrentHistogram latencyHistogram = new ConcurrentHistogram(3);
         final Semaphore inFlight;
         final int maxRps;
 
@@ -1016,6 +1053,7 @@ public class LoadScenarioOrchestrator {
             this.inFlight = new Semaphore(Math.max(1, configuration.loadGenerationMaxInFlightRequests()));
             this.maxRps = Math.max(1, configuration.loadGenerationMaxRequestsPerSecond());
             this.rpsWindowStart = triggeredAt;
+            this.latencyHistogram.setAutoResize(true);
         }
 
         /**
@@ -1137,6 +1175,14 @@ public class LoadScenarioOrchestrator {
             double currentTarget = running
                 ? (stageType == LoadStageType.RATE ? targetRateValue : targetVUs.get())
                 : 0.0;
+            // Percentiles are read from a consistent copy() of the authoritative per-run HDR histogram
+            // (not the coarse Prometheus buckets), so they are correct AND available even when metrics
+            // are disabled. An empty histogram reports 0 for every percentile.
+            Histogram latencySnapshot = latencyHistogram.copy();
+            long p50 = latencySnapshot.getTotalCount() == 0 ? 0L : latencySnapshot.getValueAtPercentile(50.0);
+            long p95 = latencySnapshot.getTotalCount() == 0 ? 0L : latencySnapshot.getValueAtPercentile(95.0);
+            long p99 = latencySnapshot.getTotalCount() == 0 ? 0L : latencySnapshot.getValueAtPercentile(99.0);
+            long p999 = latencySnapshot.getTotalCount() == 0 ? 0L : latencySnapshot.getValueAtPercentile(99.9);
             return new LoadScenarioStatus(
                 scenario.getName(),
                 state,
@@ -1145,9 +1191,11 @@ public class LoadScenarioOrchestrator {
                 requestsSent.get(),
                 succeeded.get(),
                 failed.get(),
-                Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 50),
-                Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 95),
-                Metrics.loadLatencyPercentileMillis(scenario.getName(), runId, 99),
+                p50,
+                p95,
+                p99,
+                p999,
+                droppedIterations.get(),
                 runId,
                 startedAtEpoch,
                 terminal ? now : null,
@@ -1176,6 +1224,19 @@ public class LoadScenarioOrchestrator {
         public final long p50Millis;
         public final long p95Millis;
         public final long p99Millis;
+        /**
+         * The 99.9th-percentile coordinated-omission-corrected latency in milliseconds, read from the
+         * per-run HDR histogram (0 when no iteration has completed). Surfaces deep-tail behaviour that
+         * p99 alone hides.
+         */
+        public final long p999Millis;
+        /**
+         * Iterations that were due but never dispatched because a safety cap was hit (the sum of the
+         * {@code rate_limit} and {@code inflight_cap} throttles for this run). The percentiles describe
+         * only the iterations that ran, so a non-zero value here is the truncated-distribution signal —
+         * the system-under-test could not keep up with the requested load.
+         */
+        public final long droppedIterations;
         public final String runId;
         public final long startedAtEpochMillis;
         public final Long endedAtEpochMillis;
@@ -1201,7 +1262,8 @@ public class LoadScenarioOrchestrator {
 
         public LoadScenarioStatus(String name, LoadScenarioState state, long elapsedMillis, int currentVus,
                                   long requestsSent, long succeeded, long failed,
-                                  long p50Millis, long p95Millis, long p99Millis,
+                                  long p50Millis, long p95Millis, long p99Millis, long p999Millis,
+                                  long droppedIterations,
                                   String runId, long startedAtEpochMillis, Long endedAtEpochMillis,
                                   Map<String, String> labels, LoadScenario scenario,
                                   int stageIndex, String stageType, double currentTarget,
@@ -1216,6 +1278,8 @@ public class LoadScenarioOrchestrator {
             this.p50Millis = p50Millis;
             this.p95Millis = p95Millis;
             this.p99Millis = p99Millis;
+            this.p999Millis = p999Millis;
+            this.droppedIterations = droppedIterations;
             this.runId = runId;
             this.startedAtEpochMillis = startedAtEpochMillis;
             this.endedAtEpochMillis = endedAtEpochMillis;

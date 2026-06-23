@@ -48,6 +48,7 @@ public class LoadScenarioOrchestratorTest {
     private int originalMaxSteps;
     private int originalMaxConcurrent;
     private boolean originalSloTracking;
+    private int originalMaxInFlight;
 
     @Before
     public void setUp() {
@@ -67,6 +68,7 @@ public class LoadScenarioOrchestratorTest {
         originalMaxSteps = ConfigurationProperties.loadGenerationMaxSteps();
         originalMaxConcurrent = ConfigurationProperties.loadGenerationMaxConcurrentScenarios();
         originalSloTracking = ConfigurationProperties.sloTrackingEnabled();
+        originalMaxInFlight = ConfigurationProperties.loadGenerationMaxInFlightRequests();
     }
 
     @After
@@ -81,6 +83,7 @@ public class LoadScenarioOrchestratorTest {
         ConfigurationProperties.loadGenerationMaxSteps(originalMaxSteps);
         ConfigurationProperties.loadGenerationMaxConcurrentScenarios(originalMaxConcurrent);
         ConfigurationProperties.sloTrackingEnabled(originalSloTracking);
+        ConfigurationProperties.loadGenerationMaxInFlightRequests(originalMaxInFlight);
     }
 
     /** A synchronous fake sender that records every request and returns a 200 immediately. */
@@ -91,6 +94,37 @@ public class LoadScenarioOrchestratorTest {
         public CompletableFuture<HttpResponse> apply(HttpRequest httpRequest) {
             sent.add(httpRequest);
             return CompletableFuture.completedFuture(response().withStatusCode(200));
+        }
+    }
+
+    /**
+     * A fake sender that completes each request's future after a fixed real delay, on a shared
+     * scheduled executor, so the orchestrator observes a genuine non-zero request lifetime. Used to
+     * prove the coordinated-omission-corrected latency captures the full in-flight time.
+     */
+    private static final class DelayingSender implements Function<HttpRequest, CompletableFuture<HttpResponse>> {
+        final ConcurrentLinkedQueue<HttpRequest> sent = new ConcurrentLinkedQueue<>();
+        private final long delayMillis;
+        private final ScheduledExecutorService completer = Executors.newScheduledThreadPool(4, r -> {
+            Thread t = new Thread(r, "test-delaying-sender");
+            t.setDaemon(true);
+            return t;
+        });
+
+        DelayingSender(long delayMillis) {
+            this.delayMillis = delayMillis;
+        }
+
+        @Override
+        public CompletableFuture<HttpResponse> apply(HttpRequest httpRequest) {
+            sent.add(httpRequest);
+            CompletableFuture<HttpResponse> future = new CompletableFuture<>();
+            completer.schedule(() -> future.complete(response().withStatusCode(200)), delayMillis, TimeUnit.MILLISECONDS);
+            return future;
+        }
+
+        void shutdown() {
+            completer.shutdownNow();
         }
     }
 
@@ -715,5 +749,118 @@ public class LoadScenarioOrchestratorTest {
         assertThat(error, containsString("maximum of 1"));
         // Re-triggering an already-active name is exempt from the cap (it replaces, no net increase).
         assertThat(orchestrator.start(a, sender), is(nullValue()));
+    }
+
+    @Test
+    public void correctedLatencyIncludesFullInFlightTime() throws Exception {
+        // The recorded/HDR latency is measured from the scheduled-due time (start of the dispatch path),
+        // so it captures the full request lifetime. With a sender that completes each request only after
+        // a real ~60ms delay, the per-run HDR p99 must reflect that delay — a post-acquire "service
+        // only" measurement of an instant-completing future would resolve near 0. This proves the
+        // coordinated-omission-corrected latency is the value recorded.
+        long delayMillis = 60L;
+        DelayingSender sender = new DelayingSender(delayMillis);
+        try {
+            LoadScenario scenario = new LoadScenario()
+                .withName("co-latency")
+                .withMaxRequests(12)
+                .withProfile(LoadProfile.constant(3, 60_000L))
+                .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+            assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+            // Wait until enough requests have completed (succeeded count rises only on completion).
+            long deadline = System.currentTimeMillis() + 15_000L;
+            while (orchestrator.getStatus().succeeded < 8 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.getStatus();
+            assertThat("requests completed", status.succeeded, greaterThanOrEqualTo(8L));
+            // The corrected p99 reflects the genuine in-flight time, well above the ~0 a service-only
+            // (or metrics-off) measurement of an instant future would yield. Tolerant lower bound to
+            // absorb scheduler/timing jitter while still being far above zero.
+            assertThat("corrected p99 captures the in-flight delay",
+                status.p99Millis, greaterThanOrEqualTo(delayMillis - 30L));
+            assertThat("p999 is at least p99", status.p999Millis, greaterThanOrEqualTo(status.p99Millis));
+        } finally {
+            sender.shutdown();
+        }
+    }
+
+    @Test
+    public void statusPercentilesPopulateWithMetricsDisabled() throws Exception {
+        // Metrics are NOT enabled in this test class (no new Metrics(metricsEnabled=true)), so the
+        // Prometheus load histogram is null and Metrics.loadLatencyPercentileMillis would return 0.
+        // The status percentiles must still be non-zero/correct because they are sourced from the
+        // per-run HDR histogram, proving HDR — not Prometheus — backs the DTO.
+        assertThat("metrics must be off for this test", Metrics.isLoadMetricsActive(), is(false));
+        long delayMillis = 40L;
+        DelayingSender sender = new DelayingSender(delayMillis);
+        try {
+            LoadScenario scenario = new LoadScenario()
+                .withName("hdr-no-metrics")
+                .withMaxRequests(12)
+                .withProfile(LoadProfile.constant(3, 60_000L))
+                .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+            assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+            long deadline = System.currentTimeMillis() + 15_000L;
+            while (orchestrator.getStatus().succeeded < 8 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.getStatus();
+            assertThat(status.succeeded, greaterThanOrEqualTo(8L));
+            // Cross-check: Prometheus would report 0 (histogram not registered) ...
+            assertThat(Metrics.loadLatencyPercentileMillis(scenario.getName(), status.runId, 99), is(0L));
+            // ... but the HDR-backed DTO reports a real value and a sane percentile ordering.
+            assertThat("HDR-sourced p50 is non-zero with metrics off", status.p50Millis, greaterThan(0L));
+            assertThat(status.p95Millis, greaterThanOrEqualTo(status.p50Millis));
+            assertThat(status.p99Millis, greaterThanOrEqualTo(status.p95Millis));
+            assertThat(status.p999Millis, greaterThanOrEqualTo(status.p99Millis));
+        } finally {
+            sender.shutdown();
+        }
+    }
+
+    @Test
+    public void droppedIterationsCountsCapBlockedDispatchesAndIsZeroWhenUnconstrained() throws Exception {
+        // A tiny in-flight cap plus a slow sender forces the cap to block dispatches: those due-but-
+        // undispatched iterations are surfaced as droppedIterations (rather than fabricating latency).
+        ConfigurationProperties.loadGenerationMaxInFlightRequests(1);
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        DelayingSender constrainedSender = new DelayingSender(50L);
+        try {
+            LoadScenario scenario = new LoadScenario()
+                .withName("dropped-cap")
+                .withProfile(LoadProfile.constant(8, 60_000L))
+                .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+            assertThat(orchestrator.start(scenario, constrainedSender), is(nullValue()));
+            // With only one permit but eight looping VUs hammering, the cap rejects many dispatches.
+            long deadline = System.currentTimeMillis() + 5_000L;
+            while (orchestrator.getStatus().droppedIterations == 0 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            assertThat("cap-blocked dispatches are counted as dropped iterations",
+                orchestrator.getStatus().droppedIterations, greaterThan(0L));
+        } finally {
+            orchestrator.stop("dropped-cap");
+            constrainedSender.shutdown();
+        }
+
+        // Unconstrained run: a generous cap and an instant sender never drops.
+        ConfigurationProperties.loadGenerationMaxInFlightRequests(1000);
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        RecordingSender freeSender = new RecordingSender();
+        LoadScenario unconstrained = new LoadScenario()
+            .withName("dropped-none")
+            .withMaxRequests(20)
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(unconstrained, freeSender), is(nullValue()));
+        assertThat(awaitAtLeast(freeSender, 20, 5_000L), is(true));
+        Thread.sleep(100);
+        assertThat("an unconstrained run drops nothing",
+            orchestrator.statusFor("dropped-none").droppedIterations, is(0L));
     }
 }
