@@ -1311,7 +1311,9 @@ public class HttpActionHandler {
                 // validation proxy: request + response validation runs inside the scheduler
                 // (off the Netty event loop) to avoid blocking I/O threads on cold-cache OpenAPI parsing
                 final boolean validationEnabled = isValidationProxyEnabled();
-                InetSocketAddress targetAddress = new InetSocketAddress(mapping.getTargetHost(), mapping.getTargetPort());
+                // Unresolved so Netty's event-loop resolver performs the (blocking) DNS lookup rather
+                // than resolving synchronously here in the InetSocketAddress constructor.
+                InetSocketAddress targetAddress = InetSocketAddress.createUnresolved(mapping.getTargetHost(), mapping.getTargetPort());
                 scheduler.submit(() -> {
                     try {
                         // pre-flight request validation (enforce mode blocks with 400 before upstream call)
@@ -3255,7 +3257,9 @@ public class HttpActionHandler {
             String host = configuration.proxyRemoteHost();
             Integer port = configuration.proxyRemotePort();
             if (isNotBlank(host) && port != null) {
-                remoteAddress = new InetSocketAddress(host, port);
+                // Unresolved so Netty's event-loop resolver performs the (blocking) DNS lookup rather
+                // than resolving synchronously here in the InetSocketAddress constructor.
+                remoteAddress = InetSocketAddress.createUnresolved(host, port);
             }
         }
         return remoteAddress;
