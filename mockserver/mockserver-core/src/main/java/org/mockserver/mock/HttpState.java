@@ -5093,6 +5093,47 @@ public class HttpState {
         return false;
     }
 
+    /**
+     * Coarse role-based authorization for a control-plane operation that arrives outside the
+     * HTTP method/path classification used by {@link #controlPlaneAuthorized} — notably an MCP
+     * tool call, which is dispatched as a single JSON-RPC POST so the per-tool read/mutate
+     * split cannot be derived from the HTTP verb. The caller supplies the verified principal's
+     * scopes (from {@link org.mockserver.authentication.AuthenticationResult#getScopes()}) and a
+     * read/mutate classification it computed for the specific operation; this method reuses the
+     * SAME {@link org.mockserver.authentication.authorization.ControlPlaneAuthorizer} and role
+     * model as the HTTP control plane — it does NOT introduce a new role model.
+     * <p>
+     * Gated by {@code controlPlaneAuthorizationEnabled}: when authorization is disabled (the
+     * default) this always returns true, so behaviour is unchanged. When enabled it is
+     * fail-closed exactly like {@link #controlPlaneAuthorized}: a principal with no mapped role
+     * is denied every mutation (and every read unless it has a READ-or-higher role).
+     *
+     * @param verifiedScopes the authenticated principal's verified scopes (may be null/empty)
+     * @param isRead         true if the operation only reads control-plane state, false if it mutates
+     * @param operation      a short label for the operation (e.g. the MCP tool name) used only in the
+     *                       server-side denial log; may be null
+     * @return true to allow the operation; false to deny it with a 403-equivalent
+     */
+    public boolean controlPlaneToolAuthorized(java.util.Set<String> verifiedScopes, boolean isRead, String operation) {
+        if (!configuration.controlPlaneAuthorizationEnabled()) {
+            return true;
+        }
+        org.mockserver.authentication.authorization.ControlPlaneAuthorizer authorizer = controlPlaneAuthorizer();
+        java.util.Set<String> scopes = verifiedScopes != null ? verifiedScopes : java.util.Set.of();
+        boolean authorized = authorizer.isAuthorized(scopes, isRead);
+        if (!authorized && mockServerLogger != null && mockServerLogger.isEnabledForInstance(Level.INFO)) {
+            // Mirror controlPlaneAuthorized's server-side-only denial log: the granted-vs-required
+            // role detail is logged but never disclosed to the client (authorization policy is not leaked).
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.INFO)
+                    .setMessageFormat("control plane tool call forbidden:{}")
+                    .setArguments("principal granted roles " + authorizer.grantedRoles(scopes) + " do not satisfy required role " + authorizer.requiredRole(isRead) + " for tool " + operation)
+            );
+        }
+        return authorized;
+    }
+
     private static final java.util.Set<String> CONTROL_PLANE_READ_PUTS = new java.util.HashSet<>(java.util.Arrays.asList(
         "retrieve", "verify", "verifySequence", "verifySLO", "diff", "explainUnmatched", "debugMismatch", "files/retrieve", "files/list"
     ));
