@@ -232,6 +232,21 @@ async function test() {
     requestResponse = await client.mockSimpleResponse('some/path', {});
     requestResponse = await client.mockSimpleResponse('some/path', {}, 500);
 
+    // fluent when().respond() DSL (type-checking only)
+    requestResponse = await client.when('/somePath').respond({statusCode: 200, body: 'body'});
+    requestResponse = await client.when(requestDefinition, 2, {unlimited: false}, 10).respond({statusCode: 201});
+    requestResponse = await client
+        .when({path: '/somePath'})
+        .withTimes(3)
+        .withTimeToLive({unlimited: true})
+        .withPriority(5)
+        .withId('expectation-id')
+        .respond({statusCode: 200});
+    requestResponse = await client.when('/forward').forward({host: 'localhost', port: 8081});
+    requestResponse = await client.when('/error').error({dropConnection: true});
+    requestResponse = await client.when('/callback').callback((request) => ({statusCode: 200}));
+    requestResponse = await client.when('/forwardCallback').forwardCallback((request) => request);
+
     // advanced response builders (type-checking only)
     requestResponse = await client.respondWithSse('/sse', {
         statusCode: 200,
