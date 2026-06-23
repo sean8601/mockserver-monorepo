@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Validate recorded traffic against an OpenAPI spec** (`PUT /mockserver/trafficValidate`). A new
+  control-plane endpoint validates the request/response traffic MockServer has already recorded against a
+  provided OpenAPI spec (URL, file path, or inline), returning a structured pass/fail report
+  (`totalRequests` / `passed` / `failed` / `allPassed` plus per-request `matchedOperation`, `requestErrors`,
+  and `responseErrors`) — mirroring the `/contractTest` report. The endpoint is gated by the same
+  control-plane authentication as its siblings, and a spec URL is fetched only after passing the same SSRF
+  policy enforced on proxy/forward paths.
+- **Java client helpers for contract testing & Pact.** The Java `MockServerClient` now exposes fluent, typed
+  methods for the contract-testing endpoints: `contractTest(spec, baseUrl[, operationId])`,
+  `trafficValidate(spec)`, `pactImport(json)`, `pactExport(consumer, provider)`, and `pactVerify(json)`. The
+  contract-test and traffic-validation reports parse into typed `ContractReport` / `ContractResult` objects so
+  callers no longer hand-roll raw HTTP.
 - **Closest-match hint on unmatched requests** (`closestMatchHintEnabled`, default **on**). When a request
   matches no expectation, the `404` response now carries a compact, length-bounded
   `x-mockserver-closest-match-hint` header naming the closest expectation and the first field that differed —

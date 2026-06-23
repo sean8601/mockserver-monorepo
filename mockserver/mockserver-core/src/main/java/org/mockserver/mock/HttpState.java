@@ -2116,6 +2116,14 @@ public class HttpState {
                     canHandle.complete(true);
                 }
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/trafficValidate", "/trafficValidate")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    handleTrafficValidate(request, responseWriter, canHandle);
+                } else {
+                    canHandle.complete(true);
+                }
+
             } else if (request.matches("PUT", PATH_PREFIX + "/pact/import", "/pact/import")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -5679,6 +5687,181 @@ public class HttpState {
      */
     void handleContractTestForTest(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
         handleContractTest(controlPlaneRequest, responseWriter, canHandle);
+    }
+
+    /**
+     * Validate the recorded request/response traffic against a provided OpenAPI specification.
+     *
+     * <p>The control-plane request body is a JSON document with a {@code "spec"} field — a URL, file
+     * path, or inline OpenAPI document. Each recorded request/response pair held in the event log is
+     * located against the spec ({@link OpenApiTrafficValidator}), its request validated by the OpenAPI
+     * request validator and its response by the OpenAPI response validator, and a structured report is
+     * returned mirroring the {@code /contractTest} report shape (per-pair results, pass/fail counts,
+     * {@code allPassed}).
+     *
+     * <p>When {@code spec} is a URL its host is checked against the same SSRF policy enforced by the
+     * forward/replay/contract-test paths before the parser is allowed to fetch it.
+     */
+    private void handleTrafficValidate(HttpRequest controlPlaneRequest, ResponseWriter responseWriter, CompletableFuture<Boolean> canHandle) {
+        try {
+            String body = controlPlaneRequest.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body is required — must be a JSON document with a \\\"spec\\\" (URL, file path, or inline OpenAPI spec)\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            com.fasterxml.jackson.databind.JsonNode rootNode = ObjectMapperFactory.createObjectMapper().readTree(body);
+            String spec = textOrNull(rootNode, "spec");
+            if (isBlank(spec)) {
+                spec = textOrNull(rootNode, "specUrlOrPayload");
+            }
+            if (isBlank(spec)) {
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(BAD_REQUEST.code())
+                    .withBody("{\"error\":\"request body must contain a \\\"spec\\\" — a URL, file path, or inline OpenAPI spec\"}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+                return;
+            }
+
+            // SSRF protection: when the spec is fetched from an http(s) URL, validate its host against
+            // the same policy enforced by the forward/replay/contract-test paths before the OpenAPI
+            // parser is allowed to dereference it.
+            if (org.mockserver.openapi.OpenAPIParser.isSpecUrl(spec)) {
+                String specHost = null;
+                try {
+                    java.net.URI specUri = new java.net.URI(spec.trim());
+                    String scheme = specUri.getScheme();
+                    if (scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+                        specHost = specUri.getHost();
+                    }
+                } catch (java.net.URISyntaxException ignore) {
+                    // not a parseable URI — treat as a file path / inline payload, no host to validate
+                }
+                if (isNotBlank(specHost)) {
+                    try {
+                        InetAddressValidator.validateForwardTarget(configuration, specHost);
+                    } catch (IllegalArgumentException blocked) {
+                        mockServerLogger.logEvent(
+                            new LogEntry()
+                                .setLogLevel(Level.WARN)
+                                .setMessageFormat("traffic validation spec fetch blocked by SSRF policy:{}")
+                                .setArguments(blocked.getMessage())
+                        );
+                        responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                            .withStatusCode(FORBIDDEN.code())
+                            .withBody("{\"error\":" + jsonEncodeString("traffic validation spec fetch blocked by SSRF policy: " + blocked.getMessage()) + "}", MediaType.JSON_UTF_8)), true);
+                        canHandle.complete(true);
+                        return;
+                    }
+                }
+            }
+
+            final String specRef = spec;
+            // Retrieve the recorded request/response pairs (async, via the event log) and then run the
+            // OpenAPI traffic validation off the calling (event-loop) thread: buildOpenAPI may fetch a
+            // remote spec URL (blocking I/O) and must not run on the worker event loop.
+            mockServerLog.retrieveRequestResponses(null, pairs -> {
+              try {
+                scheduler.getExecutorService().submit(() -> {
+                try {
+                    List<org.apache.commons.lang3.tuple.Pair<HttpRequest, HttpResponse>> requestResponsePairs = new java.util.ArrayList<>();
+                    for (LogEventRequestAndResponse pair : pairs) {
+                        if (pair.getHttpRequest() != null && pair.getHttpResponse() != null) {
+                            requestResponsePairs.add(org.apache.commons.lang3.tuple.Pair.of(pair.getHttpRequest(), pair.getHttpResponse()));
+                        }
+                    }
+
+                    List<org.mockserver.openapi.OpenApiTrafficValidator.TrafficValidationResult> results =
+                        new org.mockserver.openapi.OpenApiTrafficValidator(mockServerLogger)
+                            .validate(specRef, requestResponsePairs);
+
+                    int passed = 0;
+                    for (org.mockserver.openapi.OpenApiTrafficValidator.TrafficValidationResult result : results) {
+                        if (result.isPassed()) {
+                            passed++;
+                        }
+                    }
+                    com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+                    com.fasterxml.jackson.databind.node.ObjectNode reportNode = objectMapper.createObjectNode();
+                    reportNode.put("totalRequests", results.size());
+                    reportNode.put("passed", passed);
+                    reportNode.put("failed", results.size() - passed);
+                    reportNode.put("allPassed", passed == results.size());
+                    com.fasterxml.jackson.databind.node.ArrayNode resultsNode = reportNode.putArray("results");
+                    for (org.mockserver.openapi.OpenApiTrafficValidator.TrafficValidationResult result : results) {
+                        com.fasterxml.jackson.databind.node.ObjectNode resultNode = resultsNode.addObject();
+                        resultNode.put("method", result.getRequestMethod());
+                        resultNode.put("path", result.getRequestPath());
+                        resultNode.put("matchedOperation", result.getMatchedOperation());
+                        resultNode.put("passed", result.isPassed());
+                        com.fasterxml.jackson.databind.node.ArrayNode requestErrorsNode = resultNode.putArray("requestErrors");
+                        if (result.getRequestErrors() != null) {
+                            for (String error : result.getRequestErrors()) {
+                                requestErrorsNode.add(error);
+                            }
+                        }
+                        com.fasterxml.jackson.databind.node.ArrayNode responseErrorsNode = resultNode.putArray("responseErrors");
+                        if (result.getResponseErrors() != null) {
+                            for (String error : result.getResponseErrors()) {
+                                responseErrorsNode.add(error);
+                            }
+                        }
+                    }
+
+                    responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                        .withStatusCode(OK.code())
+                        .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(reportNode), MediaType.JSON_UTF_8)), true);
+                } catch (Exception e) {
+                    mockServerLogger.logEvent(
+                        new LogEntry()
+                            .setLogLevel(Level.ERROR)
+                            .setHttpRequest(controlPlaneRequest)
+                            .setMessageFormat("exception handling traffic validation request:{}error:{}")
+                            .setArguments(controlPlaneRequest, e.getMessage())
+                            .setThrowable(e)
+                    );
+                    responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                        .withStatusCode(BAD_REQUEST.code())
+                        .withBody("{\"error\":" + jsonEncodeString(e.getMessage() != null ? e.getMessage() : "unknown error") + "}", MediaType.JSON_UTF_8)), true);
+                } finally {
+                    canHandle.complete(true);
+                }
+                });
+              } catch (Exception submitFailure) {
+                // The offload itself failed (e.g. RejectedExecutionException during shutdown). This
+                // runs on the disruptor consumer thread, outside the outer try/catch, so complete
+                // canHandle here to avoid leaving the control-plane request hanging.
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.ERROR)
+                        .setHttpRequest(controlPlaneRequest)
+                        .setMessageFormat("exception offloading traffic validation request:{}error:{}")
+                        .setArguments(controlPlaneRequest, submitFailure.getMessage())
+                        .setThrowable(submitFailure)
+                );
+                responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                    .withStatusCode(SERVICE_UNAVAILABLE.code())
+                    .withBody("{\"error\":" + jsonEncodeString("unable to schedule traffic validation: " + (submitFailure.getMessage() != null ? submitFailure.getMessage() : submitFailure.getClass().getSimpleName())) + "}", MediaType.JSON_UTF_8)), true);
+                canHandle.complete(true);
+              }
+            });
+        } catch (Exception e) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setHttpRequest(controlPlaneRequest)
+                    .setMessageFormat("exception handling traffic validation request:{}error:{}")
+                    .setArguments(controlPlaneRequest, e.getMessage())
+                    .setThrowable(e)
+            );
+            responseWriter.writeResponse(controlPlaneRequest, withDashboardCORS(controlPlaneRequest, response()
+                .withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":" + jsonEncodeString(e.getMessage() != null ? e.getMessage() : "unknown error") + "}", MediaType.JSON_UTF_8)), true);
+            canHandle.complete(true);
+        }
     }
 
     /**

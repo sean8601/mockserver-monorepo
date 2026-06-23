@@ -341,8 +341,45 @@ curl -X PUT "http://localhost:1080/mockserver/pact?consumer=frontend&amp;provide
   </div>
 </div>
 
+<a id="traffic_validate" class="anchor" href="#traffic_validate">&nbsp;</a>
+
+<h2>Validate recorded traffic against a spec</h2>
+
+<p>Send a <span class="inline_code">PUT</span> request to <span class="inline_code">/mockserver/trafficValidate</span> to validate the request/response traffic MockServer has already recorded against an OpenAPI spec. Unlike <span class="inline_code">/contractTest</span> — which actively drives a live service — this endpoint validates the traffic that has flowed through MockServer (for example while it was acting as a proxy or serving mocks), so you can confirm that real exchanges conform to the contract without re-issuing any requests.</p>
+
+<p>For every recorded request/response pair, MockServer locates the matching spec operation, validates the request against the operation's parameters and request body schema, and validates the response against the operation's declared response schemas. The result is a structured pass/fail report.</p>
+
+<h3>Request body fields</h3>
+
+<table class="table-standard">
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Required</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="inline_code">spec</span></td>
+      <td>Yes</td>
+      <td>A URL, file path, or inline JSON/YAML OpenAPI v3 spec. Also accepted as <span class="inline_code">specUrlOrPayload</span>. When a spec URL is fetched, the same SSRF policy enforced on proxy/forward paths applies to the spec host. When a file path is given, it is resolved on the <strong>MockServer server's filesystem</strong>, not the client machine.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Report shape</h3>
+
+<p>The report mirrors the <span class="inline_code">/contractTest</span> report: top-level <span class="inline_code">totalRequests</span>, <span class="inline_code">passed</span>, <span class="inline_code">failed</span>, and <span class="inline_code">allPassed</span> counts, plus a <span class="inline_code">results</span> array with one entry per recorded request. Each result carries the <span class="inline_code">method</span>, <span class="inline_code">path</span>, the matched spec <span class="inline_code">matchedOperation</span> (or <span class="inline_code">null</span> when no operation matched), a <span class="inline_code">passed</span> flag, and any <span class="inline_code">requestErrors</span> and <span class="inline_code">responseErrors</span>.</p>
+
+<div class="inset_text">
+  <pre class="prettyprint code"><code class="code">curl -v -X PUT "http://localhost:1080/mockserver/trafficValidate" \
+  -H "content-type: application/json" \
+  -d '{ "spec": "https://example.com/openapi.json" }'</code></pre>
+</div>
+
 <a id="traffic_validate_note" class="anchor" href="#traffic_validate_note">&nbsp;</a>
 
 <h3>OpenAPI traffic validation (request-time)</h3>
 
-<p>MockServer can also validate incoming requests against an OpenAPI spec at the point a request arrives, by using an <a href="/mock_server/using_openapi.html"><strong>OpenAPI request matcher</strong></a> in an expectation. This is distinct from the <span class="inline_code">/contractTest</span> endpoint — it validates live traffic in-band rather than running a batch test against a remote service. See <a href="/mock_server/using_openapi.html">OpenAPI &amp; WSDL</a> for details.</p>
+<p>MockServer can also validate incoming requests against an OpenAPI spec at the point a request arrives, by using an <a href="/mock_server/using_openapi.html"><strong>OpenAPI request matcher</strong></a> in an expectation. This is distinct from the <span class="inline_code">/contractTest</span> and <span class="inline_code">/trafficValidate</span> endpoints — it validates live traffic in-band rather than running a batch test. See <a href="/mock_server/using_openapi.html">OpenAPI &amp; WSDL</a> for details.</p>
