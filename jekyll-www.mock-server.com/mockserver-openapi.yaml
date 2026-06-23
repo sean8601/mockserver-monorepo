@@ -2853,6 +2853,55 @@ paths:
                 properties:
                   error:
                     type: string
+  /mockserver/loadScenario/{name}/report:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: the load scenario name
+        schema:
+          type: string
+      - name: format
+        in: query
+        required: false
+        description: >-
+          report format. Omit (or any value other than "junit") for the JSON report;
+          "junit" returns a JUnit-XML <testsuite> (Content-Type application/xml) so a
+          load run becomes a first-class CI test artifact.
+        schema:
+          type: string
+          enum: [junit]
+    get:
+      tags:
+        - loadgen
+      summary: end-of-run summary report for a load scenario run
+      description: >-
+        Returns an end-of-run summary report derived from the run's status snapshot — the live
+        snapshot while running, or the retained terminal snapshot once finished. The default JSON
+        form carries counts, latency percentiles, the threshold verdict and per-threshold results.
+        With ?format=junit the same data is rendered as a JUnit-XML <testsuite> (one <testcase> per
+        threshold, a <failure> per breach, plus a "run completed" testcase) so CI consumers render
+        per-threshold pass/fail. 404 if the scenario never ran.
+      responses:
+        '200':
+          description: report returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoadScenarioReport"
+            application/xml:
+              schema:
+                type: string
+                description: JUnit-XML <testsuite> document (returned when format=junit)
+        '404':
+          description: no load scenario run for that name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /mockserver/loadScenario/start:
     put:
       tags:
@@ -4771,6 +4820,93 @@ components:
         endedAt:
           type: integer
           format: int64
+    LoadScenarioReport:
+      description: >-
+        end-of-run summary report for a load scenario run (JSON form). A JUnit-XML rendering of the same
+        data is returned instead when the report endpoint is called with ?format=junit (Content-Type
+        application/xml).
+      type: object
+      properties:
+        scenario:
+          type: string
+        runId:
+          type: string
+        state:
+          type: string
+          enum: [LOADED, PENDING, RUNNING, COMPLETED, STOPPED]
+        verdict:
+          type: string
+          enum: [PASS, FAIL]
+          description: "in-run threshold verdict; absent when the scenario has no thresholds or none has been evaluated yet"
+        abortedByThreshold:
+          type: boolean
+          description: "true when this run was terminated early by an abortOnFail threshold breach"
+        timing:
+          type: object
+          properties:
+            startedAtEpochMillis:
+              type: integer
+              format: int64
+            endedAtEpochMillis:
+              type: integer
+              format: int64
+              nullable: true
+              description: "epoch-millis the run ended; null while still running"
+            durationMillis:
+              type: integer
+              format: int64
+              description: "elapsed run time in milliseconds"
+        counts:
+          type: object
+          properties:
+            requestsSent:
+              type: integer
+              format: int64
+            succeeded:
+              type: integer
+              format: int64
+            failed:
+              type: integer
+              format: int64
+            droppedIterations:
+              type: integer
+              format: int64
+            errorRate:
+              type: number
+              description: "failed / max(1, requestsSent)"
+        latencyMillis:
+          type: object
+          properties:
+            p50:
+              type: integer
+              format: int64
+            p95:
+              type: integer
+              format: int64
+            p99:
+              type: integer
+              format: int64
+            p999:
+              type: integer
+              format: int64
+        thresholdResults:
+          type: array
+          description: "per-threshold results behind the verdict"
+          items:
+            type: object
+            properties:
+              metric:
+                type: string
+                enum: [LATENCY_P50, LATENCY_P95, LATENCY_P99, LATENCY_P999, ERROR_RATE, THROUGHPUT_RPS]
+              comparator:
+                type: string
+                enum: [LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL]
+              threshold:
+                type: number
+              observed:
+                type: number
+              satisfied:
+                type: boolean
     SloObjective:
       description: "a single service-level objective over the recorded SLI samples"
       type: object

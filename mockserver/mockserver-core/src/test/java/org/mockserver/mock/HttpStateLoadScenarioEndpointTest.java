@@ -397,4 +397,70 @@ public class HttpStateLoadScenarioEndpointTest {
         assertThat(one.get("startDelayMillis").asLong(), is(2000L));
         assertThat(one.get("definition").get("startDelayMillis").asLong(), is(2000L));
     }
+
+    // --- end-of-run report ---
+
+    private HttpResponse report(String name, String format) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        HttpRequest req = request("/mockserver/loadScenario/" + name + "/report").withMethod("GET");
+        if (format != null) {
+            req.withQueryStringParameter("format", format);
+        }
+        assertThat("route handled", httpState.handle(req, rw, false), is(true));
+        return rw.response;
+    }
+
+    @Test
+    public void reportReturnsJsonForRunningScenario() throws Exception {
+        put(scenarioJson("reportable"));
+        start("{ \"name\": \"reportable\" }");
+        try {
+            HttpResponse response = report("reportable", null);
+            assertThat(response.getStatusCode(), is(200));
+            assertThat(response.getBody().getContentType(), containsString("application/json"));
+            JsonNode b = body(response);
+            assertThat(b.get("scenario").asText(), is("reportable"));
+            assertThat(b.has("runId"), is(true));
+            assertThat(b.get("counts").has("requestsSent"), is(true));
+            assertThat(b.get("latencyMillis").has("p95"), is(true));
+            assertThat(b.has("thresholdResults"), is(true));
+        } finally {
+            stop(null);
+        }
+    }
+
+    @Test
+    public void reportReturnsJunitXmlWhenFormatJunit() throws Exception {
+        put(scenarioJson("junitable"));
+        start("{ \"name\": \"junitable\" }");
+        try {
+            HttpResponse response = report("junitable", "junit");
+            assertThat(response.getStatusCode(), is(200));
+            assertThat(response.getBody().getContentType(), containsString("application/xml"));
+            String xml = response.getBodyAsString();
+            assertThat(xml, containsString("<testsuite name=\"load:junitable\""));
+            assertThat(xml, containsString("<testcase name=\"run completed\">"));
+        } finally {
+            stop(null);
+        }
+    }
+
+    @Test
+    public void reportReturnsRetainedTerminalSnapshotForStoppedRun() throws Exception {
+        put(scenarioJson("terminal-report"));
+        start("{ \"name\": \"terminal-report\" }");
+        stop(null);
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("terminal-report"), is(false));
+
+        HttpResponse response = report("terminal-report", null);
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(response).get("state").asText(), is("STOPPED"));
+    }
+
+    @Test
+    public void reportReturns404WhenScenarioNeverRan() {
+        HttpResponse response = report("never-ran", null);
+        assertThat(response.getStatusCode(), is(404));
+        assertThat(response.getBodyAsString(), containsString("never-ran"));
+    }
 }

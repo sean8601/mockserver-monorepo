@@ -179,6 +179,7 @@ All endpoints are control-plane endpoints (subject to `controlPlaneRequestAuthen
 | `PUT` | `/mockserver/loadScenario` | **Load/register** a scenario by `name` (does NOT run). Allowed even when `loadGenerationEnabled=false`. `400 {error}` when invalid or a cap is exceeded; `200 {status:loaded, name, state:LOADED}` otherwise. Loading the same name replaces. |
 | `GET` | `/mockserver/loadScenario` | List ALL registered scenarios: `{ scenarios:[ { name, state, startDelayMillis, definition, ...live status fields when active/run } ] }`. State ∈ `LOADED/PENDING/RUNNING/COMPLETED/STOPPED`. |
 | `GET` | `/mockserver/loadScenario/{name}` | One scenario (definition + state + status); `404` if not registered. |
+| `GET` | `/mockserver/loadScenario/{name}/report` | **End-of-run summary report** for the run (live snapshot if running, retained terminal snapshot if finished). JSON by default; `?format=junit` returns a JUnit-XML `<testsuite>` with `application/xml`. `404` if the scenario never ran. See [Summary report](#summary-report). |
 | `DELETE` | `/mockserver/loadScenario/{name}` | Remove from the registry (stops it first if running). |
 | `DELETE` | `/mockserver/loadScenario` | Clear the whole registry (stops all running). |
 | `PUT` | `/mockserver/loadScenario/start` | **Trigger** registered scenario(s) to run. Body `{names:[...]}` or `{name:"a"}`. Requires `loadGenerationEnabled` (else `403`); `404` if a name isn't registered; `400` if it would exceed `loadGenerationMaxConcurrentScenarios`. Returns the triggered names + resulting states (`PENDING`/`RUNNING`). |
@@ -328,6 +329,37 @@ load test the moment a metric breaches its budget.
 - **CI mapping** — clients should map a terminal `verdict == FAIL` to a non-zero process exit code so a
   breached load test fails the pipeline. (The client convenience methods that do this are a later wave;
   for now poll the status and inspect `verdict` directly.)
+
+## Summary report
+
+`GET /mockserver/loadScenario/{name}/report` produces an **end-of-run summary report** derived from the
+run's status snapshot — the live snapshot while running, or the **retained terminal snapshot** once
+finished (so you can fetch the report after a `COMPLETED`/`STOPPED` run). `404` if the scenario never
+ran. The report is built by `org.mockserver.load.LoadScenarioReport` purely from existing
+`LoadScenarioStatus` fields (it adds no hot-path tracking).
+
+Two renderings of the same data:
+
+- **JSON** (default) — `{ scenario, runId, state, verdict, abortedByThreshold, timing:{
+  startedAtEpochMillis, endedAtEpochMillis, durationMillis }, counts:{ requestsSent, succeeded, failed,
+  droppedIterations, errorRate }, latencyMillis:{ p50, p95, p99, p999 }, thresholdResults:[ { metric,
+  comparator, threshold, observed, satisfied } ] }`. `errorRate = failed / max(1, requestsSent)`.
+- **JUnit XML** (`?format=junit`, `application/xml`) — a `<testsuite name="load:{scenario}" tests=…
+  failures=… time={durationSeconds}>` with one `<testcase name="threshold: {metric} {comparator}
+  {threshold}">` per threshold (a breach adds a `<failure>`), plus a `<testcase name="run completed">`
+  that fails when the run was `abortedByThreshold`, carries a `FAIL` verdict, or stopped with request
+  failures. p95/p99/error-rate (and the other counts/percentiles) are emitted as `<properties>` and a
+  `<system-out>` line so CI consumers (Buildkite, JUnit) render them. The scenario name and all messages
+  are XML-escaped, so a name containing `& < > " '` is safe.
+
+```bash
+# JSON report for a finished run
+curl http://localhost:1080/mockserver/loadScenario/checkout-load/report
+
+# JUnit XML — drop into a CI test-report artifact so a breached threshold fails the build
+curl 'http://localhost:1080/mockserver/loadScenario/checkout-load/report?format=junit' \
+  -o load-report.xml
+```
 
 ## Metrics & Observability
 

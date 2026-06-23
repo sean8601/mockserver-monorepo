@@ -2755,6 +2755,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (loadScenarioReportName(request) != null) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioReport(loadScenarioReportName(request), request.getFirstQueryStringParameter("format"))), true);
+                }
+                return true;
+            }
             if (loadScenarioName(request, "GET") != null) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioGetOne(loadScenarioName(request, "GET"))), true);
@@ -3563,6 +3569,33 @@ public class HttpState {
         }
     }
 
+    /**
+     * Handle {@code GET /mockserver/loadScenario/{name}/report}: an end-of-run summary report derived
+     * from the run's status snapshot (live snapshot for a running run, retained terminal snapshot for a
+     * finished one). Returns JSON by default; {@code ?format=junit} returns a JUnit-XML {@code testsuite}
+     * with {@code application/xml}. {@code 404} when the scenario is unknown / never ran. Read-only.
+     */
+    private HttpResponse handleLoadScenarioReport(String name, String format) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator.LoadScenarioStatus status =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance().statusFor(name);
+            if (status == null) {
+                return response().withStatusCode(NOT_FOUND.code())
+                    .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        objectMapper.createObjectNode().put("error", "no load scenario run for '" + name + "'")), MediaType.JSON_UTF_8);
+            }
+            if (format != null && format.equalsIgnoreCase("junit")) {
+                return response().withStatusCode(OK.code())
+                    .withBody(org.mockserver.load.LoadScenarioReport.toJUnitXml(status), MediaType.create("application", "xml"));
+            }
+            return response().withStatusCode(OK.code())
+                .withBody(org.mockserver.load.LoadScenarioReport.toJson(status), MediaType.JSON_UTF_8);
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to build load scenario report: " + e.getMessage());
+        }
+    }
+
     /** Handle {@code DELETE /mockserver/loadScenario/{name}}: remove from the registry (stop it if running). */
     private HttpResponse handleLoadScenarioDeleteOne(String name) {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
@@ -3842,6 +3875,43 @@ public class HttpState {
             decoded = java.net.URLDecoder.decode(rest, java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             decoded = rest;
+        }
+        if ("start".equals(decoded) || "stop".equals(decoded)) {
+            return null;
+        }
+        return decoded;
+    }
+
+    /**
+     * If {@code request} is a {@code GET} on {@code /mockserver/loadScenario/{name}/report} (with or
+     * without the prefix) where {name} is a single non-reserved segment, returns the decoded {name};
+     * otherwise {@code null}. {@code start}/{@code stop} are reserved and never matched as a name.
+     */
+    private String loadScenarioReportName(HttpRequest request) {
+        if (!request.getMethod().getValue().equals("GET")) {
+            return null;
+        }
+        String prefix = "/loadScenario/";
+        String suffix = "/report";
+        String path = request.getPath().getValue();
+        String rest = null;
+        if (path.startsWith(PATH_PREFIX + prefix)) {
+            rest = path.substring((PATH_PREFIX + prefix).length());
+        } else if (path.startsWith(prefix)) {
+            rest = path.substring(prefix.length());
+        }
+        if (rest == null || !rest.endsWith(suffix)) {
+            return null;
+        }
+        String namePart = rest.substring(0, rest.length() - suffix.length());
+        if (namePart.isEmpty() || namePart.contains("/")) {
+            return null;
+        }
+        String decoded;
+        try {
+            decoded = java.net.URLDecoder.decode(namePart, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            decoded = namePart;
         }
         if ("start".equals(decoded) || "stop".equals(decoded)) {
             return null;
