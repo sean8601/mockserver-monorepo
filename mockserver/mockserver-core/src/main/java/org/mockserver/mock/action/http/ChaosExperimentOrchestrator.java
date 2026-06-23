@@ -516,14 +516,15 @@ public class ChaosExperimentOrchestrator {
         // Scope evaluation to the experiment window via an EXPLICIT window, overriding
         // whatever window the criteria was submitted with. SloEvaluator uses EXPLICIT
         // bounds verbatim, so the evaluation never reaches outside the experiment.
+        // Propagate minimumSampleCount unconditionally: an explicit null (guard disabled)
+        // must survive rather than being silently re-defaulted to the model default of 1.
+        // SloEvaluator null-handles the guard.
         SloCriteria scoped = new SloCriteria()
             .withName(criteria.getName())
             .withObjectives(criteria.getObjectives())
             .withUpstreamHosts(criteria.getUpstreamHosts())
-            .withWindow(SloWindow.explicit(experiment.startedAtMillis, toEpochMillis));
-        if (criteria.getMinimumSampleCount() != null) {
-            scoped.withMinimumSampleCount(criteria.getMinimumSampleCount());
-        }
+            .withWindow(SloWindow.explicit(experiment.startedAtMillis, toEpochMillis))
+            .withMinimumSampleCount(criteria.getMinimumSampleCount());
         return sloEvaluator.evaluate(scoped);
     }
 

@@ -1047,6 +1047,33 @@ public class ChaosExperimentOrchestratorTest {
     }
 
     @Test
+    public void shouldEmitFailVerdictWhenAutoHaltOccursWithSloCriteria() {
+        // given - an experiment WITH sloCriteria whose samples would otherwise PASS
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            60_000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "autohalt-verdict", Arrays.asList(stage0), false, 0L, null, errorRateBelow(0.5));
+        orchestrator.start(def);
+        // clean samples — the window on its own would yield PASS, not FAIL
+        SloSampleStore.getInstance().record(clock.get() + 100L, 50L, false, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 200L, 50L, false, Scope.FORWARD, "api.svc");
+
+        // when - the raw-volume auto-halt fires (registry cleared) and the orchestrator
+        // detects the empty registry at the next advance
+        ServiceChaosRegistry.getInstance().reset();
+        clock.addAndGet(60_000L);
+        orchestrator.advanceNow();
+
+        // then - status is halted_by_auto_halt AND the verdict is forced to FAIL
+        // (STRICT semantics: an auto-halted experiment did not hold its steady state)
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("halted_by_auto_halt"));
+        assertThat(status.experimentVerdict, is(notNullValue()));
+        assertThat(status.experimentVerdict.getResult(), is(SloVerdict.Result.FAIL));
+    }
+
+    @Test
     public void shouldNotSloHaltWhenSloHolds() {
         // given - an experiment with an SLO that holds (no errors)
         ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
