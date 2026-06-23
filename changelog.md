@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still opens Get Started.
 - **Dashboard search-operator hints.** The search box now advertises its operators (`status:>=400`,
   `method:POST`, `path:/api/*`, `/regex/`) via the placeholder and an accessible help tooltip.
+- **Fluent `when().respond()` DSL in the Node client.** The Node client now offers a chainable
+  `when(request).respond(response)` — plus `.forward()`, `.error()`, `.callback()`, and
+  `.withTimes()` / `.withTimeToLive()` / `.withPriority()` builders — mirroring the Java client, alongside the
+  existing procedural methods (which are unchanged).
+- **SLO verification dashboard panel.** A new dashboard view authors service-level objectives (latency
+  p50/p95/p99, error-rate) and runs them against the existing `/mockserver/verifySLO` endpoint, showing
+  observed-vs-threshold per objective and an overall PASS / FAIL / INCONCLUSIVE verdict.
+- **Opt-in per-test reset for the JUnit 5 extension.** `@MockServerSettings(resetBeforeEach = true)` resets the
+  shared MockServer before each test (matching the JUnit 4 rule and Spring listener). Default off, so existing
+  behaviour is unchanged.
+- **Contract testing & Pact consumer guide.** New documentation page covering the `/contractTest` endpoint and
+  Pact import / export / verify, with verified response codes.
 
 ### Changed
 
