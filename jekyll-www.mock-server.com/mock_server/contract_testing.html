@@ -43,7 +43,7 @@ keywords: contract testing, consumer-driven contracts, Pact, OpenAPI contract te
     <tr>
       <td><span class="inline_code">spec</span></td>
       <td>Yes</td>
-      <td>A URL, file path, or inline JSON/YAML OpenAPI v3 spec. Also accepted as <span class="inline_code">specUrlOrPayload</span>.</td>
+      <td>A URL, file path, or inline JSON/YAML OpenAPI v3 spec. Also accepted as <span class="inline_code">specUrlOrPayload</span>. When a file path is given, it is resolved on the <strong>MockServer server's filesystem</strong>, not the client machine.</td>
     </tr>
     <tr>
       <td><span class="inline_code">baseUrl</span></td>
@@ -242,7 +242,53 @@ mockServerClient('localhost', 1080)
   </tbody>
 </table>
 
-<p>Full documentation of these endpoints — including matching-rule translation, provider state handling, export filtering, and response schemas — is on the <a href="/mock_server/pact_export.html">Pact Import / Export / Verify</a> page.</p>
+<h3>Response codes — /pact/import</h3>
+
+<table class="table-standard">
+  <thead>
+    <tr>
+      <th>HTTP status</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="inline_code">201 Created</span></td>
+      <td>Import succeeded. The response body is a JSON array of the generated expectations.</td>
+    </tr>
+    <tr>
+      <td><span class="inline_code">400 Bad Request</span></td>
+      <td>The request body was empty, not valid JSON, or could not be parsed as a Pact contract. Inspect the plain-text response body for the error message.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Response codes — /pact/verify</h3>
+
+<table class="table-standard">
+  <thead>
+    <tr>
+      <th>HTTP status</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="inline_code">202 Accepted</span></td>
+      <td>All interactions verified successfully. The response body is a JSON object with <span class="inline_code">"verified": true</span> and a per-interaction breakdown.</td>
+    </tr>
+    <tr>
+      <td><span class="inline_code">406 Not Acceptable</span></td>
+      <td>One or more interactions failed verification. The response body is a JSON object with <span class="inline_code">"verified": false</span> and per-interaction failure reasons.</td>
+    </tr>
+    <tr>
+      <td><span class="inline_code">400 Bad Request</span></td>
+      <td>The request body was empty, not valid JSON, or the contract could not be parsed. Inspect the JSON <span class="inline_code">error</span> field in the response body for details.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Full documentation of these endpoints — including matching-rule translation, provider state handling, export filtering, and full result schemas — is on the <a href="/mock_server/pact_export.html">Pact Import / Export / Verify</a> page.</p>
 
 <a id="pact_workflow" class="anchor" href="#pact_workflow">&nbsp;</a>
 
