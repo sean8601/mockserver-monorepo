@@ -4663,6 +4663,33 @@ components:
           additionalProperties:
             type: string
           description: "optional step-level custom annotation labels, merged over the scenario labels (step keys win); exported as OpenTelemetry attributes on every load measurement and as allowlisted Prometheus labels"
+        captures:
+          type: array
+          description: "optional cross-step capture rules applied to this step's response. Each binds an extracted value to a variable name visible to SUBSEQUENT steps in the same iteration via $iteration.captured.<name> (Velocity) / {{iteration.captured.<name>}} (Mustache), in path, body and header templates. Scope is per-iteration (one virtual user's single pass through the steps)."
+          items:
+            $ref: "#/components/schemas/LoadCapture"
+    LoadCapture:
+      description: "a declarative cross-step capture / correlation rule: extracts a value from a step's response and binds it to a variable name that a later step in the same iteration can reference from its templated request fields. Best-effort: on no match it falls back to defaultValue (when set) or leaves the variable unset, never failing the run."
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - source
+        - expression
+      properties:
+        name:
+          type: string
+          description: "the variable name later steps reference (e.g. 'token' for $iteration.captured.token)"
+        source:
+          type: string
+          enum: [BODY_JSONPATH, HEADER, BODY_REGEX]
+          description: "where to extract from: a JSONPath over the response body, a response header value, or a regex over the response body string"
+        expression:
+          type: string
+          description: "the JSONPath (BODY_JSONPATH), header name (HEADER), or regex (BODY_REGEX, capture group 1) driving the extraction"
+        defaultValue:
+          type: string
+          description: "optional fallback value bound to the variable when extraction yields nothing; when omitted the variable is left unset on no match"
     LoadThreshold:
       description: "an in-run pass/fail threshold for a load scenario: a per-run metric compared against a value. All thresholds must hold for the run verdict to be PASS (logical AND); any breach makes the verdict FAIL. Evaluated from this run's own latency histogram and counters, not the global SLO sample store."
       type: object

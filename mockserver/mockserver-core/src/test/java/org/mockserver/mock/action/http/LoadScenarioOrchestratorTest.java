@@ -1090,4 +1090,229 @@ public class LoadScenarioOrchestratorTest {
         assertThat("a completed run carries a final verdict", status.verdict, is("PASS"));
         assertThat(status.thresholdResults, hasSize(1));
     }
+
+    /**
+     * A path-aware fake sender: returns a canned response (body + headers) for requests whose path
+     * starts with a given prefix, and 200/empty for everything else. Records every request so a test
+     * can assert what a later step rendered.
+     */
+    private static final class CannedSender implements Function<HttpRequest, CompletableFuture<HttpResponse>> {
+        final ConcurrentLinkedQueue<HttpRequest> sent = new ConcurrentLinkedQueue<>();
+        private final String firstStepPathPrefix;
+        private final HttpResponse firstStepResponse;
+
+        CannedSender(String firstStepPathPrefix, HttpResponse firstStepResponse) {
+            this.firstStepPathPrefix = firstStepPathPrefix;
+            this.firstStepResponse = firstStepResponse;
+        }
+
+        @Override
+        public CompletableFuture<HttpResponse> apply(HttpRequest httpRequest) {
+            sent.add(httpRequest);
+            String path = httpRequest.getPath() != null ? httpRequest.getPath().getValue() : "";
+            if (path != null && path.startsWith(firstStepPathPrefix)) {
+                return CompletableFuture.completedFuture(firstStepResponse);
+            }
+            return CompletableFuture.completedFuture(response().withStatusCode(200));
+        }
+    }
+
+    private HttpRequest awaitSecondStep(CannedSender sender, String secondStepPathPrefix, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            for (HttpRequest sentRequest : sender.sent) {
+                String path = sentRequest.getPath() != null ? sentRequest.getPath().getValue() : "";
+                if (path != null && path.startsWith(secondStepPathPrefix)) {
+                    return sentRequest;
+                }
+            }
+            Thread.sleep(5);
+        }
+        return null;
+    }
+
+    @Test
+    public void captureBodyJsonPathFlowsIntoSubsequentStepPathBodyAndHeader() throws Exception {
+        // Step 1 (POST /login) returns {"token":"abc"}; a BODY_JSONPATH $.token capture binds it to
+        // 'token'. Step 2 references it in its path, body and an Authorization header. Mustache engine.
+        CannedSender sender = new CannedSender("/login",
+            response().withStatusCode(200).withBody("{\"token\":\"abc\"}"));
+        LoadScenario scenario = new LoadScenario()
+            .withName("capture-jsonpath")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(2)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep()
+                    .withRequest(request().withMethod("POST").withPath("/login").withHeader("Host", "target"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("token")
+                        .withSource(org.mockserver.load.LoadCapture.Source.BODY_JSONPATH)
+                        .withExpression("$.token")),
+                new LoadStep()
+                    .withRequest(request().withMethod("GET")
+                        .withPath("/account/{{iteration.captured.token}}")
+                        .withHeader("Host", "target")
+                        .withBody("{\"t\":\"{{iteration.captured.token}}\"}")
+                        .withHeader("Authorization", "Bearer {{iteration.captured.token}}")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        HttpRequest secondStep = awaitSecondStep(sender, "/account/", 5_000L);
+        assertThat("second step request should have been dispatched", secondStep, is(notNullValue()));
+        assertThat(secondStep.getPath().getValue(), is("/account/abc"));
+        assertThat(secondStep.getBodyAsString(), containsString("abc"));
+        assertThat(secondStep.getFirstHeader("Authorization"), is("Bearer abc"));
+    }
+
+    @Test
+    public void captureHeaderFlowsIntoSubsequentStep() throws Exception {
+        // Step 1 returns a Location header; a HEADER capture of 'Location' feeds step 2's path. Velocity.
+        CannedSender sender = new CannedSender("/login",
+            response().withStatusCode(200).withHeader("Location", "/sess/42"));
+        LoadScenario scenario = new LoadScenario()
+            .withName("capture-header")
+            .withTemplateType(HttpTemplate.TemplateType.VELOCITY)
+            .withMaxRequests(2)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep()
+                    .withRequest(request().withMethod("POST").withPath("/login").withHeader("Host", "target"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("loc")
+                        .withSource(org.mockserver.load.LoadCapture.Source.HEADER)
+                        .withExpression("Location")),
+                new LoadStep()
+                    .withRequest(request().withMethod("GET")
+                        .withPath("/follow$iteration.captured.loc")
+                        .withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        HttpRequest secondStep = awaitSecondStep(sender, "/follow", 5_000L);
+        assertThat(secondStep, is(notNullValue()));
+        assertThat(secondStep.getPath().getValue(), is("/follow/sess/42"));
+    }
+
+    @Test
+    public void captureBodyRegexGroupOneFlowsIntoSubsequentStep() throws Exception {
+        // Step 1 returns a CSRF token embedded in HTML; BODY_REGEX captures group 1. Mustache.
+        CannedSender sender = new CannedSender("/form",
+            response().withStatusCode(200).withBody("<input name=csrf value=\"XYZ-9\"/>"));
+        LoadScenario scenario = new LoadScenario()
+            .withName("capture-regex")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(2)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep()
+                    .withRequest(request().withMethod("GET").withPath("/form").withHeader("Host", "target"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("csrf")
+                        .withSource(org.mockserver.load.LoadCapture.Source.BODY_REGEX)
+                        .withExpression("value=\"([^\"]+)\"")),
+                new LoadStep()
+                    .withRequest(request().withMethod("POST")
+                        .withPath("/submit")
+                        .withHeader("Host", "target")
+                        .withHeader("X-CSRF", "{{iteration.captured.csrf}}")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        HttpRequest secondStep = awaitSecondStep(sender, "/submit", 5_000L);
+        assertThat(secondStep, is(notNullValue()));
+        assertThat(secondStep.getFirstHeader("X-CSRF"), is("XYZ-9"));
+    }
+
+    @Test
+    public void captureNoMatchUsesDefaultValueAndMissingLeavesVarUnset() throws Exception {
+        // Step 1's body has no 'token'; one capture has a defaultValue (used), one does not (var stays
+        // unset, so the literal placeholder renders empty under Mustache).
+        CannedSender sender = new CannedSender("/login",
+            response().withStatusCode(200).withBody("{\"other\":\"v\"}"));
+        LoadScenario scenario = new LoadScenario()
+            .withName("capture-default")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(2)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep()
+                    .withRequest(request().withMethod("POST").withPath("/login").withHeader("Host", "target"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("token")
+                        .withSource(org.mockserver.load.LoadCapture.Source.BODY_JSONPATH)
+                        .withExpression("$.token")
+                        .withDefaultValue("fallback"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("missing")
+                        .withSource(org.mockserver.load.LoadCapture.Source.BODY_JSONPATH)
+                        .withExpression("$.alsoMissing")),
+                new LoadStep()
+                    .withRequest(request().withMethod("GET")
+                        .withPath("/a/{{iteration.captured.token}}/{{iteration.captured.missing}}")
+                        .withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        HttpRequest secondStep = awaitSecondStep(sender, "/a/", 5_000L);
+        assertThat(secondStep, is(notNullValue()));
+        // 'token' -> defaultValue 'fallback'; 'missing' -> unset -> empty under Mustache.
+        assertThat(secondStep.getPath().getValue(), is("/a/fallback/"));
+    }
+
+    @Test
+    public void capturesDoNotLeakAcrossIterations() throws Exception {
+        // The per-iteration map is fresh each iteration: a value captured in one iteration must not be
+        // visible in another. Step 1 returns a per-global-iteration unique token; step 2 echoes it. If
+        // the map leaked, distinct iterations would render the same (stale) token. One VU, 3 iterations.
+        UniqueTokenSender sender = new UniqueTokenSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("capture-isolation")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(6) // 3 iterations of 2 steps each
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep()
+                    .withRequest(request().withMethod("POST").withPath("/login").withHeader("Host", "target"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("token")
+                        .withSource(org.mockserver.load.LoadCapture.Source.BODY_JSONPATH)
+                        .withExpression("$.token")),
+                new LoadStep()
+                    .withRequest(request().withMethod("GET")
+                        .withPath("/echo/{{iteration.captured.token}}")
+                        .withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (sender.sent.size() < 6 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(5);
+        }
+        assertThat(sender.sent.size(), greaterThanOrEqualTo(6));
+        Set<String> echoPaths = sender.sent.stream()
+            .map(r -> r.getPath() != null ? r.getPath().getValue() : "")
+            .filter(p -> p.startsWith("/echo/"))
+            .collect(java.util.stream.Collectors.toSet());
+        // Each iteration captured its own unique token, so the echoed paths must differ across iterations
+        // (no leak would produce >1 distinct path); a leak/shared map would collapse them.
+        assertThat(echoPaths.size(), greaterThan(1));
+    }
+
+    /**
+     * A sender that returns a UNIQUE token per dispatched {@code /login} (one VU runs iterations in
+     * order, so each iteration's login gets a distinct token), and 200 otherwise. Used to prove the
+     * per-iteration captured map does not leak across iterations.
+     */
+    private static final class UniqueTokenSender implements Function<HttpRequest, CompletableFuture<HttpResponse>> {
+        final ConcurrentLinkedQueue<HttpRequest> sent = new ConcurrentLinkedQueue<>();
+        private final AtomicLong loginCount = new AtomicLong();
+
+        @Override
+        public CompletableFuture<HttpResponse> apply(HttpRequest httpRequest) {
+            sent.add(httpRequest);
+            String path = httpRequest.getPath() != null ? httpRequest.getPath().getValue() : "";
+            if (path != null && path.startsWith("/login")) {
+                long n = loginCount.incrementAndGet();
+                return CompletableFuture.completedFuture(
+                    response().withStatusCode(200).withBody("{\"token\":\"t" + n + "\"}"));
+            }
+            return CompletableFuture.completedFuture(response().withStatusCode(200));
+        }
+    }
 }

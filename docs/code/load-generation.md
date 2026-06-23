@@ -104,10 +104,87 @@ and `iteration.getIndex()` (JavaScript) all resolve.
 | `vuIteration` | the iteration count within that virtual user (0-based) |
 | `elapsedMillis` | millis since the scenario started |
 | `count` | total requests dispatched so far |
+| `captured` | per-iteration cross-step captured variables (a `Map<String,String>`); see [Cross-step capture / correlation](#cross-step-capture--correlation) |
 
-Only the request `path` and `body` are rendered in v1 (the most commonly templated fields). The render
-path is a new internal overload (`TemplateEngine.renderTemplate(template, request, iteration)`); the
+The request `path`, `body` **and header values** are rendered (the most commonly templated fields). The
+render path is an internal overload (`TemplateEngine.renderTemplate(template, request, iteration)`); the
 existing response/forward template path is untouched (it passes a `null` iteration).
+
+## Cross-step capture / correlation
+
+A later step often needs a value produced by an earlier step — the classic case is a **login step that
+returns a token** which subsequent steps must send as a bearer credential. Each `LoadStep` can declare
+`captures`: rules that extract a value from **that step's response** and bind it to a named variable that
+later steps read from their templated request fields.
+
+### Scope — per-iteration
+
+The captured-variable map is **per-iteration**: it is created fresh at the start of every iteration (one
+virtual user's single pass through the ordered steps — i.e. one user "session"), threaded through that
+iteration's chained step dispatches, and **never shared** across virtual users or across a VU's
+successive iterations. This is the correct, race-free correlation scope: each simulated user gets its own
+token. A value captured in step 1 is visible to steps 2..N of the *same* iteration only.
+
+### Capture sources
+
+A `LoadCapture` has a `name` (the variable), a `source`, an `expression`, and an optional `defaultValue`:
+
+| `source` | `expression` is | Extracts |
+|----------|-----------------|----------|
+| `BODY_JSONPATH` | a JSONPath | the JSONPath result over the response body (single-element lists are unwrapped; scalars stringified) |
+| `HEADER` | a header name | the first value of that response header |
+| `BODY_REGEX` | a regex | capture **group 1** of the first match over the response body string |
+
+Capture is **best-effort and never fails the run**: on no match (or any extraction error — logged at
+debug) the variable falls back to `defaultValue` when set, otherwise it is left unset.
+
+### Referencing captured variables
+
+Captured variables are exposed on the `iteration` template object under `captured`, so a subsequent
+step references them by key — in the **path, body, and header** templates:
+
+- Velocity: `$iteration.captured.token`
+- Mustache: `{{iteration.captured.token}}`
+
+Both engines resolve a member access on a `Map<String,String>` getter (`IterationContext.getCaptured()`)
+by key, so the syntax is uniform across them.
+
+### Example — login → token → authenticated call
+
+```json
+{
+  "name": "login-then-fetch",
+  "templateType": "MUSTACHE",
+  "profile": { "stages": [ { "type": "VU", "targetVus": 5, "durationMillis": 30000 } ] },
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/login",
+        "headers": { "Host": [ "api" ] },
+        "body": { "username": "user{{iteration.vuId}}", "password": "pw" }
+      },
+      "captures": [
+        { "name": "token", "source": "BODY_JSONPATH", "expression": "$.token" }
+      ]
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/account",
+        "headers": {
+          "Host": [ "api" ],
+          "Authorization": [ "Bearer {{iteration.captured.token}}" ]
+        }
+      }
+    }
+  ]
+}
+```
+
+Step 1 logs in and captures the response body's `$.token` into `token`; step 2 — same iteration — sends
+it as `Authorization: Bearer <token>`. With 5 VUs, each VU's iterations each capture and replay their own
+token independently.
 
 ## Stages, arrival-rate and curves
 
@@ -494,5 +571,4 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
 
 - Distributed / multi-node load.
 - Seeding scenario *definitions* from recorded traffic or an OpenAPI spec (preloading from a JSON file is supported via `loadScenarioInitializationJsonPath`).
-- Programmatic cross-step capture (v1 uses template-side `$scenario.set/get`).
-- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first).
+- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field.

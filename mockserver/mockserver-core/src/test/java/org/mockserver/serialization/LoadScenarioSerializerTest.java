@@ -196,6 +196,48 @@ public class LoadScenarioSerializerTest {
         assertThat(parsed.getAbortGraceMillis(), is(0L));
     }
 
+    @Test
+    public void roundTripsStepCaptures() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("login-flow")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withProfile(LoadProfile.constant(5, 30_000L))
+            .withSteps(
+                new LoadStep()
+                    .withRequest(request().withMethod("POST").withPath("/login"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("token")
+                        .withSource(org.mockserver.load.LoadCapture.Source.BODY_JSONPATH)
+                        .withExpression("$.token"))
+                    .withCapture(new org.mockserver.load.LoadCapture()
+                        .withName("loc")
+                        .withSource(org.mockserver.load.LoadCapture.Source.HEADER)
+                        .withExpression("Location")
+                        .withDefaultValue("/")),
+                new LoadStep()
+                    .withRequest(request().withMethod("GET").withPath("/account")
+                        .withHeader("Authorization", "Bearer {{iteration.captured.token}}")));
+
+        String json = serializer.serialize(scenario);
+        LoadScenario parsed = serializer.deserialize(json);
+
+        assertThat(parsed.getSteps(), hasSize(2));
+        LoadStep first = parsed.getSteps().get(0);
+        assertThat(first.getCaptures(), hasSize(2));
+        org.mockserver.load.LoadCapture tokenCapture = first.getCaptures().get(0);
+        assertThat(tokenCapture.getName(), is("token"));
+        assertThat(tokenCapture.getSource(), is(org.mockserver.load.LoadCapture.Source.BODY_JSONPATH));
+        assertThat(tokenCapture.getExpression(), is("$.token"));
+        assertThat(tokenCapture.getDefaultValue(), is(nullValue()));
+        org.mockserver.load.LoadCapture locCapture = first.getCaptures().get(1);
+        assertThat(locCapture.getName(), is("loc"));
+        assertThat(locCapture.getSource(), is(org.mockserver.load.LoadCapture.Source.HEADER));
+        assertThat(locCapture.getExpression(), is("Location"));
+        assertThat(locCapture.getDefaultValue(), is("/"));
+        // The second step declares no captures.
+        assertThat(parsed.getSteps().get(1).getCaptures(), is(nullValue()));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankBody() {
         serializer.deserialize("  ");

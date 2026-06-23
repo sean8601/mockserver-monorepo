@@ -2,6 +2,7 @@ package org.mockserver.mock.action.http;
 
 import org.mockserver.configuration.Configuration;
 import org.mockserver.load.IterationContext;
+import org.mockserver.load.LoadCapture;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
 import org.mockserver.load.LoadStage;
@@ -597,7 +598,12 @@ public class LoadScenarioOrchestrator {
         if (looping && vuIteration > 0 && tryRetireSurplus(run)) {
             return;
         }
-        fireStep(run, vuId, vuIteration, 0, looping);
+        // Per-iteration cross-step captured-variable map: created fresh here so its scope is exactly one
+        // virtual user's single pass through the steps (one user "session"). It is threaded through the
+        // chained fireStep calls below and never shared across VUs or across a VU's successive iterations,
+        // so cross-step correlation is race-free and captures never leak between users or iterations.
+        Map<String, String> captured = new ConcurrentHashMap<>();
+        fireStep(run, vuId, vuIteration, 0, looping, captured);
     }
 
     /**
@@ -626,7 +632,7 @@ public class LoadScenarioOrchestrator {
         run.activeVUs.decrementAndGet();
     }
 
-    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping) {
+    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured) {
         // Coordinated-omission correction: capture the scheduled-due timestamp at the very start of the
         // dispatch path — BEFORE the in-flight permit and RPS-token acquire below — so the latency we
         // record measures from the moment dispatch was requested, INCLUDING any queueing wait the
@@ -666,7 +672,7 @@ public class LoadScenarioOrchestrator {
         long globalIndex = run.iterationIndex.getAndIncrement();
         long count = run.requestsSent.get();
         long elapsed = clock.getAsLong() - run.startedAt;
-        IterationContext iteration = new IterationContext(globalIndex, vuId, vuIteration, elapsed, count);
+        IterationContext iteration = new IterationContext(globalIndex, vuId, vuIteration, elapsed, count, captured);
         final String stepLabel = run.stepLabel(step, stepIndex);
         final Map<String, String> stepCustomLabels = run.customLabelsFor(step);
 
@@ -679,7 +685,7 @@ public class LoadScenarioOrchestrator {
             run.failed.incrementAndGet();
             run.requestsSent.incrementAndGet();
             Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
             return;
         }
 
@@ -701,14 +707,14 @@ public class LoadScenarioOrchestrator {
         if (!run.inFlight.tryAcquire()) {
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
             return;
         }
 
@@ -726,14 +732,14 @@ public class LoadScenarioOrchestrator {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "connection");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
             return;
         }
         if (future == null) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "null_response");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
             return;
         }
         future.whenComplete((response, throwable) -> {
@@ -743,8 +749,120 @@ public class LoadScenarioOrchestrator {
                 || (response.getStatusCode() != null && response.getStatusCode() >= 500);
             String errorKind = classifyError(throwable, response);
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, response, scheduledNanos, error, errorKind);
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping);
+            // Apply this step's cross-step captures to the per-iteration map BEFORE the next step is
+            // scheduled, so a subsequent step's template can read what this response yielded. Best-effort
+            // and never throws out of the dispatch path: a missing value or extraction error falls back
+            // to the capture's defaultValue (when set) or leaves the variable unset.
+            applyCaptures(run, step, response, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
         });
+    }
+
+    /**
+     * Apply a step's {@link LoadCapture} rules against the completed response, writing extracted values
+     * into the per-iteration {@code captured} map. Best-effort and side-effect-only: a malformed
+     * expression, a missing value, a null response, or any extraction error is logged at debug and
+     * skipped, falling back to the capture's {@code defaultValue} when set, otherwise leaving the
+     * variable unset. Never throws out of the dispatch path.
+     */
+    private void applyCaptures(RunningScenario run, LoadStep step, HttpResponse response, Map<String, String> captured) {
+        List<LoadCapture> captures = step != null ? step.getCaptures() : null;
+        if (captures == null || captures.isEmpty()) {
+            return;
+        }
+        for (LoadCapture capture : captures) {
+            if (capture == null || isBlank(capture.getName()) || capture.getSource() == null) {
+                continue;
+            }
+            String value = null;
+            try {
+                value = extractCapture(capture, response);
+            } catch (Throwable throwable) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("load scenario '{}' capture '{}' failed - skipping: {}",
+                        run.scenario.getName(), capture.getName(), throwable.getMessage());
+                }
+            }
+            if (value == null) {
+                value = capture.getDefaultValue();
+            }
+            if (value != null) {
+                captured.put(capture.getName(), value);
+            }
+        }
+    }
+
+    /**
+     * Extract a single {@link LoadCapture}'s value from the response, or null when nothing matches.
+     * Reuses Jayway JsonPath (already a project dependency) for {@code BODY_JSONPATH}.
+     */
+    private static String extractCapture(LoadCapture capture, HttpResponse response) {
+        if (response == null) {
+            return null;
+        }
+        String expression = capture.getExpression();
+        switch (capture.getSource()) {
+            case BODY_JSONPATH: {
+                if (isBlank(expression)) {
+                    return null;
+                }
+                String body = response.getBodyAsString();
+                if (isBlank(body)) {
+                    return null;
+                }
+                Object result = com.jayway.jsonpath.JsonPath.compile(expression).read(body);
+                return stringifyJsonPath(result);
+            }
+            case HEADER: {
+                if (isBlank(expression)) {
+                    return null;
+                }
+                String header = response.getFirstHeader(expression);
+                return isBlank(header) ? null : header;
+            }
+            case BODY_REGEX: {
+                if (isBlank(expression)) {
+                    return null;
+                }
+                String body = response.getBodyAsString();
+                if (isBlank(body)) {
+                    return null;
+                }
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(expression).matcher(body);
+                if (matcher.find() && matcher.groupCount() >= 1) {
+                    return matcher.group(1);
+                }
+                return null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Render a JSONPath result as a plain string: a scalar becomes its {@code toString()}; a
+     * single-element collection (the common definite-path-returning-a-list case) is unwrapped to its
+     * element; an empty collection is treated as no match. Mirrors {@code CaptureProcessor}.
+     */
+    private static String stringifyJsonPath(Object result) {
+        if (result == null) {
+            return null;
+        }
+        if (result instanceof java.util.Collection) {
+            java.util.Collection<?> collection = (java.util.Collection<?>) result;
+            if (collection.isEmpty()) {
+                return null;
+            }
+            if (collection.size() == 1) {
+                Object only = collection.iterator().next();
+                return only != null ? String.valueOf(only) : null;
+            }
+        }
+        return String.valueOf(result);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     /**
@@ -770,7 +888,7 @@ public class LoadScenarioOrchestrator {
         return null;
     }
 
-    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping) {
+    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured) {
         if (run.stopped.get() || !isCurrent(run)) {
             // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
             // genuine loop-exit point, so release the slot exactly once.
@@ -778,7 +896,7 @@ public class LoadScenarioOrchestrator {
             return;
         }
         long thinkMillis = step.getThinkTime() != null ? Math.max(0, step.getThinkTime().sampleValueMillis()) : 0;
-        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping), thinkMillis, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured), thinkMillis, TimeUnit.MILLISECONDS);
     }
 
     private void recordResult(RunningScenario run, String host, String stepLabel, String route, String method,
@@ -1258,7 +1376,50 @@ public class LoadScenarioOrchestrator {
             if (body != null && containsTemplate(body)) {
                 clone.withBody(engine.renderTemplate(body, request, iteration));
             }
+            renderHeaders(request, clone, engine, iteration);
             return clone;
+        }
+
+        /**
+         * Render any header value that contains a template placeholder, in place on the clone. This is
+         * what makes a templated auth header such as {@code Authorization: Bearer
+         * {{iteration.captured.token}}} resolve against the per-iteration captured map. Headers whose
+         * values contain no placeholder are left untouched. The template context is the ORIGINAL request
+         * (as for path/body). Best-effort: a header is rebuilt only when at least one of its values is a
+         * template, preserving the not/optional flags of names and untemplated values.
+         */
+        private void renderHeaders(HttpRequest request, HttpRequest clone, TemplateEngine engine, IterationContext iteration) {
+            if (request.getHeaders() == null || request.getHeaderList().isEmpty()) {
+                return;
+            }
+            for (org.mockserver.model.Header header : request.getHeaderList()) {
+                boolean anyTemplated = false;
+                List<org.mockserver.model.NottableString> originalValues = header.getValues();
+                if (originalValues != null) {
+                    for (org.mockserver.model.NottableString value : originalValues) {
+                        if (value != null && containsTemplate(value.getValue())) {
+                            anyTemplated = true;
+                            break;
+                        }
+                    }
+                }
+                if (!anyTemplated) {
+                    continue;
+                }
+                List<org.mockserver.model.NottableString> renderedValues = new ArrayList<>();
+                for (org.mockserver.model.NottableString value : originalValues) {
+                    if (value != null && containsTemplate(value.getValue())) {
+                        String rendered = engine.renderTemplate(value.getValue(), request, iteration);
+                        renderedValues.add(org.mockserver.model.NottableString.string(rendered, value.isNot()));
+                    } else {
+                        renderedValues.add(value);
+                    }
+                }
+                // Replace the cloned header (same name) with the rendered values. replace-by-name keeps
+                // header ordering stable and overwrites the cloned copy carried over from request.clone().
+                clone.replaceHeader(new org.mockserver.model.Header(
+                    header.getName(), renderedValues.toArray(new org.mockserver.model.NottableString[0])));
+            }
         }
 
         private boolean containsTemplate(String value) {
