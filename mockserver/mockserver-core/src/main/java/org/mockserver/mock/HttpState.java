@@ -2273,6 +2273,13 @@ public class HttpState {
                 }
                 canHandle.complete(true);
 
+            } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario/generateFromOpenAPI", "/loadScenario/generateFromOpenAPI")) {
+
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleLoadScenarioGenerateFromOpenAPI(request)), true);
+                }
+                canHandle.complete(true);
+
             } else if (request.matches("PUT", PATH_PREFIX + "/loadScenario", "/loadScenario")) {
 
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
@@ -3529,6 +3536,117 @@ public class HttpState {
         } catch (Exception e) {
             return loadScenarioError(objectMapper, "failed to process load scenario request: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle {@code PUT /mockserver/loadScenario/generateFromOpenAPI}: seed an editable
+     * {@link org.mockserver.load.LoadScenario} from an OpenAPI spec and <em>load</em> (register) it in
+     * the {@code LOADED} state — exactly like {@code PUT /mockserver/loadScenario}, this generates no
+     * traffic and is allowed even when {@code loadGenerationEnabled} is false. The generated scenario is
+     * returned in the response so a client/UI can show and edit it before triggering a run.
+     *
+     * <p>Body (JSON): {@code { "name": "...", "specUrlOrPayload": <inline spec|url|file>,
+     * "target": { "host":..., "port":..., "scheme":... } (optional),
+     * "profile": <LoadProfile> (optional) }}. One step is generated per OpenAPI operation. Returns
+     * {@code 200 { status:"loaded", name, state:"LOADED", scenario:<generated LoadScenario> }} on
+     * success, or {@code 400 { error }} when the spec is missing/unparseable or the generated scenario
+     * fails validation.
+     */
+    private HttpResponse handleLoadScenarioGenerateFromOpenAPI(HttpRequest request) {
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+        try {
+            String body = request.getBodyAsJsonOrXmlString();
+            if (isBlank(body)) {
+                return loadScenarioError(objectMapper, "request body is required with a name and OpenAPI specUrlOrPayload");
+            }
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(body);
+            String name = root.path("name").isMissingNode() ? null : root.path("name").asText(null);
+            if (isBlank(name)) {
+                return loadScenarioError(objectMapper, "'name' is required");
+            }
+            String specUrlOrPayload = readOpenApiSpec(root);
+            if (isBlank(specUrlOrPayload)) {
+                return loadScenarioError(objectMapper, "'specUrlOrPayload' is required (inline OpenAPI spec, URL or file)");
+            }
+            org.mockserver.load.LoadScenarioFromOpenAPI.Target target = readGenerateTarget(root);
+            org.mockserver.load.LoadProfile profile = null;
+            if (root.has("profile") && !root.get("profile").isNull()) {
+                // Deserialize via the DTO so the profile parses identically to PUT /loadScenario.
+                org.mockserver.serialization.model.LoadProfileDTO profileDTO =
+                    objectMapper.treeToValue(root.get("profile"), org.mockserver.serialization.model.LoadProfileDTO.class);
+                profile = profileDTO != null ? profileDTO.buildObject() : null;
+            }
+
+            org.mockserver.load.LoadScenario scenario;
+            try {
+                scenario = org.mockserver.load.LoadScenarioFromOpenAPI.generate(name, specUrlOrPayload, target, profile, mockServerLogger);
+            } catch (IllegalArgumentException e) {
+                return loadScenarioError(objectMapper, "failed to generate load scenario from OpenAPI: " + e.getMessage());
+            }
+
+            org.mockserver.mock.action.http.LoadScenarioOrchestrator orchestrator =
+                org.mockserver.mock.action.http.LoadScenarioOrchestrator.getInstance();
+            orchestrator.setConfiguration(configuration);
+            String error = orchestrator.validate(scenario);
+            if (error != null) {
+                return loadScenarioError(objectMapper, error);
+            }
+            // Round-trip through the serializer so the registry stores the exact author shape, matching
+            // PUT /loadScenario.
+            String serializedScenario = getLoadScenarioSerializer().serialize(scenario);
+            com.fasterxml.jackson.databind.JsonNode definition = objectMapper.readTree(serializedScenario);
+            loadScenarioRegistry.load(scenario.getName(), definition);
+            if (mockServerLogger.isEnabledForInstance(Level.INFO)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(LogEntry.LogMessageType.SERVER_CONFIGURATION)
+                        .setLogLevel(Level.INFO)
+                        .setHttpRequest(request)
+                        .setMessageFormat("generated and loaded load scenario:{}from OpenAPI with {}steps")
+                        .setArguments(scenario.getName(), scenario.getSteps().size())
+                );
+            }
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            result.put("status", "loaded");
+            result.put("name", scenario.getName());
+            result.put("state", loadScenarioStateFor(scenario.getName()).name());
+            result.set("scenario", definition);
+            return response().withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result), MediaType.JSON_UTF_8);
+        } catch (IllegalArgumentException e) {
+            return loadScenarioError(objectMapper, "invalid generate-from-OpenAPI request: " + e.getMessage());
+        } catch (Exception e) {
+            return loadScenarioError(objectMapper, "failed to process generate-from-OpenAPI request: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Reads the OpenAPI spec from a generate-from-OpenAPI request body, accepting it identically to the
+     * {@code PUT /mockserver/openapi/expectation} surface: a {@code specUrlOrPayload} field holding an
+     * inline JSON/YAML string, a URL or a file/classpath reference. When the field is an embedded JSON
+     * object (an inline spec sent as JSON rather than a string) it is re-serialised to a payload string.
+     */
+    private String readOpenApiSpec(com.fasterxml.jackson.databind.JsonNode root) throws Exception {
+        com.fasterxml.jackson.databind.JsonNode specNode = root.get("specUrlOrPayload");
+        if (specNode == null || specNode.isNull()) {
+            return null;
+        }
+        if (specNode.isObject()) {
+            return ObjectMapperFactory.createObjectMapper().writeValueAsString(specNode);
+        }
+        return specNode.asText(null);
+    }
+
+    /** Reads the optional {@code target} object ({@code host}/{@code port}/{@code scheme}) from a generate request. */
+    private org.mockserver.load.LoadScenarioFromOpenAPI.Target readGenerateTarget(com.fasterxml.jackson.databind.JsonNode root) {
+        com.fasterxml.jackson.databind.JsonNode targetNode = root.get("target");
+        if (targetNode == null || targetNode.isNull() || !targetNode.isObject()) {
+            return null;
+        }
+        String host = targetNode.hasNonNull("host") ? targetNode.get("host").asText() : null;
+        Integer port = targetNode.hasNonNull("port") ? targetNode.get("port").asInt() : null;
+        String scheme = targetNode.hasNonNull("scheme") ? targetNode.get("scheme").asText() : null;
+        return new org.mockserver.load.LoadScenarioFromOpenAPI.Target(host, port, scheme);
     }
 
     /**

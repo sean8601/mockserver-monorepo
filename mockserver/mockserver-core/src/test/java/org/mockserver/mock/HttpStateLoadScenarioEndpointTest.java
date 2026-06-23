@@ -463,4 +463,104 @@ public class HttpStateLoadScenarioEndpointTest {
         assertThat(response.getStatusCode(), is(404));
         assertThat(response.getBodyAsString(), containsString("never-ran"));
     }
+
+    // --- GENERATE FROM OPENAPI ---
+
+    private static final String TINY_OPENAPI = "{"
+        + "\\\"openapi\\\": \\\"3.0.0\\\","
+        + "\\\"info\\\": { \\\"title\\\": \\\"Tiny\\\", \\\"version\\\": \\\"1.0.0\\\" },"
+        + "\\\"servers\\\": [ { \\\"url\\\": \\\"http://api.example.com/v1\\\" } ],"
+        + "\\\"paths\\\": {"
+        + "  \\\"/pets\\\": {"
+        + "    \\\"get\\\": { \\\"operationId\\\": \\\"listPets\\\", \\\"responses\\\": { \\\"200\\\": { \\\"description\\\": \\\"ok\\\" } } },"
+        + "    \\\"post\\\": { \\\"operationId\\\": \\\"createPet\\\","
+        + "      \\\"requestBody\\\": { \\\"required\\\": true, \\\"content\\\": { \\\"application/json\\\": { \\\"schema\\\": {"
+        + "        \\\"type\\\": \\\"object\\\", \\\"properties\\\": { \\\"name\\\": { \\\"type\\\": \\\"string\\\" } } } } } },"
+        + "      \\\"responses\\\": { \\\"201\\\": { \\\"description\\\": \\\"created\\\" } } }"
+        + "  }"
+        + "} }";
+
+    private HttpResponse generate(String body) {
+        FakeResponseWriter rw = new FakeResponseWriter();
+        HttpRequest req = request("/mockserver/loadScenario/generateFromOpenAPI").withMethod("PUT");
+        if (body != null) {
+            req.withBody(body);
+        }
+        assertThat("route handled", httpState.handle(req, rw, false), is(true));
+        return rw.response;
+    }
+
+    @Test
+    public void generateFromOpenApiRegistersScenarioAndReturnsIt() throws Exception {
+        String requestBody = "{ \"name\": \"from-spec\", \"specUrlOrPayload\": \"" + TINY_OPENAPI + "\" }";
+        HttpResponse response = generate(requestBody);
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode b = body(response);
+        assertThat(b.get("status").asText(), is("loaded"));
+        assertThat(b.get("name").asText(), is("from-spec"));
+        assertThat(b.get("state").asText(), is("LOADED"));
+
+        // the generated scenario is returned with one step per operation
+        JsonNode scenario = b.get("scenario");
+        assertThat(scenario, is(org.hamcrest.Matchers.notNullValue()));
+        assertThat(scenario.get("steps").size(), is(2));
+        // server prefix /v1 applied; target Host from servers[0]
+        JsonNode firstRequest = scenario.get("steps").get(0).get("request");
+        assertThat(firstRequest.get("path").asText(), containsString("/v1/pets"));
+
+        // it now appears in GET /loadScenario
+        JsonNode list = body(get()).get("scenarios");
+        boolean found = false;
+        for (JsonNode s : list) {
+            if ("from-spec".equals(s.get("name").asText())) {
+                found = true;
+                assertThat(s.get("state").asText(), is("LOADED"));
+            }
+        }
+        assertThat("generated scenario is registered", found, is(true));
+        // generating does not start a run
+        assertThat(LoadScenarioOrchestrator.getInstance().isActive("from-spec"), is(false));
+    }
+
+    @Test
+    public void generateFromOpenApiAllowedWhenGenerationDisabled() throws Exception {
+        rebuildHttpState(false);
+        String requestBody = "{ \"name\": \"disabled-gen\", \"specUrlOrPayload\": \"" + TINY_OPENAPI + "\" }";
+        HttpResponse response = generate(requestBody);
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(body(response).get("status").asText(), is("loaded"));
+    }
+
+    @Test
+    public void generateFromOpenApiAppliesExplicitTargetOverServers() throws Exception {
+        String requestBody = "{ \"name\": \"targeted\", \"specUrlOrPayload\": \"" + TINY_OPENAPI + "\","
+            + " \"target\": { \"host\": \"localhost\", \"port\": 1080, \"scheme\": \"http\" } }";
+        HttpResponse response = generate(requestBody);
+        assertThat(response.getStatusCode(), is(200));
+        JsonNode firstRequest = body(response).get("scenario").get("steps").get(0).get("request");
+        assertThat(firstRequest.get("headers").get("Host").get(0).asText(), is("localhost:1080"));
+    }
+
+    @Test
+    public void generateFromOpenApiReturns400ForInvalidSpec() throws Exception {
+        String requestBody = "{ \"name\": \"bad\", \"specUrlOrPayload\": \"{ not valid openapi\" }";
+        HttpResponse response = generate(requestBody);
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(body(response).get("error").asText(), containsString("OpenAPI"));
+    }
+
+    @Test
+    public void generateFromOpenApiReturns400WhenNameMissing() throws Exception {
+        String requestBody = "{ \"specUrlOrPayload\": \"" + TINY_OPENAPI + "\" }";
+        HttpResponse response = generate(requestBody);
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(body(response).get("error").asText(), containsString("name"));
+    }
+
+    @Test
+    public void generateFromOpenApiReturns400WhenSpecMissing() throws Exception {
+        HttpResponse response = generate("{ \"name\": \"no-spec\" }");
+        assertThat(response.getStatusCode(), is(400));
+        assertThat(body(response).get("error").asText(), containsString("specUrlOrPayload"));
+    }
 }

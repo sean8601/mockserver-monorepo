@@ -2902,6 +2902,89 @@ paths:
                 properties:
                   error:
                     type: string
+  /mockserver/loadScenario/generateFromOpenAPI:
+    put:
+      tags:
+        - loadgen
+      summary: seed a load scenario from an OpenAPI specification
+      description: >-
+        Generates an editable load scenario from an OpenAPI spec and loads (registers) it into the
+        registry under "name" in the LOADED state — exactly like PUT /mockserver/loadScenario, it
+        generates no traffic and is allowed even when loadGenerationEnabled is false. One step is
+        produced per OpenAPI operation (in a stable path-then-method order), each with the operation's
+        method and server-prefixed path, a representative request-body example, and a Content-Type
+        header. The spec is accepted identically to PUT /mockserver/openapi/expectation — an inline
+        JSON/YAML payload, a URL, or a file/classpath reference. Target precedence for where each request
+        is sent (carried as the request's Host header and secure flag): an explicit "target" wins, else
+        the spec's servers[0] URL, else the request is left path-only for the operator to edit. When no
+        "profile" is supplied a conservative default is applied (one short constant-VU stage) so the
+        scenario is immediately runnable yet safe — the operator edits it before scaling up. The
+        generated scenario is returned so a client/UI can show and edit it before triggering a run.
+      responses:
+        '200':
+          description: load scenario generated and loaded (registered)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  status:
+                    type: string
+                    enum: [loaded]
+                  name:
+                    type: string
+                  state:
+                    type: string
+                    enum: [LOADED, PENDING, RUNNING, COMPLETED, STOPPED]
+                  scenario:
+                    $ref: "#/components/schemas/LoadScenario"
+        '400':
+          description: missing name/spec, an unparseable spec, a spec with no operations, or a generated scenario that fails validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - specUrlOrPayload
+              properties:
+                name:
+                  type: string
+                  description: the generated scenario name (the unique registry key)
+                specUrlOrPayload:
+                  type: string
+                  description: the OpenAPI spec as an inline JSON/YAML payload, a URL, or a file/classpath reference
+                target:
+                  type: object
+                  description: explicit network target for every generated step (overrides the spec's servers[0])
+                  properties:
+                    host:
+                      type: string
+                    port:
+                      type: integer
+                    scheme:
+                      type: string
+                      enum: [http, https]
+                profile:
+                  $ref: "#/components/schemas/LoadProfile"
+            example:
+              name: petstore-load
+              specUrlOrPayload: "https://raw.githubusercontent.com/OAI/OpenAPI-Specification/master/examples/v3.0/petstore.yaml"
+              target:
+                host: petstore.svc
+                port: 8080
+                scheme: http
+        description: the scenario name plus the OpenAPI spec (with optional target and profile)
+        required: true
   /mockserver/loadScenario/start:
     put:
       tags:

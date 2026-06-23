@@ -254,6 +254,7 @@ All endpoints are control-plane endpoints (subject to `controlPlaneRequestAuthen
 | Verb | Path | Behaviour |
 |------|------|-----------|
 | `PUT` | `/mockserver/loadScenario` | **Load/register** a scenario by `name` (does NOT run). Allowed even when `loadGenerationEnabled=false`. `400 {error}` when invalid or a cap is exceeded; `200 {status:loaded, name, state:LOADED}` otherwise. Loading the same name replaces. |
+| `PUT` | `/mockserver/loadScenario/generateFromOpenAPI` | **Seed** a scenario from an OpenAPI spec, then load/register it (does NOT run, allowed when disabled). Body `{name, specUrlOrPayload, target?, profile?}`. One step per operation; returns the generated scenario for editing. See [Seed a scenario from an OpenAPI spec](#seed-a-scenario-from-an-openapi-spec). |
 | `GET` | `/mockserver/loadScenario` | List ALL registered scenarios: `{ scenarios:[ { name, state, startDelayMillis, definition, ...live status fields when active/run } ] }`. State ∈ `LOADED/PENDING/RUNNING/COMPLETED/STOPPED`. |
 | `GET` | `/mockserver/loadScenario/{name}` | One scenario (definition + state + status); `404` if not registered. |
 | `GET` | `/mockserver/loadScenario/{name}/report` | **End-of-run summary report** for the run (live snapshot if running, retained terminal snapshot if finished). JSON by default; `?format=junit` returns a JUnit-XML `<testsuite>` with `application/xml`. `404` if the scenario never ran. See [Summary report](#summary-report). |
@@ -330,6 +331,65 @@ curl -X PUT http://localhost:1080/mockserver/loadScenario/start \
   "steps": [ { "request": { "path": "/health", "socketAddress": { "host": "target.svc", "port": 8080 } } } ]
 }
 ```
+
+## Seed a scenario from an OpenAPI spec
+
+`PUT /mockserver/loadScenario/generateFromOpenAPI` turns an OpenAPI specification into an editable,
+immediately-runnable `LoadScenario` and registers it in the `LOADED` state — it generates **no traffic**
+and (like `PUT /loadScenario`) is allowed even when `loadGenerationEnabled=false`. The generated scenario
+is returned in the response so a client/UI can show and edit it before triggering a run.
+
+`LoadScenarioFromOpenAPI.generate(...)` reuses the **same OpenAPI parse** the expectation converter uses
+(`OpenAPIParser.buildOpenAPI` + `OpenAPISerialiser.retrieveOperations`) and the **same example engine**
+(`ExampleBuilder`), so steps line up with what `PUT /mockserver/openapi/expectation` would mock:
+
+- **one `LoadStep` per operation**, in the stable path-then-method order, each with the operation's
+  method and server-prefixed path;
+- a **representative request-body example** (built from the request-body schema) plus a `Content-Type`
+  header, for operations that declare a body;
+- **plain, ordered steps** — no per-step weighting in v1.
+
+### Request body
+
+```json
+{
+  "name": "petstore-load",
+  "specUrlOrPayload": "https://raw.githubusercontent.com/OAI/OpenAPI-Specification/master/examples/v3.0/petstore.yaml",
+  "target": { "host": "petstore.svc", "port": 8080, "scheme": "http" },
+  "profile": { "stages": [ { "type": "VU", "vus": 5, "durationMillis": 30000 } ] }
+}
+```
+
+`specUrlOrPayload` is accepted **identically to `PUT /mockserver/openapi/expectation`** — an inline
+JSON/YAML payload (string or embedded object), a URL, or a file/classpath reference. `target` and
+`profile` are optional.
+
+### Target precedence
+
+Each step's target is carried as the request's `Host` header and `secure` flag (the routing surface every
+load step uses), resolved by this precedence:
+
+1. an explicit `target` (with a `host`) in the request body — wins;
+2. otherwise the spec's `servers[0]` URL — its host, port and `https` scheme are applied;
+3. otherwise the request is left **path-only** — the operator edits in a target before running.
+
+### Default profile
+
+When no `profile` is supplied a conservative default is applied — a single short constant-VU stage
+(5 VUs for 30s) — so the scenario runs out of the box yet stays safe. Edit the returned profile (ramps,
+rate stages, duration) before scaling up.
+
+```bash
+curl -X PUT http://localhost:1080/mockserver/loadScenario/generateFromOpenAPI \
+  -d '{ "name": "petstore-load", "specUrlOrPayload": "https://.../petstore.yaml" }'
+#  -> { "status":"loaded", "name":"petstore-load", "state":"LOADED", "scenario": { ...editable... } }
+
+# then edit if needed and trigger as usual
+curl -X PUT http://localhost:1080/mockserver/loadScenario/start -d '{ "name": "petstore-load" }'
+```
+
+A missing `name`/`specUrlOrPayload`, an unparseable spec, a spec with no operations, or a generated
+scenario that fails validation all return `400 {error}`.
 
 ## Timing and concurrency
 
@@ -570,5 +630,5 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
 ## Deferred
 
 - Distributed / multi-node load.
-- Seeding scenario *definitions* from recorded traffic or an OpenAPI spec (preloading from a JSON file is supported via `loadScenarioInitializationJsonPath`).
+- Seeding scenario *definitions* from recorded traffic (preloading from a JSON file is supported via `loadScenarioInitializationJsonPath`; seeding from an OpenAPI spec is supported via [`PUT /mockserver/loadScenario/generateFromOpenAPI`](#seed-a-scenario-from-an-openapi-spec)).
 - Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field.
