@@ -6,7 +6,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Snackbar from '@mui/material/Snackbar';
-import { useDashboardStore } from './store';
+import { useDashboardStore, coerceView } from './store';
 import { buildTheme } from './theme';
 import { useConnectionParams } from './hooks/useConnectionParams';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -112,6 +112,22 @@ export default function App() {
   useEffect(() => {
     connect({});
   }, [connect]);
+
+  // Keep the active view in sync with the URL hash so browser back/forward and
+  // manually-edited deep links (e.g. `#/contract`) navigate the dashboard. The
+  // store's own setView writes the hash; here we react to externally-driven hash
+  // changes. Invalid hashes are ignored (coerceView returns null).
+  const setView = useDashboardStore((s) => s.setView);
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = coerceView(globalThis.location?.hash?.replace(/^#\/?/, '') ?? '');
+      if (next && next !== useDashboardStore.getState().view) {
+        setView(next);
+      }
+    };
+    globalThis.addEventListener?.('hashchange', onHashChange);
+    return () => globalThis.removeEventListener?.('hashchange', onHashChange);
+  }, [setView]);
 
   const handleFilterChange = useCallback(
     (filter: RequestFilter) => {
