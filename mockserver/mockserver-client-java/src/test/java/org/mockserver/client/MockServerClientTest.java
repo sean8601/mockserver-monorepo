@@ -2128,4 +2128,162 @@ public class MockServerClientTest {
         assertThrows(IllegalArgumentException.class, () -> mockServerClient.replay(null));
     }
 
+    // -------------------------------------------------------------------
+    // Contract testing & Pact helpers
+    // -------------------------------------------------------------------
+
+    @Test
+    public void shouldSendContractTestRequestAndParseReport() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response()
+                .withStatusCode(200)
+                .withBody("{\"baseUrl\":\"http://localhost:8080\",\"totalOperations\":1,\"passed\":1,\"failed\":0,\"allPassed\":true," +
+                    "\"results\":[{\"operationId\":\"listPets\",\"method\":\"GET\",\"path\":\"/pets\",\"statusCodeReceived\":200,\"passed\":true,\"validationErrors\":[]}]}"));
+
+        // when
+        MockServerClient.ContractReport report = mockServerClient.contractTest("{\"openapi\":\"3.0.0\"}", "http://localhost:8080", "listPets");
+
+        // then
+        verify(mockHttpClient, atLeastOnce()).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/contractTest"));
+        assertThat(sent.getBodyAsString(), containsString("\"baseUrl\":\"http://localhost:8080\""));
+        assertThat(sent.getBodyAsString(), containsString("\"operationId\":\"listPets\""));
+        assertThat(report.total(), is(1));
+        assertThat(report.passed(), is(1));
+        assertThat(report.allPassed(), is(true));
+        assertThat(report.results().size(), is(1));
+        assertThat(report.results().get(0).operationId(), is("listPets"));
+        assertThat(report.results().get(0).statusCode(), is(200));
+        assertThat(report.results().get(0).passed(), is(true));
+    }
+
+    @Test
+    public void shouldRejectContractTestWithBlankSpecOrBaseUrl() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.contractTest(" ", "http://localhost:8080"));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.contractTest("{}", " "));
+    }
+
+    @Test
+    public void shouldSendTrafficValidateRequestAndParseReport() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response()
+                .withStatusCode(200)
+                .withBody("{\"totalRequests\":1,\"passed\":0,\"failed\":1,\"allPassed\":false," +
+                    "\"results\":[{\"method\":\"GET\",\"path\":\"/pets\",\"matchedOperation\":\"GET /pets\",\"passed\":false," +
+                    "\"requestErrors\":[],\"responseErrors\":[\"body does not match schema\"]}]}"));
+
+        // when
+        MockServerClient.ContractReport report = mockServerClient.trafficValidate("org/mockserver/openapi/openapi_petstore_example.json");
+
+        // then
+        verify(mockHttpClient, atLeastOnce()).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/trafficValidate"));
+        assertThat(sent.getBodyAsString(), containsString("\"spec\""));
+        assertThat(report.total(), is(1));
+        assertThat(report.allPassed(), is(false));
+        assertThat(report.failed(), is(1));
+        assertThat(report.results().get(0).matchedOperation(), is("GET /pets"));
+        assertThat(report.results().get(0).responseErrors(), hasItem("body does not match schema"));
+    }
+
+    @Test
+    public void shouldRejectTrafficValidateWithBlankSpec() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.trafficValidate(" "));
+    }
+
+    @Test
+    public void shouldSendPactImportRequestToImportEndpoint() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(CREATED.code()).withBody("[]"));
+
+        // when
+        String result = mockServerClient.pactImport("{\"consumer\":{\"name\":\"c\"}}");
+
+        // then
+        verify(mockHttpClient, atLeastOnce()).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/pact/import"));
+        assertThat(result, is("[]"));
+    }
+
+    @Test
+    public void shouldSendPactExportRequestWithConsumerAndProviderQueryParams() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(200).withBody("{\"consumer\":{\"name\":\"My Consumer\"}}"));
+
+        // when
+        String result = mockServerClient.pactExport("My Consumer", "My Provider");
+
+        // then
+        verify(mockHttpClient, atLeastOnce()).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/pact"));
+        assertThat(sent.getFirstQueryStringParameter("consumer"), is("My Consumer"));
+        assertThat(sent.getFirstQueryStringParameter("provider"), is("My Provider"));
+        assertThat(result, containsString("My Consumer"));
+    }
+
+    @Test
+    public void shouldSendPactExportRequestWithNoQueryParamsWhenConsumerAndProviderBlank() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(200).withBody("{}"));
+
+        // when
+        mockServerClient.pactExport(null, null);
+
+        // then
+        verify(mockHttpClient, atLeastOnce()).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getPath().getValue(), is("/mockserver/pact"));
+        assertThat(sent.getQueryStringParameters() == null || sent.getQueryStringParameters().getEntries().isEmpty(), is(true));
+    }
+
+    @Test
+    public void shouldSendPactVerifyRequestToVerifyEndpoint() {
+        // given
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(202).withBody("{\"verified\":true}"));
+
+        // when
+        String result = mockServerClient.pactVerify("{\"consumer\":{\"name\":\"c\"}}");
+
+        // then
+        verify(mockHttpClient, atLeastOnce()).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/pact/verify"));
+        assertThat(result, containsString("verified"));
+    }
+
+    @Test
+    public void shouldReturnReportBodyWhenPactVerifyFailsWith406() {
+        // given - a FAIL verdict: the server replies 406 NOT_ACCEPTABLE with the verification report
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(406).withBody("{\"verified\":false,\"failures\":[\"no matching expectation\"]}"));
+
+        // when - the helper must NOT throw; it must return the report body
+        String result = mockServerClient.pactVerify("{\"consumer\":{\"name\":\"c\"}}");
+
+        // then
+        assertThat(result, containsString("\"verified\":false"));
+        assertThat(result, containsString("no matching expectation"));
+    }
+
+    @Test
+    public void shouldRejectBlankPactImportAndVerify() {
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.pactImport(" "));
+        assertThrows(IllegalArgumentException.class, () -> mockServerClient.pactVerify(" "));
+    }
+
 }
