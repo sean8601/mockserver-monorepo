@@ -74,7 +74,7 @@ The following values are supported:
 - `app.logLevel` (default: INFO)
 - `app.proxyRemoteHost` (no default)
 - `app.proxyRemotePort` (no default)
-- `app.jvmOptions` (no default)
+- `app.jvmOptions` (default: `""`) - extra JVM options passed via `JAVA_TOOL_OPTIONS`. The image already caps the heap at 75% of the container memory limit (`-XX:MaxRAMPercentage=75.0`); set an explicit `-Xmx` here to change it. Always set `resources.limits.memory` so the heap is sized off a bounded container limit rather than total node memory.
 - `image.snapshot` (default: false) - set `true` to use latest snapshot version
 
 For example configure a proxyRemoteHost and proxyRemotePort, as follows:
