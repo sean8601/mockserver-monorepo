@@ -17,17 +17,27 @@ public interface KeyAndCertificateFactory {
      */
     AsymmetricKeyPairAlgorithm DEFAULT_KEY_GENERATION_AND_SIGNING_ALGORITHM = AsymmetricKeyPairAlgorithm.RSA2048_SHA256;
     /**
-     * Current time minus 1 year, just in case software clock goes back due to time synchronization
+     * Number of years the generated CA and leaf certificates remain valid. The
+     * generated CA is the trust anchor users pin into their trust stores, so it
+     * needs to outlive a typical test/CI lifetime rather than expiring after a
+     * single year and silently breaking pinned-CA deployments. Ten years is long
+     * enough to avoid surprise expiry while staying well below the X.509 ceiling
+     * that older clients (e.g. Apple iOS 8, issue #6) reject.
+     */
+    long CERTIFICATE_VALIDITY_YEARS = 10;
+    /**
+     * Current time minus 5 days, just in case the software clock goes back due to time synchronization
      */
     Date NOT_BEFORE = new Date(System.currentTimeMillis() - 86400000L * 5);
     /**
-     * The maximum possible value in X.509 specification: 9999-12-31 23:59:59,
-     * new Date(253402300799000L), but Apple iOS 8 fails with a certificate
-     * expiration date grater than Mon, 24 Jan 6084 02:07:59 GMT (issue #6).
+     * The maximum possible value in the X.509 specification is 9999-12-31 23:59:59
+     * (new Date(253402300799000L)), but Apple iOS 8 fails with a certificate
+     * expiration date greater than Mon, 24 Jan 6084 02:07:59 GMT (issue #6).
      * <p>
-     * A hundred years in the future from starting the proxy should be enough.
+     * {@link #CERTIFICATE_VALIDITY_YEARS} years in the future from starting the
+     * proxy is long enough for a mock-server trust anchor.
      */
-    Date NOT_AFTER = new Date(System.currentTimeMillis() + 86400000L * 365);
+    Date NOT_AFTER = new Date(System.currentTimeMillis() + 86400000L * 365 * CERTIFICATE_VALIDITY_YEARS);
     /**
      * CN for CA distinguishing name
      */
