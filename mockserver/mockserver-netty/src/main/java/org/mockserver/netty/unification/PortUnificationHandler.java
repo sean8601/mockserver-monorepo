@@ -589,6 +589,9 @@ public class PortUnificationHandler extends ReplayingDecoder<Void> {
                     .setMessageFormat("exception caught by port unification handler -> closing pipeline " + ctx.channel())
                     .setThrowable(throwable)
             );
+            // SSL/decoder faults are handled by the sslHandshakeException branch below, which
+            // produces richer TLS-specific diagnostics, so no generic isSslOrDecoderFault branch
+            // is added here.
         } else if (sslHandshakeException(throwable)) {
             String message = throwable.getMessage() != null ? throwable.getMessage() : "";
             String messageLower = message.toLowerCase();

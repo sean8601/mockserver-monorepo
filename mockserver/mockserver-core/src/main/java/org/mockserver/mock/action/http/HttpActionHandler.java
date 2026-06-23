@@ -1068,6 +1068,8 @@ public class HttpActionHandler {
                                 );
                             }
                             returnBadGateway(responseWriter, request, "failed to connect to proxied socket due to exploratory HTTP proxy");
+                            // SSL/decoder faults are surfaced by this sslHandshakeException branch
+                            // (richer TLS diagnostics) rather than a generic isSslOrDecoderFault branch.
                         } else if (sslHandshakeException(throwable)) {
                             mockServerLogger.logEvent(
                                 new LogEntry()
@@ -1248,6 +1250,8 @@ public class HttpActionHandler {
                     );
                 }
                 returnBadGateway(responseWriter, originalRequest, "failed to connect to proxied socket due to exploratory HTTP proxy");
+                // SSL/decoder faults are surfaced by this sslHandshakeException branch
+                // (richer TLS diagnostics) rather than a generic isSslOrDecoderFault branch.
             } else if (sslHandshakeException(throwable)) {
                 mockServerLogger.logEvent(
                     new LogEntry()

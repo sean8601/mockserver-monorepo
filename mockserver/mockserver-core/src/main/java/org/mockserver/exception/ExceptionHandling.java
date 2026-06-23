@@ -176,10 +176,13 @@ public class ExceptionHandling {
     }
 
     /**
-     * returns true if the exception is a genuine SSL or decoder fault (the exact set that
-     * {@link #connectionClosedException(Throwable)} treats as a non-connection-close and returns
-     * false for). Callers can use this to surface these faults at WARN rather than dropping them
-     * silently alongside benign connection closes.
+     * returns true if the exception is a genuine SSL or decoder fault, i.e. the SSL/decoder subset
+     * that {@link #connectionClosedException(Throwable)} returns false for at lines 123-124 (an
+     * {@link SSLException} cause, a {@link DecoderException}, or a {@link NotSslRecordException}).
+     * Note that {@code connectionClosedException} also returns false for benign connection resets
+     * via its message-regex and stack-trace inspection; those are NOT matched here. Callers can use
+     * this to surface real SSL/decoder faults at WARN rather than dropping them silently alongside
+     * benign connection closes.
      */
     public static boolean isSslOrDecoderFault(Throwable throwable) {
         return throwable.getCause() instanceof SSLException
