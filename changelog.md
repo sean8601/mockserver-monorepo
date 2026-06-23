@@ -8,9 +8,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Closest-match hint on unmatched requests** (`closestMatchHintEnabled`, default **on**). When a request
+  matches no expectation, the `404` response now carries a compact, length-bounded
+  `x-mockserver-closest-match-hint` header naming the closest expectation and the first field that differed —
+  answering "why didn't my mock match?" without enabling verbose diagnostics. Set `closestMatchHintEnabled=false`
+  to suppress. (The opt-in `attachMismatchDiagnosticToResponse`, which adds a full JSON diagnostic body, is
+  unchanged and still off by default.)
+- **Standard OTLP endpoint fallback.** When `mockserver.otelEndpoint` / `MOCKSERVER_OTEL_ENDPOINT` is unset,
+  MockServer now falls back to the OpenTelemetry-standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
+- **Dashboard remembers where you were.** The active view and per-panel search/filter terms persist across
+  reloads, and the view is reflected in the URL hash (e.g. `#/contract`) so views are linkable. A first visit
+  still opens Get Started.
+- **Dashboard search-operator hints.** The search box now advertises its operators (`status:>=400`,
+  `method:POST`, `path:/api/*`, `/regex/`) via the placeholder and an accessible help tooltip.
+
 ### Changed
 
+- **Docker images cap the JVM heap at 75% of the container memory limit** (`-XX:MaxRAMPercentage=75.0`, in
+  both the standard and clustered images), making memory use predictable and avoiding OOM-kills that looked
+  like hangs. Always run with an explicit container memory limit. To set a fixed heap, pass an explicit `-Xmx`
+  (a second `MaxRAMPercentage` via `JAVA_TOOL_OPTIONS` has no effect — it is applied before the image's flag).
+  The Helm chart now ships commented `resources` and `app.jvmOptions` examples.
+- **Generated TLS certificate validity extended to 10 years** (was 365 days) for the dynamically generated CA,
+  leaf/server, and HTTP/3 self-signed certificates, so pinned-CA test setups no longer expire after a year.
+
 ### Fixed
+
+- **Dashboard LLM pricing corrected.** The dashboard cost estimates were ~1 year stale and up to ~3× too high
+  (e.g. Opus 4.8 shown at 15/75 instead of 5/25); the table is now synced to the server's pricing and guarded
+  by a drift test.
+- **SSL/decoder faults in the proxy/relay handlers are now logged at WARN** instead of being silently dropped,
+  so genuine TLS/decoder problems are visible without the noise of benign connection closes.
+- **LLM streaming pacing above 1000 tokens/sec is preserved.** Sub-millisecond per-token delays were
+  integer-truncated to 0 ms (flattening fast streams); pacing now accumulates with fractional carry so
+  cumulative timing stays accurate.
+- **Forward DNS resolution moved off the calling thread.** Forward actions hand the connect path an unresolved
+  address so DNS runs on the Netty event loop; SSRF validation still resolves and rejects private/loopback
+  targets first, and a missing SSRF guard was added to the forward-validate path.
+
+### Security
+
+- **`/bind` and `/stop` now honour control-plane authentication/authorization.** These mutating lifecycle
+  endpoints were serviced before the auth gate; they now require the same control-plane auth as
+  `/mockserver/configuration`. Default deployments with no control-plane auth configured are unaffected, and
+  `/status` / `/ready` remain open for health probes. Closes the lifecycle-endpoint gap noted in 7.2.0.
+- **MCP tool calls now honour control-plane authorization.** With `controlPlaneAuthorizationEnabled`, each MCP
+  tool is classified read vs mutate (fail-closed) and checked against the same role model as the HTTP control
+  plane, so a read-only principal can no longer invoke mutating MCP tools (create/clear/reset/…). Default
+  (authorization disabled) behaviour is unchanged; enforced across HTTP and HTTP/3, single and batch. Closes
+  the per-tool MCP gap noted in 7.2.0.
 
 ## [7.2.0] - 2026-06-22
 
