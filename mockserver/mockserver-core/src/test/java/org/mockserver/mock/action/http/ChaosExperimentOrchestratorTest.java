@@ -6,6 +6,12 @@ import org.junit.Test;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.metrics.Metrics;
 import org.mockserver.model.HttpChaosProfile;
+import org.mockserver.slo.SloCriteria;
+import org.mockserver.slo.SloObjective;
+import org.mockserver.slo.SloSampleStore;
+import org.mockserver.slo.SloVerdict;
+import org.mockserver.slo.SloWindow;
+import org.mockserver.slo.Scope;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -33,6 +39,7 @@ public class ChaosExperimentOrchestratorTest {
     private boolean originalAutoHaltEnabled;
     private long originalAutoHaltThreshold;
     private long originalAutoHaltWindow;
+    private boolean originalSloTrackingEnabled;
 
     @Before
     public void setUp() {
@@ -45,11 +52,15 @@ public class ChaosExperimentOrchestratorTest {
         orchestrator = new ChaosExperimentOrchestrator(clock::get, scheduler);
         ServiceChaosRegistry.getInstance().reset();
         ChaosAutoHaltMonitor.getInstance().reset();
+        SloSampleStore.getInstance().reset();
         Metrics.resetAdditionalMetricsForTesting();
 
         originalAutoHaltEnabled = ConfigurationProperties.chaosAutoHaltEnabled();
         originalAutoHaltThreshold = ConfigurationProperties.chaosAutoHaltErrorThreshold();
         originalAutoHaltWindow = ConfigurationProperties.chaosAutoHaltWindowMillis();
+        originalSloTrackingEnabled = ConfigurationProperties.sloTrackingEnabled();
+        // SLO sample recording must be on so experiment-scoped verdicts see samples.
+        ConfigurationProperties.sloTrackingEnabled(true);
     }
 
     @After
@@ -57,11 +68,28 @@ public class ChaosExperimentOrchestratorTest {
         orchestrator.reset();
         ServiceChaosRegistry.getInstance().reset();
         ChaosAutoHaltMonitor.getInstance().reset();
+        SloSampleStore.getInstance().reset();
         scheduler.shutdownNow();
         Metrics.resetAdditionalMetricsForTesting();
         ConfigurationProperties.chaosAutoHaltEnabled(originalAutoHaltEnabled);
         ConfigurationProperties.chaosAutoHaltErrorThreshold(originalAutoHaltThreshold);
         ConfigurationProperties.chaosAutoHaltWindowMillis(originalAutoHaltWindow);
+        ConfigurationProperties.sloTrackingEnabled(originalSloTrackingEnabled);
+    }
+
+    /** An SLO criteria asserting error-rate &lt; threshold over FORWARD traffic. */
+    private SloCriteria errorRateBelow(double threshold) {
+        return new SloCriteria()
+            .withName("exp-slo")
+            .withMinimumSampleCount(1)
+            // The window is overridden by the orchestrator to the experiment window,
+            // but a window is required by the SloCriteria model so supply a placeholder.
+            .withWindow(SloWindow.lookback(60_000L))
+            .withObjectives(new SloObjective()
+                .withSli(SloObjective.Sli.ERROR_RATE)
+                .withComparator(SloObjective.Comparator.LESS_THAN)
+                .withThreshold(threshold)
+                .withScope(Scope.FORWARD));
     }
 
     private Map<String, HttpChaosProfile> profileMap(String host, HttpChaosProfile profile) {
@@ -819,4 +847,142 @@ public class ChaosExperimentOrchestratorTest {
         assertThat("stop with no experiment is idempotent (no-op)",
             orchestrator.getStatus(), is(nullValue()));
     }
+
+    // --- A1: experiment SLO assertion + terminal verdict ---
+
+    @Test
+    public void shouldEmitPassVerdictWhenSloHeldThroughoutExperiment() {
+        // given - a single-stage experiment with an error-rate SLO
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "slo-pass", Arrays.asList(stage0), false, 0L, null, errorRateBelow(0.5));
+        orchestrator.start(def);
+
+        // and - all successful samples recorded within the experiment window
+        SloSampleStore.getInstance().record(clock.get() + 1000L, 50L, false, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 2000L, 60L, false, Scope.FORWARD, "api.svc");
+
+        // when - the experiment completes
+        clock.addAndGet(5000L);
+        orchestrator.advanceNow();
+
+        // then - terminal verdict is PASS and the window is the experiment window
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("completed"));
+        assertThat(status.experimentVerdict, is(notNullValue()));
+        assertThat(status.experimentVerdict.getResult(), is(SloVerdict.Result.PASS));
+        assertThat(status.experimentVerdict.getWindowFromEpochMillis(), is(10_000L));
+        assertThat(status.experimentVerdict.getWindowToEpochMillis(), is(15_000L));
+        // verdict is also surfaced in the status JSON
+        assertThat(status.toJson().has("experimentVerdict"), is(true));
+        assertThat(status.toJson().get("experimentVerdict").get("result").asText(), is("PASS"));
+    }
+
+    @Test
+    public void shouldEmitFailVerdictWhenSloBreachedDuringExperiment() {
+        // given - a single long stage so completion does not pre-empt the verdict path
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "slo-fail", Arrays.asList(stage0), false, 0L, null, errorRateBelow(0.5));
+        orchestrator.start(def);
+
+        // and - a high error rate (3/4 = 0.75 > 0.5) recorded in the window
+        SloSampleStore.getInstance().record(clock.get() + 500L, 50L, true, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 600L, 50L, true, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 700L, 50L, true, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 800L, 50L, false, Scope.FORWARD, "api.svc");
+
+        // when - the experiment terminates by explicit stop (verdict computed over window)
+        clock.addAndGet(900L);
+        orchestrator.stop();
+
+        // then - terminal verdict is FAIL
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("stopped"));
+        assertThat(status.experimentVerdict, is(notNullValue()));
+        assertThat(status.experimentVerdict.getResult(), is(SloVerdict.Result.FAIL));
+    }
+
+    @Test
+    public void shouldEmitInconclusiveVerdictWhenTooFewSamples() {
+        // given - an SLO requiring at least 5 samples
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        SloCriteria criteria = errorRateBelow(0.5).withMinimumSampleCount(5);
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "slo-inconclusive", Arrays.asList(stage0), false, 0L, null, criteria);
+        orchestrator.start(def);
+
+        // and - only two samples recorded (< minimumSampleCount)
+        SloSampleStore.getInstance().record(clock.get() + 100L, 50L, false, Scope.FORWARD, "api.svc");
+        SloSampleStore.getInstance().record(clock.get() + 200L, 50L, false, Scope.FORWARD, "api.svc");
+
+        // when - the experiment completes
+        clock.addAndGet(5000L);
+        orchestrator.advanceNow();
+
+        // then - terminal verdict is INCONCLUSIVE
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("completed"));
+        assertThat(status.experimentVerdict, is(notNullValue()));
+        assertThat(status.experimentVerdict.getResult(), is(SloVerdict.Result.INCONCLUSIVE));
+    }
+
+    @Test
+    public void shouldEmitNoVerdictWhenNoSloCriteria() {
+        // given - an experiment WITHOUT sloCriteria (back-compat default)
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition("no-slo", Arrays.asList(stage0), false);
+        orchestrator.start(def);
+        SloSampleStore.getInstance().record(clock.get() + 100L, 50L, true, Scope.FORWARD, "api.svc");
+
+        // when - the experiment completes
+        clock.addAndGet(5000L);
+        orchestrator.advanceNow();
+
+        // then - no verdict is attached, and the status JSON omits experimentVerdict
+        ChaosExperimentOrchestrator.ExperimentStatus status = orchestrator.getStatus();
+        assertThat(status.status, is("completed"));
+        assertThat(status.experimentVerdict, is(nullValue()));
+        assertThat(status.toJson().has("experimentVerdict"), is(false));
+    }
+
+    @Test
+    public void shouldRoundTripSloCriteriaThroughJson() throws Exception {
+        // given - an experiment with sloCriteria
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition original =
+            new ChaosExperimentOrchestrator.ExperimentDefinition(
+                "slo-json", Arrays.asList(stage0), false, 0L, null, errorRateBelow(0.25));
+
+        // when
+        com.fasterxml.jackson.databind.node.ObjectNode json = original.toJson();
+        ChaosExperimentOrchestrator.ExperimentDefinition restored =
+            ChaosExperimentOrchestrator.ExperimentDefinition.fromJson(json);
+
+        // then
+        assertThat(json.has("sloCriteria"), is(true));
+        assertThat(restored.sloCriteria, is(notNullValue()));
+        assertThat(restored.sloCriteria.getObjectives().size(), is(1));
+        assertThat(restored.sloCriteria.getObjectives().get(0).getThreshold(), is(0.25));
+    }
+
+    @Test
+    public void shouldOmitSloCriteriaFromJsonWhenUnset() {
+        ChaosExperimentOrchestrator.Stage stage0 = new ChaosExperimentOrchestrator.Stage(
+            5000L, profileMap("api.svc", httpChaosProfile().withErrorStatus(503)));
+        ChaosExperimentOrchestrator.ExperimentDefinition def =
+            new ChaosExperimentOrchestrator.ExperimentDefinition("no-slo-json", Arrays.asList(stage0), false);
+
+        assertThat(def.toJson().has("sloCriteria"), is(false));
+    }
+
 }
