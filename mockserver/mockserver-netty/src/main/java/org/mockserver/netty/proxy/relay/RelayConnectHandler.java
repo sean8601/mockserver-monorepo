@@ -28,6 +28,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
 import static org.mockserver.exception.ExceptionHandling.connectionClosedException;
+import static org.mockserver.exception.ExceptionHandling.isSslOrDecoderFault;
 import static org.mockserver.mock.action.http.HttpActionHandler.getRemoteAddress;
 import static org.mockserver.model.Protocol.HTTP_2;
 import static org.mockserver.netty.unification.PortUnificationHandler.*;
@@ -157,6 +158,13 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat(message)
+                    .setThrowable(cause)
+            );
+        } else if (isSslOrDecoderFault(cause)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("SSL or decoder fault -> " + message)
                     .setThrowable(cause)
             );
         }

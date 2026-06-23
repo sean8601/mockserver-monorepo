@@ -48,6 +48,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.mockserver.exception.ExceptionHandling.connectionClosedException;
+import static org.mockserver.exception.ExceptionHandling.isSslOrDecoderFault;
 import static org.mockserver.log.model.LogEntry.LogMessageType.*;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.netty.unification.PortUnificationHandler.isHttp2Enabled;
@@ -310,6 +311,13 @@ public class DashboardWebSocketHandler extends ChannelInboundHandlerAdapter impl
                 new LogEntry()
                     .setLogLevel(Level.ERROR)
                     .setMessageFormat("web socket server caught exception")
+                    .setThrowable(cause)
+            );
+        } else if (isSslOrDecoderFault(cause)) {
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.WARN)
+                    .setMessageFormat("web socket server caught SSL or decoder fault")
                     .setThrowable(cause)
             );
         }
