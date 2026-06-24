@@ -1086,6 +1086,16 @@ public class RequestMatchers extends MockServerMatcherNotifier {
             trimEvictedFromBackend();
             return;
         }
+        reconcileClusteredScan();
+    }
+
+    /**
+     * The expensive clustered reconcile scan: snapshots the entire backend and
+     * diffs it against the node-local matcher cache (evict / remote-add /
+     * remote-update). Only ever invoked from {@link #reconcileFromBackend()}
+     * under its {@code synchronized} monitor.
+     */
+    private void reconcileClusteredScan() {
         // Snapshot backend state
         Map<String, KeyValueStore.Entry<ExpectationEntry>> backendEntries = new HashMap<>();
         expectationBackend.entries().forEach(e -> backendEntries.put(e.getKey(), e));
@@ -1213,15 +1223,27 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
     public Expectation postProcess(Expectation expectation) {
         if (expectation != null) {
-            getHttpRequestMatchersCopy()
-                .filter(httpRequestMatcher -> httpRequestMatcher.getExpectation() == expectation)
-                .findFirst()
-                .ifPresent(httpRequestMatcher -> {
-                    if (!expectation.isActive()) {
-                        removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID());
-                    }
-                    httpRequestMatcher.setResponseInProgress(false);
-                });
+            // O(1) fast path: the id-keyed cache is kept in sync on add/update/remove. Guard with a
+            // reference-equality check so semantics exactly match the original O(n) scan — if the
+            // cached matcher's expectation is a different instance (e.g. updated under the same id
+            // since this request matched), fall back to the scan, which finds nothing in that case.
+            HttpRequestMatcher cachedMatcher = matcherCacheById.get(expectation.getId());
+            if (cachedMatcher != null && cachedMatcher.getExpectation() == expectation) {
+                if (!expectation.isActive()) {
+                    removeHttpRequestMatcher(cachedMatcher, UUIDService.getUUID());
+                }
+                cachedMatcher.setResponseInProgress(false);
+            } else {
+                getHttpRequestMatchersCopy()
+                    .filter(httpRequestMatcher -> httpRequestMatcher.getExpectation() == expectation)
+                    .findFirst()
+                    .ifPresent(httpRequestMatcher -> {
+                        if (!expectation.isActive()) {
+                            removeHttpRequestMatcher(httpRequestMatcher, UUIDService.getUUID());
+                        }
+                        httpRequestMatcher.setResponseInProgress(false);
+                    });
+            }
         }
         return expectation;
     }
