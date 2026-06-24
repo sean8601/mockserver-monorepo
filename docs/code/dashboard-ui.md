@@ -118,7 +118,7 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 
 | Panel | Refresh mechanism |
 |-------|------------------|
-| Dashboard, Traffic, Sessions | WebSocket push (`_mockserver_ui_websocket`) |
+| Dashboard, Traffic, Trace | WebSocket push (`_mockserver_ui_websocket`) |
 | Breakpoints — live exchanges / frames | Callback WebSocket push (`_mockserver_callback_websocket`) |
 | Breakpoints — matcher list | `useAutoRefresh` (interval, default 3 s) |
 | Drift | `useAutoRefresh` (interval) |
@@ -147,30 +147,37 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 
 ## Top-Level Views
 
-The dashboard has **fourteen top-level views** controlled by the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
+The dashboard has **eighteen top-level views** controlled by the AppBar. The view state is stored in Zustand as `view: ViewMode` where:
 
 ```
 ViewMode = 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library'
          | 'chaos' | 'performance' | 'metrics' | 'drift' | 'verification'
-         | 'async' | 'grpc' | 'breakpoints' | 'get-started'
+         | 'slo' | 'async' | 'grpc' | 'breakpoints'
+         | 'contract' | 'cluster' | 'optimise' | 'get-started'
 ```
 
-`'composer'` is surfaced in the UI under the button label **Mocks**; `'async'` is the **AsyncAPI** broker view; `'performance'` is the **Performance** load-scenario panel; `'get-started'` is the initial onboarding view shown to new users before any data arrives.
+`'composer'` is surfaced in the UI under the button label **Mocks**; `'async'` is the **AsyncAPI** broker view; `'performance'` is the **Performance** load-scenario panel; `'sessions'` is labelled **Trace** in the nav; `'get-started'` is the initial onboarding view shown to new users before any data arrives.
 
-The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It is hidden on all other views.
+The active view and per-panel search terms persist across page reloads: the view is mirrored in the URL hash (`#/<view>`) and in `localStorage`, resolved at startup by `coerceView`/`persistView` in `store/index.ts`; per-panel search terms are stored under a separate `localStorage` key. Unknown or stale values are silently ignored and fall back to `'get-started'`.
 
-| View | Button label | Component | Description |
-|------|--------------|-----------|-------------|
-| `get-started` | — | `OnboardingPanel.tsx` | Onboarding view shown on first load; stays until the user navigates away (no auto-switch) |
+The Request Filter panel is shown on Dashboard, Traffic, and Trace views. It is hidden on all other views.
+
+| View | Nav label | Component | Description |
+|------|-----------|-----------|-------------|
+| `get-started` | Get Started | `OnboardingPanel.tsx` | Onboarding view shown on first load; stays until the user navigates away (no auto-switch) |
 | `dashboard` | Dashboard | `DashboardGrid.tsx` | 2×2 grid of Log Messages, Active Expectations, Received Requests, Proxied Requests panels |
 | `traffic` | Traffic | `TrafficInspector.tsx` | Full-width master/detail list of all captured traffic (mock-matched + proxied), with per-row Replay and Compare buttons |
-| `sessions` | Sessions | `SessionInspector.tsx` | Swim-lane grouped view of isolated LLM conversation sessions |
+| `sessions` | Trace | `SessionInspector.tsx` | Swim-lane grouped view of isolated LLM conversation sessions; labelled **Trace** in the nav |
 | `composer` | Mocks | `ComposerView.tsx` | Unified expectation creator/editor for Standard HTTP and LLM Conversation expectations |
 | `library` | Library | `LibraryView.tsx` | Fixture cassettes, run comparison, and export (HAR / OpenAPI / Postman / Bruno) |
 | `chaos` | Chaos | `ServiceChaosPanel.tsx` | Service-scoped HTTP chaos registration, live TTL countdown, and clear-all |
 | `performance` | Performance | `LoadScenarioPanel.tsx` | Create and run load scenarios: stage-builder (VU / RATE / PAUSE stages with ramp curves), live run status (stageIndex / stageType / currentTarget / active VUs), and a live latency+throughput graph with per-metric and per-scenario toggles plus an all-scenarios total (see [Performance View](#performance-view)) |
 | `drift` | Drift | `DriftPanel.tsx` | Mock drift detection results: divergence records between forwarded responses and stub expectations |
 | `verification` | Verify | `VerificationView.tsx` | Build and run verifications — request matchers, expected counts (atLeast/atMost/exactly/between), or an ordered sequence — against received requests |
+| `slo` | SLO | `SloPanel.tsx` | Assert service-level objectives — latency percentiles and error rate — against recorded traffic (see [SLO View](#slo-view)) |
+| `contract` | Contract | `ContractTestPanel.tsx` | Validate mocks and traffic against an OpenAPI contract |
+| `cluster` | Cluster | `ClusterPanel.tsx` | Monitor MockServer cluster nodes and shared state |
+| `optimise` | LLM Optimise | `OptimiseView.tsx` | Analyse captured LLM traffic to optimise prompts, inference cost, safety, and speed |
 | `async` | Async | `AsyncApiPanel.tsx` | AsyncAPI broker mock status: loaded spec, channels/topics, publisher/subscriber summary, and recorded broker messages |
 | `grpc` | gRPC | `GrpcServicesPanel.tsx` | gRPC services and methods loaded from protobuf descriptors, with per-service health-check status (see [gRPC Services View](#grpc-services-view)) |
 | `metrics` | Metrics | `MetricsView.tsx` | Prometheus metrics polling: request counters, latency percentiles, JVM stats, chaos gauges |
@@ -180,7 +187,7 @@ The Request Filter panel is shown on Dashboard, Traffic, and Sessions views. It 
 graph TB
     APP["App.tsx"]
     AB["AppBar.tsx
-primary tabs + More overflow"]
+grouped nav: 6 dropdown groups"]
     FP["FilterPanel.tsx
 (dashboard, traffic, sessions only)"]
     GS["OnboardingPanel.tsx
@@ -190,7 +197,7 @@ primary tabs + More overflow"]
     TI["TrafficInspector.tsx
 (view = 'traffic')"]
     SI["SessionInspector.tsx
-(view = 'sessions')"]
+(view = 'sessions', label 'Trace')"]
     CV["ComposerView.tsx
 (view = 'composer', label 'Mocks')"]
     LV["LibraryView.tsx
@@ -203,6 +210,14 @@ primary tabs + More overflow"]
 (view = 'drift')"]
     VV["VerificationView.tsx
 (view = 'verification')"]
+    SP["SloPanel.tsx
+(view = 'slo')"]
+    CO["ContractTestPanel.tsx
+(view = 'contract')"]
+    CL["ClusterPanel.tsx
+(view = 'cluster')"]
+    OP["OptimiseView.tsx
+(view = 'optimise')"]
     AAP["AsyncApiPanel.tsx
 (view = 'async')"]
     GP["GrpcServicesPanel.tsx
@@ -225,6 +240,10 @@ primary tabs + More overflow"]
     APP -->|view = performance| LSP
     APP -->|view = drift| DP
     APP -->|view = verification| VV
+    APP -->|view = slo| SP
+    APP -->|view = contract| CO
+    APP -->|view = cluster| CL
+    APP -->|view = optimise| OP
     APP -->|view = async| AAP
     APP -->|view = grpc| GP
     APP -->|view = metrics| MV
@@ -436,9 +455,9 @@ The component is a pure renderer — it receives a parsed object from `llmTraffi
 
 **Base64 body decoding:** When a response body has a `BINARY` body type, the content is base64-encoded. `llmTraffic.ts` detects the `BINARY` type and decodes before parsing. Textual streaming responses are normally delivered as `STRING` bodies; this is a defensive fallback.
 
-## Sessions Inspector
+## Trace (Sessions) Inspector
 
-`SessionInspector.tsx` groups all captured requests into swim-lanes by `<scenarioName> / <isolation-value>`. Each swim-lane displays chips for the captured turns, where each chip shows the turn index, method, path, and status code. Clicking a chip opens a per-request detail panel directly below the swim-lane, showing the Conversation view for the selected turn.
+`SessionInspector.tsx` (view = `sessions`, nav label **Trace**) groups all captured requests into swim-lanes by `<scenarioName> / <isolation-value>`. Each swim-lane displays chips for the captured turns, where each chip shows the turn index, method, path, and status code. Clicking a chip opens a per-request detail panel directly below the swim-lane, showing the Conversation view for the selected turn.
 
 Requests that do not match any isolated scenario are grouped by upstream host (from the `Host` header) into **unscoped** sessions. This proxy-aware fallback means proxied traffic to different LLM providers (e.g. `api.anthropic.com` vs `api.openai.com`) appears in separate swim-lanes even without any conversation-isolation expectations configured.
 
@@ -498,6 +517,31 @@ The edit-existing flow works because `ComposerView.tsx` collects the current exp
 - **Ordered sequence** — an ordered list of matcher rows (add / remove steps) that must have been received in order (other requests may occur in between). Submitting calls `verifySequence(...)`.
 
 Empty form fields are omitted from the built `httpRequest` (`buildHttpRequest`). A pass renders a green "Verified" alert; a failure renders the server's `failureMessage` (closest matches + actual count) in a red alert. `lib/verification.ts` is framework-agnostic (plain `fetch`) so it is unit-tested independently of the component. This is the visual equivalent of the verification REST API (`PUT /mockserver/verify` and `PUT /mockserver/verifySequence`).
+
+## SLO View
+
+`SloPanel.tsx` (view = `slo`, AppBar label **SLO**, under the **Verify** group) lets the user define SLO objectives against recorded traffic and assert them on demand. It calls `PUT /mockserver/verifySLO` via `lib/slo.ts` with a `SloCriteria` body — a `window` object (`{ type: 'LOOKBACK', lookbackMillis }` for a trailing window, or `{ type: 'EXPLICIT', fromEpochMillis, toEpochMillis }` for an absolute range) and an array of `SloObjective` entries each specifying:
+- `sli` — one of `LATENCY_P50` / `LATENCY_P95` / `LATENCY_P99` / `ERROR_RATE`
+- `comparator` — one of `LESS_THAN` / `LESS_THAN_OR_EQUAL` / `GREATER_THAN` / `GREATER_THAN_OR_EQUAL`
+- `threshold` — the numeric threshold value
+
+The server evaluates the objectives and returns an `SloVerdict` with `result` (`PASS` / `FAIL` / `INCONCLUSIVE`) and `objectiveResults` array. The panel renders per-objective pass/fail chips showing the measured value alongside the threshold.
+
+## Contract View
+
+`ContractTestPanel.tsx` (view = `contract`, AppBar label **Contract**, under the **Verify** group) validates mocks and recorded traffic against an OpenAPI spec. Two modes:
+- **Traffic validate** — calls `PUT /mockserver/trafficValidate` with a spec (URL or inline YAML/JSON) to check whether all recorded traffic conforms to the spec.
+- **Contract test** — calls `PUT /mockserver/contractTest` with a spec and a target `baseUrl` (and optional `operationId`) to exercise the live service and report pass/fail per operation.
+
+Results are rendered as a report table with columns: operation, status code received, pass/fail, and validation errors. The UI result type (`lib/contractTest.ts`) has fields `operationId`, `method`, `path`, `statusCodeReceived`, `passed`, and `validationErrors: string[]`; the Java client maps these to `ContractResult.requestErrors`/`responseErrors`.
+
+## Cluster View
+
+`ClusterPanel.tsx` (view = `cluster`, AppBar label **Cluster**, under the **Inspect** group) shows the status of MockServer cluster nodes when the Infinispan state backend is active. It polls the cluster status endpoint and renders per-node health, the cluster name, and shared-state metrics. When clustering is not enabled the panel shows a configuration prompt.
+
+## LLM Optimise View
+
+`OptimiseView.tsx` (view = `optimise`, AppBar label **LLM Optimise**, under the **AI** group) analyses captured LLM proxy traffic and exports a brief recommending optimisations to prompts, inference cost, safety, and speed. It calls the LLM optimise REST endpoint, renders per-call signals (token usage, cost, cache-hit rate, one-shot rate, latency), and assigns an A–F verdict with a dollar-value "recoverable" attribution capped at actual spend. An export button downloads the full JSON report.
 
 ## AsyncAPI View
 
@@ -581,14 +625,22 @@ See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture 
 
 ## AppBar Styling and Responsive Behaviour
 
-The AppBar navigation is driven by a single `NAV_TABS` array where each entry carries a `primary?: boolean` flag. On wide screens (`>= lg`) the AppBar renders two distinct controls:
+The AppBar navigation is driven by `NAV_GROUPS` — six top-level group-button entries, each of which opens a dropdown `Menu` of its member views. Groups, in order:
 
-1. **Primary tabs** (`PRIMARY_NAV_TABS`) — a `ToggleButtonGroup` with five buttons shown inline: Get Started, Dashboard, Traffic, Breakpoints, Mocks.
-2. **"More ▾" overflow menu** (`OVERFLOW_NAV_TABS`) — an MUI `Button` that opens a `Menu` containing the remaining views: Chaos, Async, gRPC, Sessions, Library, Drift, Verify, Metrics. The button label changes to the active overflow tab's name when one of those views is selected.
+| Group | Views |
+|-------|-------|
+| **Mock** | Get Started, Mocks, gRPC, Async |
+| **Observe** | Dashboard, Traffic, Trace, Metrics |
+| **Verify** | Verify, Contract, SLO, Drift |
+| **Resilience** | Chaos, Performance |
+| **AI** | LLM Optimise |
+| **Inspect** | Breakpoints, Library, Cluster |
 
-Below the `lg` breakpoint (`useMediaQuery(theme.breakpoints.down('lg'))`) both controls are replaced by a single hamburger menu icon that opens an MUI `Menu` listing all thirteen navigation entries. The **Mocks** button maps to `view = 'composer'`, **Verify** to `view = 'verification'`, **Async** to `view = 'async'` (the AsyncAPI broker view), and **gRPC** to `view = 'grpc'`. The HAR download lives in Library → Export rather than as a top-bar icon.
+The group button whose group contains the active view is highlighted (a translucent-white tint in light mode; the theme action-selected overlay in dark mode). Clicking a group button opens a dropdown `Menu`; selecting an item calls `setView` and closes the menu. One shared `<Menu>` is reused across all groups rather than one per group.
 
-**Light mode**: toggle buttons use `primary.contrastText` (white) text with a translucent white border (`rgba(255,255,255,0.3)`) and a translucent-white selected state. The status chip uses pale colour tints (`#7fffa0` connected, `#ffd180` connecting, `#ff8a80` error) so colour semantics remain readable against the blue AppBar background.
+Below the `lg` breakpoint (`useMediaQuery(theme.breakpoints.down('lg'))`) all six group buttons are replaced by a single hamburger icon that opens one flat `Menu` organised into the same six labelled sections (`ListSubheader` + `Divider` separators). The current view name appears inline next to the icon.
+
+**Light mode**: group buttons use `color="inherit"` (white text) with a translucent white border and a pale-tint active background. The connection-status chip uses pale tints (`#7fffa0` connected, `#ffd180` connecting, `#ff8a80` error) for visibility against the primary-coloured bar.
 
 **Dark mode**: MUI defaults are kept; no overrides applied.
 
@@ -596,12 +648,12 @@ Below the `lg` breakpoint (`useMediaQuery(theme.breakpoints.down('lg'))`) both c
 
 | Breakpoint | Effect |
 |-----------|--------|
-| `< lg` | AppBar nav collapses from primary + "More ▾" to hamburger menu |
+| `< lg` | AppBar nav collapses from six group-dropdown buttons to hamburger menu |
 | `< md` | `DashboardGrid` collapses from 2×2 to a single stacked column |
 | `< md` | `TrafficInspector` stacks master list above detail pane (column layout) |
 | `< sm` | Dialogs rendered with `fullScreen` |
 
-Icon-only buttons carry both a `Tooltip` and an `aria-label`.
+Icon-only toolbar buttons carry both a `Tooltip` and an `aria-label`.
 
 ## Tools Menu
 
@@ -660,7 +712,7 @@ The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, e
   receivedSearch: '',
   proxiedSearch: '',
   trafficSearch: '',
-  view: 'get-started',          // 'dashboard' | 'traffic' | 'sessions' | 'composer' | 'library' | 'chaos' | 'performance' | 'metrics' | 'drift' | 'verification' | 'async' | 'grpc' | 'breakpoints' | 'get-started'  (composer is labelled "Mocks", async is the AsyncAPI view, grpc is the gRPC Services view, performance is the Load Scenarios panel)
+  view: 'get-started',          // 18 values — see ViewMode in store/index.ts; 'sessions' is labelled "Trace", 'composer' is "Mocks", 'async' is AsyncAPI, 'slo' is SLO, 'contract' is Contract, 'cluster' is Cluster, 'optimise' is "LLM Optimise"
   selectedTrafficIndex: null,
   actionTypeFilter: [],
   llmProviderFilter: [],
@@ -690,7 +742,7 @@ graph TB
 Orchestrator: theme, WebSocket, shortcuts"]
     AB["AppBar.tsx
 Title bar: status, theme, clear menu
-view toggle (14 views)"]
+grouped nav (18 views)"]
     FP["FilterPanel.tsx
 Collapsible request filter form"]
     DG["DashboardGrid.tsx
@@ -770,7 +822,7 @@ Expandable match failure reasons"]
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu; on wide screens: 5-button primary `ToggleButtonGroup` (Get Started / Dashboard / Traffic / Breakpoints / Mocks) + "More ▾" overflow menu (Chaos / Performance / Async / gRPC / Sessions / Library / Drift / Verify / Metrics); on narrow screens: hamburger menu listing all 14 views |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu; on wide screens (`>= lg`): six grouped dropdown buttons (Mock / Observe / Verify / Resilience / AI / Inspect), each opening a `Menu` of its views; on narrow screens: hamburger icon with all 18 views in labelled sections |
 | `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send; shown on dashboard/traffic/sessions |
 | `DashboardGrid` | `DashboardGrid.tsx` | 2×2 CSS grid layout for the four panels |
 | `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for all captured traffic (mock-matched + proxied) |
