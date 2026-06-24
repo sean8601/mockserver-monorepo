@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behaviour is unchanged.
 - **Contract testing & Pact consumer guide.** New documentation page covering the `/contractTest` endpoint and
   Pact import / export / verify, with verified response codes.
+- **Per-import realistic example generation.** OpenAPI imports can now request realistic (Datafaker) example
+  values for a single import via a `"realisticValues": true` entry in the reserved `__generationOptions__`
+  map (alongside the existing `seed` and `fieldOverrides` options), without changing the global
+  `generateRealisticExampleValues` configuration. When the entry is absent, behaviour is unchanged and the
+  global default still applies.
 
 ### Changed
 
@@ -90,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Forward DNS resolution moved off the calling thread.** Forward actions hand the connect path an unresolved
   address so DNS runs on the Netty event loop; SSRF validation still resolves and rejects private/loopback
   targets first, and a missing SSRF guard was added to the forward-validate path.
+- **`mockserver-core` no longer triggers dependency-convergence errors in downstream builds**
+  ([#1970](https://github.com/mock-server/mockserver-monorepo/issues/1970)). Projects that depend on
+  `mockserver-core` and run `maven-enforcer`'s `dependencyConvergence` rule saw conflicts for guava, jsr305,
+  rhino, libphonenumber, snakeyaml, commons-*, slf4j-api, jackson-* and jakarta.xml.bind-api, because those
+  versions are pinned in MockServer's parent `dependencyManagement` (which is not transitive) while
+  swagger-parser, json-patch, velocity and protobuf-java-util dragged in older transitive copies. The stale
+  transitive edges are now pruned with `<exclusion>`s (the resolved classpath is unchanged — the pinned/newer
+  versions already won nearest-wins), and `jackson-dataformat-yaml` and `jsr305` are declared directly so a
+  single version of each reaches consumers. (The `mockserver-client-java` half of this was fixed in 7.1.0.)
 
 ### Security
 
