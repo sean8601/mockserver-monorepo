@@ -42,7 +42,7 @@ import static org.mockserver.log.model.LogEntryMessages.TEMPLATE_GENERATED_MESSA
 @SuppressWarnings("FieldMayBeFinal")
 public class MustacheTemplateEngine implements TemplateEngine {
 
-    private static ObjectMapper objectMapper;
+    private static final ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
     private final MockServerLogger mockServerLogger;
     private final Configuration configuration;
     private final Mustache.Compiler compiler;
@@ -86,9 +86,6 @@ public class MustacheTemplateEngine implements TemplateEngine {
         this.mockServerLogger = mockServerLogger;
         this.configuration = configuration;
         this.httpTemplateOutputDeserializer = new HttpTemplateOutputDeserializer(mockServerLogger);
-        if (objectMapper == null) {
-            objectMapper = ObjectMapperFactory.createObjectMapper();
-        }
         compiler = Mustache
             .compiler()
             .emptyStringIsFalse(true)
