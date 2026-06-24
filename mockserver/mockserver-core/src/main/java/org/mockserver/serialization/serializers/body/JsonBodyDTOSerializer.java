@@ -40,8 +40,13 @@ public class JsonBodyDTOSerializer extends StdSerializer<JsonBodyDTO> {
         JsonNode jsonNode = OBJECT_MAPPER.readTree(jsonBodyDTO.getJson());
         // the original wire bytes cannot be reconstructed from the serialised JSON value when they differ
         // from the canonical serialisation of the parsed tree (e.g. recorded requests with original spacing) -
-        // in that case emit them explicitly so getBodyAsRawBytes()/getBodyAsOriginalRawBytes() round-trip exactly
-        boolean rawBytesNonDefault = jsonBodyDTO.getRawBytes() != null && !Arrays.equals(jsonBodyDTO.getRawBytes(), OBJECT_MAPPER.writeValueAsBytes(jsonNode));
+        // in that case emit them explicitly so getBodyAsRawBytes()/getBodyAsOriginalRawBytes() round-trip exactly.
+        // this is scoped to the recorded-request retrieval path only (via the per-call "emitRawBytes" attribute) so
+        // matcher/expectation serialisation and diagnostic mismatch logs stay clean (see #2374); the expensive
+        // canonical re-serialisation + comparison is only computed when the attribute is set and rawBytes is present
+        boolean rawBytesNonDefault = Boolean.TRUE.equals(provider.getAttribute("emitRawBytes"))
+            && jsonBodyDTO.getRawBytes() != null
+            && !Arrays.equals(jsonBodyDTO.getRawBytes(), OBJECT_MAPPER.writeValueAsBytes(jsonNode));
         if (serialiseDefaultValues || notNonDefault || optionalNonDefault || contentTypeNonDefault || matchTypeNonDefault || matchNumbersAsStringsNonDefault || rawBytesNonDefault) {
             jgen.writeStartObject();
             if (notNonDefault) {

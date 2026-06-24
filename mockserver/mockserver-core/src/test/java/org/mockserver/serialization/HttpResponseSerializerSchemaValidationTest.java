@@ -437,11 +437,7 @@ public class HttpResponseSerializerSchemaValidationTest {
         // then
         assertThat( jsonHttpResponse, is("{" + NEW_LINE +
             "  \"body\" : {" + NEW_LINE +
-            "    \"type\" : \"JSON\"," + NEW_LINE +
-            "    \"json\" : {" + NEW_LINE +
-            "      \"key\" : \"value\"" + NEW_LINE +
-            "    }," + NEW_LINE +
-            "    \"rawBytes\" : \"eyAia2V5IjogInZhbHVlIiB9\"" + NEW_LINE +
+            "    \"key\" : \"value\"" + NEW_LINE +
             "  }" + NEW_LINE +
             "}"));
     }
@@ -525,11 +521,7 @@ public class HttpResponseSerializerSchemaValidationTest {
         // then
         assertThat( jsonHttpResponse, is("{" + NEW_LINE +
             "  \"body\" : {" + NEW_LINE +
-            "    \"type\" : \"JSON\"," + NEW_LINE +
-            "    \"json\" : {" + NEW_LINE +
-            "      \"key\" : \"value\"" + NEW_LINE +
-            "    }," + NEW_LINE +
-            "    \"rawBytes\" : \"eyAia2V5IjogInZhbHVlIiB9\"" + NEW_LINE +
+            "    \"key\" : \"value\"" + NEW_LINE +
             "  }" + NEW_LINE +
             "}"));
     }
@@ -548,8 +540,7 @@ public class HttpResponseSerializerSchemaValidationTest {
             "    \"type\" : \"JSON\"," + NEW_LINE +
             "    \"json\" : {" + NEW_LINE +
             "      \"key\" : \"value\"" + NEW_LINE +
-            "    }," + NEW_LINE +
-            "    \"rawBytes\" : \"eyAia2V5IjogInZhbHVlIiB9\"" + NEW_LINE +
+            "    }" + NEW_LINE +
             "  }" + NEW_LINE +
             "}"));
     }

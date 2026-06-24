@@ -44,15 +44,16 @@ public class JsonBodyRawBytesRoundTripTest {
 
     @Test
     public void shouldRoundTripOriginalRawBytesViaRequestDefinitionSerializerPrettyPrinted() {
-        // this is the exact path used by retrieveRecordedRequests (prettyPrint = true -> HttpRequestPrettyPrintedDTO)
+        // this is the exact path used by retrieveRecordedRequests (prettyPrint = true -> HttpRequestPrettyPrintedDTO);
+        // only serializeRecordedRequests emits rawBytes, so the original bytes survive the round-trip
         RequestDefinitionSerializer serializer = new RequestDefinitionSerializer(new MockServerLogger());
 
-        String serialized = serializer.serialize(true, recordedJsonRequest());
+        String serialized = serializer.serializeRecordedRequests(true, java.util.Collections.singletonList(recordedJsonRequest()));
 
         // the serialized form must carry the rawBytes so the original bytes survive the round-trip
         assertTrue("expected rawBytes field in serialized recorded request but was: " + serialized, serialized.contains("rawBytes"));
 
-        RequestDefinition deserialized = serializer.deserialize(serialized);
+        RequestDefinition deserialized = serializer.deserializeArray(serialized)[0];
         assertTrue(deserialized instanceof HttpRequest);
         HttpRequest result = (HttpRequest) deserialized;
 
@@ -64,11 +65,11 @@ public class JsonBodyRawBytesRoundTripTest {
     public void shouldRoundTripOriginalRawBytesViaRequestDefinitionSerializerCompact() {
         RequestDefinitionSerializer serializer = new RequestDefinitionSerializer(new MockServerLogger());
 
-        String serialized = serializer.serialize(false, recordedJsonRequest());
+        String serialized = serializer.serializeRecordedRequests(false, java.util.Collections.singletonList(recordedJsonRequest()));
 
         assertTrue("expected rawBytes field in serialized recorded request but was: " + serialized, serialized.contains("rawBytes"));
 
-        RequestDefinition deserialized = serializer.deserialize(serialized);
+        RequestDefinition deserialized = serializer.deserializeArray(serialized)[0];
         assertTrue(deserialized instanceof HttpRequest);
         HttpRequest result = (HttpRequest) deserialized;
 
@@ -87,8 +88,19 @@ public class JsonBodyRawBytesRoundTripTest {
         );
 
         RequestDefinitionSerializer serializer = new RequestDefinitionSerializer(new MockServerLogger());
-        String serialized = serializer.serialize(false, request);
+        String serialized = serializer.serializeRecordedRequests(false, java.util.Collections.singletonList(request));
 
         assertThat("canonical body should not carry rawBytes but was: " + serialized, serialized.contains("rawBytes"), is(false));
+    }
+
+    @Test
+    public void shouldNotEmitRawBytesViaGenericSerializeOutsideRetrievalPath() {
+        // the generic serialize(...) overloads (used for matcher/expectation serialisation and diagnostic logs) must
+        // stay clean - they never emit rawBytes even when the wire bytes differ from the canonical serialisation
+        RequestDefinitionSerializer serializer = new RequestDefinitionSerializer(new MockServerLogger());
+
+        String serialized = serializer.serialize(true, recordedJsonRequest());
+
+        assertThat("matcher/diagnostic serialisation should not carry rawBytes but was: " + serialized, serialized.contains("rawBytes"), is(false));
     }
 }

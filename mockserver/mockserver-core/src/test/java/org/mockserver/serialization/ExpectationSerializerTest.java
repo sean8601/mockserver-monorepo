@@ -2859,12 +2859,8 @@ public class ExpectationSerializerTest {
             "  }," + NEW_LINE +
             "  \"httpResponse\" : {" + NEW_LINE +
             "    \"body\" : {" + NEW_LINE +
-            "      \"type\" : \"JSON\"," + NEW_LINE +
-            "      \"json\" : {" + NEW_LINE +
-            "        \"fieldOne\" : \"valueOne\"," + NEW_LINE +
-            "        \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
-            "      }," + NEW_LINE +
-            "      \"rawBytes\" : \"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"" + NEW_LINE +
+            "      \"fieldOne\" : \"valueOne\"," + NEW_LINE +
+            "      \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
             "    }" + NEW_LINE +
             "  }," + NEW_LINE +
             "  \"id\" : \"some_key\"," + NEW_LINE +
@@ -2945,12 +2941,8 @@ public class ExpectationSerializerTest {
             "  }," + NEW_LINE +
             "  \"httpResponse\" : {" + NEW_LINE +
             "    \"body\" : {" + NEW_LINE +
-            "      \"type\" : \"JSON\"," + NEW_LINE +
-            "      \"json\" : {" + NEW_LINE +
-            "        \"fieldOne\" : \"valueOne\"," + NEW_LINE +
-            "        \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
-            "      }," + NEW_LINE +
-            "      \"rawBytes\" : \"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"" + NEW_LINE +
+            "      \"fieldOne\" : \"valueOne\"," + NEW_LINE +
+            "      \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
             "    }" + NEW_LINE +
             "  }," + NEW_LINE +
             "  \"id\" : \"some_key\"," + NEW_LINE +
@@ -2990,22 +2982,14 @@ public class ExpectationSerializerTest {
             "  \"httpRequest\" : {" + NEW_LINE +
             "    \"path\" : \"somePath\"," + NEW_LINE +
             "    \"body\" : {" + NEW_LINE +
-            "      \"type\" : \"JSON\"," + NEW_LINE +
-            "      \"json\" : {" + NEW_LINE +
-            "        \"fieldOne\" : \"valueOne\"," + NEW_LINE +
-            "        \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
-            "      }," + NEW_LINE +
-            "      \"rawBytes\" : \"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"" + NEW_LINE +
+            "      \"fieldOne\" : \"valueOne\"," + NEW_LINE +
+            "      \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
             "    }" + NEW_LINE +
             "  }," + NEW_LINE +
             "  \"httpResponse\" : {" + NEW_LINE +
             "    \"body\" : {" + NEW_LINE +
-            "      \"type\" : \"JSON\"," + NEW_LINE +
-            "      \"json\" : {" + NEW_LINE +
-            "        \"fieldOne\" : \"valueOne\"," + NEW_LINE +
-            "        \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
-            "      }," + NEW_LINE +
-            "      \"rawBytes\" : \"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"" + NEW_LINE +
+            "      \"fieldOne\" : \"valueOne\"," + NEW_LINE +
+            "      \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
             "    }" + NEW_LINE +
             "  }," + NEW_LINE +
             "  \"id\" : \"some_key\"," + NEW_LINE +

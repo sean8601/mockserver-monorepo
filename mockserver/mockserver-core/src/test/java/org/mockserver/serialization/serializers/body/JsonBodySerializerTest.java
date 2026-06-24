@@ -8,6 +8,7 @@ import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.nio.charset.StandardCharsets;
 
+import static junit.framework.TestCase.assertTrue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
@@ -68,49 +69,49 @@ public class JsonBodySerializerTest {
     @Test
     public void shouldSerializeJsonBody() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}")),
-            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"}"));
+            is("{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithDefaultMatchType() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.ONLY_MATCHING_FIELDS)),
-            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"}"));
+            is("{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithMatchType() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.STRICT)),
-            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\",\"matchType\":\"STRICT\"}"));
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithNoneDefaultMatchTypeAndCharset() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", StandardCharsets.UTF_16, MatchType.STRICT)),
-            is("{\"contentType\":\"application/json; charset=utf-16\",\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"/v8AewBmAGkAZQBsAGQATwBuAGUAOgAgACIAdgBhAGwAdQBlAE8AbgBlACIALAAgACIAZgBpAGUAbABkAFQAdwBvACIAOgAgACIAdgBhAGwAdQBlAFQAdwBvACIAfQ==\",\"matchType\":\"STRICT\"}"));
+            is("{\"contentType\":\"application/json; charset=utf-16\",\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithDefaultMatchTypeAndContentType() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MediaType.JSON_UTF_8, MatchType.STRICT)),
-            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\",\"matchType\":\"STRICT\"}"));
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithNoneDefaultMatchTypeAndContentType() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MediaType.parse("application/json; charset=utf-16"), MatchType.STRICT)),
-            is("{\"contentType\":\"application/json; charset=utf-16\",\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"/v8AewBmAGkAZQBsAGQATwBuAGUAOgAgACIAdgBhAGwAdQBlAE8AbgBlACIALAAgACIAZgBpAGUAbABkAFQAdwBvACIAOgAgACIAdgBhAGwAdQBlAFQAdwBvACIAfQ==\",\"matchType\":\"STRICT\"}"));
+            is("{\"contentType\":\"application/json; charset=utf-16\",\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithMatchTypeWithNot() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(not(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.STRICT))),
-            is("{\"not\":true,\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\",\"matchType\":\"STRICT\"}"));
+            is("{\"not\":true,\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithMatchTypeWithOptional() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.STRICT).withOptional(true)),
-            is("{\"optional\":true,\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\",\"matchType\":\"STRICT\"}"));
+            is("{\"optional\":true,\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
     }
 
     @Test
@@ -153,5 +154,32 @@ public class JsonBodySerializerTest {
     public void shouldSerializeJsonBodyWithNullPrimitive() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(json("null")),
             is("null"));
+    }
+
+    @Test
+    public void shouldEmitRawBytesWhenEmitRawBytesAttributeSetAndWireBytesDifferFromCanonical() throws JsonProcessingException {
+        // the recorded-request retrieval path sets the "emitRawBytes" attribute so the original wire bytes survive
+        // the round-trip (#2374) when they differ from the canonical serialisation of the parsed JSON value
+        assertThat(ObjectMapperFactory.createObjectMapper().writer().withAttribute("emitRawBytes", Boolean.TRUE)
+                .writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.STRICT)),
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\",\"matchType\":\"STRICT\"}"));
+    }
+
+    @Test
+    public void shouldNotEmitRawBytesWhenEmitRawBytesAttributeNotSet() throws JsonProcessingException {
+        // outside the retrieval path (matcher/expectation serialisation, diagnostic logs) the attribute is unset so
+        // rawBytes is never emitted, keeping that output clean and human-readable
+        assertThat(ObjectMapperFactory.createObjectMapper()
+                .writeValueAsString(json("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.STRICT)),
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"matchType\":\"STRICT\"}"));
+    }
+
+    @Test
+    public void shouldNotEmitRawBytesWhenEmitRawBytesAttributeSetButWireBytesMatchCanonical() throws JsonProcessingException {
+        // even with the attribute set, a body whose wire bytes already equal the canonical serialisation carries no
+        // extra information, so no rawBytes field is emitted (no output bloat)
+        assertThat(ObjectMapperFactory.createObjectMapper().writer().withAttribute("emitRawBytes", Boolean.TRUE)
+                .writeValueAsString(json("{\"fieldOne\":\"valueOne\"}", MatchType.STRICT)),
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\"},\"matchType\":\"STRICT\"}"));
     }
 }

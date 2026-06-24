@@ -1104,7 +1104,7 @@ public class HttpState {
                                         requestDefinition,
                                         requests -> {
                                             response.withBody(
-                                                getRequestDefinitionSerializer().serialize(true, requests),
+                                                getRequestDefinitionSerializer().serializeRecordedRequests(true, requests),
                                                 MediaType.JSON_UTF_8
                                             );
                                             mockServerLogger.logEvent(logEntry);
