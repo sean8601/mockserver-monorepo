@@ -8,7 +8,7 @@
  * Licensed under the Apache License, Version 2.0
  */
 
-import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GrpcStreamResponse, HttpChaosProfile, HttpClassCallback, HttpError, HttpForward, HttpOverrideForwardedRequest, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpTemplate, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioStatus, LoadScenarioEntry, LoadScenarioList, LoadScenarioRegistration, LoadScenarioStartResult, LoadScenarioStopResult, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
+import {BinaryResponse, DnsResponse, Expectation, ExpectationId, GenerateLoadScenarioFromOpenAPIRequest, GenerateLoadScenarioFromRecordingRequest, GrpcStreamResponse, HttpChaosProfile, HttpClassCallback, HttpError, HttpForward, HttpOverrideForwardedRequest, HttpRequest, HttpRequestAndHttpResponse, HttpResponse, HttpSseResponse, HttpTemplate, HttpWebSocketResponse, KeyToMultiValue, LoadScenario, LoadScenarioGenerationResult, LoadScenarioReport, LoadScenarioStatus, LoadScenarioEntry, LoadScenarioList, LoadScenarioRegistration, LoadScenarioStartResult, LoadScenarioStopResult, OpenAPIExpectation, RequestDefinition, Times, TimeToLive,} from './mockServer';
 import {Llm, LlmConversationBuilder, LlmFailoverBuilder, LlmMockBuilder} from './llm';
 import {McpMockBuilder} from './mcpMockBuilder';
 
@@ -313,6 +313,30 @@ export interface MockServerClient {
     stopLoadScenarios(names?: string | string[]): Promise<LoadScenarioStopResult>;
 
     runLoadScenario(scenario: LoadScenario): Promise<LoadScenarioStartResult>;
+
+    /**
+     * Retrieve the end-of-run summary report for a load scenario run. With no
+     * `format` (or any value other than "junit") the JSON report is parsed and
+     * resolved as a {@link LoadScenarioReport}; with `format="junit"` the
+     * JUnit-XML document is resolved as a string. Rejects 404 if the named
+     * scenario has never run.
+     */
+    getLoadScenarioReport(name: string, format?: string): Promise<LoadScenarioReport | string>;
+
+    /**
+     * Generate (and register) an editable load scenario from an OpenAPI spec —
+     * one step per operation. Loaded in the LOADED state without generating any
+     * traffic; allowed even when loadGenerationEnabled is false.
+     */
+    generateLoadScenarioFromOpenAPI(request: GenerateLoadScenarioFromOpenAPIRequest): Promise<LoadScenarioGenerationResult>;
+
+    /**
+     * Generate (and register) an editable load scenario from traffic previously
+     * recorded by MockServer in proxy/recording mode. Loaded in the LOADED state
+     * without generating any traffic; allowed even when loadGenerationEnabled is
+     * false.
+     */
+    generateLoadScenarioFromRecording(request: GenerateLoadScenarioFromRecordingRequest): Promise<LoadScenarioGenerationResult>;
 
     /**
      * Obtain a handle to a named stateful scenario, exposing typed helpers over

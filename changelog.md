@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **All client libraries now expose the full load-scenario surface.** The Java, Node, Python, Ruby, Go,
+  .NET, PHP, and Rust clients gained the new scenario fields (`thresholds`, `abortOnFail`, `abortGraceMillis`,
+  `pacing`, `feeder`, `stepSelection`, per-step `captures`/`weight`, profile `shape`), the new run-status
+  fields (`p999Millis`, `droppedIterations`, `verdict`, `abortedByThreshold`, `thresholdResults`), and three
+  new methods — `getLoadScenarioReport` (with optional `junit` format), `generateLoadScenarioFromOpenAPI`,
+  and `generateLoadScenarioFromRecording`.
 - **Mustache response templates can now read scenario state by name.** Velocity
   (`$scenario.get('orderId')`) and JavaScript (`scenario.get('orderId')`) could already read
   scenario/captured state in a response template; the Mustache engine now exposes the same through a

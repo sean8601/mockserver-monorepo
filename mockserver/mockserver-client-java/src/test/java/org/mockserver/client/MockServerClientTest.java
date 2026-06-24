@@ -2018,6 +2018,125 @@ public class MockServerClientTest {
         assertThat(start.getBodyAsString(), is("{\"names\":[\"smoke\"]}"));
     }
 
+    @Test
+    public void shouldSendGetLoadScenarioReportRequest() {
+        // when
+        mockServerClient.getLoadScenarioReport("smoke");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("GET"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/smoke/report"));
+        assertThat(sent.getFirstQueryStringParameter("format"), is(""));
+    }
+
+    @Test
+    public void shouldSendGetLoadScenarioReportRequestWithJunitFormat() {
+        // when
+        mockServerClient.getLoadScenarioReport("smoke", "junit");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("GET"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/smoke/report"));
+        assertThat(sent.getFirstQueryStringParameter("format"), is("junit"));
+    }
+
+    @Test
+    public void shouldSendGetLoadScenarioReportRequestWithoutFormatWhenBlank() {
+        // when
+        mockServerClient.getLoadScenarioReport("smoke", "");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("GET"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/smoke/report"));
+        assertThat(sent.getFirstQueryStringParameter("format"), is(""));
+    }
+
+    @Test
+    public void shouldSendGenerateLoadScenarioFromOpenAPIRequest() {
+        // when
+        mockServerClient.generateLoadScenarioFromOpenAPI("{\"name\":\"petstore-load\",\"specUrlOrPayload\":\"https://example.com/petstore.yaml\"}");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/generateFromOpenAPI"));
+        assertThat(sent.getBodyAsString(), containsString("\"name\":\"petstore-load\""));
+        assertThat(sent.getBodyAsString(), containsString("specUrlOrPayload"));
+    }
+
+    @Test
+    public void shouldThrowErrorWhenGenerateLoadScenarioFromOpenAPIBadRequest() {
+        // given (sendRequest itself maps 400 to IllegalArgumentException carrying the server body)
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(BAD_REQUEST.code()).withBody("{\"error\":\"spec has no operations\"}"));
+
+        // when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> mockServerClient.generateLoadScenarioFromOpenAPI("{\"name\":\"x\"}"));
+
+        // then
+        assertThat(exception.getMessage(), containsString("spec has no operations"));
+    }
+
+    @Test
+    public void shouldThrowErrorWhenGenerateLoadScenarioFromOpenAPIRejected() {
+        // given (a 5xx error other than 400/401, which sendRequest maps to dedicated exceptions)
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(500).withBody("{\"error\":\"boom\"}"));
+
+        // when
+        ClientException clientException = assertThrows(ClientException.class, () -> mockServerClient.generateLoadScenarioFromOpenAPI("{\"name\":\"x\"}"));
+
+        // then
+        assertThat(clientException.getMessage(), containsString("while generating load scenario from OpenAPI"));
+    }
+
+    @Test
+    public void shouldSendGenerateLoadScenarioFromRecordingRequest() {
+        // when
+        mockServerClient.generateLoadScenarioFromRecording("{\"name\":\"replay-prod-traffic\",\"mode\":\"TEMPLATIZED\"}");
+
+        // then
+        verify(mockHttpClient).sendRequest(httpRequestArgumentCaptor.capture(), anyLong(), any(TimeUnit.class), anyBoolean());
+        HttpRequest sent = httpRequestArgumentCaptor.getValue();
+        assertThat(sent.getMethod().getValue(), is("PUT"));
+        assertThat(sent.getPath().getValue(), is("/mockserver/loadScenario/generateFromRecording"));
+        assertThat(sent.getBodyAsString(), containsString("\"name\":\"replay-prod-traffic\""));
+        assertThat(sent.getBodyAsString(), containsString("TEMPLATIZED"));
+    }
+
+    @Test
+    public void shouldThrowErrorWhenGenerateLoadScenarioFromRecordingBadRequest() {
+        // given (sendRequest itself maps 400 to IllegalArgumentException carrying the server body)
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(BAD_REQUEST.code()).withBody("{\"error\":\"no recorded requests to convert\"}"));
+
+        // when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> mockServerClient.generateLoadScenarioFromRecording("{\"name\":\"x\"}"));
+
+        // then
+        assertThat(exception.getMessage(), containsString("no recorded requests to convert"));
+    }
+
+    @Test
+    public void shouldThrowErrorWhenGenerateLoadScenarioFromRecordingRejected() {
+        // given (a 5xx error other than 400/401, which sendRequest maps to dedicated exceptions)
+        when(mockHttpClient.sendRequest(any(HttpRequest.class), anyLong(), any(TimeUnit.class), anyBoolean()))
+            .thenReturn(response().withStatusCode(500).withBody("{\"error\":\"boom\"}"));
+
+        // when
+        ClientException clientException = assertThrows(ClientException.class, () -> mockServerClient.generateLoadScenarioFromRecording("{\"name\":\"x\"}"));
+
+        // then
+        assertThat(clientException.getMessage(), containsString("while generating load scenario from recording"));
+    }
+
     // -------------------------------------------------------------------
     // AsyncAPI Control-Plane
     // -------------------------------------------------------------------

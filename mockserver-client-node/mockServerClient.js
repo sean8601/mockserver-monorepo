@@ -2160,6 +2160,97 @@ var mockServerClient;
                 }
             };
         };
+        /**
+         * Retrieve the end-of-run summary report for a load scenario run. The
+         * default JSON report carries counts, latency percentiles, the threshold
+         * verdict and per-threshold results; with `format="junit"` the server
+         * returns a JUnit-XML <testsuite> document instead (resolved as a raw
+         * string). Rejects 404 if the scenario has never run.
+         *
+         * @param name the unique scenario name
+         * @param format optional report format - "junit" for the JUnit-XML form,
+         *        omitted (or anything else) for the JSON report
+         * @return promise resolving to the parsed JSON report, or the raw
+         *         JUnit-XML string when format === "junit"
+         */
+        var getLoadScenarioReport = function (name, format) {
+            var path = "/mockserver/loadScenario/" + encodeURIComponent(name) + "/report";
+            if (format) {
+                path += "?format=" + encodeURIComponent(format);
+            }
+            return {
+                then: function (sucess, error) {
+                    makeGetRequest(host, port, path)
+                        .then(function (result) {
+                            if (sucess) {
+                                if (format === "junit") {
+                                    sucess(result.body);
+                                } else {
+                                    sucess(result.body ? JSON.parse(result.body) : result);
+                                }
+                            }
+                        }, function (err) {
+                            if (error) {
+                                error(err);
+                            }
+                        });
+                }
+            };
+        };
+        /**
+         * Generate (and register) an editable load scenario from an OpenAPI
+         * specification - one step per operation. Like loadScenario(...), this
+         * registers the scenario in the LOADED state and generates no traffic, so
+         * it is allowed even when the server was started without
+         * `loadGenerationEnabled=true`.
+         *
+         * @param request {name, specUrlOrPayload, target?, profile?}
+         * @return promise resolving to the parsed JSON
+         *         ({status: "loaded", name, state, scenario})
+         */
+        var generateLoadScenarioFromOpenAPI = function (request) {
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/loadScenario/generateFromOpenAPI", request)
+                        .then(function (result) {
+                            if (sucess) {
+                                sucess(result.body ? JSON.parse(result.body) : result);
+                            }
+                        }, function (err) {
+                            if (error) {
+                                error(err);
+                            }
+                        });
+                }
+            };
+        };
+        /**
+         * Generate (and register) an editable load scenario from traffic
+         * previously recorded by MockServer in proxy/recording mode. Like
+         * loadScenario(...), this registers the scenario in the LOADED state and
+         * generates no traffic, so it is allowed even when the server was started
+         * without `loadGenerationEnabled=true`.
+         *
+         * @param request {name, mode?, requestFilter?, maxSteps?, target?, profile?}
+         * @return promise resolving to the parsed JSON
+         *         ({status: "loaded", name, state, scenario})
+         */
+        var generateLoadScenarioFromRecording = function (request) {
+            return {
+                then: function (sucess, error) {
+                    makeRequest(host, port, "/mockserver/loadScenario/generateFromRecording", request)
+                        .then(function (result) {
+                            if (sucess) {
+                                sucess(result.body ? JSON.parse(result.body) : result);
+                            }
+                        }, function (err) {
+                            if (error) {
+                                error(err);
+                            }
+                        });
+                }
+            };
+        };
 
         // -------------------------------------------------------------------
         // Stateful scenario (state-machine) management
@@ -2560,6 +2651,9 @@ var mockServerClient;
             startLoadScenarios: startLoadScenarios,
             stopLoadScenarios: stopLoadScenarios,
             runLoadScenario: runLoadScenario,
+            getLoadScenarioReport: getLoadScenarioReport,
+            generateLoadScenarioFromOpenAPI: generateLoadScenarioFromOpenAPI,
+            generateLoadScenarioFromRecording: generateLoadScenarioFromRecording,
             bind: bind,
             retrieveRecordedRequests: retrieveRecordedRequests,
             retrieveRecordedRequestsAndResponses: retrieveRecordedRequestsAndResponses,

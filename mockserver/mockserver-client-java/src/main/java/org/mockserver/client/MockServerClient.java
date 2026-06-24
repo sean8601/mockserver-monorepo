@@ -2904,6 +2904,108 @@ public class MockServerClient implements Stoppable {
         return startLoadScenarios(scenario.getName());
     }
 
+    /**
+     * Retrieve the end-of-run summary report for a load scenario run via
+     * {@code GET /mockserver/loadScenario/{name}/report}. The report is derived from the
+     * run's status snapshot — the live snapshot while running, or the retained terminal
+     * snapshot once finished — and carries counts, latency percentiles, the threshold
+     * verdict and per-threshold results. The server responds {@code 404} if the named
+     * scenario never ran.
+     *
+     * @param name the unique name of the load scenario whose run report is wanted
+     * @return JSON string describing the run report (counts, percentiles, threshold verdict)
+     */
+    public String getLoadScenarioReport(String name) {
+        return getLoadScenarioReport(name, null);
+    }
+
+    /**
+     * Retrieve the end-of-run summary report for a load scenario run via
+     * {@code GET /mockserver/loadScenario/{name}/report}, selecting the rendering with the
+     * {@code format} query parameter. The default JSON form (when {@code format} is
+     * {@code null} or empty, or any value other than {@code "junit"}) carries counts,
+     * latency percentiles and per-threshold results; {@code format="junit"} renders the
+     * same data as a JUnit-XML {@code <testsuite>} so a load run becomes a first-class CI
+     * test artifact. The server responds {@code 404} if the named scenario never ran.
+     *
+     * @param name   the unique name of the load scenario whose run report is wanted
+     * @param format the report format (e.g. {@code "junit"}); {@code null} or empty selects the default JSON report
+     * @return the run report as a JSON string (or a JUnit-XML document when {@code format="junit"})
+     */
+    public String getLoadScenarioReport(String name, String format) {
+        HttpRequest request = request()
+            .withMethod("GET")
+            .withPath(calculatePath("loadScenario/" + name + "/report"));
+        if (format != null && !format.isEmpty()) {
+            request.withQueryStringParameter("format", format);
+        }
+        HttpResponse httpResponse = sendRequest(request, false);
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Generate an editable load scenario from an OpenAPI specification and load (register)
+     * it via {@code PUT /mockserver/loadScenario/generateFromOpenAPI}. The generated
+     * scenario is registered in the {@code LOADED} state — exactly like
+     * {@link #loadScenario(LoadScenario)}, it drives no traffic and is allowed even when
+     * {@code loadGenerationEnabled} is off — and is returned so it can be shown and edited
+     * before a run is triggered.
+     *
+     * <p>The body is a JSON object the caller builds, carrying at least {@code name} and
+     * {@code specUrlOrPayload} (the OpenAPI spec as an inline JSON/YAML payload, a URL, or a
+     * file/classpath reference), with optional {@code target} and {@code profile}, e.g.
+     * {@code {"name":"petstore-load","specUrlOrPayload":"..."}}.
+     *
+     * @param jsonBody the JSON request body ({@code {name, specUrlOrPayload, target?, profile?}})
+     * @return JSON string describing the generated, loaded scenario ({@code {"status":"loaded","name":...,"scenario":...}})
+     */
+    public String generateLoadScenarioFromOpenAPI(String jsonBody) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("loadScenario/generateFromOpenAPI"))
+                .withBody(jsonBody != null ? jsonBody : "", StandardCharsets.UTF_8),
+            false
+        );
+        if (httpResponse != null && httpResponse.getStatusCode() != null && httpResponse.getStatusCode() >= 400) {
+            throw new ClientException(formatLogMessage("error:{}while generating load scenario from OpenAPI", httpResponse.getBodyAsString()));
+        }
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
+    /**
+     * Generate an editable load scenario from recorded proxy traffic and load (register) it
+     * via {@code PUT /mockserver/loadScenario/generateFromRecording}. The generated scenario
+     * is registered in the {@code LOADED} state — exactly like
+     * {@link #loadScenario(LoadScenario)}, it drives no traffic and is allowed even when
+     * {@code loadGenerationEnabled} is off — and is returned so it can be shown and edited
+     * before a run is triggered.
+     *
+     * <p>The body is a JSON object the caller builds, carrying at least {@code name}, with an
+     * optional {@code mode} ({@code VERBATIM} (default) = one step per recorded request;
+     * {@code TEMPLATIZED} = one step per unique route), plus optional {@code requestFilter},
+     * {@code maxSteps}, {@code target} and {@code profile}, e.g.
+     * {@code {"name":"replay-prod-traffic","mode":"TEMPLATIZED"}}.
+     *
+     * @param jsonBody the JSON request body ({@code {name, mode?, requestFilter?, maxSteps?, target?, profile?}})
+     * @return JSON string describing the generated, loaded scenario ({@code {"status":"loaded","name":...,"scenario":...}})
+     */
+    public String generateLoadScenarioFromRecording(String jsonBody) {
+        HttpResponse httpResponse = sendRequest(
+            request()
+                .withMethod("PUT")
+                .withContentType(APPLICATION_JSON_UTF_8)
+                .withPath(calculatePath("loadScenario/generateFromRecording"))
+                .withBody(jsonBody != null ? jsonBody : "", StandardCharsets.UTF_8),
+            false
+        );
+        if (httpResponse != null && httpResponse.getStatusCode() != null && httpResponse.getStatusCode() >= 400) {
+            throw new ClientException(formatLogMessage("error:{}while generating load scenario from recording", httpResponse.getBodyAsString()));
+        }
+        return httpResponse != null ? httpResponse.getBodyAsString() : "";
+    }
+
     private static String namesBody(String... names) {
         StringBuilder body = new StringBuilder("{\"names\":[");
         for (int i = 0; i < names.length; i++) {
