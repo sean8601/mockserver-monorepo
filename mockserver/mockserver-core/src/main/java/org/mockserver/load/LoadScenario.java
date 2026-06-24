@@ -67,6 +67,14 @@ public class LoadScenario extends ObjectWithJsonToString {
      * abort action is deferred until {@code elapsedMillis >= abortGraceMillis}. Default {@code 0}.
      */
     private long abortGraceMillis;
+    /**
+     * Adaptive iteration pacing (think-time): a target per-VU iteration cycle time. Nullable (or
+     * {@link LoadPacing.Mode#NONE}) means no pacing — the closed-model VU loop reschedules each next
+     * iteration immediately. When set, a closed-model VU starts an iteration at most once per target
+     * cycle (waiting out any remainder, starting immediately on overrun). Applies only to the
+     * closed-model VU loop; open-model RATE iterations ignore it. See {@link LoadPacing}.
+     */
+    private LoadPacing pacing;
 
     public static LoadScenario loadScenario() {
         return new LoadScenario();
@@ -200,6 +208,18 @@ public class LoadScenario extends ObjectWithJsonToString {
 
     public LoadScenario withAbortGraceMillis(long abortGraceMillis) {
         this.abortGraceMillis = abortGraceMillis;
+        return this;
+    }
+
+    /**
+     * Adaptive iteration pacing (may be null = no pacing). See {@link #pacing}.
+     */
+    public LoadPacing getPacing() {
+        return pacing;
+    }
+
+    public LoadScenario withPacing(LoadPacing pacing) {
+        this.pacing = pacing;
         return this;
     }
 }

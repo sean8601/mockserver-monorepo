@@ -1388,4 +1388,135 @@ public class LoadScenarioOrchestratorTest {
         assertThat(orchestrator.validate(scenario),
             containsString("exceeds the maximum of 5"));
     }
+
+    // -- Adaptive iteration pacing --
+
+    /** Poll until the most-recent run's last applied pacing delay is within [min, max] (or timeout). */
+    private boolean awaitPacingDelayBetween(long min, long max, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            long delay = orchestrator.lastRunPacingDelayMillis();
+            if (delay >= min && delay <= max) {
+                return true;
+            }
+            Thread.sleep(5);
+        }
+        long delay = orchestrator.lastRunPacingDelayMillis();
+        return delay >= min && delay <= max;
+    }
+
+    @Test
+    public void constantPacingDelaysNextIterationToTargetCycle() throws Exception {
+        // One VU, instant sender, 200ms target cycle: each iteration's work finishes ~immediately, so the
+        // reschedule of the next iteration waits ~the full 200ms cycle (allow jitter for clock granularity).
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("paced")
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withPacing(org.mockserver.load.LoadPacing.constantPacing(200.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        // First iteration fires immediately; the closed-model reschedule then applies a ~200ms pacing delay.
+        assertThat("first request is sent without waiting on pacing", awaitAtLeast(sender, 1, 5_000L), is(true));
+        assertThat("next iteration is paced to ~200ms (instant iteration => delay ~ full cycle)",
+            awaitPacingDelayBetween(150L, 200L, 5_000L), is(true));
+    }
+
+    @Test
+    public void constantThroughputPacingComputesCycleFromRate() throws Exception {
+        // 5 iterations/sec per VU => a 200ms cycle, identical paced delay to CONSTANT_PACING(200ms).
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("throughput-paced")
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withPacing(org.mockserver.load.LoadPacing.constantThroughput(5.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        assertThat(awaitAtLeast(sender, 1, 5_000L), is(true));
+        assertThat("5/s per VU => 200ms cycle => ~200ms paced delay on an instant iteration",
+            awaitPacingDelayBetween(150L, 200L, 5_000L), is(true));
+    }
+
+    @Test
+    public void pacingDelayIsZeroWhenIterationOverrunsCycle() throws Exception {
+        // A 1ms target cycle with a sender that completes after 50ms: the iteration's work always overruns
+        // the cycle, so the next iteration must start immediately (paced delay 0).
+        DelayingSender sender = new DelayingSender(50L);
+        try {
+            LoadScenario scenario = new LoadScenario()
+                .withName("overrun")
+                .withProfile(LoadProfile.constant(1, 60_000L))
+                .withPacing(org.mockserver.load.LoadPacing.constantPacing(1.0))
+                .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+            assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+            // Wait until at least 2 iterations have been dispatched (so a reschedule has computed its delay),
+            // then assert the last applied pacing delay was 0 (overrun => no wait).
+            assertThat(awaitAtLeastDelaying(sender, 2, 5_000L), is(true));
+            assertThat("overrun iteration reschedules immediately", orchestrator.lastRunPacingDelayMillis(), is(0L));
+        } finally {
+            sender.shutdown();
+        }
+    }
+
+    @Test
+    public void nonePacingReschedulesImmediately() throws Exception {
+        // No pacing configured: the closed-model loop reschedules with zero delay (unchanged behaviour).
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("unpaced")
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        // Many iterations accrue quickly with no pacing; the recorded pacing delay stays 0 throughout.
+        assertThat(awaitAtLeast(sender, 5, 5_000L), is(true));
+        assertThat(orchestrator.lastRunPacingDelayMillis(), is(0L));
+    }
+
+    @Test
+    public void validateRejectsNonPositivePacingValue() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("bad-pacing")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withPacing(new org.mockserver.load.LoadPacing()
+                .withMode(org.mockserver.load.LoadPacing.Mode.CONSTANT_PACING)
+                .withValue(0.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario),
+            is("'pacing.value' must be > 0 when 'pacing.mode' is CONSTANT_PACING"));
+    }
+
+    @Test
+    public void validateAcceptsNonePacing() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("none-pacing")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withPacing(new org.mockserver.load.LoadPacing()
+                .withMode(org.mockserver.load.LoadPacing.Mode.NONE)
+                .withValue(0.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario), is(nullValue()));
+    }
+
+    private boolean awaitAtLeastDelaying(DelayingSender sender, int n, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (sender.sent.size() >= n) {
+                return true;
+            }
+            Thread.sleep(5);
+        }
+        return sender.sent.size() >= n;
+    }
 }

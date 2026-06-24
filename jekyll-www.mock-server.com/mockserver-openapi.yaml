@@ -4949,6 +4949,22 @@ components:
         threshold:
           type: number
           description: "the threshold value (milliseconds for latency metrics, a 0.0-1.0 fraction for ERROR_RATE, requests/second for THROUGHPUT_RPS)"
+    LoadPacing:
+      description: "adaptive iteration pacing (think-time) for a load scenario: a target per-virtual-user iteration cycle time. After a closed-model VU finishes one pass through the steps, the orchestrator waits whatever remains of the target cycle before launching that VU's next iteration; on overrun the next iteration starts immediately (no wait). Applies only to the closed-model VU loop — open-model RATE iterations ignore it, their arrival rate already governing spacing — and composes with per-step thinkTime. In-flight latency measurement is unchanged; pacing only affects when the next iteration launches."
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+        - value
+      properties:
+        mode:
+          type: string
+          enum: [NONE, CONSTANT_PACING, CONSTANT_THROUGHPUT]
+          default: NONE
+          description: "how the target iteration cycle is derived from value: NONE = no pacing (immediate reschedule); CONSTANT_PACING = value is the target cycle in milliseconds; CONSTANT_THROUGHPUT = value is the target iterations/second per VU (cycle = 1000 / value ms)"
+        value:
+          type: number
+          description: "for CONSTANT_PACING the target cycle in milliseconds; for CONSTANT_THROUGHPUT the target iterations/second per VU. Must be > 0 when mode is not NONE; ignored when mode is NONE."
     LoadScenario:
       description: "an API-driven load scenario: ordered templated steps driven at a target concurrency. The name is the unique registry key — PUT loads (registers) it; PUT /loadScenario/start triggers it to run."
       type: object
@@ -4993,6 +5009,8 @@ components:
           format: int64
           default: 0
           description: "suppress abortOnFail for the first N milliseconds of the run so noisy startup samples cannot trigger a premature abort (thresholds are still evaluated and a verdict still reported during the grace window — only the abort action is deferred)"
+        pacing:
+          $ref: "#/components/schemas/LoadPacing"
         profile:
           $ref: "#/components/schemas/LoadProfile"
         steps:

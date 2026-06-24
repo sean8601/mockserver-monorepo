@@ -84,7 +84,8 @@ triggered by name. Preloading is fail-soft: an invalid definition logs a WARN an
 
 | Type | Purpose |
 |------|---------|
-| `LoadScenario` | `name`, ordered `steps`, `profile`, `templateType` (default `VELOCITY`), optional `maxRequests`, optional `labels` (`Map<String,String>` — scenario-level custom metric labels). |
+| `LoadScenario` | `name`, ordered `steps`, `profile`, `templateType` (default `VELOCITY`), optional `maxRequests`, optional `labels` (`Map<String,String>` — scenario-level custom metric labels), optional `pacing` (`LoadPacing` — adaptive iteration pacing; see [Adaptive pacing (think-time)](#adaptive-pacing-think-time)). |
+| `LoadPacing` | a `mode` ∈ `{NONE, CONSTANT_PACING, CONSTANT_THROUGHPUT}` (default `NONE`) and a `value` — the target per-VU iteration **cycle** (closed model only). |
 | `LoadStep` | a `request` (reuses `HttpRequest`; template strings live in its fields), an optional `thinkTime` (`Delay`) — inter-step pacing only, an optional `name` (used as the `route` metric label when set; otherwise the path is auto-templatized), and optional `labels` (`Map<String,String>` — step-level custom metric labels that override scenario labels for this step). |
 | `LoadProfile` | a `List<LoadStage> stages` run in sequence. |
 | `LoadStage` | one slice of the run: a `type` ∈ `{VU, RATE, PAUSE}`, a required `durationMillis` (> 0), an optional `curve` ∈ `{LINEAR, EXPONENTIAL, QUADRATIC}` (ramps only; default `LINEAR`), and the setpoint fields for its type (see below). |
@@ -495,6 +496,37 @@ injected sender, which returns a `CompletableFuture` immediately. Step and itera
 *scheduled* (`scheduler.schedule(nextStep, thinkTimeMillis, …)`), never `Thread.sleep`-ed via
 `Delay.applyDelay()`, so a slow target never blocks a worker thread. There is **no dedicated thread per
 virtual user**: a VU "loop" is a chain of `CompletableFuture` completion callbacks.
+
+### Adaptive pacing (think-time)
+
+Adaptive pacing targets a fixed per-virtual-user iteration **cycle** time, so a closed-model VU starts
+a new iteration at most once per cycle (Locust `constant_pacing` / `constant_throughput`, Gatling
+`pace`). Set it via the scenario-level `pacing` (`LoadPacing`) object:
+
+| `mode` | `value` means | target cycle |
+|--------|---------------|--------------|
+| `NONE` (default) | — | none (the next iteration launches immediately) |
+| `CONSTANT_PACING` | target cycle in **milliseconds** | `value` ms |
+| `CONSTANT_THROUGHPUT` | target iterations/second **per VU** | `1000 / value` ms |
+
+At the closed-model reschedule point, the orchestrator measures how long the iteration's work took
+(`elapsedMillis`, from `TimeService.nanoTime()`) and waits `max(0, round(cycleMillis - elapsedMillis))`
+before launching that VU's next iteration. If the iteration finished inside the cycle it waits out the
+remainder; **on overrun it starts immediately (waits 0)** — pacing never makes a slow VU go faster, it
+only smooths a fast one toward the target rate.
+
+Scope and composition:
+
+- **Closed-model VU loop only.** One-shot open-model `RATE` iterations ignore pacing — their arrival
+  rate already governs the spacing between starts.
+- **Composes with per-step `thinkTime`.** `thinkTime` adds intra-iteration pauses *between steps*;
+  pacing targets the *whole iteration cycle* and only delays the *start of the next iteration*. Because
+  pacing measures the full iteration elapsed time (which includes any `thinkTime` waits), the two
+  combine naturally: if per-step think-times already consume the cycle, pacing adds no extra wait.
+- **Latency measurement is unchanged.** Pacing only affects *when* the next iteration launches; the
+  coordinated-omission-corrected in-flight latency sample is untouched (no coordinated-omission games).
+
+`pacing.value` must be `> 0` when `mode` is not `NONE` (rejected by validation otherwise).
 
 ## Decoupling
 

@@ -26,6 +26,7 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private List<LoadThresholdDTO> thresholds;
     private Boolean abortOnFail;
     private Long abortGraceMillis;
+    private LoadPacingDTO pacing;
 
     public LoadScenarioDTO(LoadScenario scenario) {
         if (scenario != null) {
@@ -58,6 +59,10 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             if (scenario.getAbortGraceMillis() > 0) {
                 abortGraceMillis = scenario.getAbortGraceMillis();
             }
+            if (scenario.getPacing() != null && scenario.getPacing().getMode() != null
+                && scenario.getPacing().getMode() != org.mockserver.load.LoadPacing.Mode.NONE) {
+                pacing = new LoadPacingDTO(scenario.getPacing());
+            }
         }
     }
 
@@ -79,7 +84,8 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withMaxRequests(maxRequests)
             .withStartDelayMillis(startDelayMillis != null ? startDelayMillis : 0L)
             .withAbortOnFail(abortOnFail != null && abortOnFail)
-            .withAbortGraceMillis(abortGraceMillis != null ? abortGraceMillis : 0L);
+            .withAbortGraceMillis(abortGraceMillis != null ? abortGraceMillis : 0L)
+            .withPacing(pacing != null ? pacing.buildObject() : null);
         if (labels != null && !labels.isEmpty()) {
             scenario.withLabels(labels);
         }
@@ -180,6 +186,15 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public LoadScenarioDTO setAbortGraceMillis(Long abortGraceMillis) {
         this.abortGraceMillis = abortGraceMillis;
+        return this;
+    }
+
+    public LoadPacingDTO getPacing() {
+        return pacing;
+    }
+
+    public LoadScenarioDTO setPacing(LoadPacingDTO pacing) {
+        this.pacing = pacing;
         return this;
     }
 }

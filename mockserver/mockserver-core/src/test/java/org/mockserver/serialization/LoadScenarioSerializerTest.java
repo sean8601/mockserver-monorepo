@@ -289,6 +289,53 @@ public class LoadScenarioSerializerTest {
         assertThat(parsed.getProfile().getStages().get(1).getRate(), is(250.0));
     }
 
+    @Test
+    public void roundTripsConstantPacing() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("paced")
+            .withProfile(LoadProfile.constant(5, 30_000L))
+            .withPacing(org.mockserver.load.LoadPacing.constantPacing(200.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        LoadScenario parsed = serializer.deserialize(serializer.serialize(scenario));
+
+        assertThat(parsed.getPacing(), is(notNullValue()));
+        assertThat(parsed.getPacing().getMode(), is(org.mockserver.load.LoadPacing.Mode.CONSTANT_PACING));
+        assertThat(parsed.getPacing().getValue(), is(200.0));
+        assertThat(parsed.getPacing().cycleMillis(), is(200.0));
+    }
+
+    @Test
+    public void roundTripsConstantThroughputPacing() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("throughput")
+            .withProfile(LoadProfile.constant(5, 30_000L))
+            .withPacing(org.mockserver.load.LoadPacing.constantThroughput(5.0))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        LoadScenario parsed = serializer.deserialize(serializer.serialize(scenario));
+
+        assertThat(parsed.getPacing().getMode(), is(org.mockserver.load.LoadPacing.Mode.CONSTANT_THROUGHPUT));
+        assertThat(parsed.getPacing().getValue(), is(5.0));
+        // 5 iterations/sec per VU => a 200ms cycle.
+        assertThat(parsed.getPacing().cycleMillis(), is(200.0));
+    }
+
+    @Test
+    public void omitsPacingWhenAbsentOrNone() {
+        // backward compatible: a scenario with no pacing (or NONE) serialises without a pacing key.
+        LoadScenario scenario = new LoadScenario()
+            .withName("plain")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String json = serializer.serialize(scenario);
+        assertThat(json, not(containsString("\"pacing\"")));
+
+        LoadScenario parsed = serializer.deserialize(json);
+        assertThat(parsed.getPacing(), is(nullValue()));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankBody() {
         serializer.deserialize("  ");

@@ -3,6 +3,7 @@ package org.mockserver.mock.action.http;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.load.IterationContext;
 import org.mockserver.load.LoadCapture;
+import org.mockserver.load.LoadPacing;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
 import org.mockserver.load.LoadStage;
@@ -598,12 +599,18 @@ public class LoadScenarioOrchestrator {
         if (looping && vuIteration > 0 && tryRetireSurplus(run)) {
             return;
         }
+        // Adaptive-pacing anchor: record the wall-clock nanos at which this iteration's work begins, so
+        // the closed-model reschedule point can wait out the remainder of the target iteration cycle.
+        // Threaded (like {@code captured}) through the chained fireStep calls; ignored when pacing is off
+        // and never used for the one-shot (RATE) path. Read via TimeService.nanoTime() (the same clock
+        // recordResult uses) so it is independent of the mutable test clock used for stage progression.
+        final long iterationStartNanos = TimeService.nanoTime();
         // Per-iteration cross-step captured-variable map: created fresh here so its scope is exactly one
         // virtual user's single pass through the steps (one user "session"). It is threaded through the
         // chained fireStep calls below and never shared across VUs or across a VU's successive iterations,
         // so cross-step correlation is race-free and captures never leak between users or iterations.
         Map<String, String> captured = new ConcurrentHashMap<>();
-        fireStep(run, vuId, vuIteration, 0, looping, captured);
+        fireStep(run, vuId, vuIteration, 0, looping, captured, iterationStartNanos);
     }
 
     /**
@@ -632,7 +639,7 @@ public class LoadScenarioOrchestrator {
         run.activeVUs.decrementAndGet();
     }
 
-    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured) {
+    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured, long iterationStartNanos) {
         // Coordinated-omission correction: capture the scheduled-due timestamp at the very start of the
         // dispatch path — BEFORE the in-flight permit and RPS-token acquire below — so the latency we
         // record measures from the moment dispatch was requested, INCLUDING any queueing wait the
@@ -661,10 +668,16 @@ public class LoadScenarioOrchestrator {
                 endVu(run);
                 return;
             }
-            // Closed-model VU: schedule the next iteration immediately (re-scheduled, not recursed, to
-            // avoid starving the single scheduler thread).
+            // Closed-model VU: schedule the next iteration (re-scheduled, not recursed, to avoid
+            // starving the single scheduler thread). Adaptive pacing: if a target iteration cycle is
+            // configured and this iteration's work finished inside it, wait out the remainder before the
+            // next iteration's start; on overrun (or when pacing is off) the delay is 0 (immediate).
+            // Pacing only delays the NEXT launch — in-flight latency measurement is untouched. The
+            // one-shot (RATE) path above returns before here, so pacing never affects the open model.
             long nextIteration = vuIteration + 1;
-            scheduler.schedule(() -> launchIteration(run, vuId, nextIteration, true), 0, TimeUnit.MILLISECONDS);
+            long pacingDelayMillis = pacingDelayMillis(run, iterationStartNanos);
+            run.lastPacingDelayMillis = pacingDelayMillis;
+            scheduler.schedule(() -> launchIteration(run, vuId, nextIteration, true), pacingDelayMillis, TimeUnit.MILLISECONDS);
             return;
         }
 
@@ -685,7 +698,7 @@ public class LoadScenarioOrchestrator {
             run.failed.incrementAndGet();
             run.requestsSent.incrementAndGet();
             Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
             return;
         }
 
@@ -707,14 +720,14 @@ public class LoadScenarioOrchestrator {
         if (!run.inFlight.tryAcquire()) {
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
             return;
         }
 
@@ -732,14 +745,14 @@ public class LoadScenarioOrchestrator {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "connection");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
             return;
         }
         if (future == null) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "null_response");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
             return;
         }
         future.whenComplete((response, throwable) -> {
@@ -754,7 +767,7 @@ public class LoadScenarioOrchestrator {
             // and never throws out of the dispatch path: a missing value or extraction error falls back
             // to the capture's defaultValue (when set) or leaves the variable unset.
             applyCaptures(run, step, response, captured);
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
         });
     }
 
@@ -888,7 +901,7 @@ public class LoadScenarioOrchestrator {
         return null;
     }
 
-    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured) {
+    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured, long iterationStartNanos) {
         if (run.stopped.get() || !isCurrent(run)) {
             // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
             // genuine loop-exit point, so release the slot exactly once.
@@ -896,7 +909,25 @@ public class LoadScenarioOrchestrator {
             return;
         }
         long thinkMillis = step.getThinkTime() != null ? Math.max(0, step.getThinkTime().sampleValueMillis()) : 0;
-        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured), thinkMillis, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured, iterationStartNanos), thinkMillis, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Compute the adaptive-pacing delay (milliseconds) to wait before launching this VU's next
+     * closed-model iteration: {@code max(0, round(cycleMillis - elapsedMillis))}, where the cycle is
+     * the scenario's {@link LoadPacing#cycleMillis() target cycle} and {@code elapsedMillis} is how
+     * long this iteration's work took (wall-clock, via {@link TimeService#nanoTime()}). Returns
+     * {@code 0} when no pacing is configured or when the iteration overran the cycle.
+     */
+    private long pacingDelayMillis(RunningScenario run, long iterationStartNanos) {
+        LoadPacing pacing = run.scenario.getPacing();
+        double cycleMillis = pacing != null ? pacing.cycleMillis() : 0;
+        if (cycleMillis <= 0) {
+            return 0;
+        }
+        long elapsedMillis = Math.max(0, (TimeService.nanoTime() - iterationStartNanos) / 1_000_000L);
+        long delay = Math.round(cycleMillis - elapsedMillis);
+        return Math.max(0, delay);
     }
 
     private void recordResult(RunningScenario run, String host, String stepLabel, String route, String method,
@@ -1016,6 +1047,16 @@ public class LoadScenarioOrchestrator {
         return run != null ? run.activeVUs.get() : 0;
     }
 
+    /**
+     * Test hook: the most recent adaptive-pacing delay (milliseconds) the most-recently-started run
+     * applied at a closed-model iteration reschedule. {@code 0} when pacing is off or the last
+     * iteration overran the cycle. Returns {@code 0} when no scenario has ever run.
+     */
+    long lastRunPacingDelayMillis() {
+        RunningScenario run = lastRun;
+        return run != null ? run.lastPacingDelayMillis : 0;
+    }
+
     public String validate(LoadScenario scenario) {
         if (scenario == null) {
             return "'loadScenario' is required";
@@ -1122,6 +1163,11 @@ public class LoadScenarioOrchestrator {
         if (scenario.getTemplateType() == HttpTemplate.TemplateType.JAVASCRIPT) {
             return "templateType JAVASCRIPT is not supported for load steps; use VELOCITY or MUSTACHE";
         }
+        LoadPacing pacing = scenario.getPacing();
+        if (pacing != null && pacing.getMode() != null && pacing.getMode() != LoadPacing.Mode.NONE
+            && pacing.getValue() <= 0) {
+            return "'pacing.value' must be > 0 when 'pacing.mode' is " + pacing.getMode();
+        }
         return null;
     }
 
@@ -1189,6 +1235,12 @@ public class LoadScenarioOrchestrator {
         volatile List<ThresholdResult> thresholdResults = Collections.emptyList();
         /** Set once when an {@code abortOnFail} FAIL terminates the run, surfaced in the status DTO. */
         volatile boolean abortedByThreshold;
+        /**
+         * The most recent adaptive-pacing delay (milliseconds) applied at a closed-model iteration
+         * reschedule, for test assertions. {@code 0} when pacing is off or the iteration overran the
+         * cycle. Written on the scheduler thread, read by a test hook; volatile for visibility.
+         */
+        volatile long lastPacingDelayMillis;
 
         // Arrival-rate (RATE stage) deficit accounting; only touched on the single scheduler thread.
         double rateDeficit;
