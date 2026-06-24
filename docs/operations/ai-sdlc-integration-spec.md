@@ -146,7 +146,7 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 - **C5 — Concurrency caps.** ≤10 active subagents and ≤10-way parallelism at any time, with dynamic lower limits (§8).
 - **C6 — Explicit routing.** Model, temperature, **reasoning effort**, **and least-privilege tool/permission scope** **MUST** be selected from task classification and recorded (§9, §16, §21).
 - **C7 — Verifiability.** Every AI output **MUST** be verifiable; unverifiable completion claims **MUST NOT** be accepted (§12).
-- **C8 — Adversarial review.** Key artefacts **MUST** undergo iterative adversarial review by a **separate, clean-context subagent** (never the generating agent), at **every aggregation level** (unit, group, wave/phase, whole plan — §14.6), looping until no critical or major findings remain or 8 iterations complete, with all critical and major findings **fixed** and residual risk recorded if unconverged (§14).
+- **C8 — Adversarial review.** Key artefacts **MUST** undergo iterative adversarial review by a **separate, freshly-spawned, clean-context subagent** (never the generating agent, nor a resumed/context-anchored continuation of it), at **every aggregation level** (unit, group, wave/phase, whole plan — §14.6), looping until no critical or major findings remain or 8 iterations complete, with all critical and major findings **fixed** and residual risk recorded if unconverged (§14).
 - **C9 — Reproducibility.** Significant outputs **MUST** be reconstructable from recorded inputs, assumptions, evidence, and decisions (§15).
 - **C10 — Safe failure.** On any failure mode the system **MUST** fail safe, signal explicitly, and record an auditable reason (§20).
 - **C11 — Least privilege.** Agents **MUST** operate under least-privilege access scoped to the task and its authorised context (§16).
@@ -171,7 +171,7 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 ### 7.1 Roles
 - **Main / orchestrator agent (`MUST`)** — its **primary job is to orchestrate subagents**: plan, decompose, classify risk, select subagents/models/temperatures/effort, schedule concurrency within caps, coordinate dependencies, run the gate chain, make escalation decisions, reintegrate, and maintain the decision log. It **MUST NOT** routinely perform execution work — implementation *or* investigation — that a subagent could do; it **MAY** perform execution directly only for the trivial residue where delegation would add no value (e.g. a one-line edit). Keeping execution in subagents is what preserves the orchestrator's context *and* lets each unit run at a cost-and-determinism-appropriate model/temperature/effort.
 - **Execution subagents (`MUST`)** — perform scoped execution (coding, investigation, summarisation, validation) within the worktree (their own session's, or the spawning session's when they are helper subagents — §8.3), returning structured results.
-- **Adversarial reviewer subagents (`MUST`)** — independently challenge artefacts with clean context (§14).
+- **Adversarial reviewer subagents (`MUST`)** — independently challenge artefacts as a separate, freshly-spawned, clean-context subagent (§14.4).
 
 ### 7.2 Delegation by default
 - The system **MUST** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents so the orchestrator can optimise task–model–temperature–effort fit (the primary inference-cost and determinism lever) and preserve context. Direct execution by the orchestrator is reserved for the trivial residue (§7.1).
@@ -398,7 +398,7 @@ flowchart TD
 - **Critical and major findings MUST be fixed** — corrected in the artefact — before the next iteration. They **MUST NOT** be merely accepted or "consciously dispositioned"; there is **no disposition path** that leaves a critical or major finding unfixed. (A finding that, on independent re-examination, proves to be a false positive is *not* a finding — that determination **MUST** itself be recorded with its reasoning.)
 - **Minor findings MUST** be fixed or **explicitly recorded with rationale** (the only severity for which conscious deferral is permitted); recorded minor findings **MUST** be visible in the decision log (§21).
 - After any change, the artefact **MUST** be **re-verified** (§12) and the next iteration **MUST** run in a fresh clean context (§14.4).
-- The loop **MUST** terminate when **either** no new critical or major findings remain (convergence → PASS) **or** **8 iterations** have completed.
+- The loop **MUST** terminate when **either** no critical or major findings remain — a fresh review iteration surfaces no new ones and all prior ones have been fixed (convergence → PASS) — **or** **8 iterations** have completed.
 - If the 8-iteration limit is reached **before** convergence (critical or major findings still unfixed), the system **MUST** record the **unresolved residual risk explicitly** and **MUST** route the artefact to *gated approval* or escalation (it **MUST NOT** be auto-reintegrated as if converged).
 
 **Trade-off (rapid progress vs assurance):** Iterative review costs inference and time; the 8-iteration cap bounds that cost while the mandatory fixing of every critical/major finding — and the residual-risk recording when the cap is hit — prevents the cap from silently lowering quality. Severity classification keeps the must-fix obligation focused on findings that actually matter, so the loop converges rather than chasing cosmetic noise.
@@ -702,6 +702,7 @@ Adoption **MUST** be incremental and reversible:
 - The authoritative **model/temperature/effort routing policy** mapping classification → selection, and its review cadence (§9).
 - Whether, and under what policy, **remote branch creation** for agent work is ever permitted (§8.3).
 - The precise severity boundaries between "**critical**", "**major**", and "**minor**" adversarial findings (§14.5) — critical and major are must-fix and block convergence; only minor may be deferred with rationale — and whether those boundaries differ per review constitution (§14.3).
+- The precise boundaries between the review **aggregation tiers** — what constitutes a "group", a "wave/phase", and a "plan/programme" for a given body of work (§14.6).
 - The authoritative **licence/IP policy** for generated artefacts and the allowed-licence set (§16 S13).
 - The **scope and authority** of the operator halt — who may trigger it, its granularity, and the resumption procedure (§17 OP10).
 - **Eval-suite regression thresholds** for correctness, safety, and cost that block an AI-component change (§18.5).
@@ -742,7 +743,7 @@ Adoption **MUST** be incremental and reversible:
 - [ ] ≤10 active subagents and ≤10-way parallelism, with dynamic lower limits (C5, §8)
 - [ ] Model + temperature + effort + least-privilege permission scope selected from classification and recorded (C6, §9, §16)
 - [ ] Every output verifiable; no unverifiable completion claims (C7, §12)
-- [ ] Adversarial review by a separate clean-context subagent, under an artefact-specific review constitution, at every aggregation tier (unit/group/wave/plan), looping to convergence or 8 iterations with all critical & major findings fixed; residual risk recorded if unconverged (C8, §14, §14.4, §14.5, §14.6)
+- [ ] Adversarial review by a separate, freshly-spawned, clean-context subagent (never a resumed/context-anchored agent), under an artefact-specific review constitution, at every aggregation tier (unit/group/wave/plan), looping to convergence or 8 iterations with all critical & major findings fixed; residual risk recorded if unconverged (C8, §14, §14.4, §14.5, §14.6)
 - [ ] Significant outputs reproducible from recorded inputs/assumptions/evidence/decisions (C9, §15)
 - [ ] Safe failure with explicit signalling and auditable reasons (C10, §20)
 - [ ] Least-privilege access scoped per task (C11, §16)
@@ -773,6 +774,9 @@ Terms used normatively in this specification. Where a term is defined here, its 
 | **Major finding** | An adversarial-review finding material enough to block convergence; like a critical finding it **must be fixed** (not dispositioned). The critical/major boundary is policy-defined, potentially per constitution (§14.5, §22.6). |
 | **Minor finding** | A low-severity adversarial-review finding; the only severity that **MAY** be deferred — it must be fixed or explicitly recorded with rationale, and does not block convergence (§14.5). |
 | **Layered (tiered) review** | The model in which adversarial review runs at every aggregation level — unit, group, wave/phase, whole plan — each as an independent clean-context review (§14.6). |
+| **Group (of units)** | A set of related units of work reviewed together once merged, because defects can emerge from their combination even when each unit is individually correct (Tier 2, §14.6). |
+| **Wave / phase** | A set of groups completed as one stage of a plan, reviewed together once its groups are complete (Tier 3, §14.6). The precise group/wave boundary is policy-defined (§22.6). |
+| **Plan / programme** | The whole body of work the units compose, reviewed as a whole once all waves are complete (Tier 4, §14.6). |
 | **Authority class** | Act-autonomously / gated-approval / advisory / reserved — what AI may do with a given artefact or activity (§3.3). |
 | **Risk class** | Classification by blast radius, reversibility, sensitivity, verification strength, novelty, and dependency complexity that sets the permitted autonomy (§19.1). |
 | **Worktree isolation** | The mandatory model in which each agent works in its own dedicated, local-only working tree (§8.3). |
