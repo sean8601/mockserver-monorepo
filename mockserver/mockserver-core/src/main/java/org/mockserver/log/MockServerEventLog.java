@@ -274,6 +274,10 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
     public void stop() {
         try {
             notifyListeners(this, true);
+            // cancel any pending coalesced (debounced) listener notification so the scheduled
+            // task does not outlive the log — the synchronous notifyListeners above already
+            // flushed the final state to every listener.
+            stopNotifications();
             eventLog.clear();
             disruptor.shutdown(2, SECONDS);
         } catch (Throwable throwable) {

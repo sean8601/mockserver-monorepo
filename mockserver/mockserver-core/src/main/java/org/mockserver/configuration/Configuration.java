@@ -107,6 +107,7 @@ public class Configuration {
     // memory usage
     private Integer maxExpectations;
     private Integer maxLogEntries;
+    private Integer ringBufferSize;
     private Integer maxWebSocketExpectations;
     private Boolean outputMemoryUsageCsv;
     private String memoryUsageCsvDirectory;
@@ -1507,6 +1508,25 @@ public class Configuration {
      */
     public Configuration maxLogEntries(Integer maxLogEntries) {
         this.maxLogEntries = maxLogEntries;
+        return this;
+    }
+
+    /**
+     * <p>
+     * Number of slots in the in-memory log event ring buffer (LMAX Disruptor) that buffers log events
+     * between the producing Netty I/O threads and the single consumer thread. Independent of
+     * {@link #maxLogEntries} (which bounds the retained event history) — the ring only needs to absorb
+     * short bursts, so it can be much smaller than the retained history.
+     * </p>
+     * <p>
+     * The value is rounded up to the next power of two (a Disruptor requirement). When unset the
+     * default is {@code min(maxLogEntries, 16384)}.
+     * </p>
+     *
+     * @param ringBufferSize number of slots in the log event ring buffer (rounded up to a power of two)
+     */
+    public Configuration ringBufferSize(Integer ringBufferSize) {
+        this.ringBufferSize = ringBufferSize;
         return this;
     }
 
@@ -4744,7 +4764,14 @@ public class Configuration {
     }
 
     public int ringBufferSize() {
-        return nextPowerOfTwo(maxLogEntries());
+        // Resolve the dedicated ring-buffer knob: instance field -> explicit mockserver.ringBufferSize
+        // property -> default min(this.maxLogEntries(), 16384). The default cap is based on THIS
+        // configuration's maxLogEntries (not the static/global one) so per-instance retention sizing is
+        // honoured. The disruptor requires a power-of-two size, so the resolved value is rounded up.
+        // This decouples the in-flight ring from maxLogEntries retention so a large retention setting
+        // no longer forces a large pre-allocated ring.
+        int size = ringBufferSize != null ? ringBufferSize : ConfigurationProperties.resolveRingBufferSize(maxLogEntries());
+        return nextPowerOfTwo(size);
     }
 
     private int nextPowerOfTwo(int value) {

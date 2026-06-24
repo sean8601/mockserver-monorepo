@@ -36,6 +36,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     private Integer maxExpectations;
     private Integer maxLogEntries;
+    private Integer ringBufferSize;
     private Integer maxWebSocketExpectations;
     private Boolean outputMemoryUsageCsv;
     private String memoryUsageCsvDirectory;
@@ -291,6 +292,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
             this.maxExpectations = configuration.maxExpectations();
             this.maxLogEntries = configuration.maxLogEntries();
+            this.ringBufferSize = configuration.ringBufferSize();
             this.maxWebSocketExpectations = configuration.maxWebSocketExpectations();
             this.outputMemoryUsageCsv = configuration.outputMemoryUsageCsv();
             this.memoryUsageCsvDirectory = configuration.memoryUsageCsvDirectory();
@@ -545,6 +547,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         if (maxLogEntries != null && (maxLogEntries < 0 || maxLogEntries > 1000000)) {
             throw new IllegalArgumentException("maxLogEntries must be between 0 and 1000000, got: " + maxLogEntries);
         }
+        if (ringBufferSize != null && (ringBufferSize < 0 || ringBufferSize > 1073741824)) {
+            throw new IllegalArgumentException("ringBufferSize must be between 0 and 1073741824, got: " + ringBufferSize);
+        }
         if (maxWebSocketExpectations != null && (maxWebSocketExpectations < 0 || maxWebSocketExpectations > 100000)) {
             throw new IllegalArgumentException("maxWebSocketExpectations must be between 0 and 100000, got: " + maxWebSocketExpectations);
         }
@@ -594,6 +599,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
         configuration.maxExpectations(maxExpectations);
         configuration.maxLogEntries(maxLogEntries);
+        configuration.ringBufferSize(ringBufferSize);
         configuration.maxWebSocketExpectations(maxWebSocketExpectations);
         configuration.outputMemoryUsageCsv(outputMemoryUsageCsv);
         configuration.memoryUsageCsvDirectory(memoryUsageCsvDirectory);
@@ -904,6 +910,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (maxLogEntries != null) {
             target.maxLogEntries(maxLogEntries);
+        }
+        if (ringBufferSize != null) {
+            target.ringBufferSize(ringBufferSize);
         }
         if (maxWebSocketExpectations != null) {
             target.maxWebSocketExpectations(maxWebSocketExpectations);
@@ -1713,6 +1722,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setMaxLogEntries(Integer maxLogEntries) {
         this.maxLogEntries = maxLogEntries;
+        return this;
+    }
+
+    public Integer getRingBufferSize() {
+        return ringBufferSize;
+    }
+
+    public ConfigurationDTO setRingBufferSize(Integer ringBufferSize) {
+        this.ringBufferSize = ringBufferSize;
         return this;
     }
 

@@ -100,6 +100,15 @@ public class ConfigurationProperties {
     // memory usage
     private static final String MOCKSERVER_MAX_EXPECTATIONS = "mockserver.maxExpectations";
     private static final String MOCKSERVER_MAX_LOG_ENTRIES = "mockserver.maxLogEntries";
+    private static final String MOCKSERVER_RING_BUFFER_SIZE = "mockserver.ringBufferSize";
+    // Default ceiling for the in-flight disruptor ring buffer, decoupling it from maxLogEntries
+    // retention. The ring only has to absorb event bursts between the producer (Netty I/O threads)
+    // and the single consumer thread — it is NOT the retained history (that is the separate
+    // CircularConcurrentLinkedDeque sized at maxLogEntries). 16384 slots (rounded up to the next
+    // power of two by Configuration.ringBufferSize) comfortably absorbs realistic bursts while
+    // capping the fixed pre-allocated-shell overhead. Without this cap, maxLogEntries=100000 forced a
+    // 131072-slot ring (~14.7MB of empty LogEntry shells) purely as a side effect of retention sizing.
+    static final int DEFAULT_MAX_RING_BUFFER_SIZE = 16384;
     private static final String MOCKSERVER_MAX_WEB_SOCKET_EXPECTATIONS = "mockserver.maxWebSocketExpectations";
     private static final String MOCKSERVER_OUTPUT_MEMORY_USAGE_CSV = "mockserver.outputMemoryUsageCsv";
     private static final String MOCKSERVER_MEMORY_USAGE_CSV_DIRECTORY = "mockserver.memoryUsageCsvDirectory";
@@ -1627,6 +1636,81 @@ public class ConfigurationProperties {
      */
     public static void maxLogEntries(int count) {
         setProperty(MOCKSERVER_MAX_LOG_ENTRIES, "" + count);
+    }
+
+    public static int ringBufferSize() {
+        return resolveRingBufferSize(maxLogEntries());
+    }
+
+    /**
+     * Resolve the ring-buffer size, defaulting (when no explicit {@code mockserver.ringBufferSize}
+     * override is present) to {@code min(maxLogEntriesForDefault, 16384)}. The caller supplies
+     * {@code maxLogEntriesForDefault} so an instance {@link Configuration} can base the default on its
+     * OWN maxLogEntries rather than the global/static value. Decoupled from maxLogEntries retention:
+     * the in-flight disruptor ring only needs to absorb event bursts, not hold the full retained
+     * history, so large-retention deployments (e.g. maxLogEntries=100000) no longer pre-allocate a
+     * 131072-slot ring. {@link Configuration#ringBufferSize()} rounds the result up to the next power
+     * of two as the disruptor requires.
+     */
+    public static int resolveRingBufferSize(int maxLogEntriesForDefault) {
+        // Only an EXPLICIT override (programmatic cache / system property / env var) is honoured; the
+        // computed default is NOT cached under the property key. This keeps the default dynamic — it
+        // tracks the supplied maxLogEntries on every call — rather than freezing the first computed
+        // value (as readIntegerProperty would by caching it), which would otherwise leak a stale
+        // default to later readers of this global property.
+        String explicit = explicitProperty(MOCKSERVER_RING_BUFFER_SIZE, "MOCKSERVER_RING_BUFFER_SIZE");
+        if (explicit != null) {
+            try {
+                return Integer.parseInt(explicit);
+            } catch (NumberFormatException nfe) {
+                LoggerHolder.LOGGER.logEvent(
+                    new LogEntry()
+                        .setLogLevel(Level.ERROR)
+                        .setMessageFormat("NumberFormatException converting " + MOCKSERVER_RING_BUFFER_SIZE + " with value [" + explicit + "]")
+                        .setThrowable(nfe)
+                );
+            }
+        }
+        return Math.min(maxLogEntriesForDefault, DEFAULT_MAX_RING_BUFFER_SIZE);
+    }
+
+    /**
+     * Returns the value of a property if it is EXPLICITLY set — via the programmatic cache, a JVM
+     * system property, the {@code mockserver.properties} file, or an environment variable — or
+     * {@code null} when only a computed default would apply. Unlike {@link #readPropertyHierarchically}
+     * this never injects (nor caches) a default, so callers can compute a dynamic default without
+     * polluting the property cache.
+     */
+    private static String explicitProperty(String systemPropertyKey, String environmentVariableKey) {
+        String cached = getPropertyCache().get(systemPropertyKey);
+        if (cached != null) {
+            return cached;
+        }
+        String systemOrFile = System.getProperty(systemPropertyKey, PROPERTIES != null ? PROPERTIES.getProperty(systemPropertyKey) : null);
+        if (systemOrFile != null) {
+            return systemOrFile;
+        }
+        String env = System.getenv(environmentVariableKey);
+        return isNotBlank(env) ? env : null;
+    }
+
+    /**
+     * <p>
+     * Number of slots in the in-memory log event ring buffer (LMAX Disruptor) that buffers log events
+     * between the producing Netty I/O threads and the single consumer thread. This is independent of
+     * {@code maxLogEntries} (which bounds the retained event history). The ring only needs to absorb
+     * short bursts of log events, so it can be much smaller than the retained history.
+     * </p>
+     * <p>
+     * The value is rounded up to the next power of two (a Disruptor requirement). The default is
+     * {@code min(maxLogEntries, 16384)}. Increase it only if you see dropped log events under sustained
+     * extreme load (see the {@code mock_server_dropped_log_events} metric); decrease it to save memory.
+     * </p>
+     *
+     * @param size number of slots in the log event ring buffer (rounded up to a power of two)
+     */
+    public static void ringBufferSize(int size) {
+        setProperty(MOCKSERVER_RING_BUFFER_SIZE, "" + size);
     }
 
     public static int maxWebSocketExpectations() {

@@ -524,6 +524,40 @@ classDiagram
 
 Notifications are dispatched asynchronously via the `Scheduler` to avoid blocking the Disruptor consumer thread.
 
+#### Coalesced (debounced) asynchronous notifications
+
+`MockServerEventLogNotifier.notifyListeners(notifier, synchronous)` is called on **every** log add
+(`processLogEntry`) as well as on stop, reset, and clear. Firing a listener `updated(...)` per add is
+expensive: each of the three listeners — `DashboardWebSocketHandler` (WebSocket push),
+`MemoryMonitoring` (CSV), and `RecordedExpectationFileSystemPersistence` — does a full retrieve and
+re-serialize of state, and the listeners only ever need the *latest* snapshot.
+
+So the **asynchronous** path (`synchronous=false`, the per-add case) is **coalesced**: each call sets a
+`dirty` flag and a single scheduled task fires at most one `updated(...)` per **250 ms** debounce window.
+A rapid burst of adds therefore collapses into one retrieve+serialize per window instead of one per add.
+The task re-arms itself only if more adds arrived while it was running.
+
+```mermaid
+flowchart LR
+    A["processLogEntry (per add)"] --> B["notifyListeners(false)"]
+    B --> C{"dirty flag set\ntask already scheduled?"}
+    C -->|"no task"| D["schedule one task\n(+250ms)"]
+    C -->|"task pending"| E["just set dirty,\ncoalesce"]
+    D --> F["fire ONE updated()\nper window, re-arm if dirty"]
+```
+
+The **synchronous** path (`synchronous=true`, used by stop/clear/reset where ordering and a final flush
+matter) stays **immediate** and is never debounced. The debounce uses the `Scheduler`'s
+`ScheduledExecutorService` (`scheduler.getExecutorService()`); when that is `null` — the synchronous
+`Scheduler` used by WAR/servlet deployments — the notifier falls back to firing immediately so
+notifications are never lost.
+
+**Correctness:** debouncing the listener path cannot affect verification or retrieval. Those operations
+drain the disruptor (`drainDisruptor()`) and then query the event log directly via a `RUNNABLE` on the
+consumer thread; they never wait on `notifyListeners`. On `stop()`, the log fires a final synchronous
+notification (flushing latest state) and then calls `stopNotifications()`, which cancels any pending
+coalesced task so it cannot leak past shutdown.
+
 ## Scheduler
 
 The `Scheduler` manages async task execution with a `ScheduledThreadPoolExecutor`:

@@ -94,7 +94,13 @@ mockserver.enableCORSForAllResponses=false</code></pre>
             <td><span class="inline_code">maxLogEntries</span></td>
             <td><span class="inline_code">MOCKSERVER_MAX_LOG_ENTRIES</span></td>
             <td><span class="this_value">heap-based (up to 100,000)</span></td>
-            <td>Lower for high-throughput or large-body workloads; each HTTP request generates 2–3 log entries</td>
+            <td>How many log entries are retained in memory before the oldest are overwritten. Lower for high-throughput or large-body workloads; each HTTP request generates 2–3 log entries</td>
+        </tr>
+        <tr>
+            <td><span class="inline_code">ringBufferSize</span></td>
+            <td><span class="inline_code">MOCKSERVER_RING_BUFFER_SIZE</span></td>
+            <td><span class="this_value">min(maxLogEntries, 16,384)</span></td>
+            <td>Size of the in-flight log event buffer (separate from <span class="inline_code">maxLogEntries</span> retention). You rarely need to change this — raise it only if you see dropped log events under sustained extreme load; lower it to save memory on a high-retention, low-throughput workload. Rounded up to a power of 2</td>
         </tr>
         <tr>
             <td><span class="inline_code">maxSocketTimeout</span></td>
@@ -300,7 +306,7 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <p>Maximum number of log entries to hold in memory, this includes recorded requests, expectation match failures and other log entries. Log entries are stored in a circular queue so once this limit is reached the oldest entries are overwritten. The lower the log level the more log entries will be captured, particularly at TRACE level logging.</p>
     <p>Type: <span class="keyword">int</span> Default: <span class="this_value">minimum of (free heap space in KB / 8) and 100000</span></p>
     <p>The default is calculated automatically based on available JVM heap memory. Each log entry typically uses 4-10 KB of heap for small request/response bodies, but log entries for large responses are proportionally larger (e.g., a 100 KB response body produces log entries of ~100+ KB each). Each HTTP request generates 2-3 log entries (request recording, expectation match, and response) that are always stored regardless of log level. With a 256 MB heap the default of approximately 20,000 entries covers around 7,000-10,000 HTTP requests before the oldest entries are evicted. For high-throughput use cases or large response bodies, reduce this value to limit memory usage and GC pressure. See <a href="/mock_server/performance.html#troubleshooting_performance">troubleshooting performance</a> for detailed guidance.</p>
-    <p><strong>Power-of-2 sizing:</strong> the log ring buffer is implemented on top of the LMAX Disruptor, which rounds the configured size up to the next power of 2. Setting <span class="inline_code">maxLogEntries=10000</span> allocates 16,384 slots; setting <span class="inline_code">maxLogEntries=20000</span> allocates 32,768 slots. To minimise wasted heap, pick a power-of-2 value yourself: 4,096 (~32&nbsp;MB) / 16,384 (~131&nbsp;MB) / 65,536 (~524&nbsp;MB) are good starting points.</p>
+    <p><strong>Independent of the ring buffer:</strong> <span class="inline_code">maxLogEntries</span> controls how much history is <em>retained</em>, not the size of the in-flight log event ring buffer. The ring buffer is a separate, smaller buffer sized by <span class="inline_code">ringBufferSize</span> (default <span class="this_value">min(maxLogEntries, 16,384)</span>), so raising <span class="inline_code">maxLogEntries</span> for more retention no longer inflates the ring buffer's fixed memory. You can set <span class="inline_code">maxLogEntries</span> to any value — it does not need to be a power of 2.</p>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.maxLogEntries(int count)</code></pre>
     <p>System Property:</p>
@@ -311,6 +317,24 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">mockserver.maxLogEntries=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.maxLogEntries="20000"</code></pre>
+</div>
+
+<button id="button_configuration_ring_buffer_size" class="accordion title"><strong>Log Event Ring Buffer Size</strong></button>
+<div class="panel title">
+    <p>Number of slots in the in-memory log event ring buffer. This buffer holds log events briefly while they are passed from the threads handling requests to the single thread that writes them to the log — it is <strong>not</strong> the retained log history (that is controlled separately by <span class="inline_code">maxLogEntries</span>). The ring buffer only needs to absorb short bursts of log events, so it can be much smaller than the retained history.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">minimum of maxLogEntries and 16,384</span> (rounded up to the next power of 2)</p>
+    <p>You rarely need to change this. Raise it only if MockServer reports dropped log events (the <span class="inline_code">mock_server_dropped_log_events</span> metric is non-zero and growing) under sustained extreme load. Lower it to save a little memory on a workload that retains a lot of history but receives requests slowly. The value is rounded up to the next power of 2 because the underlying LMAX Disruptor requires it.</p>
+    <p>Previously the ring buffer was sized from <span class="inline_code">maxLogEntries</span>, so a large retention setting (e.g. <span class="inline_code">maxLogEntries=100000</span>) forced a 131,072-slot ring (~14.7&nbsp;MB of pre-allocated, mostly-empty slots). The default 16,384 ceiling caps that overhead while leaving small deployments unchanged.</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.ringBufferSize(int size)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.ringBufferSize=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_RING_BUFFER_SIZE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.ringBufferSize=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.ringBufferSize="8192"</code></pre>
 </div>
 
 <button id="button_configuration_max_web_socket_expectations" class="accordion title"><strong>Maximum WebSockets For Object Callback Expectations</strong></button>

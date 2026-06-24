@@ -364,7 +364,14 @@ public class ConfigurationDTOTest {
         "logEventListener",
         "binaryProxyListener",
         "rebuildTLSContext",
-        "rebuildServerTLSContext"
+        "rebuildServerTLSContext",
+        // ringBufferSize() is a DERIVED, rounded-to-the-next-power-of-two EFFECTIVE getter (the
+        // disruptor requires a power-of-two ring), not a faithfully round-trippable raw setting:
+        // ringBufferSize(N) then ringBufferSize() returns nextPowerOfTwo(N) >= N, so value-equality
+        // round-trip cannot hold. It IS carried through the DTO (constructor/applyTo/buildObject) for
+        // observability/parity — see ConfigurationDTO — but is excluded from this value-equality drift
+        // guard for the rounding reason above.
+        "ringBufferSize"
     ));
 
     @Test
