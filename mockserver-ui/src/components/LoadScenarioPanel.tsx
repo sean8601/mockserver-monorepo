@@ -78,6 +78,7 @@ import HumanErrorAlert from './HumanErrorAlert';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import MetricsLineChart from './MetricsLineChart';
 import LoadScenarioReview from './LoadScenarioReview';
+import { trackFeature } from '../lib/analytics';
 
 interface LoadScenarioPanelProps {
   connectionParams: ConnectionParams;
@@ -1228,6 +1229,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
       setPanelView('run'); // starting a run → jump to the Run & Monitor sub-tab
       await runAction(async () => {
         await startScenariosByName(connectionParams, [scenario.name]);
+        trackFeature('load_run_started');
         setSamples([]);
         sampleRunId.current = null;
       });
@@ -1250,6 +1252,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     setPanelView('run'); // starting runs → jump to the Run & Monitor sub-tab
     void runAction(async () => {
       await startScenariosByName(connectionParams, names);
+      trackFeature('load_run_started');
     });
   }, [connectionParams, runAction, selected]);
 
@@ -1257,6 +1260,7 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     setPanelView('run'); // starting a run → jump to the Run & Monitor sub-tab
     void runAction(async () => {
       await startScenariosByName(connectionParams, [name]);
+      trackFeature('load_run_started');
     });
   }, [connectionParams, runAction]);
 

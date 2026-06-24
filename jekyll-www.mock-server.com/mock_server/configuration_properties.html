@@ -1969,6 +1969,47 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.redactSecretsInLog="true"</code></pre>
 </div>
 
+<a id="dashboard_analytics_configuration" class="anchor" href="#dashboard_analytics_configuration">&nbsp;</a>
+
+<h2>Dashboard Analytics Configuration:</h2>
+
+<button id="button_configuration_dashboard_analytics_enabled" class="accordion title"><strong>Dashboard Analytics Enabled</strong></button>
+<div class="panel title">
+    <p>Master kill switch for the dashboard's anonymous usage analytics. When set to <span class="inline_code">false</span>, the analytics module never loads — no PostHog chunk is fetched, no events are sent, and the consent banner is suppressed. Use this to disable analytics across an entire deployment regardless of any other configuration.</p>
+    <p>Analytics is also inactive unless <span class="inline_code">dashboardAnalyticsEndpoint</span> and <span class="inline_code">dashboardAnalyticsKey</span> are both set to non-empty values, so setting this switch alone has no effect unless an endpoint and key are also provided.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsEnabled=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED=...</code></pre>
+    <p>Example (disable globally):</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsEnabled="false"</code></pre>
+</div>
+
+<button id="button_configuration_dashboard_analytics_endpoint" class="accordion title"><strong>Dashboard Analytics Endpoint</strong></button>
+<div class="panel title">
+    <p>The base URL of a self-hosted PostHog instance to which anonymous dashboard usage events are sent (the PostHog <span class="inline_code">api_host</span> value, for example <span class="inline_code">https://posthog.example.com</span>). When this property is blank or absent, analytics is disabled regardless of the other analytics settings. MockServer never uses the PostHog cloud endpoint by default — an operator must explicitly supply their own self-hosted endpoint.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (analytics disabled)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsEndpoint=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsEndpoint="https://posthog.example.com"</code></pre>
+</div>
+
+<button id="button_configuration_dashboard_analytics_key" class="accordion title"><strong>Dashboard Analytics Key</strong></button>
+<div class="panel title">
+    <p>The PostHog write-only project API key for the self-hosted instance identified by <span class="inline_code">dashboardAnalyticsEndpoint</span>. When this property is blank or absent, analytics is disabled. The key is transmitted to the dashboard browser as part of the server configuration and is used only to authenticate with the PostHog ingest API — it cannot read or export any data.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (analytics disabled)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsKey=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DASHBOARD_ANALYTICS_KEY=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsKey="phc_xxxxxxxxxxxxxxxxxxxx"</code></pre>
+</div>
+
 <button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>

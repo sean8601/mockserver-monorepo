@@ -35,6 +35,7 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import HumanErrorAlert from './HumanErrorAlert';
 import { monospaceFontFamily, transitions } from '../theme';
+import { trackFeature } from '../lib/analytics';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -452,7 +453,7 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
           ))}
         </TextField>
         <Tooltip title="Refresh report">
-          <IconButton size="small" onClick={() => load()} aria-label="Refresh report">
+          <IconButton size="small" onClick={() => { trackFeature('optimise_run'); load(); }} aria-label="Refresh report">
             <RefreshIcon fontSize="small" />
           </IconButton>
         </Tooltip>

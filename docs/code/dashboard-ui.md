@@ -1164,3 +1164,77 @@ Mock/proxy responses (`apiResponse == false`) are unaffected — they only recei
 mocked APIs respond. The Vite dev proxy above is therefore optional; the demo launcher
 (`launch-with-demo-data.sh`) points the dashboard straight at the MockServer port via `?port=` and
 relies on this CORS support.
+
+## Usage Analytics
+
+Anonymous, cookieless dashboard usage analytics are available via a self-hosted PostHog instance. The module is inert by default — no events are sent unless an operator explicitly supplies both an endpoint and a key.
+
+### Activation gate chain
+
+`initAnalytics(config)` in `mockserver-ui/src/lib/analytics.ts` runs all gates once at startup. If any gate fails, the module becomes a permanent no-op for the lifetime of the page; the decision can never be reversed without a fresh load.
+
+```mermaid
+flowchart TD
+    A["initAnalytics(config) called"] --> B{dashboardAnalyticsEnabled == true?}
+    B -- No --> Z[permanent no-op]
+    B -- Yes --> C{endpoint + key both non-empty?}
+    C -- No --> Z
+    C -- Yes --> D{Do Not Track / GPC set?}
+    D -- Yes --> Z
+    D -- No --> E{localStorage opt-out?}
+    E -- Yes --> Z
+    E -- No --> F{navigator.onLine?}
+    F -- No --> Z
+    F -- Yes --> G{navigator.webdriver?}
+    G -- Yes --> Z
+    G -- No --> H{IDE embedded + telemetry suppressed?}
+    H -- Yes --> Z
+    H -- No --> I[dynamic import posthog-js]
+    I --> J["init cookieless\npersistence: memory\nautocapture: false"]
+    J --> K["emit app_open\nactive = true"]
+```
+
+### Event taxonomy
+
+Every public function only ever emits a value from a **closed set** — there is no code path that accepts a free-text string (URL, hostname, header value, body, error message, file path, expectation JSON) and forwards it to the backend.
+
+| PostHog event | Function | Properties |
+|---|---|---|
+| `app_open` | emitted by `initAnalytics` | `app_version`, `surface` (`browser`/`ide-embedded`), `theme` |
+| `view_change` | `trackView(view)` | `view` — the active tab name (e.g. `traffic`, `chaos`) |
+| `feature_used` | `trackFeature(feature, params?)` | `feature` from the `Feature` union type; optional `mode` (`quick`/`advanced`) |
+| `error_shown` | `trackError(category)` | `category` from the `ErrorCategory` union type |
+
+Both `feature` and `category` are runtime-guarded against non-enumerated values: values outside their `ReadonlySet` are dropped silently before any `posthog.capture` call.
+
+### `view_change` wiring
+
+Navigation tracking is wired in `App.tsx`, not inside the store, to keep the store pure. A `useEffect` subscribes to the store's `view` selector and calls `trackView(view)` on every change (and once for the initial view). The store itself has no analytics dependency.
+
+### PostHog init options
+
+```typescript
+ph.init(key, {
+  api_host: endpoint,
+  persistence: 'memory',        // no cookie, no localStorage identifier
+  autocapture: false,           // only our explicit closed event set
+  capture_pageview: false,      // SPA tab switches sent manually as view_change
+  capture_pageleave: false,
+  disable_session_recording: true,
+  disable_surveys: true,
+});
+```
+
+`posthog-js` is loaded via a **dynamic `import()`** only after all gates pass, so it is a lazily-fetched first-party chunk that is never fetched when analytics is inactive.
+
+### Configuration properties
+
+| Property | System property / Env var | Default | Purpose |
+|---|---|---|---|
+| `dashboardAnalyticsEnabled` | `mockserver.dashboardAnalyticsEnabled` / `MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED` | `true` | Master kill switch. `false` ⇒ module never loads. |
+| `dashboardAnalyticsEndpoint` | `mockserver.dashboardAnalyticsEndpoint` / `MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT` | `""` | PostHog `api_host` URL. Blank ⇒ disabled. |
+| `dashboardAnalyticsKey` | `mockserver.dashboardAnalyticsKey` / `MOCKSERVER_DASHBOARD_ANALYTICS_KEY` | `""` | PostHog write-only project key. Blank ⇒ disabled. |
+
+### Opt-out
+
+Users can opt out via the dashboard banner (persisted to `localStorage` under `mockserver.analytics.optOut`), browser Do Not Track, or Global Privacy Control. `setAnalyticsOptOut(true)` also calls `posthog.opt_out_capturing()` immediately to stop any in-flight capture.

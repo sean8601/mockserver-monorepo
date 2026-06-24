@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Anonymous, cookieless dashboard usage analytics via self-hosted PostHog.** The dashboard can report coarse, enumerated usage events (`app_open`, `view_change`, `feature_used`, `error_shown`) to a self-hosted PostHog instance. No request URLs, hostnames, headers, bodies, or expectation data are ever sent. Inactive by default until an operator supplies `dashboardAnalyticsEndpoint` and `dashboardAnalyticsKey`; disable globally with `dashboardAnalyticsEnabled=false`. Respects Do Not Track, Global Privacy Control, and a per-browser opt-out banner.
 - **All client libraries now expose the full load-scenario surface.** The Java, Node, Python, Ruby, Go,
   .NET, PHP, and Rust clients gained the new scenario fields (`thresholds`, `abortOnFail`, `abortGraceMillis`,
   `pacing`, `feeder`, `stepSelection`, per-step `captures`/`weight`, profile `shape`), the new run-status

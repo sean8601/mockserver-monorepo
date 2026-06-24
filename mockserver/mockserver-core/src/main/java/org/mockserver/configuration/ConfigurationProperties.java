@@ -58,6 +58,9 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DETAILED_MATCH_FAILURES = "mockserver.detailedMatchFailures";
     private static final String MOCKSERVER_LAUNCH_UI_FOR_LOG_LEVEL_DEBUG = "mockserver.launchUIForLogLevelDebug";
     private static final String MOCKSERVER_METRICS_ENABLED = "mockserver.metricsEnabled";
+    private static final String MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED = "mockserver.dashboardAnalyticsEnabled";
+    private static final String MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT = "mockserver.dashboardAnalyticsEndpoint";
+    private static final String MOCKSERVER_DASHBOARD_ANALYTICS_KEY = "mockserver.dashboardAnalyticsKey";
     private static final String MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS = "mockserver.slowRequestThresholdMillis";
     private static final String MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS = "mockserver.metricsRequestDurationRouteLabels";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ENABLED = "mockserver.chaosAutoHaltEnabled";
@@ -640,6 +643,48 @@ public class ConfigurationProperties {
      */
     public static void metricsEnabled(boolean enable) {
         setProperty(MOCKSERVER_METRICS_ENABLED, "" + enable);
+    }
+
+    public static boolean dashboardAnalyticsEnabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED, "MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED", "" + true));
+    }
+
+    /**
+     * Master kill switch for browser dashboard usage analytics, default is true.
+     * Analytics remains inert until an endpoint and key are also supplied.
+     *
+     * @param enable enable dashboard analytics
+     */
+    public static void dashboardAnalyticsEnabled(boolean enable) {
+        setProperty(MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED, "" + enable);
+    }
+
+    public static String dashboardAnalyticsEndpoint() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT, "MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT", "");
+    }
+
+    /**
+     * Analytics endpoint (PostHog api_host) the browser dashboard sends usage analytics to.
+     * Default is empty, which leaves dashboard analytics disabled.
+     *
+     * @param endpoint analytics endpoint host
+     */
+    public static void dashboardAnalyticsEndpoint(String endpoint) {
+        setProperty(MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT, endpoint);
+    }
+
+    public static String dashboardAnalyticsKey() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DASHBOARD_ANALYTICS_KEY, "MOCKSERVER_DASHBOARD_ANALYTICS_KEY", "");
+    }
+
+    /**
+     * Write-only analytics project key the browser dashboard uses when sending usage analytics.
+     * Default is empty, which leaves dashboard analytics disabled.
+     *
+     * @param key analytics project key
+     */
+    public static void dashboardAnalyticsKey(String key) {
+        setProperty(MOCKSERVER_DASHBOARD_ANALYTICS_KEY, key);
     }
 
     public static long slowRequestThresholdMillis() {

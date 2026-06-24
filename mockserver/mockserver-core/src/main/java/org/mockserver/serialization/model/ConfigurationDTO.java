@@ -20,6 +20,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean detailedMatchFailures;
     private Boolean launchUIForLogLevelDebug;
     private Boolean metricsEnabled;
+    private Boolean dashboardAnalyticsEnabled;
+    private String dashboardAnalyticsEndpoint;
+    private String dashboardAnalyticsKey;
     private Boolean chaosAutoHaltEnabled;
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
@@ -271,6 +274,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.detailedMatchFailures = configuration.detailedMatchFailures();
             this.launchUIForLogLevelDebug = configuration.launchUIForLogLevelDebug();
             this.metricsEnabled = configuration.metricsEnabled();
+            this.dashboardAnalyticsEnabled = configuration.dashboardAnalyticsEnabled();
+            this.dashboardAnalyticsEndpoint = configuration.dashboardAnalyticsEndpoint();
+            this.dashboardAnalyticsKey = configuration.dashboardAnalyticsKey();
             this.chaosAutoHaltEnabled = configuration.chaosAutoHaltEnabled();
             this.chaosAutoHaltErrorThreshold = configuration.chaosAutoHaltErrorThreshold();
             this.chaosAutoHaltWindowMillis = configuration.chaosAutoHaltWindowMillis();
@@ -572,6 +578,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.detailedMatchFailures(detailedMatchFailures);
         configuration.launchUIForLogLevelDebug(launchUIForLogLevelDebug);
         configuration.metricsEnabled(metricsEnabled);
+        configuration.dashboardAnalyticsEnabled(dashboardAnalyticsEnabled);
+        configuration.dashboardAnalyticsEndpoint(dashboardAnalyticsEndpoint);
+        configuration.dashboardAnalyticsKey(dashboardAnalyticsKey);
         configuration.chaosAutoHaltEnabled(chaosAutoHaltEnabled);
         configuration.chaosAutoHaltErrorThreshold(chaosAutoHaltErrorThreshold);
         configuration.chaosAutoHaltWindowMillis(chaosAutoHaltWindowMillis);
@@ -853,6 +862,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (metricsEnabled != null) {
             target.metricsEnabled(metricsEnabled);
+        }
+        if (dashboardAnalyticsEnabled != null) {
+            target.dashboardAnalyticsEnabled(dashboardAnalyticsEnabled);
+        }
+        if (dashboardAnalyticsEndpoint != null) {
+            target.dashboardAnalyticsEndpoint(dashboardAnalyticsEndpoint);
+        }
+        if (dashboardAnalyticsKey != null) {
+            target.dashboardAnalyticsKey(dashboardAnalyticsKey);
         }
         if (chaosAutoHaltEnabled != null) {
             target.chaosAutoHaltEnabled(chaosAutoHaltEnabled);
@@ -1569,6 +1587,33 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setMetricsEnabled(Boolean metricsEnabled) {
         this.metricsEnabled = metricsEnabled;
+        return this;
+    }
+
+    public Boolean getDashboardAnalyticsEnabled() {
+        return dashboardAnalyticsEnabled;
+    }
+
+    public ConfigurationDTO setDashboardAnalyticsEnabled(Boolean dashboardAnalyticsEnabled) {
+        this.dashboardAnalyticsEnabled = dashboardAnalyticsEnabled;
+        return this;
+    }
+
+    public String getDashboardAnalyticsEndpoint() {
+        return dashboardAnalyticsEndpoint;
+    }
+
+    public ConfigurationDTO setDashboardAnalyticsEndpoint(String dashboardAnalyticsEndpoint) {
+        this.dashboardAnalyticsEndpoint = dashboardAnalyticsEndpoint;
+        return this;
+    }
+
+    public String getDashboardAnalyticsKey() {
+        return dashboardAnalyticsKey;
+    }
+
+    public ConfigurationDTO setDashboardAnalyticsKey(String dashboardAnalyticsKey) {
+        this.dashboardAnalyticsKey = dashboardAnalyticsKey;
         return this;
     }
 

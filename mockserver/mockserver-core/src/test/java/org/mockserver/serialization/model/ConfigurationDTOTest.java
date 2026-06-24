@@ -96,6 +96,32 @@ public class ConfigurationDTOTest {
     }
 
     @Test
+    public void shouldRoundTripDashboardAnalyticsThroughJson() {
+        Configuration original = configuration()
+            .dashboardAnalyticsEnabled(false)
+            .dashboardAnalyticsEndpoint("https://analytics.example.com")
+            .dashboardAnalyticsKey("phc_test_key");
+
+        ConfigurationDTO dto = new ConfigurationDTO(original);
+        assertThat(dto.getDashboardAnalyticsEnabled(), is(false));
+        assertThat(dto.getDashboardAnalyticsEndpoint(), is("https://analytics.example.com"));
+        assertThat(dto.getDashboardAnalyticsKey(), is("phc_test_key"));
+
+        String json = new org.mockserver.serialization.ConfigurationSerializer(new org.mockserver.logging.MockServerLogger())
+            .serialize(original);
+        assertThat(json, containsString("dashboardAnalyticsEnabled"));
+        assertThat(json, containsString("dashboardAnalyticsEndpoint"));
+        assertThat(json, containsString("dashboardAnalyticsKey"));
+
+        Configuration rebuilt = new org.mockserver.serialization.ConfigurationSerializer(new org.mockserver.logging.MockServerLogger())
+            .deserialize(json);
+
+        assertThat(rebuilt.dashboardAnalyticsEnabled(), is(false));
+        assertThat(rebuilt.dashboardAnalyticsEndpoint(), is("https://analytics.example.com"));
+        assertThat(rebuilt.dashboardAnalyticsKey(), is("phc_test_key"));
+    }
+
+    @Test
     public void shouldRoundTripLoadGenerationMetricLabelsThroughJson() {
         // a List<String> property must survive a full serialize -> JSON -> deserialize cycle as a JSON array
         Configuration original = configuration()

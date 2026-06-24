@@ -6,7 +6,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Snackbar from '@mui/material/Snackbar';
-import { useDashboardStore, coerceView } from './store';
+import { useDashboardStore, coerceView, ALL_VIEWS } from './store';
 import { buildTheme } from './theme';
 import { useConnectionParams } from './hooks/useConnectionParams';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -36,6 +36,9 @@ import DebugMismatchDialog from './components/DebugMismatchDialog';
 import GenerateStubDialog from './components/GenerateStubDialog';
 import ConfirmDialog from './components/ConfirmDialog';
 import ErrorBoundary from './components/ErrorBoundary';
+import AnalyticsBanner from './components/AnalyticsBanner';
+import { getConfiguration } from './lib/configuration';
+import { initAnalytics, trackView } from './lib/analytics';
 import type { RequestFilter } from './types';
 
 // Lazy-loaded so the @mui/x-charts bundle only loads when the Metrics tab is
@@ -130,6 +133,47 @@ export default function App() {
     return () => globalThis.removeEventListener?.('hashchange', onHashChange);
   }, [setView]);
 
+  // Fetch the server configuration once at startup and hand it to the analytics
+  // module, which runs all privacy gates and (only if every gate passes) lazily
+  // loads posthog-js and emits `app_open`. We pass the valid-view whitelist
+  // (ALL_VIEWS) so trackView can drop any non-view value, and the current view
+  // so the analytics module emits the initial `view_change` exactly once when
+  // activation completes (activation is async — the `[view]` effect below has
+  // already fired-and-dropped by then). initAnalytics is idempotent (one-shot
+  // decision), so a duplicate call under StrictMode remount is a no-op. Failure
+  // to fetch config simply means analytics stays off — never surfaced.
+  useEffect(() => {
+    const controller = new AbortController();
+    void getConfiguration(params, controller.signal)
+      .then((config) => {
+        if (!controller.signal.aborted) {
+          initAnalytics(config, {
+            validViews: ALL_VIEWS,
+            initialView: useDashboardStore.getState().view,
+          });
+        }
+      })
+      .catch(() => {
+        /* config endpoint unavailable — analytics stays off */
+      });
+    return () => controller.abort();
+  }, [params]);
+
+  // Report subsequent navigations to analytics. The store stays pure —
+  // navigation is tracked here, at the single place that observes the selected
+  // `view`. The INITIAL view is emitted by the analytics module at activation
+  // time (see above), so this effect skips its first run to avoid double-counting
+  // the starting tab; it then emits every real view change. trackView is a no-op
+  // unless analytics is active.
+  const initialViewTracked = useRef(false);
+  useEffect(() => {
+    if (!initialViewTracked.current) {
+      initialViewTracked.current = true;
+      return;
+    }
+    trackView(view);
+  }, [view]);
+
   const handleFilterChange = useCallback(
     (filter: RequestFilter) => {
       sendFilter(filter);
@@ -213,6 +257,7 @@ export default function App() {
               reconnect. Displayed data may be stale until the connection is restored.
             </Alert>
           )}
+          <AnalyticsBanner />
           {(view === 'dashboard' || view === 'traffic' || view === 'sessions') && (
             <FilterPanel onFilterChange={handleFilterChange} />
           )}

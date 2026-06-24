@@ -18,7 +18,7 @@ const VIEW_MIGRATION: Record<string, ViewMode> = {
 };
 
 /** Every valid ViewMode, used to validate persisted/hash-derived values. */
-const ALL_VIEWS: readonly ViewMode[] = [
+export const ALL_VIEWS: readonly ViewMode[] = [
   'dashboard', 'traffic', 'sessions', 'composer', 'library', 'chaos', 'performance',
   'metrics', 'drift', 'verification', 'slo', 'async', 'grpc', 'breakpoints', 'contract',
   'cluster', 'optimise', 'get-started',

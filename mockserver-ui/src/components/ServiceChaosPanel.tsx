@@ -91,6 +91,7 @@ import { getConfiguration, updateConfiguration, type Configuration } from '../li
 import ConfirmDialog from './ConfirmDialog';
 import HumanErrorAlert from './HumanErrorAlert';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
+import { trackFeature } from '../lib/analytics';
 
 // Responsive width helper for fixed-px form fields: full-width on a phone (xs),
 // the original fixed pixel width from `sm` up so the desktop layout is unchanged.
@@ -1119,6 +1120,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     if (!definition) return;
     void runAction(async () => {
       await startChaosExperiment(connectionParams, definition);
+      trackFeature('chaos_started');
     });
   }, [connectionParams, buildDefinitionFromEditor, runAction]);
 

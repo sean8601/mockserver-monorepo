@@ -41,6 +41,9 @@ public class Configuration {
     private Boolean detailedMatchFailures;
     private Boolean launchUIForLogLevelDebug;
     private Boolean metricsEnabled;
+    private Boolean dashboardAnalyticsEnabled;
+    private String dashboardAnalyticsEndpoint;
+    private String dashboardAnalyticsKey;
     private Long slowRequestThresholdMillis;
     private Boolean metricsRequestDurationRouteLabels;
     private Boolean chaosAutoHaltEnabled;
@@ -465,6 +468,58 @@ public class Configuration {
      */
     public Configuration metricsEnabled(Boolean metricsEnabled) {
         this.metricsEnabled = metricsEnabled;
+        return this;
+    }
+
+    public Boolean dashboardAnalyticsEnabled() {
+        if (dashboardAnalyticsEnabled == null) {
+            return ConfigurationProperties.dashboardAnalyticsEnabled();
+        }
+        return dashboardAnalyticsEnabled;
+    }
+
+    /**
+     * Master kill switch for browser dashboard usage analytics, default is true.
+     * Analytics remains inert until an endpoint and key are also supplied.
+     *
+     * @param dashboardAnalyticsEnabled enable dashboard analytics
+     */
+    public Configuration dashboardAnalyticsEnabled(Boolean dashboardAnalyticsEnabled) {
+        this.dashboardAnalyticsEnabled = dashboardAnalyticsEnabled;
+        return this;
+    }
+
+    public String dashboardAnalyticsEndpoint() {
+        if (dashboardAnalyticsEndpoint == null) {
+            return ConfigurationProperties.dashboardAnalyticsEndpoint();
+        }
+        return dashboardAnalyticsEndpoint;
+    }
+
+    /**
+     * Analytics endpoint (PostHog api_host) the browser dashboard sends usage analytics to, default is empty.
+     *
+     * @param dashboardAnalyticsEndpoint analytics endpoint host
+     */
+    public Configuration dashboardAnalyticsEndpoint(String dashboardAnalyticsEndpoint) {
+        this.dashboardAnalyticsEndpoint = dashboardAnalyticsEndpoint;
+        return this;
+    }
+
+    public String dashboardAnalyticsKey() {
+        if (dashboardAnalyticsKey == null) {
+            return ConfigurationProperties.dashboardAnalyticsKey();
+        }
+        return dashboardAnalyticsKey;
+    }
+
+    /**
+     * Write-only analytics project key the browser dashboard uses when sending usage analytics, default is empty.
+     *
+     * @param dashboardAnalyticsKey analytics project key
+     */
+    public Configuration dashboardAnalyticsKey(String dashboardAnalyticsKey) {
+        this.dashboardAnalyticsKey = dashboardAnalyticsKey;
         return this;
     }
 
