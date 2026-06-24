@@ -65,9 +65,9 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                 public void channelActive(final ChannelHandlerContext mockServerCtx) {
                     String hostForMessage = host.contains(":") ? "[" + host + "]" : host;
                     if (isSslEnabledUpstream(proxyClientCtx.channel())) {
-                        mockServerCtx.writeAndFlush(Unpooled.copiedBuffer((PROXIED_SECURE + hostForMessage + ":" + port).getBytes(StandardCharsets.UTF_8))).awaitUninterruptibly();
+                        mockServerCtx.writeAndFlush(Unpooled.copiedBuffer((PROXIED_SECURE + hostForMessage + ":" + port).getBytes(StandardCharsets.UTF_8)));
                     } else {
-                        mockServerCtx.writeAndFlush(Unpooled.copiedBuffer((PROXIED + hostForMessage + ":" + port).getBytes(StandardCharsets.UTF_8))).awaitUninterruptibly();
+                        mockServerCtx.writeAndFlush(Unpooled.copiedBuffer((PROXIED + hostForMessage + ":" + port).getBytes(StandardCharsets.UTF_8)));
                     }
                 }
 
@@ -225,7 +225,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                     new DelegatingDecompressorFrameListener(
                         connection,
                         new InboundHttp2ToHttpAdapterBuilder(connection)
-                            .maxContentLength(Integer.MAX_VALUE)
+                            .maxContentLength(configuration.maxRequestBodySize())
                             .propagateSettings(true)
                             .validateHttpHeaders(false)
                             .build()
@@ -238,7 +238,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
         } else {
             pipelineToProxyClient.addLast(new HttpServerCodec(configuration.maxInitialLineLength(), configuration.maxHeaderSize(), configuration.maxChunkSize()));
             pipelineToProxyClient.addLast(new HttpContentDecompressor());
-            pipelineToProxyClient.addLast(new HttpObjectAggregator(Integer.MAX_VALUE));
+            pipelineToProxyClient.addLast(new HttpObjectAggregator(configuration.maxRequestBodySize()));
         }
 
         pipelineToProxyClient.addLast(new UpstreamProxyRelayHandler(mockServerLogger, proxyClientCtx.channel(), mockServerCtx.channel()));
@@ -247,7 +247,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
     private void configureHttp1LoopbackPipeline(ChannelPipeline pipelineToMockServer, ChannelHandlerContext proxyClientCtx) {
         pipelineToMockServer.addLast(new HttpClientCodec(configuration.maxInitialLineLength(), configuration.maxHeaderSize(), configuration.maxChunkSize()));
         pipelineToMockServer.addLast(new HttpContentDecompressor());
-        pipelineToMockServer.addLast(new StreamingAwareHttpObjectAggregator(Integer.MAX_VALUE, configuration, mockServerLogger, true));
+        pipelineToMockServer.addLast(new StreamingAwareHttpObjectAggregator(configuration.maxRequestBodySize(), configuration, mockServerLogger, true));
         pipelineToMockServer.addLast(new DownstreamProxyRelayHandler(mockServerLogger, proxyClientCtx.channel()));
     }
 
@@ -258,7 +258,7 @@ public abstract class RelayConnectHandler<T> extends SimpleChannelInboundHandler
                 new DelegatingDecompressorFrameListener(
                     connection,
                     new InboundHttp2ToHttpAdapterBuilder(connection)
-                        .maxContentLength(Integer.MAX_VALUE)
+                        .maxContentLength(configuration.maxRequestBodySize())
                         .propagateSettings(true)
                         .validateHttpHeaders(false)
                         .build()
