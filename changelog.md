@@ -135,6 +135,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transitive edges are now pruned with `<exclusion>`s (the resolved classpath is unchanged — the pinned/newer
   versions already won nearest-wins), and `jackson-dataformat-yaml` and `jsr305` are declared directly so a
   single version of each reaches consumers. (The `mockserver-client-java` half of this was fixed in 7.1.0.)
+- **Code-review hardening sweep — correctness, concurrency, resources and performance.** A repo-wide review
+  surfaced and fixed a set of latent defects:
+  - **Stale `hashCode` broke matching.** `KeyToMultiValue.replaceValues()`/`addNottableValues()` mutated the
+    value list without refreshing the cached `hashCode` (unlike `addValue()`), so a header/parameter object
+    reused on the matching hot path (e.g. via `ExpandedParameterDecoder`) could violate the `equals`/`hashCode`
+    contract. The cache is now refreshed on every mutation, and the `0`-sentinel hashCode caches on
+    `HttpRequest`/`HttpResponse`/`Action`/`Not` no longer defeat themselves when a hash legitimately computes to 0.
+  - **`NullPointerException` serialising a chunked response with no body** — the chunked body encoder now guards a
+    null body.
+  - **WebSocket object-callback disconnect bug.** When a callback client disconnected mid-exchange the
+    forward-object-callback handler wrote the HTTP response twice and left a `CompletableFuture` that never
+    completed (pinning a scheduler thread until the future timeout); the disconnect path now writes once,
+    unregisters the callback, and returns. Response/forward callback registry entries are also unregistered on
+    every disconnect branch.
+  - **JavaScript response templates were fully serialised** through an engine-wide lock even though each call
+    already builds its own GraalVM context; the lock was removed so concurrent JS templates run in parallel.
+  - **Numerous unsynchronised lazy-init / check-then-act races hardened** (template-engine and body-deserializer
+    `ObjectMapper`s, the OpenAPI parse cache via `computeIfAbsent`, `JsonStringMatcher`, the Java client's Netty
+    client and event bus, action-handler template engines, `LogEntry` override cache, scheduler thread numbering).
+  - **Configuration round-trip gaps.** `controlPlaneScopeMapping`, the proxy-pass mappings, and
+    `proxyRemoteHost`/`proxyRemotePort` now round-trip through `PUT /mockserver/config`; an unrecognised
+    `logLevel` now fails fast with a clear message instead of an NPE during start-up; the conventional
+    `mockserver.perExpectationMetricsEnabled` property key is accepted (the legacy key still works).
+  - **Event loop no longer blocked.** Connection-delay sleeps and `awaitUninterruptibly()` calls were removed
+    from the proxy/SOCKS/relay event-loop paths; the outbound HTTP client now applies a read timeout so a
+    stalled upstream cannot pin a connection/future indefinitely; CONNECT-relay aggregators are bounded to the
+    configured maximum body size instead of ~2 GB.
+  - **Resource & memory leaks fixed.** `MemoryMonitoring` now unregisters its log/expectation listeners on stop
+    (and writes its CSV via try-with-resources); the LLM completion cache and quota registry are now bounded;
+    gRPC gzip frames are capped on *decompressed* size (decompression-bomb guard).
+  - **Async broker mocking** publish/subscribe lifecycle is synchronised, Kafka send failures are logged, and
+    subscribers expose a health flag after a broker disconnect.
+  - **Clustered in-memory CAS** no longer loses a concurrent write when an entry is swapped under the same key
+    (identity-conditional remove/replace).
+  - **Hot-path allocations removed** (case-insensitive header/parameter lookups, matcher-listener notification,
+    load-metric label arrays), and generated TLS certificates are now anchored to issuance time rather than the
+    JVM start time.
 
 ### Security
 
@@ -147,6 +184,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plane, so a read-only principal can no longer invoke mutating MCP tools (create/clear/reset/…). Default
   (authorization disabled) behaviour is unchanged; enforced across HTTP and HTTP/3, single and batch. Closes
   the per-tool MCP gap noted in 7.2.0.
+- **Control-plane JWT validation cross-request race fixed.** A single shared `JWTValidator` reconfigured the
+  Nimbus processor (key selector + claims verifier) on every call, so concurrent control-plane requests could be
+  verified against another request's policy. The processor is now configured once and `validate()` is stateless.
+- **Remote JWKS / OIDC discovery fetches are now bounded.** JWKS-key-set and OIDC discovery-document fetches on
+  the authentication path used the JOSE library defaults (infinite connect/read timeout, no size limit); they now
+  use finite timeouts and a size cap, so a slow or hostile identity-provider endpoint can no longer hang the auth
+  path or be used as an amplification vector.
+- **Velocity templates can no longer fetch arbitrary URLs or read local files.** The Apache Velocity
+  `ImportTool` (which exposes `$import.read(url|file)`) was registered in the template toolbox; it has been
+  removed, closing an SSRF / local-file-disclosure vector in response templates.
+- **mTLS control-plane authentication rejects expired client certificates.** Client-certificate authentication
+  validated only that the certificate chained to the configured CA; it now also enforces the certificate
+  validity window, so an expired or not-yet-valid (but correctly signed) client certificate is rejected.
+- **Mock OIDC client-secret comparison is now constant-time.**
 
 ## [7.2.0] - 2026-06-22
 

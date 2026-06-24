@@ -1508,7 +1508,8 @@ public class HttpRequest extends RequestDefinition implements HttpMessage<HttpRe
         // need to call isSecure because getter can change the hashcode
         isSecure();
         if (hashCode == 0) {
-            hashCode = Objects.hash(super.hashCode(), method, path, pathParameters, queryStringParameters, body, headers, cookies, keepAlive, secure, respondBeforeBody, protocol, streamId, clientCertificateChain, socketAddress, localAddress, remoteAddress);
+            int computed = Objects.hash(super.hashCode(), method, path, pathParameters, queryStringParameters, body, headers, cookies, keepAlive, secure, respondBeforeBody, protocol, streamId, clientCertificateChain, socketAddress, localAddress, remoteAddress);
+            hashCode = computed != 0 ? computed : 1;
         }
         return hashCode;
     }
