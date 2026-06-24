@@ -53,7 +53,10 @@ trap cleanup EXIT
 CORES="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)"
 SERVER_CPUS=""; UPSTREAM_CPUS=""; K6_CPUS=""
 if [ "$CORES" -ge 16 ]; then
-  SERVER_CPUS="0-5"; UPSTREAM_CPUS="6"; K6_CPUS="8-13"   # 7,14,15 left for kernel/docker/sampler
+  # Defaults: server=0-5 upstream=6 k6=8-13 (7,14,15 left for kernel/docker/sampler).
+  # Each cpuset is overridable via PERF_SERVER_CPUS / PERF_UPSTREAM_CPUS / PERF_K6_CPUS
+  # so a re-run can, e.g., hand k6 more cores to drive higher arrival rates.
+  SERVER_CPUS="${PERF_SERVER_CPUS:-0-5}"; UPSTREAM_CPUS="${PERF_UPSTREAM_CPUS:-6}"; K6_CPUS="${PERF_K6_CPUS:-8-13}"
   echo "--- core-pinning enabled (${CORES} vCPU): server=$SERVER_CPUS upstream=$UPSTREAM_CPUS k6=$K6_CPUS"
 else
   echo "--- WARNING: ${CORES} vCPU (<16) — core-pinning skipped; numbers will be noisier"
@@ -64,10 +67,21 @@ docker network create "$NETWORK" >/dev/null
 
 start_mockserver() {
   local name="$1" cpus="$2" alias="$3" publish="${4:-}"
+  # PERF_SERVER_JAVA_OPTS (when set) is passed through as JAVA_TOOL_OPTIONS so a
+  # re-run can opt into a tuned JVM (e.g. low-pause GC + a larger heap) for nicer
+  # documentation-site throughput/latency figures. Applied to BOTH the SUT and
+  # the upstream so the upstream never becomes the bottleneck under those tuned
+  # rates. Request logging is deliberately left ON (we don't disable it here) so
+  # the growth phase stays meaningful. Built as an array element so the value
+  # survives intact as a SINGLE -e pair even though it contains spaces; unset =>
+  # the array is empty and no -e flag is added, identical behaviour.
+  local java_opts_arg=()
+  [ -n "${PERF_SERVER_JAVA_OPTS:-}" ] && java_opts_arg=(-e "JAVA_TOOL_OPTIONS=$PERF_SERVER_JAVA_OPTS")
   # shellcheck disable=SC2046
   docker run -d --rm --name "$name" --network "$NETWORK" --network-alias "$alias" \
     $(cpuset_arg "$cpus") \
     ${publish:+-p 127.0.0.1::1080} \
+    ${java_opts_arg[@]+"${java_opts_arg[@]}"} \
     -e MOCKSERVER_LOG_LEVEL=ERROR \
     -e MOCKSERVER_DISABLE_SYSTEM_OUT=true \
     -e MOCKSERVER_METRICS_ENABLED=true \
