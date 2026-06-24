@@ -95,6 +95,7 @@ export interface ExperimentStatusDTO {
     | 'stopped'
     | 'halted_by_auto_halt'
     | 'halted_by_slo_breach'
+    | 'scheduled'
     | 'starting';
   currentStageIndex: number;
   totalStages: number;

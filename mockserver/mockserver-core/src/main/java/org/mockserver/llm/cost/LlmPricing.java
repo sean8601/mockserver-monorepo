@@ -15,11 +15,12 @@ import java.util.Map;
  * unknown model so callers can distinguish "free/known-zero" from "unpriceable".
  *
  * <p><strong>Companion dashboard pricing table</strong>
- * {@code mockserver-ui/src/lib/llmPricing.ts} maintains a parallel (and
- * possibly-lagging) table with the same prefix-walk semantics. There is no
- * automated drift check between the two — keep them aligned when refreshing
- * rates. This table currently carries newer model families that the UI table
- * has not yet been updated with.
+ * {@code mockserver-ui/src/lib/llmPricing.ts} maintains a parallel table with
+ * the same prefix-walk semantics, and is kept in sync with this table. A
+ * UI-side drift guard ({@code mockserver-ui/src/__tests__/llmPricing.test.ts})
+ * snapshots the expected prefixes and rates and fails if the dashboard table
+ * drifts from them, so when refreshing rates update both tables together and
+ * update that test's canonical snapshot to match.
  *
  * <p><strong>Pricing source / freshness:</strong> rates are public provider
  * list prices captured 2026-06 (newer families) / 2025-Q4 (original entries).

@@ -71,9 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Docker images cap the JVM heap at 75% of the container memory limit** (`-XX:MaxRAMPercentage=75.0`, in
-  both the standard and clustered images), making memory use predictable and avoiding OOM-kills that looked
+  every published image that runs the server — standard, snapshot, root, root-snapshot, graaljs, local, and
+  clustered), making memory use predictable and avoiding OOM-kills that looked
   like hangs. Always run with an explicit container memory limit. To set a fixed heap, pass an explicit `-Xmx`
   (a second `MaxRAMPercentage` via `JAVA_TOOL_OPTIONS` has no effect — it is applied before the image's flag).
+  A build-time guard (`.buildkite/scripts/steps/docker-validate-sync.sh`) now fails the build if any
+  server image's entrypoint is missing the cap, so it cannot drift back out of one variant.
   The Helm chart now ships commented `resources` and `app.jvmOptions` examples.
 - **Generated TLS certificate validity extended to 10 years** (was 365 days) for the dynamically generated CA,
   leaf/server, and HTTP/3 self-signed certificates, so pinned-CA test setups no longer expire after a year.
