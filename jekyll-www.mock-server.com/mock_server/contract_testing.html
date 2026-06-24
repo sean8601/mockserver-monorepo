@@ -166,21 +166,37 @@ keywords: contract testing, consumer-driven contracts, Pact, OpenAPI contract te
   </div>
   <button class="accordion inner">Java</button>
   <div class="panel">
-    <pre class="prettyprint lang-java code"><code class="code">HttpResponse response = new MockServerClient("localhost", 1080)
-    .sendRequest(
-        request()
-            .withMethod("PUT")
-            .withPath("/mockserver/contractTest")
-            .withContentType(MediaType.APPLICATION_JSON)
-            .withBody(json(
-                "{" +
-                "  \"spec\": \"https://petstore3.swagger.io/api/v3/openapi.json\"," +
-                "  \"baseUrl\": \"https://petstore3.swagger.io\"" +
-                "}"
-            ))
-    );
-// response body contains the JSON report
-System.out.println(response.getBodyAsString());</code></pre>
+    <p>Use the typed <code>contractTest</code> helper on <code>MockServerClient</code> — it builds the request, parses the response, and returns a structured <code>ContractReport</code>:</p>
+    <pre class="prettyprint lang-java code"><code class="code">MockServerClient client = new MockServerClient("localhost", 1080);
+
+// Run contract test against a live service
+MockServerClient.ContractReport report = client.contractTest(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    "https://petstore3.swagger.io"
+);
+
+System.out.println("All passed: " + report.allPassed());
+System.out.println("Passed: " + report.passed() + " / " + report.total());
+for (MockServerClient.ContractResult result : report.results()) {
+    System.out.printf("  %s %s — %s%n",
+        result.method(), result.path(),
+        result.passed() ? "PASS" : "FAIL");
+    result.requestErrors().forEach(e -> System.out.println("    request: " + e));
+    result.responseErrors().forEach(e -> System.out.println("    response: " + e));
+}
+
+// Optionally filter to a single operation by operationId
+MockServerClient.ContractReport singleOp = client.contractTest(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    "https://petstore3.swagger.io",
+    "getUsers"
+);</code></pre>
+    <p>To validate recorded traffic against a spec instead of driving live requests, use <code>trafficValidate</code>:</p>
+    <pre class="prettyprint lang-java code"><code class="code">// Validate traffic already recorded by MockServer against an OpenAPI spec
+MockServerClient.ContractReport trafficReport = client.trafficValidate(
+    "https://petstore3.swagger.io/api/v3/openapi.json"
+);
+System.out.println("Traffic valid: " + trafficReport.allPassed());</code></pre>
   </div>
   <button class="accordion inner">JavaScript</button>
   <div class="panel">
@@ -310,6 +326,35 @@ mockServerClient('localhost', 1080)
 
 <button id="button_pact_full_workflow" class="accordion">end-to-end Pact workflow example</button>
 <div class="panel">
+  <button class="accordion inner">Java</button>
+  <div class="panel">
+    <p>Use the typed Pact helpers on <code>MockServerClient</code> — <code>pactImport</code>, <code>pactExport</code>, and <code>pactVerify</code> — instead of constructing raw PUT requests:</p>
+    <p><strong>Step 1 — Consumer: create expectations and export the contract</strong></p>
+    <pre class="prettyprint lang-java code"><code class="code">MockServerClient client = new MockServerClient("localhost", 1080);
+
+// Create an expectation
+client.when(
+    request().withMethod("GET").withPath("/api/users")
+).respond(
+    response()
+        .withStatusCode(200)
+        .withHeader("content-type", "application/json")
+        .withBody("{\"users\":[{\"id\":1,\"name\":\"Alice\"}]}")
+);
+
+// Export active expectations as a Pact v3 contract
+String pactJson = client.pactExport("frontend", "users-service");
+// pactJson is a Pact v3 JSON string — save it or send it to a Pact Broker</code></pre>
+    <p><strong>Step 2 — Provider: verify the contract</strong></p>
+    <pre class="prettyprint lang-java code"><code class="code">// Verify that the provider's active expectations satisfy every Pact interaction
+String verificationReport = client.pactVerify(pactJson);
+// 202 = all interactions verified; 406 = one or more failed
+System.out.println(verificationReport);</code></pre>
+    <p><strong>Alternative — Provider: import a contract and stub from it</strong></p>
+    <pre class="prettyprint lang-java code"><code class="code">// Import a Pact contract; returns a JSON array of the generated expectations
+String expectations = client.pactImport(pactJson);
+System.out.println("Created expectations: " + expectations);</code></pre>
+  </div>
   <button class="accordion inner">REST API</button>
   <div class="panel">
     <p><strong>Step 1 — Consumer: create expectations and export the contract</strong></p>

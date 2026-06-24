@@ -246,7 +246,11 @@ sum(rate(mock_server_llm_cost_usd_total[1h]))</code></pre>
 <p>
     <span class="inline_code">otelEndpoint</span> is the base URL of the OTLP HTTP collector.
     MockServer appends <span class="inline_code">/v1/metrics</span> and <span class="inline_code">/v1/traces</span>
-    automatically.
+    automatically. If <span class="inline_code">MOCKSERVER_OTEL_ENDPOINT</span> is not set, MockServer
+    falls back to the standard OpenTelemetry <span class="inline_code">OTEL_EXPORTER_OTLP_ENDPOINT</span>
+    environment variable, so existing OTel deployments work without extra configuration.
+    See <a href="/mock_server/configuration_properties.html#button_configuration_otel_endpoint">otelEndpoint</a>
+    in the configuration reference for details.
 </p>
 
 <p>
