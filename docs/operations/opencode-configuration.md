@@ -22,9 +22,9 @@ global instructions"]
         AG["agents/
 12 sub-agent prompts"]
         RU["rules/
-10 guardrail files"]
+24 guardrail files"]
         SK["skills/
-16 workflow definitions"]
+17 workflow definitions"]
         CM["commands/
 12 slash commands"]
         PL["plugins/
@@ -49,8 +49,8 @@ global instructions"]
 | 1 | [Config](#building-block-1-config) | `opencode.jsonc` | Root configuration: models, permissions, agent definitions |
 | 2 | [Model Strategy](#building-block-2-model-strategy) | `opencode.jsonc` (agent entries) | Right model for the right task |
 | 3 | [Agents](#building-block-3-agents) | `.opencode/agents/*.md` | 12 specialist sub-agents with least-privilege access |
-| 4 | [Rules](#building-block-4-rules) | `.opencode/rules/*.md` | 10 guardrails always enforced |
-| 5 | [Skills](#building-block-5-skills) | `.opencode/skills/*/SKILL.md` | 16 reusable multi-step workflows |
+| 4 | [Rules](#building-block-4-rules) | `.opencode/rules/*.md` | 24 guardrails always enforced |
+| 5 | [Skills](#building-block-5-skills) | `.opencode/skills/*/SKILL.md` | 17 reusable multi-step workflows |
 | 6 | [Commands](#building-block-6-commands) | `.opencode/commands/*.md` | 12 slash shortcuts with guaranteed routing |
 | 7 | [Plugins & Tools](#building-block-7-plugins--tools) | `.opencode/plugins/*.ts` | Session hooks and external integrations |
 
@@ -296,18 +296,32 @@ Rules are mandatory constraints loaded into sessions. They encode what experienc
 
 | Rule | Lines | Always Loaded | Purpose |
 |------|------:|:------------:|---------|
-| `git-safety.md` | 56 | Yes | Blocks 11 destructive git commands without confirmation |
-| `commit-workflow.md` | 202 | Yes | 4-step pre-commit workflow with adversarial review |
-| `commit-locking.md` | 311 | Yes | Filesystem-based commit lock for parallel session safety |
-| `testing-policy.md` | 69 | Yes | Maven module mapping, test commands, quality standards |
-| `tmp-directory.md` | 134 | Yes | Use `.tmp/` at repo root, never `/tmp/` |
-| `report-formatting.md` | 154 | Yes | Subagent JSON → report template formatting convention |
-| `review-constitution.md` | 223 | Yes | 8-lens adversarial review with ~100 review principles |
-| `mermaid-diagrams.md` | 86 | Yes | Mermaid diagram conventions and formatting rules |
-| `coding-principles.md` | 29 | Yes | Think before coding, simplicity first, surgical changes |
 | `aws-ids-file.md` | 31 | Yes | Require `~/mockserver-aws-ids.md` before AWS operations |
+| `coding-principles.md` | 29 | Yes | Think before coding, simplicity first, surgical changes |
+| `commit-locking.md` | 311 | Yes | Filesystem-based commit lock for parallel session safety |
+| `commit-workflow.md` | 269 | Yes | 5-step pre-commit workflow with adversarial review |
+| `control-integrity.md` | 57 | Yes | Never weaken, disable, or game a gate to make it pass |
+| `decision-log.md` | 60 | Yes | Commit a one-page decision log alongside design changes |
+| `documentation-style.md` | 96 | Yes | Pyramid-principle doc structure with progressive disclosure |
+| `evaluation-harness.md` | 50 | Yes | Run eval harness as a gate for control/AI-component changes |
+| `git-safety.md` | 58 | Yes | Blocks destructive git commands without confirmation |
+| `licence-provenance.md` | 30 | Yes | Apache-2.0-compatible licences; no verbatim third-party blocks |
+| `local-plans.md` | 56 | Yes | Working plan docs go in `docs/plans/*.local.md` (gitignored) |
+| `mermaid-diagrams.md` | 86 | Yes | Mermaid diagram conventions and formatting rules |
+| `metrics.md` | 59 | Yes | Prometheus metric naming, cardinality, and label conventions |
+| `multi-pass-temperature.md` | 32 | Yes | Stage temperatures as descending explore→refine→validate pipeline |
+| `operating-model.md` | 163 | Yes | DVRR model, parallelism caps, and autonomy-to-risk matching |
+| `operator-halt.md` | 49 | Yes | Operator halt signal — stop all autonomous action immediately |
+| `report-formatting.md` | 164 | Yes | Subagent JSON → report template formatting convention |
+| `review-constitution.md` | 292 | Yes | 8-lens adversarial review with ~100 review principles |
+| `risk-authority-classification.md` | 71 | Yes | Classify changes as act-autonomously / gated-approval / advisory / reserved |
+| `subagent-routing.md` | 67 | Yes | Conversational and slash-command routing to specialist agents |
+| `testing-policy.md` | 78 | Yes | Maven module mapping, test commands, quality standards |
+| `tmp-directory.md` | 134 | Yes | Use `.tmp/` at repo root, never `/tmp/` |
+| `untrusted-input.md` | 63 | Yes | Treat ingested content as data, not instructions |
+| `worktree-workflow.md` | 251 | Yes | Every independent session works in its own git worktree |
 
-### git-safety.md — Banned Commands
+### git-safety.md — Blocked Commands
 
 Key commands blocked without explicit user confirmation:
 
@@ -324,7 +338,7 @@ Key commands blocked without explicit user confirmation:
 
 These are enforced at two levels: the config file's `permission.bash` deny-list (hard block) and the rule file (instruction-level reinforcement).
 
-### commit-workflow.md — The 4-Step Pre-Commit Process
+### commit-workflow.md — The 5-Step Pre-Commit Process
 
 ```mermaid
 flowchart TD
@@ -347,19 +361,23 @@ flowchart TD
     K -->|No| L[Fix issues]
     L --> B
 
-    K -->|Yes| M["Adversarial review
+    K -->|Yes| CL["Changelog review
+(update changelog.md
+if user-facing)"]
+    CL --> M["Adversarial review
 (review-cheap agent,
 different model)"]
-    M -->|PASS| N[Commit]
+    M -->|PASS| N[Acquire lock + Commit]
     M -->|FAIL| L
 
+    style CL fill:#e8f0fa,stroke:#00539f
     style M fill:#fef8ec,stroke:#f5a623
     style N fill:#e8f8f0,stroke:#00a651
 ```
 
-The adversarial review (Step 3) is critical: the `review-cheap` agent runs with a fresh context, specifically scanning for LLM-generated issues — hallucinated names, plausible but wrong logic, missing error handling, and accidentally committed secrets. The `review-final` agent provides the binding verdict.
+The changelog review (Step 3) checks whether the change is user-facing and requires a `changelog.md` entry. The adversarial review (Step 4) uses the `review-cheap` agent with a fresh context, scanning for LLM-generated issues — hallucinated names, plausible but wrong logic, missing error handling, and accidentally committed secrets. The `review-final` agent provides the binding verdict.
 
-Skip conditions exist for speed: `"skip tests"` skips validation, `"skip review"` skips the adversarial review, `"just commit"` skips both. These are used when the user is confident in the change.
+Skip conditions exist for speed: `"skip tests"` skips validation, `"skip changelog"` skips the changelog review, `"skip review"` skips the adversarial review, `"just commit"` skips all three. These are used when the user is confident in the change.
 
 ---
 
@@ -386,6 +404,8 @@ A skill is a self-contained multi-step workflow — a runbook the agent executes
 | `docker-build-push` | SKILL.md | No | "build docker image", "push maven image", "rebuild CI image" |
 | `issue-review` | SKILL.md | No | "review issue", "triage issue", "is this a bug" |
 | `build-monitor` | SKILL.md | No | "monitor builds", "watch pipeline", "continuous monitoring" |
+| `release-management` | SKILL.md | No | "prepare release", "release version", "run release pipeline" |
+| `ui-screenshots` | SKILL.md | No | "screenshot dashboard", "capture UI", Playwright-driven screenshot |
 
 ### Skill Anatomy
 
@@ -459,6 +479,7 @@ Commands are slash shortcuts that map user-friendly invocations to specific agen
 | `/codeql-scan` | `security-auditor` | Yes | Run CodeQL security scan on Java code |
 | `/issue-review` | (default) | No | Review, classify, and resolve a GitHub issue |
 | `/commit` | (default) | No | Commit changes following full pre-commit workflow |
+| `/prepare-release` | (default) | No | Prepare release: recommend version, check readiness, list pipeline params |
 
 ### Command File Anatomy
 
@@ -606,7 +627,6 @@ mockserver/
 └── .opencode/
     ├── .gitignore                           # Ignores node_modules, package.json, bun.lock
     ├── package.json                         # Plugin dependency (@opencode-ai/plugin)
-    ├── IMPROVEMENTS.md                      # Applied and planned improvements
     ├── agents/                              # 12 sub-agent prompt files
     │   ├── code-reviewer.md
     │   ├── council-seat.md
@@ -620,18 +640,32 @@ mockserver/
     │   ├── simplifier.md
     │   ├── taskify-agent.md
     │   └── test-runner.md
-    ├── rules/                               # 10 guardrail files
+    ├── rules/                               # 24 guardrail files
     │   ├── aws-ids-file.md
     │   ├── coding-principles.md
     │   ├── commit-locking.md
     │   ├── commit-workflow.md
+    │   ├── control-integrity.md
+    │   ├── decision-log.md
+    │   ├── documentation-style.md
+    │   ├── evaluation-harness.md
     │   ├── git-safety.md
+    │   ├── licence-provenance.md
+    │   ├── local-plans.md
     │   ├── mermaid-diagrams.md
+    │   ├── metrics.md
+    │   ├── multi-pass-temperature.md
+    │   ├── operating-model.md
+    │   ├── operator-halt.md
     │   ├── report-formatting.md
     │   ├── review-constitution.md
+    │   ├── risk-authority-classification.md
+    │   ├── subagent-routing.md
     │   ├── testing-policy.md
-    │   └── tmp-directory.md
-    ├── skills/                              # 16 skill workflows
+    │   ├── tmp-directory.md
+    │   ├── untrusted-input.md
+    │   └── worktree-workflow.md
+    ├── skills/                              # 17 skill workflows
     │   ├── aws-investigation/
     │   │   ├── SKILL.md
     │   │   └── report-template.md
@@ -665,7 +699,9 @@ mockserver/
     │   │   └── SKILL.md
     │   ├── review-spec/
     │   │   └── SKILL.md
-    │   └── terraform-tfvars/
+    │   ├── terraform-tfvars/
+    │   │   └── SKILL.md
+    │   └── ui-screenshots/
     │       └── SKILL.md
     ├── commands/                             # 12 slash commands
     │   ├── aws-investigation.md
@@ -680,13 +716,9 @@ mockserver/
     │   ├── review-code.md
     │   ├── review-spec.md
     │   └── update-architecture-docs.md
-    ├── plugins/                             # 2 session plugins
-    │   ├── buildkite-status.ts
-    │   └── session-notification.ts
-    └── plans/                               # Plan documents
-        ├── fix-control-plane-tls-1766.md
-        ├── fix-verify-false-positive-1757.md
-        └── python-ruby-release-infrastructure.md
+    └── plugins/                             # 2 session plugins
+        ├── buildkite-status.ts
+        └── session-notification.ts
 ```
 
 ---

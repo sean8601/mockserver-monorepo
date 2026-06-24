@@ -77,17 +77,19 @@ Key design decisions:
 
 ## Mandatory Pre-Commit Workflow
 
-Every commit follows a 4-step workflow. Steps cannot be skipped without explicit human override.
+Every commit follows a 5-step workflow. Steps cannot be skipped without explicit human override.
 
 ```mermaid
 flowchart LR
     S1["1. Classify
     changed files"] --> S2["2. Validate
     (tests, lint, build)"]
-    S2 --> S3["3. Adversarial
+    S2 --> S3["3. Changelog
     review"]
-    S3 -->|BLOCK| S2
-    S3 -->|PASS| S4["4. Commit"]
+    S3 --> S4["4. Adversarial
+    review"]
+    S4 -->|BLOCK| S2
+    S4 -->|PASS| S5["5. Commit"]
 ```
 
 ### Step 1: Classify Changed Files
@@ -102,13 +104,17 @@ Executable verification, not static inspection:
 - **Helm:** `helm lint` + `helm template`
 - **Node.js/Python/Ruby:** Language-specific test and lint commands
 
-### Step 3: Adversarial Code Review
+### Step 3: Changelog Review
 
-After validations pass, an independent reviewer (running on a **different AI model** with a **fresh context**) performs an adversarial review using the full Review Constitution. If it issues a **BLOCK**, the code is fixed and the cycle repeats.
+Every commit is checked against `changelog.md`. User-facing changes require a matching entry under `## [Unreleased]`. Non-user-facing changes (tests, CI, internal refactors) require an explicit note that no entry is needed.
 
-### Step 4: Commit
+### Step 4: Adversarial Code Review
 
-Only after tests pass and review approves. A filesystem-based commit lock prevents concurrent AI sessions from creating conflicting commits.
+After validations and the changelog review pass, an independent reviewer (running on a **different AI model** with a **fresh context**) performs an adversarial review using the full Review Constitution. If it issues a **BLOCK**, the code is fixed and the cycle repeats.
+
+### Step 5: Commit
+
+Only after tests pass, changelog is reviewed, and the adversarial review approves. A filesystem-based commit lock prevents concurrent AI sessions from creating conflicting commits.
 
 ## The Testing Backstop
 

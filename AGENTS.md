@@ -43,9 +43,12 @@ Comprehensive internal documentation is maintained in `docs/`. **Always consult 
 | [docs/code/domain-model.md](docs/code/domain-model.md) | Before modifying domain model, matchers, codecs, or configuration |
 | [docs/code/tls-and-security.md](docs/code/tls-and-security.md) | Before modifying TLS, mTLS, certificates, or authentication |
 | [docs/code/client-and-integrations.md](docs/code/client-and-integrations.md) | Before modifying client library, JUnit rules, or Spring integration |
+| [docs/code/editor-extensions.md](docs/code/editor-extensions.md) | Before modifying the VS Code or JetBrains extensions, JSON Schema generation, or REST client architecture |
 | [docs/code/breakpoints.md](docs/code/breakpoints.md) | Before modifying request breakpoints, BreakpointRegistry, PausedExchange, request/response/stream phases, or the /breakpoint endpoints |
 | [docs/code/chaos.md](docs/code/chaos.md) | Before modifying chaos experiments, ChaosExperimentOrchestrator, auto-halt integration, or the /chaosExperiment endpoints |
 | [docs/code/drift-detection.md](docs/code/drift-detection.md) | Before modifying mock drift detection, DriftAnalyzer, DriftStore, or the /drift endpoint |
+| [docs/code/slo-verdicts.md](docs/code/slo-verdicts.md) | Before modifying SLO verdicts, SloSampleStore, SloEvaluator, or the /mockserver/verifySLO endpoint |
+| [docs/code/load-generation.md](docs/code/load-generation.md) | Before modifying load scenarios, LoadScenarioOrchestrator, ramp profiles, or the /mockserver/loadScenario endpoints |
 | [docs/code/wasm-rules.md](docs/code/wasm-rules.md) | Before modifying WASM custom rule engine, chicory integration, or WASM REST endpoints |
 | [docs/code/telemetry.md](docs/code/telemetry.md) | Before modifying OpenTelemetry integration, OTLP export, GenAI spans, or W3C trace context propagation |
 | [docs/code/async-messaging.md](docs/code/async-messaging.md) | Before modifying the AsyncAPI broker mocking module, AsyncApiParser, MessagePublisher adapters, or AsyncApiMockOrchestrator |
