@@ -704,6 +704,31 @@ stateDiagram-v2
     RelayEstablished --> [*]: Connection closed
 ```
 
+## SSL and Decoder Fault Logging
+
+Netty's `exceptionCaught` fires for both benign connection closes and genuine faults. MockServer distinguishes these two categories using `ExceptionHandling.isSslOrDecoderFault(Throwable)`:
+
+| Exception type | Classification | Logged at |
+|---------------|----------------|-----------|
+| `SSLException` (as `cause`) | SSL/decoder fault | **WARN** |
+| `DecoderException` | SSL/decoder fault | **WARN** |
+| `NotSslRecordException` | SSL/decoder fault | **WARN** |
+| Connection reset / broken pipe (regex + stack match) | Benign close | silent |
+| Other unexpected exceptions | Unexpected | **ERROR** |
+
+The `isSslOrDecoderFault` predicate is wired into the `exceptionCaught` handler of every handler that could receive these exceptions:
+
+- `PortUnificationHandler` (protocol detection)
+- `HttpRequestHandler` (main request dispatcher)
+- `BinaryRequestProxyingHandler` (raw binary proxy)
+- `SocksProxyHandler` (SOCKS4/5)
+- `UpstreamProxyRelayHandler` / `DownstreamProxyRelayHandler` / `RelayConnectHandler` (relay handlers)
+- `CallbackWebSocketServerHandler` (WebSocket callback channel)
+- `McpStreamableHttpHandler` (MCP streaming)
+- `DashboardWebSocketHandler` (dashboard WebSocket)
+
+This means genuine SSL negotiation failures (e.g., client sends plain HTTP to a TLS port, or a non-TLS client probes a TLS port) surface at WARN and are visible in logs, while normal connection teardowns remain silent. `ExceptionHandling.isSslOrDecoderFault` mirrors the predicate already in `connectionClosedException` but as a positive match so callers can route specifically to WARN rather than silently drop.
+
 ## Class Reference
 
 | Class | File | Role |
