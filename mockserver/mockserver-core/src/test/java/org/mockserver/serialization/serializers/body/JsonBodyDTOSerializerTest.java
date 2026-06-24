@@ -21,7 +21,7 @@ public class JsonBodyDTOSerializerTest {
     @Test
     public void shouldSerializeJsonBodyDTO() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}"))),
-            is("{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"}"));
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"}"));
     }
 
     @Test
@@ -41,15 +41,14 @@ public class JsonBodyDTOSerializerTest {
                 "  \"json\" : {" + NEW_LINE +
                 "    \"fieldOne\" : \"valueOne\"," + NEW_LINE +
                 "    \"fieldTwo\" : \"valueTwo\"" + NEW_LINE +
-                "  }," + NEW_LINE +
-                "  \"rawBytes\" : \"eyJmaWVsZE9uZSI6InZhbHVlT25lIiwiZmllbGRUd28iOiJ2YWx1ZVR3byJ9\"" + NEW_LINE +
+                "  }" + NEW_LINE +
                 "}"));
     }
 
     @Test
     public void shouldSerializeJsonBodyWithDefaultMatchType() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{fieldOne: \"valueOne\", \"fieldTwo\": \"valueTwo\"}", MatchType.ONLY_MATCHING_FIELDS))),
-            is("{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"}"));
+            is("{\"type\":\"JSON\",\"json\":{\"fieldOne\":\"valueOne\",\"fieldTwo\":\"valueTwo\"},\"rawBytes\":\"e2ZpZWxkT25lOiAidmFsdWVPbmUiLCAiZmllbGRUd28iOiAidmFsdWVUd28ifQ==\"}"));
     }
 
     @Test
@@ -91,7 +90,7 @@ public class JsonBodyDTOSerializerTest {
     @Test
     public void shouldSerializeJsonBodyDTOWithMatchNumbersAsStrings() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("{\"value\":1}", null, null, MatchType.ONLY_MATCHING_FIELDS, true))),
-            is("{\"type\":\"JSON\",\"json\":{\"value\":1},\"rawBytes\":\"eyJ2YWx1ZSI6MX0=\",\"matchNumbersAsStrings\":true}"));
+            is("{\"type\":\"JSON\",\"json\":{\"value\":1},\"matchNumbersAsStrings\":true}"));
     }
 
     @Test
@@ -109,7 +108,7 @@ public class JsonBodyDTOSerializerTest {
     @Test
     public void shouldSerializeJsonBodyDTOWithStringPrimitiveAndNonDefaultFields() throws JsonProcessingException {
         assertThat(ObjectMapperFactory.createObjectMapper().writeValueAsString(new JsonBodyDTO(new JsonBody("\"test\"", MatchType.STRICT))),
-            is("{\"type\":\"JSON\",\"json\":\"test\",\"rawBytes\":\"InRlc3Qi\",\"matchType\":\"STRICT\"}"));
+            is("{\"type\":\"JSON\",\"json\":\"test\",\"matchType\":\"STRICT\"}"));
     }
 
     @Test

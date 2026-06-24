@@ -10,6 +10,7 @@ import org.mockserver.model.JsonBody;
 import org.mockserver.serialization.ObjectMapperFactory;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 /**
  * @author jamesdbloom
@@ -35,7 +36,12 @@ public class JsonBodySerializer extends StdSerializer<JsonBody> {
         boolean contentTypeNonDefault = jsonBody.getContentType() != null && !jsonBody.getContentType().equals(JsonBody.DEFAULT_JSON_CONTENT_TYPE.toString());
         boolean matchTypeNonDefault = jsonBody.getMatchType() != JsonBody.DEFAULT_MATCH_TYPE;
         boolean matchNumbersAsStringsNonDefault = jsonBody.isMatchNumbersAsStrings();
-        if (serialiseDefaultValues || notNonDefault || optionalNonDefault || contentTypeNonDefault || matchTypeNonDefault || matchNumbersAsStringsNonDefault) {
+        JsonNode jsonNode = OBJECT_MAPPER.readTree(jsonBody.getValue());
+        // the original wire bytes cannot be reconstructed from the serialised JSON value when they differ
+        // from the canonical serialisation of the parsed tree (e.g. recorded requests with original spacing) -
+        // in that case emit them explicitly so getBodyAsRawBytes()/getBodyAsOriginalRawBytes() round-trip exactly
+        boolean rawBytesNonDefault = jsonBody.getRawBytes() != null && !Arrays.equals(jsonBody.getRawBytes(), OBJECT_MAPPER.writeValueAsBytes(jsonNode));
+        if (serialiseDefaultValues || notNonDefault || optionalNonDefault || contentTypeNonDefault || matchTypeNonDefault || matchNumbersAsStringsNonDefault || rawBytesNonDefault) {
             jgen.writeStartObject();
             if (notNonDefault) {
                 jgen.writeBooleanField("not", jsonBody.getNot());
@@ -47,12 +53,14 @@ public class JsonBodySerializer extends StdSerializer<JsonBody> {
                 jgen.writeStringField("contentType", jsonBody.getContentType());
             }
             jgen.writeStringField("type", jsonBody.getType().name());
-            JsonNode jsonNode = OBJECT_MAPPER.readTree(jsonBody.getValue());
             if (jsonNode.isValueNode()) {
                 jgen.writeFieldName("json");
                 jgen.writeRawValue(jsonBody.getValue());
             } else {
                 jgen.writeObjectField("json", jsonNode);
+            }
+            if (rawBytesNonDefault) {
+                jgen.writeObjectField("rawBytes", jsonBody.getRawBytes());
             }
             if (matchTypeNonDefault) {
                 jgen.writeStringField("matchType", jsonBody.getMatchType().name());
@@ -62,11 +70,10 @@ public class JsonBodySerializer extends StdSerializer<JsonBody> {
             }
             jgen.writeEndObject();
         } else {
-            JsonNode defaultJsonNode = OBJECT_MAPPER.readTree(jsonBody.getValue());
-            if (defaultJsonNode.isValueNode()) {
+            if (jsonNode.isValueNode()) {
                 jgen.writeRawValue(jsonBody.getValue());
             } else {
-                jgen.writeObject(defaultJsonNode);
+                jgen.writeObject(jsonNode);
             }
         }
     }

@@ -710,7 +710,11 @@ public class HttpRequestSerializerSchemaValidationTest {
         // then
         assertThat( jsonHttpRequest, is("{" + NEW_LINE +
             "  \"body\" : {" + NEW_LINE +
-            "    \"key\" : \"value\"" + NEW_LINE +
+            "    \"type\" : \"JSON\"," + NEW_LINE +
+            "    \"json\" : {" + NEW_LINE +
+            "      \"key\" : \"value\"" + NEW_LINE +
+            "    }," + NEW_LINE +
+            "    \"rawBytes\" : \"eyJrZXkiOiAidmFsdWUifQ==\"" + NEW_LINE +
             "  }" + NEW_LINE +
             "}"));
     }
