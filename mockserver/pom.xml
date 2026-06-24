@@ -589,8 +589,8 @@
             </dependency>
 
             <!-- graphql schema parsing + response synthesis (schema-valid GraphQL responses).
-                 Pinned to the 22.x line: 22.x ships Java 11 bytecode and runs on the Java 17 floor.
-                 Newer majors are ceiling-pinned in .github/dependabot.yml in case they raise the floor. -->
+                 graphql-java ships Java 11 bytecode (through 26.x), so it runs on the Java 17 floor;
+                 tracked at the latest major with no version ceiling (see docs/operations/security.md). -->
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>graphql-java</artifactId>
