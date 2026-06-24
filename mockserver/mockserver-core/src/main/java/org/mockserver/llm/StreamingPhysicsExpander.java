@@ -48,7 +48,19 @@ public class StreamingPhysicsExpander {
         }
 
         int tokensPerSecond = physics.getTokensPerSecond() != null ? physics.getTokensPerSecond() : 50;
+        // Guard against a non-positive rate, which would make baseDelayMs (1000.0 /
+        // tokensPerSecond) infinite or negative and round to garbage delays.
+        if (tokensPerSecond <= 0) {
+            tokensPerSecond = 50;
+        }
+        // Clamp jitter to its valid 0..1 range; outside it the jitter factor could go
+        // negative (clamped to 0 below) or balloon the per-token delay.
         double jitter = physics.getJitter() != null ? physics.getJitter() : 0.0;
+        if (jitter < 0.0) {
+            jitter = 0.0;
+        } else if (jitter > 1.0) {
+            jitter = 1.0;
+        }
         long seed = physics.getSeed() != null ? physics.getSeed() : System.nanoTime();
         long timeToFirstTokenMs = 0;
         if (physics.getTimeToFirstToken() != null) {
