@@ -94,7 +94,6 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario \
   -H "Content-Type: application/json" \
   -d '{
     "name": "checkout-load",
-    "templateType": "VELOCITY",
     "startDelayMillis": 0,
     "profile": {
       "stages": [
@@ -261,7 +260,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
             <td><code class="inline code">templateType</code></td>
             <td>string</td>
             <td>No</td>
-            <td>Template engine for rendering step fields: <code class="inline code">VELOCITY</code> (default) or <code class="inline code">MUSTACHE</code>. <code class="inline code">JAVASCRIPT</code> is <strong>not</strong> supported for load steps and is rejected with a <code class="inline code">400</code>.</td>
+            <td><strong>Scenario-wide</strong> template engine used to re-render every step's templated fields — request <code class="inline code">path</code>, <code class="inline code">body</code> and header values — once <em>per iteration</em>, so each virtual-user request can carry varying data (feeder columns, captured values, the iteration index). It applies to <strong>all</strong> steps in the scenario; it is not set per step, because every step shares the same per-iteration context (the same feeder row and captured variables), so one engine keeps the placeholder syntax uniform across the whole journey. <strong>Optional</strong> — omit it to use the default <code class="inline code">VELOCITY</code> (e.g. <code class="inline code">$iteration.index</code>); set <code class="inline code">MUSTACHE</code> to use <code class="inline code">&#123;&#123;iteration.index&#125;&#125;</code> syntax instead. <code class="inline code">JAVASCRIPT</code> is <strong>not</strong> supported for load steps and is rejected with a <code class="inline code">400</code>. Fields that contain no template placeholder are sent unchanged.</td>
         </tr>
         <tr>
             <td><code class="inline code">maxRequests</code></td>
