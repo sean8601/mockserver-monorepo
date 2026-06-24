@@ -1315,4 +1315,77 @@ public class LoadScenarioOrchestratorTest {
             return CompletableFuture.completedFuture(response().withStatusCode(200));
         }
     }
+
+    // --- named load shape validation ---
+
+    @Test
+    public void validateAcceptsShapedProfile() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("shaped")
+            .withProfile(LoadProfile.shaped(
+                org.mockserver.load.LoadShape.rampHold(
+                    org.mockserver.load.LoadShape.Metric.VU, 10, 5_000L, 20_000L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario), is(nullValue()));
+    }
+
+    @Test
+    public void validateRejectsProfileWithNeitherStagesNorShape() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("empty")
+            .withProfile(new LoadProfile())
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario),
+            is("'profile' must contain either 'stages' or a 'shape'"));
+    }
+
+    @Test
+    public void validateRejectsShapeThatExpandsToNoStages() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("empty-shape")
+            .withProfile(LoadProfile.shaped(
+                org.mockserver.load.LoadShape.stairs(
+                    org.mockserver.load.LoadShape.Metric.VU, 5, 5, 0, 1_000L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario), containsString("expands to no stages"));
+    }
+
+    @Test
+    public void validateRejectsShapeWhoseExpansionExceedsVuCap() {
+        org.mockserver.configuration.Configuration config =
+            org.mockserver.configuration.Configuration.configuration().loadGenerationMaxVirtualUsers(50);
+        orchestrator.setConfiguration(config);
+        LoadScenario scenario = new LoadScenario()
+            .withName("too-big")
+            .withProfile(LoadProfile.shaped(
+                org.mockserver.load.LoadShape.rampHold(
+                    org.mockserver.load.LoadShape.Metric.VU, 500, 5_000L, 20_000L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String error = orchestrator.validate(scenario);
+        assertThat(error, containsString("500 virtual users"));
+        assertThat(error, containsString("exceeding the maximum of 50"));
+    }
+
+    @Test
+    public void validateRejectsShapeWhoseExpansionExceedsStageCap() {
+        org.mockserver.configuration.Configuration config =
+            org.mockserver.configuration.Configuration.configuration().loadGenerationMaxStages(5);
+        orchestrator.setConfiguration(config);
+        LoadScenario scenario = new LoadScenario()
+            .withName("too-many-steps")
+            .withProfile(LoadProfile.shaped(
+                org.mockserver.load.LoadShape.stairs(
+                    org.mockserver.load.LoadShape.Metric.VU, 1, 1, 10, 1_000L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario),
+            containsString("exceeds the maximum of 5"));
+    }
 }

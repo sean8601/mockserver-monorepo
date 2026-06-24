@@ -1040,9 +1040,14 @@ public class LoadScenarioOrchestrator {
         if (profile == null) {
             return "'profile' is required";
         }
+        // getStages() returns the explicit stages, or — when only a 'shape' is set — the stages that
+        // shape expands into; so all the per-stage / cap checks below cover shaped profiles for free.
         List<LoadStage> stages = profile.getStages();
         if (stages == null || stages.isEmpty()) {
-            return "'profile.stages' must contain at least one stage";
+            if (profile.getShape() != null) {
+                return "'profile.shape' expands to no stages; check its parameters (durations and step count must be > 0)";
+            }
+            return "'profile' must contain either 'stages' or a 'shape'";
         }
         int maxStages = configuration.loadGenerationMaxStages();
         if (stages.size() > maxStages) {

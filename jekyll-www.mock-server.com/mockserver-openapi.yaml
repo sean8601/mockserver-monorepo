@@ -4802,18 +4802,81 @@ components:
         maxVus:
           type: integer
           description: "RATE stage only: optional cap on the auto-scaling virtual-user pool that runs the started iterations (defaults to the global virtual-user cap)"
-    LoadProfile:
-      description: "an ordered list of stages run in sequence describing the load over time"
+    LoadShapeType:
+      type: string
+      enum: [SPIKE, STAIRS, RAMP_HOLD]
+      description: "named load shape: SPIKE (ramp up, hold the peak, ramp back down, optional recovery hold); STAIRS (a flight of pure-hold steps, each one 'step' higher); RAMP_HOLD (ramp 0 to target then hold)."
+    LoadShapeMetric:
+      type: string
+      enum: [VU, RATE]
+      description: "what the shape drives: VU = concurrent virtual users (closed model); RATE = arrival rate in iterations/second (open model). A shape expands into ordinary LoadStage stages of this type."
+    LoadShape:
+      description: "a declarative named load shape that expands into ordinary stages; only the parameters its 'type' needs are read, the rest are ignored. Use a shape OR an explicit 'stages' list, not both."
       type: object
       additionalProperties: false
       required:
-        - stages
+        - type
+      properties:
+        type:
+          $ref: "#/components/schemas/LoadShapeType"
+        metric:
+          $ref: "#/components/schemas/LoadShapeMetric"
+        curve:
+          $ref: "#/components/schemas/RampCurve"
+        baseline:
+          type: number
+          description: "SPIKE: the level held before and after the spike"
+        peak:
+          type: number
+          description: "SPIKE: the level held at the top of the spike"
+        rampUpMillis:
+          type: integer
+          format: int64
+          description: "SPIKE: duration of the baseline to peak ramp"
+        holdMillis:
+          type: integer
+          format: int64
+          description: "SPIKE: duration to hold at the peak; RAMP_HOLD: duration to hold at the target"
+        rampDownMillis:
+          type: integer
+          format: int64
+          description: "SPIKE: duration of the peak to baseline ramp"
+        recoveryHoldMillis:
+          type: integer
+          format: int64
+          description: "SPIKE (optional): duration to hold at baseline after the down ramp"
+        start:
+          type: number
+          description: "STAIRS: the level of the first step"
+        step:
+          type: number
+          description: "STAIRS: how much each step rises above the previous one"
+        steps:
+          type: integer
+          description: "STAIRS: the number of steps"
+        stepDurationMillis:
+          type: integer
+          format: int64
+          description: "STAIRS: how long each step holds at its level"
+        target:
+          type: number
+          description: "RAMP_HOLD: the level ramped up to (from 0) and then held"
+        rampMillis:
+          type: integer
+          format: int64
+          description: "RAMP_HOLD: duration of the 0 to target ramp"
+    LoadProfile:
+      description: "describes the load over time, as EITHER an ordered list of 'stages' OR a single named 'shape' (which expands into stages). Set one, not both; if both are set the explicit stages win."
+      type: object
+      additionalProperties: false
       properties:
         stages:
           type: array
           description: "ordered stages run one after another (max 20). Each holds or ramps virtual users (VU, closed model) or an arrival rate (RATE, open model), or pauses (PAUSE)."
           items:
             $ref: "#/components/schemas/LoadStage"
+        shape:
+          $ref: "#/components/schemas/LoadShape"
     LoadStep:
       description: "a single templated request step in a load scenario"
       type: object

@@ -246,6 +246,32 @@ injector could not meet the requested rate. Caps are never exceeded.
 Sequences and pauses compose freely — e.g. a VU warm-up, then a pause, then a ramping-arrival-rate
 soak, then a constant-rate hold — up to `loadGenerationMaxStages` stages.
 
+### Named load shapes
+
+A profile may instead carry a single declarative **shape** (`LoadShape`) describing a common traffic
+pattern by name, rather than spelling out every stage. A shape is **pure sugar**: `LoadShapes.expand`
+turns it into ordinary `LoadStage`s, and `LoadProfile.getStages()` returns that expansion — so the
+orchestrator, the validator, and every cap check run unchanged. A profile uses **either** an explicit
+`stages` list **or** a `shape`; if both are set the explicit stages win (the shape is ignored).
+
+Each shape drives one **metric** — `VU` (concurrent virtual users, closed model; expands to `VU`
+stages, setpoints rounded to whole VUs) or `RATE` (arrival rate in iterations/second, open model;
+expands to `RATE` stages, fractional rates preserved). Expanded `RATE` stages leave `maxVus` unset, so
+the global `loadGenerationMaxVirtualUsers` cap governs the auto-scaled VU pool — a shape never imposes
+its own lower cap.
+
+| Shape | Expands into | Parameters (only these are read) |
+|-------|--------------|----------------------------------|
+| `SPIKE` | ramp `baseline→peak`, hold `peak`, ramp `peak→baseline`, optional hold `baseline` | `baseline`, `peak`, `rampUpMillis`, `holdMillis`, `rampDownMillis`, optional `recoveryHoldMillis`; `curve` shapes both ramps |
+| `STAIRS` | for `i` in `0..steps-1`: a **pure hold** at `start + i*step` for `stepDurationMillis` (discrete steps, no inter-step ramp) | `start`, `step`, `steps`, `stepDurationMillis` |
+| `RAMP_HOLD` | ramp `0→target` along `curve`, then hold `target` | `target`, `rampMillis`, `holdMillis`, optional `curve` (default `LINEAR`) |
+
+Any zero/absent duration (or zero `steps`) simply drops that stage from the expansion, so e.g. a SPIKE
+with `rampDownMillis=0` expands to ramp-up + hold only. A shape whose parameters expand to **no**
+stages — or whose expansion exceeds a cap (max stages, peak VUs/rate, total duration) — is rejected by
+`validate` with a clear error, because validation runs over the expanded stages exactly as it does for
+explicit ones.
+
 ## REST API
 
 All endpoints are control-plane endpoints (subject to `controlPlaneRequestAuthenticated`). The model is

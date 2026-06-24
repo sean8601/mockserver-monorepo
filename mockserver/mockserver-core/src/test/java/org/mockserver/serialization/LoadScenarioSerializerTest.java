@@ -238,6 +238,57 @@ public class LoadScenarioSerializerTest {
         assertThat(parsed.getSteps().get(1).getCaptures(), is(nullValue()));
     }
 
+    @Test
+    public void roundTripsShapeWithoutEmittingExpandedStages() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("spike-shape")
+            .withProfile(LoadProfile.shaped(
+                org.mockserver.load.LoadShape.spike(
+                    org.mockserver.load.LoadShape.Metric.VU, 2, 40, 10_000L, 30_000L, 5_000L)
+                    .withRecoveryHoldMillis(8_000L)
+                    .withCurve(RampCurve.QUADRATIC)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String json = serializer.serialize(scenario);
+        // the shape is serialized; the derived expansion is NOT emitted as a redundant stages array.
+        assertThat(json, containsString("\"shape\""));
+        assertThat(json, containsString("\"SPIKE\""));
+        assertThat(json, not(containsString("\"stages\"")));
+
+        LoadScenario parsed = serializer.deserialize(json);
+
+        // re-reading yields the same expansion (no double expansion).
+        assertThat(parsed.getProfile().getShape(), is(notNullValue()));
+        assertThat(parsed.getProfile().getShape().getType(),
+            is(org.mockserver.load.LoadShape.Type.SPIKE));
+        assertThat(parsed.getProfile().getRawStages(), hasSize(0));
+        assertThat(parsed.getProfile().getStages(), hasSize(4));
+        assertThat(parsed.getProfile().peakVus(), is(40));
+        assertThat(parsed.getProfile().totalDurationMillis(), is(53_000L));
+        LoadStage rampUp = parsed.getProfile().getStages().get(0);
+        assertThat(rampUp.getStartVus(), is(2));
+        assertThat(rampUp.getEndVus(), is(40));
+        assertThat(rampUp.getCurve(), is(RampCurve.QUADRATIC));
+    }
+
+    @Test
+    public void roundTripsRateRampHoldShape() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("rate-shape")
+            .withProfile(LoadProfile.shaped(
+                org.mockserver.load.LoadShape.rampHold(
+                    org.mockserver.load.LoadShape.Metric.RATE, 250.0, 10_000L, 60_000L)))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        LoadScenario parsed = serializer.deserialize(serializer.serialize(scenario));
+
+        assertThat(parsed.getProfile().getShape().getMetric(),
+            is(org.mockserver.load.LoadShape.Metric.RATE));
+        assertThat(parsed.getProfile().getStages(), hasSize(2));
+        assertThat(parsed.getProfile().getStages().get(0).getType(), is(LoadStageType.RATE));
+        assertThat(parsed.getProfile().getStages().get(1).getRate(), is(250.0));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankBody() {
         serializer.deserialize("  ");
