@@ -221,6 +221,33 @@ Structured-output validation against a JSON Schema works on **both sides** of a 
 
 When the opt-in `mockserver.llmInferUsageEnabled` flag is set, `HttpLlmResponseActionHandler.withInferredUsageIfEnabled(...)` returns a **per-request shallow copy** of the completion carrying approximate `prompt_tokens` / `completion_tokens` for a mocked completion that omits `usage`, on both the non-streaming and streaming paths, **before** the codec encodes. The shared expectation `Completion` is never mutated, so the request-dependent prompt estimate is recomputed every request (no stale caching, no concurrent-write race). The prompt estimate comes from decoding the inbound request with the provider codec (`ProviderCodec.decode`); the completion estimate from the response text and tool-call arguments. It is **off by default** so existing responses are unchanged (an absent `usage` continues to encode as zeros) and a completion that already declares a non-zero `usage` is never overwritten. Decoding failures are fail-soft (prompt estimate degrades to 0, never an error). This is independent of `HttpLlmResponseActionHandler.estimateTokenCount(...)`, the existing rough character estimate that backs the token-based chaos quota, which is unchanged.
 
+## Cached/reasoning token usage and reasoning content encoding
+
+The `Usage` optional fields and the `Completion` reasoning fields are **encoded** by every chat codec onto the response wire — additively, and only when set, so a completion that omits them encodes byte-identically to before (the golden fixtures are unchanged).
+
+**Usage token details** — emitted only when the corresponding `Usage` field is non-null and non-zero, under each provider's native key (the same keys the runtime-LLM clients *decode*, so encode/decode are symmetric):
+
+| Provider(s) | `cachedInputTokens` key | `cacheCreationTokens` key | `reasoningTokens` key |
+|-------------|-------------------------|---------------------------|-----------------------|
+| ANTHROPIC / BEDROCK | `usage.cache_read_input_tokens` | `usage.cache_creation_input_tokens` | — (no native field) |
+| OPENAI / AZURE_OPENAI | `usage.prompt_tokens_details.cached_tokens` | — | `usage.completion_tokens_details.reasoning_tokens` |
+| OPENAI_RESPONSES | `usage.input_tokens_details.cached_tokens` | — | `usage.output_tokens_details.reasoning_tokens` |
+| GEMINI | `usageMetadata.cachedContentTokenCount` | — | `usageMetadata.thoughtsTokenCount` |
+| OLLAMA | — (no native field) | — | — (no native field) |
+
+The Anthropic `cache_read`/`cache_creation` keys are mirrored into the streaming `message_start` usage; the OpenAI Responses details into the `response.completed` usage; the Gemini counts into the final streaming chunk's `usageMetadata`. (Bedrock and Azure inherit the Anthropic/OpenAI behaviour by delegation.)
+
+**Reasoning ("thinking") content** — `Completion.reasoningText` (plus optional `reasoningSignature` for Anthropic redaction) encodes a provider-correct reasoning block **before** the visible text block, on both paths, absent unless set:
+
+| Provider | Non-streaming shape | Streaming events |
+|----------|--------------------|------------------|
+| ANTHROPIC / BEDROCK | leading `{"type":"thinking","thinking":…,"signature":…}` content block | `content_block_start`(thinking) → `thinking_delta` → optional `signature_delta` → `content_block_stop`, at index 0 before the text block |
+| OPENAI_RESPONSES | leading `{"type":"reasoning","summary":[{"type":"summary_text","text":…}]}` output item | `response.output_item.added`(reasoning) → `response.reasoning_summary_part.added` → `response.reasoning_summary_text.delta`/`.done` → `…part.done` → `output_item.done` |
+| GEMINI | leading `{"text":…,"thought":true}` part | a thought chunk (`parts:[{text,thought:true}]`) before the text chunks |
+| OLLAMA | `message.thinking` sibling string | a leading chunk with `message.thinking` set |
+
+OpenAI Chat Completions has no reasoning-content representation on the response wire (reasoning is summarised only via the Responses API), so `reasoningText` is not encoded for `OPENAI`/`AZURE_OPENAI`. None of this touches the request matcher — only response encoding.
+
 ## Adversarial-response harness
 
 `AdversarialResponseLibrary` (`org.mockserver.llm.adversarial`) is a curated catalog of hostile/malformed *responses* an agent might receive from a compromised tool or jailbroken model — prompt injection, jailbreak persona-swaps, data-exfiltration requests, malformed/truncated JSON, an empty response, and an over-long repetition. The `mock_adversarial_llm_response` MCP tool mocks a chosen payload as the provider-correct LLM response so you can test that your agent **resists** it. The payloads are short, well-known benign test fixtures (not working exploits) — a defensive testing aid — and generation is deterministic (each id maps to fixed text).
@@ -318,6 +345,8 @@ classDiagram
         +streamingPhysics: StreamingPhysics
         +outputSchema: String
         +enforceOutputSchema: Boolean
+        +reasoningText: String
+        +reasoningSignature: String
     }
     class ToolUse {
         +id: String
