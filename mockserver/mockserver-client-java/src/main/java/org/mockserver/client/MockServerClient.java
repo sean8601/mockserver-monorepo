@@ -98,7 +98,7 @@ public class MockServerClient implements Stoppable {
     private ClientConfiguration configuration;
     private ProxyConfiguration proxyConfiguration;
     private Supplier<String> controlPlaneJWTSupplier;
-    private NettyHttpClient nettyHttpClient;
+    private volatile NettyHttpClient nettyHttpClient;
     private RequestDefinitionSerializer requestDefinitionSerializer = new RequestDefinitionSerializer(MOCK_SERVER_LOGGER);
     private ExpectationIdSerializer expectationIdSerializer = new ExpectationIdSerializer(MOCK_SERVER_LOGGER);
     private LogEventRequestAndResponseSerializer httpRequestResponseSerializer = new LogEventRequestAndResponseSerializer(MOCK_SERVER_LOGGER);
@@ -304,10 +304,7 @@ public class MockServerClient implements Stoppable {
     }
 
     private MockServerEventBus getMockServerEventBus() {
-        if (EVENT_BUS_MAP.get(this.port()) == null) {
-            EVENT_BUS_MAP.put(this.port(), new MockServerEventBus());
-        }
-        return EVENT_BUS_MAP.get(this.port());
+        return EVENT_BUS_MAP.computeIfAbsent(this.port(), k -> new MockServerEventBus());
     }
 
     private void removeMockServerEventBus() {
@@ -360,7 +357,14 @@ public class MockServerClient implements Stoppable {
     }
 
     private NettyHttpClient getNettyHttpClient() {
-        if (nettyHttpClient == null) {
+        NettyHttpClient localClient = nettyHttpClient;
+        if (localClient != null) {
+            return localClient;
+        }
+        synchronized (this) {
+            if (nettyHttpClient != null) {
+                return nettyHttpClient;
+            }
             NettySslContextFactory nettySslContextFactory = new NettySslContextFactory(configuration.toServerConfiguration(), MOCK_SERVER_LOGGER, false);
             Function<SslContextBuilder, SslContext> clientSslContextBuilderFunction = NettySslContextFactory.clientSslContextBuilderFunction;
             if (configuration.controlPlaneTLSMutualAuthenticationRequired()) {
@@ -394,8 +398,8 @@ public class MockServerClient implements Stoppable {
                 false,
                 nettySslContextFactory.withClientSslContextBuilderFunction(clientSslContextBuilderFunction)
             );
+            return nettyHttpClient;
         }
-        return nettyHttpClient;
     }
 
     private HttpResponse sendRequest(HttpRequest request, boolean ignoreErrors, boolean throwClientException) {

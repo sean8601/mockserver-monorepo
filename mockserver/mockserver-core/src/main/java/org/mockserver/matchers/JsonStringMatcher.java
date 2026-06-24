@@ -33,7 +33,7 @@ public class JsonStringMatcher extends BodyMatcher<String> {
     private static final ThreadLocal<Object[]> BODY_PARSE_CACHE = ThreadLocal.withInitial(() -> new Object[2]);
     private final MockServerLogger mockServerLogger;
     private final String matcher;
-    private JsonNode matcherJsonNode;
+    private volatile JsonNode matcherJsonNode;
     private final MatchType matchType;
     private final boolean matchNumbersAsStrings;
     // the options are derived only from matchType + matchNumbersAsStrings, both fixed per
