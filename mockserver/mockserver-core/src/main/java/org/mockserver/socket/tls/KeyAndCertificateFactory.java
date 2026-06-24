@@ -26,18 +26,31 @@ public interface KeyAndCertificateFactory {
      */
     long CERTIFICATE_VALIDITY_YEARS = 10;
     /**
-     * Current time minus 5 days, just in case the software clock goes back due to time synchronization
+     * The not-before validity bound for a freshly issued certificate: the current time minus 5 days,
+     * just in case the software clock goes back due to time synchronization.
+     * <p>
+     * Computed per issuance (rather than once at class load) so that certificates generated on the fly
+     * — e.g. leaf certificates minted long after the JVM started — are anchored to issuance time rather
+     * than to JVM start time.
      */
-    Date NOT_BEFORE = new Date(System.currentTimeMillis() - 86400000L * 5);
+    static Date notBefore() {
+        return new Date(System.currentTimeMillis() - 86400000L * 5);
+    }
+
     /**
+     * The not-after validity bound for a freshly issued certificate, {@link #CERTIFICATE_VALIDITY_YEARS}
+     * years in the future from issuance time.
+     * <p>
      * The maximum possible value in the X.509 specification is 9999-12-31 23:59:59
      * (new Date(253402300799000L)), but Apple iOS 8 fails with a certificate
      * expiration date greater than Mon, 24 Jan 6084 02:07:59 GMT (issue #6).
      * <p>
-     * {@link #CERTIFICATE_VALIDITY_YEARS} years in the future from starting the
-     * proxy is long enough for a mock-server trust anchor.
+     * Computed per issuance (rather than once at class load) so that on-the-fly generated certificates
+     * are anchored to issuance time rather than to JVM start time.
      */
-    Date NOT_AFTER = new Date(System.currentTimeMillis() + 86400000L * 365 * CERTIFICATE_VALIDITY_YEARS);
+    static Date notAfter() {
+        return new Date(System.currentTimeMillis() + 86400000L * 365 * CERTIFICATE_VALIDITY_YEARS);
+    }
     /**
      * CN for CA distinguishing name
      */
