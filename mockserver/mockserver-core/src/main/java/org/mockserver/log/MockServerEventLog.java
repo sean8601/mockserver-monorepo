@@ -326,7 +326,12 @@ public class MockServerEventLog extends MockServerEventLogNotifier {
                 // MatchDifference allocation) exactly as before.
                 final boolean clearEverything = requestDefinition == null;
                 HttpRequestMatcher requestMatcher = clearEverything ? null : matcherBuilder.transformsToMatcher(requestDefinition);
-                for (LogEntry logEntry : new LinkedList<>(eventLog)) {
+                // Only the single Disruptor handler thread mutates eventLog (add via processLogEntry,
+                // removeItem/eviction here), and this consumer runs on that same thread, so there is no
+                // concurrent writer to guard against — iterate the deque directly rather than copying up
+                // to maxLogEntries entries into a LinkedList first. eventLog's ConcurrentLinkedDeque
+                // iterator is weakly consistent and tolerates the removeItem (super.remove) calls below.
+                for (LogEntry logEntry : eventLog) {
                     if (markAsDeletedOnly && logEntry.isDeleted()) {
                         // already tombstoned by an earlier clear — skip the expensive matcher so
                         // repeated clear cycles do not re-match the whole accumulated log (#2359)

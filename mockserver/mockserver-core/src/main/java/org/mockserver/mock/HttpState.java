@@ -5787,6 +5787,9 @@ public class HttpState {
         if (expectationFileWatcher != null) {
             expectationFileWatcher.stop();
         }
+        if (memoryMonitoring != null) {
+            memoryMonitoring.stop();
+        }
         // Stop any active AsyncAPI broker connections (Kafka consumers, MQTT clients)
         // so they are not leaked on shutdown; no-op when the async module is absent
         // or nothing is loaded.
