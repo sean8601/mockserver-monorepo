@@ -899,7 +899,10 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
   [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic)). Manual mixed-workload
   weighting is now supported via [`stepSelection: WEIGHTED` + per-step `weight`](#weighted-step-selection);
   what remains deferred is auto-deriving those weights from observed hit frequencies.
-- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field, the `stepSelection`/`weight` fields, and the [`generateFromRecording`](#seed-a-scenario-from-recorded-traffic) seeder.
+- Client libraries and codegen for the new fields/endpoints (cross-step `captures`, `thresholds`,
+  `shape`, `pacing`, `feeder`, `stepSelection`/`weight`, and the `generateFromOpenAPI`/`generateFromRecording`/`report`
+  endpoints) — later waves; the core, REST API, **and dashboard UI** land first. (The dashboard UI already
+  exposes all of these.)
 
 > Seeding scenario *definitions* from recorded traffic **is now supported** via
 > [`PUT /mockserver/loadScenario/generateFromRecording`](#seed-a-scenario-from-recorded-traffic) (preloading
