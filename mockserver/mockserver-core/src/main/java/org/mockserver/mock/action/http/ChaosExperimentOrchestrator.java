@@ -234,7 +234,8 @@ public class ChaosExperimentOrchestrator {
     /**
      * Returns the current experiment status. If no experiment is currently running
      * but one recently terminated, returns a status with the terminal status
-     * ({@code halted_by_auto_halt}, {@code completed}, or {@code stopped}).
+     * ({@code halted_by_auto_halt}, {@code halted_by_slo_breach}, {@code completed},
+     * or {@code stopped}).
      * Returns {@code null} only when no experiment has ever run (or after reset).
      */
     public ExperimentStatus getStatus() {
