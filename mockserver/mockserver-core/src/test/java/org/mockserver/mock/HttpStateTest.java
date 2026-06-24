@@ -3827,6 +3827,29 @@ public class HttpStateTest {
     }
 
     @Test
+    public void shouldNotEarlyMatchControlPlaneRequestsAgainstCatchAllRespondBeforeBody() {
+        // given a catch-all respondBeforeBody expectation (e.g. seeded via an initialization file)
+        httpState.add(new Expectation(
+            request().withRespondBeforeBody(true)
+        ).thenRespond(response().withStatusCode(404)));
+
+        // when control-plane requests are checked for an early match
+        // then they are never hijacked by the data-plane early expectation — they fall through
+        // to the standard pipeline so HttpState.handle() dispatches the control plane
+        assertThat(httpState.firstMatchingEarlyExpectation(
+            request().withMethod("PUT").withPath("/mockserver/reset")
+        ), is(nullValue()));
+        assertThat(httpState.firstMatchingEarlyExpectation(
+            request().withMethod("PUT").withPath("/mockserver/status")
+        ), is(nullValue()));
+
+        // and a genuine data-plane request still early-matches the catch-all
+        assertThat(httpState.firstMatchingEarlyExpectation(
+            request().withMethod("GET").withPath("/some/data/plane/path")
+        ), is(notNullValue()));
+    }
+
+    @Test
     public void shouldReturnNullEarlyMatchingExpectationWhenRespondBeforeBodyIsNotSet() {
         // given
         httpState.add(new Expectation(

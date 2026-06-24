@@ -858,6 +858,17 @@ public class RequestMatchers extends MockServerMatcherNotifier {
     }
 
     public Expectation firstMatchingEarlyExpectation(HttpRequest headersOnlyRequest) {
+        // Control-plane requests (path under HttpState.PATH_PREFIX, e.g. /mockserver/reset,
+        // /mockserver/status) must never be answered by a data-plane early (respondBeforeBody)
+        // expectation. EarlyMatchingHandler runs before the control-plane dispatch in
+        // HttpState.handle(), so without this guard a catch-all respondBeforeBody expectation
+        // (e.g. seeded via an initialization file) would hijack the server's own management API.
+        if (headersOnlyRequest != null
+            && headersOnlyRequest.getPath() != null
+            && headersOnlyRequest.getPath().getValue() != null
+            && headersOnlyRequest.getPath().getValue().startsWith(HttpState.PATH_PREFIX)) {
+            return null;
+        }
         String requestNamespace = extractRequestNamespace(headersOnlyRequest);
         for (HttpRequestMatcher httpRequestMatcher : httpRequestMatchers.toSortedList()) {
             Expectation expectation = httpRequestMatcher.getExpectation();

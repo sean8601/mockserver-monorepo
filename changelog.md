@@ -172,6 +172,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Hot-path allocations removed** (case-insensitive header/parameter lookups, matcher-listener notification,
     load-metric label arrays), and generated TLS certificates are now anchored to issuance time rather than the
     JVM start time.
+  - **Control-plane endpoints can no longer be hijacked by an early (`respondBeforeBody`) expectation.** A
+    catch-all `respondBeforeBody` expectation (for example one seeded from an initialization file) was matched
+    before the control-plane dispatch, so it could answer the server's own management requests (e.g.
+    `PUT /mockserver/reset`). Early header matching now excludes the reserved `/mockserver` control-plane path
+    prefix, so management endpoints always reach the control plane.
 
 ### Security
 
