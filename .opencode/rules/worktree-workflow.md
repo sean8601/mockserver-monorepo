@@ -182,7 +182,10 @@ has already landed the combination on master.
 # Acquire a HELD lock (released only in Step 10, after a PASS push or on abort).
 # mkdir is an atomic POSIX mutex; the lock spans the agent-driven gate steps,
 # so it is NOT a single flock bash -c (which would release before the review runs).
-LOCK_DIR=".git/agent-rebase.lockdir"; START=$(date +%s)
+# The lock lives in the SHARED git common dir (not ".git/…": inside a linked
+# worktree ".git" is a *file*, and a per-worktree gitdir would not serialise
+# across sessions). git rev-parse --git-common-dir resolves it from any worktree.
+LOCK_DIR="$(git rev-parse --git-common-dir)/agent-rebase.lockdir"; START=$(date +%s)
 while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
     [ "$(($(date +%s) - START))" -gt 300 ] && { echo "Merge lock held >5m by another session — retry shortly or check ${LOCK_DIR}/holder"; exit 1; }
     sleep 2

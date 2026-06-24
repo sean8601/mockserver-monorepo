@@ -26,11 +26,14 @@ if [ -z "${REPO_ROOT}" ]; then
 fi
 
 WORKTREE_BASE="${REPO_ROOT}/.worktrees"
-# Canonical merge lock is a held directory mutex (see worktree-workflow.md Step 7):
-# `.git/agent-rebase.lockdir` exists == lock held; its `holder` file records
-# "<worktree-path> <pid> <epoch>". (A mkdir mutex has no fd holder, so lsof cannot
-# detect it — read the directory + marker instead.)
-LOCK_DIR="${REPO_ROOT}/.git/agent-rebase.lockdir"
+# Canonical merge lock is a held directory mutex (see worktree-workflow.md Step 7),
+# living in the SHARED git common dir so it serialises across all worktrees (inside
+# a linked worktree ".git" is a file, not a dir). Existence == lock held; its
+# `holder` file records "<worktree-path> <pid> <epoch>". (A mkdir mutex has no fd
+# holder, so lsof cannot detect it — read the directory + marker instead.)
+GIT_COMMON_DIR="$(cd "${REPO_ROOT}" && git rev-parse --git-common-dir 2>/dev/null || echo "${REPO_ROOT}/.git")"
+case "${GIT_COMMON_DIR}" in /*) ;; *) GIT_COMMON_DIR="${REPO_ROOT}/${GIT_COMMON_DIR}" ;; esac
+LOCK_DIR="${GIT_COMMON_DIR}/agent-rebase.lockdir"
 
 if [ ! -d "${WORKTREE_BASE}" ]; then
     echo "No agent worktrees active (${WORKTREE_BASE} does not exist)."

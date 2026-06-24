@@ -25,7 +25,7 @@ Run the pre-rebase gates (1–4) in order; then, **holding the merge lock**, reb
    - Gate 1/2/3 results in one line each
    Then **proceed automatically** to the locked rebase. Do NOT wait for approval. Fail-closed: if any of gates 1–3 did not return a clean PASS, stop and leave the worktree intact. A user can interject at any time to halt.
 
-6. **Acquire the merge lock and rebase — do NOT push yet.** Acquire a **held** lock (`mkdir .git/agent-rebase.lockdir`, atomic POSIX mutex; or `flock` with a descriptor kept open across steps 6–9 — *not* a self-contained `flock bash -c`, which would release before the review runs). Record the holder so `/agent-status` can attribute it: `printf '%s %s %s\n' "$(git rev-parse --show-toplevel)" "$$" "$(date +%s)" > .git/agent-rebase.lockdir/holder`. Check the operator halt first (`.opencode/scripts/check-halt.sh`). Holding the lock, produce the integrated result locally:
+6. **Acquire the merge lock and rebase — do NOT push yet.** The lock lives in the **shared git common dir** (`LOCK_DIR="$(git rev-parse --git-common-dir)/agent-rebase.lockdir"`) — not `.git/…`, because inside a linked worktree `.git` is a *file* and a per-worktree path would not serialise across sessions. Acquire a **held** lock (`mkdir "$LOCK_DIR"`, atomic POSIX mutex; or `flock` with a descriptor kept open across steps 6–9 — *not* a self-contained `flock bash -c`, which would release before the review runs). Record the holder so `/agent-status` can attribute it: `printf '%s %s %s\n' "$(git rev-parse --show-toplevel)" "$$" "$(date +%s)" > "$LOCK_DIR/holder"`. Check the operator halt first (`.opencode/scripts/check-halt.sh`). Holding the lock, produce the integrated result locally:
    ```bash
    git fetch origin master --quiet
    git rebase origin/master    # no push yet — steps 7–8 must PASS first
@@ -39,7 +39,7 @@ Run the pre-rebase gates (1–4) in order; then, **holding the merge lock**, reb
 9. **Push the gated result, then release the lock.** Only after steps 7 and 8 PASS, still holding the lock:
     ```bash
     git push origin HEAD:master
-    rm -rf .git/agent-rebase.lockdir    # release (also on any abort above; rm -rf since the holder file makes it non-empty)
+    rm -rf "$LOCK_DIR"    # release (also on any abort above; rm -rf since the holder file makes it non-empty)
     ```
     If the push is rejected because `master` advanced during the gate, release the lock and restart from step 6 (re-fetch, re-rebase, re-gate) — never force-push.
 
