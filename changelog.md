@@ -79,6 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard navigation reorganised into grouped menus.** The dashboard's views are now organised into six
   groups (Mock / Observe / Verify / Resilience / AI / Inspect) with submenus, replacing the flat overflow tab
   bar, so features are easier to discover.
+- **Expectation matching scales to large expectation sets.** A candidate index buckets literal
+  `(method, exact-path)` expectations so a request evaluates only plausible candidates instead of scanning
+  every expectation; non-literal matchers (regex/notted/optional/schema/path-param) are always checked, so
+  matching is byte-for-byte unchanged. The index engages automatically only above a size threshold (default
+  64, overridable via `-Dmockserver.candidateIndexThreshold`); small expectation sets run the unchanged
+  linear scan, so there is no regression at small scale and a large speed-up at thousands of expectations.
 
 ### Fixed
 
