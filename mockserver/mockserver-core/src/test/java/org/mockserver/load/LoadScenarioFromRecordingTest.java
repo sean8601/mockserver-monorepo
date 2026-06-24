@@ -12,6 +12,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.fail;
 import static org.mockserver.model.HttpRequest.request;
 
@@ -113,6 +114,44 @@ public class LoadScenarioFromRecordingTest {
         assertThat(scenario.getSteps().get(0).getName(), is("GET /orders/{id}"));
         assertThat(scenario.getSteps().get(1).getName(), is("GET /users/{id}"));
         assertThat(scenario.getSteps().get(2).getName(), is("GET /products/{id}"));
+    }
+
+    @Test
+    public void templatizedWeightsEachStepByHitCountAndSelectsWeighted() {
+        List<RequestDefinition> recorded = recorded(
+            // /products hit once
+            request().withMethod("GET").withPath("/products/9"),
+            // /orders hit three times (most-hit)
+            request().withMethod("GET").withPath("/orders/1"),
+            request().withMethod("GET").withPath("/orders/2"),
+            request().withMethod("GET").withPath("/orders/3"),
+            // /users hit twice
+            request().withMethod("GET").withPath("/users/7"),
+            request().withMethod("GET").withPath("/users/8")
+        );
+        LoadScenario scenario = LoadScenarioFromRecording.generate("rec", recorded, LoadScenarioFromRecording.Mode.TEMPLATIZED, null, null, null);
+        // WEIGHTED selection reproduces the recorded mix.
+        assertThat(scenario.getStepSelection(), is(LoadScenario.StepSelection.WEIGHTED));
+        // Steps ordered by descending frequency with weight == hit count.
+        assertThat(scenario.getSteps().size(), is(3));
+        assertThat(scenario.getSteps().get(0).getName(), is("GET /orders/{id}"));
+        assertThat(scenario.getSteps().get(0).getWeight(), is(3.0));
+        assertThat(scenario.getSteps().get(1).getName(), is("GET /users/{id}"));
+        assertThat(scenario.getSteps().get(1).getWeight(), is(2.0));
+        assertThat(scenario.getSteps().get(2).getName(), is("GET /products/{id}"));
+        assertThat(scenario.getSteps().get(2).getWeight(), is(1.0));
+    }
+
+    @Test
+    public void verbatimAttachesNoWeightAndUsesDefaultStepSelection() {
+        LoadScenario scenario = LoadScenarioFromRecording.generate("rec",
+            recorded(request().withMethod("GET").withPath("/a"), request().withMethod("GET").withPath("/b")),
+            LoadScenarioFromRecording.Mode.VERBATIM, null, null, null);
+        // VERBATIM is unchanged: no weights, default (SEQUENTIAL) step selection.
+        assertThat(scenario.getStepSelection(), is(nullValue()));
+        for (LoadStep step : scenario.getSteps()) {
+            assertThat(step.getWeight(), is(nullValue()));
+        }
     }
 
     @Test

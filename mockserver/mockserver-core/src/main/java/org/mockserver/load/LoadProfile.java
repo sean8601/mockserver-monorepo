@@ -75,6 +75,11 @@ public class LoadProfile extends ObjectWithJsonToString {
         }
         if (shape != null) {
             if (expandedShapeStages == null) {
+                // Unsynchronised check-then-set is intentionally benign here: expandedShapeStages is
+                // volatile and LoadShapes.expand is a pure, deterministic, idempotent function of the
+                // (immutable-for-the-lifetime-of-this-shape) shape, so a rare concurrent double-compute
+                // only ever yields an equivalent value, and the volatile write safely publishes it.
+                // This is off the hot path, so a lock would add cost without buying correctness.
                 expandedShapeStages = LoadShapes.expand(shape);
             }
             return expandedShapeStages;

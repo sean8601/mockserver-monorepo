@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`generateFromRecording` in `TEMPLATIZED` mode now reproduces the recorded traffic mix.** Each generated
+  step's `weight` is set to the route's observed hit count and the scenario uses `stepSelection: WEIGHTED`,
+  so replaying picks routes in proportion to how often they appeared in the recording (instead of plain
+  ordered steps). `VERBATIM` mode is unchanged.
+
 ### Added
 
 - **Mustache response templates can now read scenario state by name.** Velocity

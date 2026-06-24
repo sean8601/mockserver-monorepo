@@ -83,17 +83,6 @@ public class LoadThreshold extends ObjectWithJsonToString {
         if (comparator == null) {
             return true;
         }
-        switch (comparator) {
-            case LESS_THAN:
-                return observed < threshold;
-            case LESS_THAN_OR_EQUAL:
-                return observed <= threshold;
-            case GREATER_THAN:
-                return observed > threshold;
-            case GREATER_THAN_OR_EQUAL:
-                return observed >= threshold;
-            default:
-                return false;
-        }
+        return comparator.test(observed, threshold);
     }
 }

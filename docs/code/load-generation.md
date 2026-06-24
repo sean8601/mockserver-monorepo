@@ -371,7 +371,7 @@ All endpoints are control-plane endpoints (subject to `controlPlaneRequestAuthen
 |------|------|-----------|
 | `PUT` | `/mockserver/loadScenario` | **Load/register** a scenario by `name` (does NOT run). Allowed even when `loadGenerationEnabled=false`. `400 {error}` when invalid or a cap is exceeded; `200 {status:loaded, name, state:LOADED}` otherwise. Loading the same name replaces. |
 | `PUT` | `/mockserver/loadScenario/generateFromOpenAPI` | **Seed** a scenario from an OpenAPI spec, then load/register it (does NOT run, allowed when disabled). Body `{name, specUrlOrPayload, target?, profile?}`. One step per operation; returns the generated scenario for editing. See [Seed a scenario from an OpenAPI spec](#seed-a-scenario-from-an-openapi-spec). |
-| `PUT` | `/mockserver/loadScenario/generateFromRecording` | **Seed** a scenario from recorded proxy traffic, then load/register it (does NOT run, allowed when disabled). Body `{name, mode?, requestFilter?, maxSteps?, target?, profile?}`. `VERBATIM` (default) = one step per recorded request; `TEMPLATIZED` = one step per unique route. Returns the generated scenario for editing. See [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic). |
+| `PUT` | `/mockserver/loadScenario/generateFromRecording` | **Seed** a scenario from recorded proxy traffic, then load/register it (does NOT run, allowed when disabled). Body `{name, mode?, requestFilter?, maxSteps?, target?, profile?}`. `VERBATIM` (default) = one step per recorded request; `TEMPLATIZED` = one weighted step per unique route (weight == hit count, `stepSelection: WEIGHTED`, reproducing the recorded traffic mix). Returns the generated scenario for editing. See [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic). |
 | `GET` | `/mockserver/loadScenario` | List ALL registered scenarios: `{ scenarios:[ { name, state, startDelayMillis, definition, ...live status fields when active/run } ] }`. State ∈ `LOADED/PENDING/RUNNING/COMPLETED/STOPPED`. |
 | `GET` | `/mockserver/loadScenario/{name}` | One scenario (definition + state + status); `404` if not registered. |
 | `GET` | `/mockserver/loadScenario/{name}/report` | **End-of-run summary report** for the run (live snapshot if running, retained terminal snapshot if finished). JSON by default; `?format=junit` returns a JUnit-XML `<testsuite>` with `application/xml`. `404` if the scenario never ran. See [Summary report](#summary-report). |
@@ -527,7 +527,7 @@ optionally narrowed by a `requestFilter`, and the **same route templatizer** the
 | Mode | Steps produced |
 |------|----------------|
 | `VERBATIM` (default) | One `LoadStep` per recorded request, **in recorded order**, preserving the concrete path, body and headers. An optional `maxSteps` keeps only the first N recorded requests (the orchestrator's `loadGenerationMaxSteps` also caps). |
-| `TEMPLATIZED` | Recorded requests are **deduplicated by `(method, templatised-path)`** — id-shaped segments such as `/orders/123` collapse to `/orders/{id}` — keeping one representative example per unique route, **ordered by descending hit frequency** (most-hit routes first). One step per unique route. No per-step weight is added. |
+| `TEMPLATIZED` | Recorded requests are **deduplicated by `(method, templatised-path)`** — id-shaped segments such as `/orders/123` collapse to `/orders/{id}` — keeping one representative example per unique route, **ordered by descending hit frequency** (most-hit routes first). One step per unique route, with each step's `weight` set to that route's **observed hit count** and the scenario marked [`stepSelection: WEIGHTED`](#weighted-step-selection), so each iteration picks a route in proportion to its recorded frequency — reproducing the recorded traffic **mix**. |
 
 ### Request body
 
@@ -575,10 +575,10 @@ curl -X PUT http://localhost:1080/mockserver/loadScenario/start -d '{ "name": "r
 A missing `name`, no recorded requests to convert (none recorded, or none matching `requestFilter`), an
 invalid `mode`, or a generated scenario that fails validation all return `400 {error}`.
 
-> The `TEMPLATIZED` seeder emits ordered, unweighted steps. To fire hotter routes more often, set the
-> generated scenario's [`stepSelection: WEIGHTED`](#weighted-step-selection) and assign per-step
-> `weight`s by hand; **auto**-deriving weights from observed hit frequencies remains a deferred
-> enhancement.
+> The `TEMPLATIZED` seeder now emits a **weighted mix**: each route's `weight` is its observed hit
+> count and the scenario is marked [`stepSelection: WEIGHTED`](#weighted-step-selection), so each
+> iteration fires a route in proportion to its recorded frequency. Edit the weights (or switch back to
+> `SEQUENTIAL`) on the returned scenario if you want different behaviour.
 
 ## Timing and concurrency
 
@@ -894,11 +894,6 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
 ## Deferred
 
 - Distributed / multi-node load.
-- **Automatic** frequency-proportional weighting of routes by the recording seeder (the `TEMPLATIZED`
-  recording seeder still emits ordered, unweighted steps — see
-  [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic)). Manual mixed-workload
-  weighting is now supported via [`stepSelection: WEIGHTED` + per-step `weight`](#weighted-step-selection);
-  what remains deferred is auto-deriving those weights from observed hit frequencies.
 - Client libraries and codegen for the new fields/endpoints (cross-step `captures`, `thresholds`,
   `shape`, `pacing`, `feeder`, `stepSelection`/`weight`, and the `generateFromOpenAPI`/`generateFromRecording`/`report`
   endpoints) — later waves; the core, REST API, **and dashboard UI** land first. (The dashboard UI already

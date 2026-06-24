@@ -1445,8 +1445,21 @@ public class LoadScenarioOrchestrator {
                 // No completed request yet: do not evaluate so a run is never failed on zero samples.
                 return verdict;
             }
-            Histogram latencySnapshot = latencyHistogram.copy();
-            boolean haveLatency = latencySnapshot.getTotalCount() > 0;
+            // The HDR histogram copy is only needed for LATENCY_* thresholds; for runs whose
+            // thresholds are only ERROR_RATE/THROUGHPUT_RPS, skip the per-tick copy entirely.
+            boolean needLatencySnapshot = false;
+            for (LoadThreshold threshold : thresholds) {
+                LoadThreshold.Metric metric = threshold.getMetric();
+                if (metric == LoadThreshold.Metric.LATENCY_P50
+                    || metric == LoadThreshold.Metric.LATENCY_P95
+                    || metric == LoadThreshold.Metric.LATENCY_P99
+                    || metric == LoadThreshold.Metric.LATENCY_P999) {
+                    needLatencySnapshot = true;
+                    break;
+                }
+            }
+            Histogram latencySnapshot = needLatencySnapshot ? latencyHistogram.copy() : null;
+            boolean haveLatency = latencySnapshot != null && latencySnapshot.getTotalCount() > 0;
             // Error rate is a fraction in [0,1]. requestsSent is incremented at dispatch and failed at
             // completion, so a lock-free read can momentarily see more completed failures than the
             // earlier-read dispatch count; clamp so the observed rate never exceeds 1.0.

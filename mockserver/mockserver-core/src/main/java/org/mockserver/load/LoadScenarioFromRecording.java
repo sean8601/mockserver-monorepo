@@ -28,8 +28,10 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
  *       templatizer (e.g. {@code /orders/123} and {@code /orders/456} collapse to one
  *       {@code /orders/{id}} route), keeping one representative example per unique route, ordered by
  *       descending hit frequency (most-hit routes first). One {@link LoadStep} is emitted per unique
- *       route. No per-step weight is attached — frequency-proportional weighting is a separate
- *       weighted-flows enhancement.</li>
+ *       route, each carrying that route's observed hit COUNT as its {@link LoadStep#getWeight() weight},
+ *       and the generated scenario is marked {@link LoadScenario.StepSelection#WEIGHTED WEIGHTED} so each
+ *       iteration picks a route in proportion to its recorded frequency — reproducing the recorded
+ *       traffic MIX.</li>
  * </ul>
  *
  * <p><b>Target precedence</b> for where each generated request is sent (carried as the request's
@@ -52,7 +54,11 @@ public class LoadScenarioFromRecording {
     public enum Mode {
         /** One step per recorded request, concrete and in recorded order (default). */
         VERBATIM,
-        /** One step per unique (method, templatised-path) route, ordered by descending frequency. */
+        /**
+         * One weighted step per unique (method, templatised-path) route, ordered by descending
+         * frequency, with each step's weight set to its hit count and the scenario marked
+         * {@link LoadScenario.StepSelection#WEIGHTED WEIGHTED} to reproduce the recorded traffic mix.
+         */
         TEMPLATIZED
     }
 
@@ -143,6 +149,12 @@ public class LoadScenarioFromRecording {
      * order the emitted steps by descending hit frequency (ties keep first-seen order via the
      * insertion-ordered map). The step name is set to the route key so the orchestrator surfaces the
      * templatised route directly as the {@code route} metric label.
+     *
+     * <p>Each emitted step's {@link LoadStep#getWeight() weight} is set to its route's observed hit
+     * count and the scenario's {@link LoadScenario#getStepSelection() stepSelection} is set to
+     * {@link LoadScenario.StepSelection#WEIGHTED WEIGHTED}, so each iteration runs a single route chosen
+     * in proportion to its recorded frequency — reproducing the recorded traffic mix. Counts are always
+     * {@code >= 1}, so the resulting scenario satisfies the WEIGHTED positive-weight validation.
      */
     private static void buildTemplatizedSteps(LoadScenario scenario, List<HttpRequest> httpRequests, Target target) {
         Map<String, RouteAggregate> byRoute = new LinkedHashMap<>();
@@ -163,8 +175,12 @@ public class LoadScenarioFromRecording {
             LoadStep step = LoadStep.loadStep(httpRequest);
             String method = httpRequest.getMethod() != null ? httpRequest.getMethod().getValue() : "";
             step.withName((isNotBlank(method) ? method + " " : "") + aggregate.routePath);
+            // Weight the step by its recorded hit count so WEIGHTED selection reproduces the traffic mix.
+            step.withWeight((double) aggregate.count);
             scenario.withSteps(step);
         }
+        // Pick one route per iteration in proportion to recorded frequency (the weights set above).
+        scenario.withStepSelection(LoadScenario.StepSelection.WEIGHTED);
     }
 
     private static List<HttpRequest> toHttpRequests(List<? extends RequestDefinition> recordedRequests) {

@@ -170,7 +170,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
         <tr>
             <td><code class="inline code">PUT</code></td>
             <td><code class="inline code">/mockserver/loadScenario/generateFromRecording</code></td>
-            <td><strong>Generate a scenario from recorded proxy traffic</strong> and register it in the <code class="inline code">LOADED</code> state. Does not run. Body: <code class="inline code">{ name, mode?, requestFilter?, maxSteps?, target?, profile? }</code>. <code class="inline code">mode</code> ∈ <code class="inline code">VERBATIM</code> (default) / <code class="inline code">TEMPLATIZED</code>. Returns the generated scenario for editing. See <a href="#generate_from_recording">Generate from Recording</a>.</td>
+            <td><strong>Generate a scenario from recorded proxy traffic</strong> and register it in the <code class="inline code">LOADED</code> state. Does not run. Body: <code class="inline code">{ name, mode?, requestFilter?, maxSteps?, target?, profile? }</code>. <code class="inline code">mode</code> ∈ <code class="inline code">VERBATIM</code> (default) / <code class="inline code">TEMPLATIZED</code> (a weighted route mix — weight == hit count, <code class="inline code">stepSelection: WEIGHTED</code>). Returns the generated scenario for editing. See <a href="#generate_from_recording">Generate from Recording</a>.</td>
         </tr>
         <tr>
             <td><code class="inline code">PUT</code></td>
@@ -1070,7 +1070,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/start \
         </tr>
         <tr>
             <td><code class="inline code">TEMPLATIZED</code></td>
-            <td>Requests are deduplicated by (method, templatized-path) — <code class="inline code">/orders/123</code> collapses to <code class="inline code">/orders/{id}</code> — keeping one representative per unique route, ordered by hit frequency (most-hit first). One step per unique route.</td>
+            <td>Requests are deduplicated by (method, templatized-path) — <code class="inline code">/orders/123</code> collapses to <code class="inline code">/orders/{id}</code> — keeping one representative per unique route, ordered by hit frequency (most-hit first). One step per unique route, each with its <code class="inline code">weight</code> set to that route's observed hit count and the scenario marked <code class="inline code">stepSelection: WEIGHTED</code>, so each iteration picks a route in proportion to its recorded frequency — reproducing the recorded traffic mix.</td>
             <td>Traffic-shape load test — model the mix of endpoints without replaying every individual request verbatim.</td>
         </tr>
     </tbody>
@@ -1139,7 +1139,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/generateFromRecordi
 curl -s -X PUT http://localhost:1080/mockserver/loadScenario/start \
   -d '{ "name": "replay-prod-traffic" }'</code></pre>
 
-<p>A missing <code class="inline code">name</code>, no recorded requests to convert (none recorded or none matching the filter), an invalid <code class="inline code">mode</code>, or a generated scenario that fails validation returns <code class="inline code">400</code>. The <code class="inline code">TEMPLATIZED</code> seeder produces ordered, unweighted steps — to fire hotter routes more often, set <a href="#weighted_step_selection"><code class="inline code">stepSelection: WEIGHTED</code></a> and assign per-step <code class="inline code">weight</code>s by hand.</p>
+<p>A missing <code class="inline code">name</code>, no recorded requests to convert (none recorded or none matching the filter), an invalid <code class="inline code">mode</code>, or a generated scenario that fails validation returns <code class="inline code">400</code>. The <code class="inline code">TEMPLATIZED</code> seeder produces a <strong>weighted mix</strong>: each route's <code class="inline code">weight</code> is its observed hit count and the scenario is marked <a href="#weighted_step_selection"><code class="inline code">stepSelection: WEIGHTED</code></a>, so each iteration fires a route in proportion to its recorded frequency. Edit the weights (or switch to <code class="inline code">SEQUENTIAL</code>) on the returned scenario for different behaviour.</p>
 
 <a id="safety_caps" class="anchor" href="#safety_caps">&nbsp;</a>
 

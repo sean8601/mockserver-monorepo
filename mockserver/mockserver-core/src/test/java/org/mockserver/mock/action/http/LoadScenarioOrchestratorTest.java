@@ -769,11 +769,22 @@ public class LoadScenarioOrchestratorTest {
 
             assertThat(orchestrator.start(scenario, sender), is(nullValue()));
             // Wait until enough requests have completed (succeeded count rises only on completion).
+            // Retain the last non-null snapshot: the run can COMPLETE (maxRequests reached) and be moved
+            // to terminal state between a poll and the read, at which point getStatus() may momentarily
+            // return null — the retained terminal snapshot still carries the final succeeded count.
             long deadline = System.currentTimeMillis() + 15_000L;
-            while (orchestrator.getStatus().succeeded < 8 && System.currentTimeMillis() < deadline) {
+            LoadScenarioOrchestrator.LoadScenarioStatus status = null;
+            while (System.currentTimeMillis() < deadline) {
+                LoadScenarioOrchestrator.LoadScenarioStatus s = orchestrator.getStatus();
+                if (s != null) {
+                    status = s;
+                    if (s.succeeded >= 8) {
+                        break;
+                    }
+                }
                 Thread.sleep(10);
             }
-            LoadScenarioOrchestrator.LoadScenarioStatus status = orchestrator.getStatus();
+            assertThat("a status snapshot was captured", status, is(notNullValue()));
             assertThat("requests completed", status.succeeded, greaterThanOrEqualTo(8L));
             // The corrected p99 reflects the genuine in-flight time, well above the ~0 a service-only
             // (or metrics-off) measurement of an instant future would yield. Tolerant lower bound to
@@ -1875,6 +1886,23 @@ public class LoadScenarioOrchestratorTest {
                 new LoadStep().withRequest(request().withPath("/a")).withWeight(5.0),
                 new LoadStep().withRequest(request().withPath("/b")).withWeight(0.0));
 
+        assertThat(orchestrator.validate(scenario), is(nullValue()));
+    }
+
+    @Test
+    public void validateAcceptsTemplatizedRecordingGeneratedWeightedScenario() {
+        // A TEMPLATIZED record-to-load generation now emits WEIGHTED selection with per-step weights ==
+        // hit counts (always >= 1), so the generated scenario must pass validation.
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        java.util.List<org.mockserver.model.RequestDefinition> recorded = new java.util.ArrayList<>(java.util.Arrays.asList(
+            request().withMethod("GET").withPath("/orders/1"),
+            request().withMethod("GET").withPath("/orders/2"),
+            request().withMethod("GET").withPath("/users/9")));
+        LoadScenario scenario = org.mockserver.load.LoadScenarioFromRecording.generate(
+            "rec", recorded, org.mockserver.load.LoadScenarioFromRecording.Mode.TEMPLATIZED, null, null,
+            LoadProfile.constant(1, 1_000L));
+
+        assertThat(scenario.getStepSelection(), is(LoadScenario.StepSelection.WEIGHTED));
         assertThat(orchestrator.validate(scenario), is(nullValue()));
     }
 }
