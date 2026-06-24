@@ -77,6 +77,11 @@ against rules"}
     MATCH -->|mockserver-node/ or mockserver-client-node/| NODE["trigger: mockserver-node"]
     MATCH -->|mockserver-client-python/| PYTHON["trigger: mockserver-python"]
     MATCH -->|mockserver-client-ruby/| RUBY["trigger: mockserver-ruby"]
+    MATCH -->|mockserver-client-go/ or testcontainers/go/| GO["trigger: mockserver-go"]
+    MATCH -->|mockserver-client-dotnet/ or testcontainers/dotnet/| DOTNET["trigger: mockserver-dotnet"]
+    MATCH -->|mockserver-client-rust/ or testcontainers/rust/| RUST["trigger: mockserver-rust"]
+    MATCH -->|mockserver-client-php/| PHP["trigger: mockserver-php"]
+    MATCH -->|mockserver-vscode/ or mockserver-jetbrains/| EDITORS["trigger: mockserver-editors"]
     MATCH -->|mockserver/mockserver-maven-plugin/| MAVEN_PLUGIN["trigger: mockserver-maven-plugin"]
     MATCH -->|mockserver-performance-test/| PERF["trigger: mockserver-performance-test"]
     MATCH -->|container_integration_tests/| CONTAINER["trigger: mockserver-container-tests"]
@@ -106,15 +111,20 @@ All pipelines are managed via Terraform in `terraform/buildkite-pipelines/pipeli
 | `mockserver-node` | `pipeline-node.yml` | Orchestrator | Node.js lint and typecheck |
 | `mockserver-python` | `pipeline-python.yml` | Orchestrator | Python unit + integration tests (builds MockServer image from HEAD) |
 | `mockserver-ruby` | `pipeline-ruby.yml` | Orchestrator | Ruby unit + integration tests (builds MockServer image from HEAD) |
+| `mockserver-go` | `pipeline-go.yml` | Orchestrator | Go client and testcontainers module — unit tests |
+| `mockserver-dotnet` | `pipeline-dotnet.yml` | Orchestrator | .NET client and testcontainers module — unit tests |
+| `mockserver-rust` | `pipeline-rust.yml` | Orchestrator | Rust client and testcontainers module — tests and clippy |
+| `mockserver-php` | `pipeline-php.yml` | Orchestrator | PHP client — unit tests |
+| `mockserver-editors` | `pipeline-editors.yml` | Orchestrator | VS Code extension and JetBrains plugin — build and test |
 | `mockserver-maven-plugin` | `pipeline-maven-plugin.yml` | Orchestrator | Maven plugin build and test |
-| `mockserver-performance-test` | `pipeline-perf-test.yml` | Orchestrator | Perf test script validation |
+| `mockserver-performance-test` | `pipeline-perf-test.yml` | Orchestrator + Daily schedule (04:00 UTC) | Perf test script validation + daily regression run (guard + k6 + JMH + rolling-baseline compare) |
 | `mockserver-container-tests` | `pipeline-container-tests.yml` | Orchestrator | Shell script validation |
 | `mockserver-website` | `pipeline-website.yml` | Orchestrator | Jekyll site build |
 | `mockserver-infra` | `pipeline-infra.yml` | Orchestrator | Infrastructure validation |
 | `mockserver-build-image` | `docker-push-maven.yml` | Orchestrator + Manual | Build/push maven CI image |
 | `mockserver-release` | `release-pipeline.yml` | Manual | Automated release pipeline (TOTP, Maven Central, maven-plugin, Docker Hub + ECR Public, npm, Helm, Javadoc, SwaggerHub, website, JSON Schema, PyPI, RubyGems, GitHub Release, optional versioned site) |
+| `mockserver-release-preflight` | `release-preflight-pipeline.yml` | Manual | Validates release-queue and default-queue agents have every tool the release pipeline needs |
 | `mockserver-cleanup` | `pipeline-cleanup.yml` | GitHub webhook + scheduled | Clean up builds for closed PRs |
-| `mockserver-perf-regression` | `pipeline-perf-test.yml` | Daily Buildkite schedule (04:00 UTC) | Daily performance-regression pipeline — guard + k6 run + JMH microbench + rolling-baseline compare |
 
 A single commit can trigger multiple child pipelines if it changes files in multiple areas. For example, a commit touching both `mockserver/` and `mockserver-ui/` triggers both `mockserver-java` and `mockserver-ui` pipelines.
 
@@ -304,7 +314,7 @@ The `RELEASE_VERSION` / tag is derived from the release pipeline context.
 
 Tags pushed per image:
 - `mockserver/mockserver:mockserver-X.Y.Z` + `:X.Y.Z` + `:latest` (main, GraalJS, clustered variants)
-- `mockserver/mockserver-webhook:mockserver-X.Y.Z` + `:X.Y.Z` (admission webhook)
+- `mockserver/mockserver-webhook:mockserver-X.Y.Z` + `:X.Y.Z` + `:latest` (admission webhook)
 - Same tags to ECR Public (URI resolved dynamically via `aws ecr-public describe-repositories`) and mirrored to GHCR
 
 ```mermaid
@@ -394,7 +404,7 @@ All Docker push scripts call both login scripts and push tags to both registries
 
 ### Managing Buildkite Pipelines
 
-Pipelines are managed via Terraform in `terraform/buildkite-pipelines/`. The Terraform stack includes all 15 pipelines (orchestrator, 11 child pipelines, 2 Docker image push pipelines, and 1 release pipeline), each pointing to `mock-server/mockserver-monorepo.git`. To add a new pipeline:
+Pipelines are managed via Terraform in `terraform/buildkite-pipelines/`. The Terraform stack includes all 20 pipelines (1 orchestrator, 16 child pipelines, 1 Docker image build pipeline, 1 release pipeline, and 1 release-preflight pipeline), each pointing to `mock-server/mockserver-monorepo.git`. To add a new pipeline:
 
 1. Create the pipeline YAML in `.buildkite/`
 2. Add an entry to `local.pipelines` in `terraform/buildkite-pipelines/pipelines.tf`
@@ -564,13 +574,13 @@ Once `bk` is installed and authenticated, opencode agents can use it directly fo
 
 The orchestrator emits `command` steps that run `trigger-pipeline.sh`, which creates a child build via the Buildkite API and then **polls until completion** (up to 2 hours). Each polling trigger job occupies an agent slot while doing essentially nothing — just `sleep 30` + `curl` in a loop.
 
-When multiple commits land on `master` in quick succession (e.g. from concurrent opencode sessions), each parent build triggers ~6 child pipelines, and each trigger job holds an agent:
+When multiple commits land on `master` in quick succession (e.g. from concurrent opencode sessions), each parent build can trigger up to ~16 child pipelines, and each trigger job holds an agent:
 
 | Concurrent parent builds | Trigger jobs (agents blocked polling) | Agents remaining for actual work |
 |---|---|---|
-| 1 | ~6 | 4 of 10 |
-| 2 | ~12 | 0 of 10 (starvation) |
-| 3 | ~18 | 0 of 10 (starvation, queued jobs can't start) |
+| 1 | ~16 | 0 of 10 (most child pipelines are path-filtered) |
+| 2 | ~32 | 0 of 10 (starvation) |
+| 3 | ~48 | 0 of 10 (starvation, queued jobs can't start) |
 
 Cancel intermediate (running) builds is set to `!master` (disabled on master) on **every** pipeline because cancelling on master drops legitimate builds and shows misleading failures. This filter is now applied uniformly in Terraform (`terraform/buildkite-pipelines/pipelines.tf`). Previously several child pipelines (`mockserver-container-tests`, `mockserver-performance-test`, `mockserver-infra`, the per-client and release pipelines) had empty filters — so a fresh master commit cancelled the previous still-running build before it could report, which was especially disruptive for the long-running container-tests (~20m) and performance-test pipelines. The parent pipeline's trigger jobs still hold a (cheap, `trigger`-queue) agent while waiting on children.
 
@@ -751,11 +761,9 @@ The previous caching attempt (reverted) broke builds by writing to `/var/cache` 
 
 ### Activation
 
-The S3 bucket and IAM policy are defined in `terraform/buildkite-agents/dependency-cache.tf`. The IAM policy is currently **detached from all agent roles** — the runtime pipeline wiring (cache-restore/cache-save steps) was reverted. The bucket and policy remain in place so the infrastructure is ready to re-enable once cache-integrity verification (signed or content-addressed entries) is implemented.
+The S3 bucket and IAM policy are defined in `terraform/buildkite-agents/dependency-cache.tf`. The IAM policy (`buildkite-dependency-cache`) is **attached to the `default` and `release` queues** in `terraform/buildkite-agents/main.tf`. The pipeline wiring (cache-restore/cache-save steps) activates the cache for builds running on those queues.
 
-To re-activate: attach `aws_iam_policy.dependency_cache` to the relevant queues in `main.tf` and re-add the cache restore/save steps to the affected pipelines.
-
-Until the IAM policy is re-attached, the cache scripts will detect missing credentials and no-op gracefully. No pipeline will break.
+The cache scripts are fail-safe: if credentials are missing or the S3 operation fails, the script exits 0 and the build proceeds cold.
 
 ## Local CI Simulation
 

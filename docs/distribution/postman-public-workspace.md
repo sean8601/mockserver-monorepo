@@ -4,7 +4,8 @@
 
 **Status: LIVE + automated.** The collection is published to the public workspace
 `official-mockserver` (workspace `1739eeee-…`, collection `3256712-63a2d67a-…`) and now covers
-**all 68 control-plane endpoints**. It is **generated from the OpenAPI spec**
+**93 requests across 21 functional folders** (68 spec paths map to 93 requests when
+expanded with sub-operations). It is **generated from the OpenAPI spec**
 (`jekyll-www.mock-server.com/mockserver-openapi.yaml`) by
 `scripts/collections/generate_collections.py`, and the release pipeline's `postman-collection`
 component re-generates and **republishes it via the Postman API on every release** (key in Secrets
@@ -31,7 +32,7 @@ laptop, so publish from another machine.
 | Collection file | `examples/postman/MockServer.postman_collection.json` — valid Postman v2.1.0 JSON |
 | Collection name | "MockServer Control Plane" |
 | `baseUrl` variable | pre-set to `http://localhost:1080` |
-| Coverage | Expectations, Verify, Traffic (retrieve requests/logs), Manage (status/clear/reset) |
+| Coverage | Expectations, Verify, Traffic, Manage, Chaos, Drift, SCIM, OIDC/SAML, AsyncAPI, gRPC, WASM, Load, SLO, Contract, Audit (21 folders) |
 | Source of truth | The JSON file in the repo — update it there first, then re-import to Postman on each release |
 
 ---

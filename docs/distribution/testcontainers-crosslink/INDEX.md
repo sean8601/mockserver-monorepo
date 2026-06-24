@@ -16,7 +16,7 @@ URLs are:
 |----------|----------|--------------|
 | Node | npm | https://www.npmjs.com/package/@mockserver/testcontainers |
 | Python | PyPI | https://pypi.org/project/testcontainers-mockserver/ |
-| .NET | NuGet | https://www.nuget.org/packages/Testcontainers.MockServer/ |
+| .NET | NuGet | https://www.nuget.org/packages/MockServer.Testcontainers/ |
 | Go | pkg.go.dev | https://pkg.go.dev/github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go |
 | Rust | crates.io | https://crates.io/crates/testcontainers-mockserver |
 

@@ -80,7 +80,7 @@ await container.stop();
 ## Links
 
 - npm: https://www.npmjs.com/package/@mockserver/testcontainers
-- Source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/node
+- Source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/node
 - MockServer docs: https://www.mock-server.com
 ```
 

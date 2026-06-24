@@ -411,7 +411,7 @@ Rules:
 - **NEVER** change `version` without also changing `appVersion` to the same value
 - Both charts must be kept at the same version (the release scripts handle this automatically)
 
-Helm chart changes made between releases are published as part of the next MockServer release, not independently.
+Helm chart changes made between releases are published as part of the next MockServer release, not independently. Between releases, `Chart.yaml` may show the last released version (e.g. `7.2.0`) while the root `pom.xml` is already at the next snapshot (e.g. `7.2.1-SNAPSHOT`); this is expected and correct — the version-match policy applies at release time when `helm.sh` stamps both fields to `$RELEASE_VERSION`.
 
 ## Chart Distribution
 

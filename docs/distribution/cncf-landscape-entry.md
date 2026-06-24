@@ -108,7 +108,7 @@ fork push is outward-facing.
 
 ## Related
 
-- Manual distribution playbook: `docs/plans/distribution-manual-channels.local.md` (local-only)
+- Manual distribution playbook: `docs/plans/distribution-manual-channels.local.md` (local-only, gitignored — create if needed)
 - Other external listings: [Artifact Hub](artifacthub-official-status-issue.md),
   [Postman](postman-public-workspace.md)
 - Brand assets / site fonts: [operations/website.md](../operations/website.md)

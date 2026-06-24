@@ -56,7 +56,7 @@ Dependabot monitors **8 package ecosystems** across the monorepo for outdated an
 | Docker | `/docker` + subdirs, `/docker_build/*` | 10 |
 | Terraform | `/terraform/*` | 10 |
 
-The Docker and Terraform directory columns are summarised; Dependabot has no glob support, so each directory is listed explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (10 Docker dirs, 4 Terraform dirs). When you add a new Docker/Terraform directory, add it there too or it will not be scanned.
+The Docker and Terraform directory columns are summarised; Dependabot uses the `directories:` key to list each directory explicitly in [`.github/dependabot.yml`](../../.github/dependabot.yml) (10 Docker dirs, 4 Terraform dirs). When you add a new Docker/Terraform directory, add it there too or it will not be scanned.
 
 Dependabot runs **daily** and opens pull requests for version updates and security patches. Minor and patch updates are **grouped per ecosystem** (e.g. `maven-minor-and-patch`) so related bumps land in a single PR instead of many.
 
@@ -74,7 +74,7 @@ MockServer targets **Java 17** as the minimum supported runtime. Some dependenci
 |------------|---------|--------|
 | `com.puppycrawl.tools:checkstyle` | `< 13.0.0` (stay on 12.x) | checkstyle 13.x is compiled for Java 21 (class file version 65.0) and fails to load under Java 17 — see the CodeQL `Analyze (java)` build, which runs on Java 17 |
 | `org.infinispan:infinispan-core` | `< 15.0.0` (stay on 14.0.x) | Infinispan 15.x requires Java 21+. The 14.0.x line is the last to support Java 17. Used only by `mockserver-state-infinispan`. |
-| `com.graphql-java:graphql-java` | `< 25.0.0` (precautionary) | graphql-java 22.x–24.x ship Java 11 bytecode and run fine on Java 17 (verified by `mockserver-core` build/tests on the Java 17 target). The ceiling is precautionary: a future major (25.x) could raise the runtime floor, so it must be manually verified on Java 17 before adoption. Pulls in `com.graphql-java:java-dataloader` (3.3.x); ANTLR4 runtime and `reactive-streams` arrive transitively. Used by `org.mockserver.graphql.*` for schema-driven GraphQL response synthesis. |
+| `com.graphql-java:graphql-java` | `< 25.0.0` in Dependabot (stale — pom.xml is 26.0) | Currently pinned to 26.0 in `pom.xml` (manually bumped past the Dependabot ceiling after verifying Java 17 compatibility). The `dependabot.yml` ignore entry (`>= 25.0.0`) pre-dates this bump and no longer reflects reality; remove it when next reviewing ceilings. Pulls in `com.graphql-java:java-dataloader`; ANTLR4 runtime and `reactive-streams` arrive transitively. Used by `org.mockserver.graphql.*` for schema-driven GraphQL response synthesis. |
 
 **When raising the Java floor:** remove the corresponding ceiling here and the matching ignore entries in `.github/dependabot.yml`, then let the dependency upgrade. The Dependabot ignore does not block **manual** version bumps in `pom.xml` — keep this table in mind when hand-editing dependency versions.
 
@@ -84,7 +84,7 @@ Dependencies that interact with the OS kernel or native libraries, added for spe
 
 | Dependency | Version | Module | Purpose | Java 17 compatible |
 |------------|---------|--------|---------|:---:|
-| `net.java.dev.jna:jna` | `${jna.version}` (5.19.0) | `mockserver-netty` | JNA-based `getsockopt(SO_ORIGINAL_DST)` for transparent proxy original-destination resolution (`SoOriginalDstResolver`). O(1) socket option read, tried before the O(n) conntrack table scan. | Yes (supports Java 8+) |
+| `net.java.dev.jna:jna` | `${jna.version}` (5.19.1) | `mockserver-netty` | JNA-based `getsockopt(SO_ORIGINAL_DST)` for transparent proxy original-destination resolution (`SoOriginalDstResolver`). O(1) socket option read, tried before the O(n) conntrack table scan. | Yes (supports Java 8+) |
 | `io.netty:netty-transport-classes-epoll` | `${netty.version}` | `mockserver-core`, `mockserver-netty` | Pure-Java API classes for `EpollSocketChannel`, `EpollEventLoopGroup`, `EpollServerSocketChannel`, and `Epoll.isAvailable()` — needed at compile time by `NettyTransport` (transport selection) and `SoOriginalDstResolver` (fd extraction). No native classifier (the `.so` is only needed at runtime on Linux). | Yes (follows Netty BOM) |
 | `io.netty:netty-transport-native-epoll` (classifier: `linux-x86_64`) | `${netty.version}` | `mockserver-netty` (runtime) | Native JNI library that activates `Epoll.isAvailable()` on Linux x86_64. Bundled in the distribution jar-with-dependencies and Docker images. Inert on non-Linux platforms. | Yes (follows Netty BOM) |
 | `io.netty:netty-transport-native-epoll` (classifier: `linux-aarch_64`) | `${netty.version}` | `mockserver-netty` (runtime) | Native JNI library that activates `Epoll.isAvailable()` on Linux aarch64 (ARM64). Bundled in the distribution jar-with-dependencies and Docker images. Inert on non-Linux/non-ARM platforms. | Yes (follows Netty BOM) |

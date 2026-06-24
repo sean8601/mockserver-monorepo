@@ -11,8 +11,8 @@ The end-to-end checklist a release manager follows. **Use this every release.** 
 Run the `/prepare-release` slash command from this repo. It inspects `changelog.md`, `mockserver/pom.xml`, and the latest `mockserver-X.Y.Z` git tag, then recommends:
 
 - `release-version` (e.g. `7.2.0`)
-- `next-version` (e.g. `6.1.1-SNAPSHOT`)
-- `old-version` (e.g. `6.0.0` — auto-derived, you don't need to type it on the form)
+- `next-version` (e.g. `7.2.1-SNAPSHOT`)
+- `old-version` (e.g. `7.1.0` — auto-derived, you don't need to type it on the form)
 - `release-type` (almost always `full`)
 - `create-versioned-site` (`yes` for major/minor, `no` for patch)
 
@@ -89,7 +89,7 @@ Versioned Site and Update Version References run first (sequentially), then the 
 | npm — mockserver-client-node | https://www.npmjs.com/package/mockserver-client-node |
 | PyPI | https://pypi.org/project/mockserver-client/ |
 | RubyGems | https://rubygems.org/gems/mockserver-client |
-| GitHub Release | https://github.com/mock-server/mockserver/releases |
+| GitHub Release | https://github.com/mock-server/mockserver-monorepo/releases |
 | Helm chart | https://www.mock-server.com/index.yaml — should list the new version |
 | Versioned docs site (major/minor only) | `https://<release-version-with-dash>.mock-server.com` — e.g. `6-1.mock-server.com` |
 | Website | https://www.mock-server.com — version pin in the footer should match |
@@ -157,17 +157,32 @@ scripts/release/
 └── components/                   # one script per deployable artifact
     ├── maven-central.sh          # build + sign + Sonatype + publish + wait
     ├── maven-plugin.sh           # mockserver-maven-plugin release
+    ├── versioned-site.sh         # X-Y.mock-server.com Terraform
     ├── docker.sh                 # multi-arch Docker Hub + ECR Public
     ├── npm.sh                    # mockserver-node + mockserver-client-node
-    ├── pypi.sh                   # mockserver-client-python
-    ├── rubygems.sh               # mockserver-client (Ruby)
     ├── helm.sh                   # Helm chart (OCI: GHCR + legacy HTTP: S3)
     ├── javadoc.sh                # Javadoc to S3
+    ├── swaggerhub.sh             # OpenAPI spec to SwaggerHub
     ├── website.sh                # Jekyll site
     ├── schema.sh                 # JSON Schema
-    ├── swaggerhub.sh             # OpenAPI spec to SwaggerHub
+    ├── pypi.sh                   # mockserver-client-python
+    ├── rubygems.sh               # mockserver-client (Ruby)
     ├── github.sh                 # GitHub Release
-    └── versioned-site.sh         # X-Y.mock-server.com Terraform
+    ├── binary.sh                 # native binary tarballs/zips
+    ├── mcp.sh                    # MCP registry publish
+    ├── client-go.sh              # Go client module
+    ├── client-dotnet.sh          # .NET client package
+    ├── client-rust.sh            # Rust crate
+    ├── client-php.sh             # PHP package (Packagist mirror)
+    ├── tc-node.sh                # Node Testcontainers module
+    ├── tc-python.sh              # Python Testcontainers module
+    ├── tc-dotnet.sh              # .NET Testcontainers module
+    ├── tc-go.sh                  # Go Testcontainers module
+    ├── tc-rust.sh                # Rust Testcontainers crate
+    ├── vscode.sh                 # VS Code extension
+    ├── jetbrains.sh              # JetBrains plugin
+    ├── postman-collection.sh     # Postman collection publish
+    └── verify.sh                 # post-publish verification checks
 
 .buildkite/scripts/
 ├── release-runner.sh             # Buildkite adapter (meta-data → env vars)
@@ -227,7 +242,7 @@ aws sso login --profile mockserver-build
 
 # Run the same scripts the CI would have run
 RELEASE_VERSION=7.2.0 \
-NEXT_VERSION=6.1.1-SNAPSHOT \
+NEXT_VERSION=7.2.1-SNAPSHOT \
 RELEASE_TYPE=full \
 CREATE_VERSIONED_SITE=yes \
 ./scripts/release/release.sh --execute
@@ -340,7 +355,7 @@ RELEASE_VERSION=7.2.0 ./scripts/release/components/npm.sh --execute
 # Pull the same env vars Buildkite was using (or set them by hand) and run
 # the same script.
 RELEASE_VERSION=7.2.0 \
-NEXT_VERSION=6.1.1-SNAPSHOT \
+NEXT_VERSION=7.2.1-SNAPSHOT \
 ./scripts/release/components/maven-central.sh --dry-run
 ```
 

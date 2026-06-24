@@ -907,7 +907,7 @@ Handled by `useKeyboardShortcuts` hook in `App.tsx`:
 | Shortcut | Handler | Action |
 |----------|---------|--------|
 | `⌘K` / `Ctrl+K` | `onSearch` | Focus log messages search input |
-| `⌘L` / `Ctrl+L` | `onClear` | Call `clearServer('all')` (server reset + UI clear + WebSocket reconnect) |
+| `⌘L` / `Ctrl+L` | `onClear` | Show confirm dialog then call `clearServer('log')` (log-only clear) |
 | `Escape` | `onToggleFilter` | Toggle filter panel expanded/collapsed |
 
 ### Clear and Reset

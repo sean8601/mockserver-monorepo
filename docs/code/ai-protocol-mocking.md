@@ -610,7 +610,7 @@ Response body on success:
 
 The `chaos` field in the response reflects the merged profile as serialised by the corresponding `*ChaosProfileDTO`.
 
-**Implementation references:** all nine handlers (`handleServiceChaosPut`, `handleServiceChaosPatch`, `handleServiceChaosGet`, `handleTcpChaosPut`, `handleTcpChaosPatch`, `handleTcpChaosGet`, `handleGrpcChaosPut`, `handleGrpcChaosPatch`, `handleGrpcChaosGet`) are in `mockserver/mockserver-core/src/main/java/org/mockserver/mock/HttpState.java` around lines 2070–2503.
+**Implementation references:** all nine handlers (`handleServiceChaosPut`, `handleServiceChaosPatch`, `handleServiceChaosGet`, `handleTcpChaosPut`, `handleTcpChaosPatch`, `handleTcpChaosGet`, `handleGrpcChaosPut`, `handleGrpcChaosPatch`, `handleGrpcChaosGet`) are private methods in `mockserver/mockserver-core/src/main/java/org/mockserver/mock/HttpState.java`.
 
 ### GraphQL-Semantic HTTP Chaos
 
@@ -643,7 +643,7 @@ MockServer auto-responds to `grpc.health.v1.Health/Check` without requiring a pr
 
 **Interception point:** `GrpcToHttpRequestHandler` checks whether the request path equals `GrpcHealthCheckHandler.HEALTH_CHECK_PATH` (`/grpc.health.v1.Health/Check`) before performing any descriptor lookup. When matched, the response is written directly and the request never reaches the expectation matching engine.
 
-**Configuration:** `grpcHealthCheckEnabled` (default `true`) controls whether health check interception is active.
+**Configuration:** Health check interception is unconditional — whenever the request path matches `GrpcHealthCheckHandler.HEALTH_CHECK_PATH`, the handler fires. There is no configuration toggle.
 
 **REST endpoints:**
 

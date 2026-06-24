@@ -290,7 +290,7 @@ classDiagram
     BodyWithContentType <|-- FileBody
 ```
 
-Body `Type` enum: `BINARY`, `FILE`, `JSON`, `JSON_SCHEMA`, `JSON_PATH`, `PARAMETERS`, `REGEX`, `STRING`, `XML`, `XML_SCHEMA`, `XPATH`, `JSON_RPC`, `GRAPHQL`, `LOG_EVENT`
+Body `Type` enum: `BINARY`, `FILE`, `FUZZY`, `JSON`, `JSON_SCHEMA`, `JSON_PATH`, `JSON_RPC`, `GRAPHQL`, `LOG_EVENT`, `MULTIPART`, `PARAMETERS`, `REGEX`, `STRING`, `WASM`, `XML`, `XML_SCHEMA`, `XPATH`
 
 #### FileBody
 
@@ -689,17 +689,17 @@ flowchart TD
     M -->|fail| FAIL([No match])
     M -->|pass| P[path match?]
     P -->|fail| FAIL
-    P -->|pass| PP[path parameters match?]
-    PP -->|fail| FAIL
-    PP -->|pass| QP[query parameters match?]
-    QP -->|fail| FAIL
-    QP -->|pass| H[headers match?]
+    P -->|pass| B[body match?]
+    B -->|fail| FAIL
+    B -->|pass| H[headers match?]
     H -->|fail| FAIL
     H -->|pass| C[cookies match?]
     C -->|fail| FAIL
-    C -->|pass| B[body match?]
-    B -->|fail| FAIL
-    B -->|pass| KA[keepAlive match?]
+    C -->|pass| PP[path parameters match?]
+    PP -->|fail| FAIL
+    PP -->|pass| QP[query parameters match?]
+    QP -->|fail| FAIL
+    QP -->|pass| KA[keepAlive match?]
     KA -->|fail| FAIL
     KA -->|pass| S[secure/SSL match?]
     S -->|fail| FAIL

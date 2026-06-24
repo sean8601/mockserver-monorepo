@@ -11,8 +11,8 @@ no external workspace to create — the repo *is* the published location).
 
 **Spec-driven + in parity by construction.** The Bruno collection is **generated from the
 OpenAPI spec** (`jekyll-www.mock-server.com/mockserver-openapi.yaml`) by the same generator as
-Postman (`scripts/collections/generate_collections.py`), so both cover all **68 control-plane
-endpoints** and can never diverge. To change anything, edit the spec and regenerate — never edit
+Postman (`scripts/collections/generate_collections.py`), so both cover all **94 requests across
+21 functional folders** (68 spec paths expand to 94 requests) and can never diverge. To change anything, edit the spec and regenerate — never edit
 the `.bru` files by hand. Validate with `python3 scripts/collections/test_collections.py`.
 
 ---
@@ -24,7 +24,7 @@ the `.bru` files by hand. Validate with `python3 scripts/collections/test_collec
 | Collection | `examples/bruno/` (`bruno.json` + folders) |
 | Collection name | "MockServer Control Plane" |
 | Environment | `environments/Local.bru`, `baseUrl` = `http://localhost:1080` |
-| Coverage | Expectations, Verify, Traffic (retrieve requests/logs), Manage (status/clear/reset) |
+| Coverage | Expectations, Verify, Traffic, Manage, Chaos, Drift, SCIM, OIDC/SAML, AsyncAPI, gRPC, WASM, Load, SLO, Contract, Audit (21 folders) |
 | Source of truth | The `.bru` files in the repo — update them first, on each release |
 | Parity | Mirrors `examples/postman/MockServer.postman_collection.json` |
 

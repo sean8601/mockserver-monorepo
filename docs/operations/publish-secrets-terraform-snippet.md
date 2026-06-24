@@ -38,7 +38,7 @@ same pattern exactly:
 
 +# NuGet API key (mockserver-release/nuget, key: api_key) is created out of
 +# band. Read by client-dotnet.sh and tc-dotnet.sh (release queue) to push
-+# MockServerClient and Testcontainers.MockServer packages to NuGet.org.
++# MockServerClient and MockServer.Testcontainers packages to NuGet.org.
 +data "aws_secretsmanager_secret" "nuget" {
 +  name = "mockserver-release/nuget"
 +}

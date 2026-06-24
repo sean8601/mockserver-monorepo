@@ -224,7 +224,7 @@ Current dependency baseline:
 
 | Dependency | Version |
 |-----------|---------|
-| Spring Framework | 7.2.x |
+| Spring Framework | 7.0.x |
 | Jakarta EE | 10 |
 | Tomcat Embed | 11.x |
 | Jetty | 12.x |
@@ -284,7 +284,7 @@ See: [Client & Integrations — MCP](client-and-integrations.md#mcp-model-contex
 | `org.mockserver.netty.mcp` | netty | MCP (Model Context Protocol) server handler | [Client & Integrations](client-and-integrations.md) |
 | `org.mockserver.integration` | netty | `ClientAndServer` combined class | [Client & Integrations](client-and-integrations.md) |
 | `org.mockserver.mock` | core | Expectation management, HttpState | [Request Processing](request-processing.md) |
-| `org.mockserver.mock.action.http` | core | Action handlers (16 types) | [Request Processing](request-processing.md) |
+| `org.mockserver.mock.action.http` | core | Action handlers (16 type-specific handler classes, plus `HttpActionHandler` dispatcher; the `Action.Type` enum defines 19 action types in total) | [Request Processing](request-processing.md) |
 | `org.mockserver.matchers` | core | Request matching (15+ matcher types) | [Domain Model](domain-model.md) |
 | `org.mockserver.model` | core | Domain objects (HttpRequest, etc.) | [Domain Model](domain-model.md) |
 | `org.mockserver.serialization` | core | JSON/Java serialization | [Domain Model](domain-model.md) |

@@ -76,7 +76,7 @@ with MockServerContainer() as mockserver:
 ## Links
 
 - PyPI: https://pypi.org/project/testcontainers-mockserver/
-- Source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/python
+- Source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/python
 - MockServer docs: https://www.mock-server.com
 ```
 

@@ -159,7 +159,7 @@ A complete end-to-end mTLS example with self-generated certificates, Docker Comp
 
 ### Incoming Connection mTLS
 
-When `tlsMutualAuthenticationRequired` is configured, `PortUnificationHandler` checks for TLS on the channel. If the connection is not TLS, it returns **426 Upgrade Required** and disconnects.
+When both `tlsMutualAuthenticationRequired` and `controlPlaneTLSMutualAuthenticationRequired` are configured, `PortUnificationHandler` checks for TLS on the channel. If the connection is not already TLS (upstream SSL not detected), it returns **426 Upgrade Required** and disconnects.
 
 Client certificates are extracted from the SSL session via `SniHandler.retrieveClientCertificates()` and stored as a channel attribute (`UPSTREAM_CLIENT_CERTIFICATES`).
 
@@ -337,6 +337,7 @@ SOCKS5 proxy also supports username/password authentication (configured separate
 | `certificateAuthorityCertificate` | (auto) | PEM file for custom CA certificate |
 | `forwardProxyTLSX509CertificatesTrustManagerType` | ANY | Trust mode for upstream connections |
 | `forwardProxyTLSCustomTrustX509Certificates` | (none) | PEM file for custom upstream trust |
+| `forwardProxyBlockPrivateNetworks` | false | Block outbound connections to private/loopback/link-local addresses and cloud metadata endpoints (SSRF protection) |
 | `controlPlaneTLSMutualAuthenticationRequired` | false | Require mTLS for control plane |
 | `controlPlaneTLSMutualAuthenticationCAChain` | (none) | CA chain for control plane mTLS |
 | `controlPlaneJWTAuthenticationJWKSource` | (none) | JWK source URL for JWT validation |
