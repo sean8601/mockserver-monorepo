@@ -12,13 +12,13 @@ and noisy (which trains agents to ignore it).
 
 ## Input
 
-A documentation-only diff that fixes a typo in a Javadoc comment and adds a
-clarifying sentence — no behaviour change, no public-API change, no new code path:
+A documentation-only diff that fixes a typo in a Javadoc comment — no behaviour
+change, no public-API change, no new code path, and no new factual claim about
+behaviour (a pure spelling correction):
 
 ```diff
 - * Retruns the matched expectation, or null if none matched.
 + * Returns the matched expectation, or null if none matched.
-+ * The first registered expectation wins when several match.
 ```
 
 ## Expected
