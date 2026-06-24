@@ -7,7 +7,8 @@
 #   - age (minutes since worktree creation)
 #   - activity (first line of `.tmp/agent-activity` inside the worktree, if present)
 #   - commit count ahead of origin/master
-#   - lock status (* if this worktree holds the merge lock .git/agent-rebase.lockdir)
+#   - lock status (* if this worktree holds the merge lock — the directory
+#     "agent-rebase.lockdir" in the shared git common-dir, $(git rev-parse --git-common-dir))
 #
 # Companion to `/worktree` and `/worktree-merge`. See
 # `.opencode/rules/worktree-workflow.md` for the broader workflow.
@@ -112,6 +113,6 @@ if [ -n "${LOCK_HELD}" ]; then
     if [ -n "${LOCK_HOLDER_PID}" ] || [ -n "${LOCK_HOLDER_WT}" ]; then
         echo "Merge lock held by PID ${LOCK_HOLDER_PID:-?} (${LOCK_HOLDER_WT:-unknown worktree}) — a merge is rebasing/re-verifying/integration-reviewing."
     else
-        echo "Merge lock is currently held (.git/agent-rebase.lockdir present) — a merge is in progress."
+        echo "Merge lock is currently held (${LOCK_DIR} present) — a merge is in progress."
     fi
 fi

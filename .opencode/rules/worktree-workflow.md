@@ -228,15 +228,17 @@ re-running Steps 7–9).
 The merge-gate adversarial review is the **Tier-2/3 integration
 review**, not a generic final pass, and it runs **before the push** while
 the lock is held. Spawn a *separate, freshly-spawned, clean-context*
-reviewer under the **`review-integration`** constitution (§14.3) — given
+reviewer — the **`review-final`** agent **applying the `review-integration`
+constitution** (the constitution is a profile, not a separate agent) (§14.3) — given
 the integrated diff (`git diff origin/master...HEAD` *after* the rebase),
 the re-verification results from Step 8, and the plan/wave scope — to
 probe what only becomes visible in the combination: **combination
 defects, interface drift between units, duplicated or conflicting
 changes, dropped units, and end-to-end coherence vs the plan's intent.**
 This reviewer MUST NOT be the implementer or any context-anchored
-continuation of it, and MUST NOT be a resumed generic-`review-final`
-session. Loop to convergence or the 8-iteration cap per §14.5. **On
+continuation of it, and MUST NOT be a resumed `review-final` session
+applying its default profile instead of the `review-integration`
+constitution. Loop to convergence or the 8-iteration cap per §14.5. **On
 BLOCK:** do not push; release the lock; leave the worktree for fix-forward
 (re-run Steps 7–9). **On PASS:** proceed to Step 10.
 
@@ -304,7 +306,7 @@ rm -f .tmp/active-worktree
   resolution, or its integration review is stuck)
 - C's `mkdir`-lock acquisition loop exceeds its 300s budget and exits non-zero
 - C surfaces a clear message and stops; the user investigates D's worktree
-  (and can read `.git/agent-rebase.lockdir/holder` to see who holds it)
+  (and can read the `holder` file in `$(git rev-parse --git-common-dir)/agent-rebase.lockdir` to see who holds it)
 
 ## Failure Modes
 
@@ -314,7 +316,7 @@ rm -f .tmp/active-worktree
 | Gate 2 (lint) fails | Same — fix lint and re-run merge |
 | Gate 3 (review-final) returns BLOCK | Worktree preserved; agent shows review verdict; user decides |
 | Gate 4 (a gate 1–3 not a clean PASS, or user interjects) | Worktree preserved; merge halted; user keeps the diff to iterate |
-| Merge-lock timeout | Worktree preserved; agent reports lock holder (`.git/agent-rebase.lockdir/holder`); retry later |
+| Merge-lock timeout | Worktree preserved; agent reports lock holder (the `holder` file in `$(git rev-parse --git-common-dir)/agent-rebase.lockdir`); retry later |
 | Rebase conflict | Worktree preserved; agent attempts resolution or hands back to user |
 | Step 8 re-verify fails on integrated tree | Worktree preserved; push not finalised; integration breakage surfaced |
 | Step 9 `review-integration` returns BLOCK | Worktree preserved; integrated diff shown; user decides |
