@@ -21,7 +21,7 @@ MOCKSERVER_PORT = 1080
 _IMAGE_NAME = "mockserver/mockserver"
 
 #: Default image tag, pinned to the current MockServer release version.
-_DEFAULT_TAG = "mockserver-7.0.0"
+_DEFAULT_TAG = "mockserver-7.2.0"
 
 
 class MockServerContainer(DockerContainer):
@@ -35,7 +35,7 @@ class MockServerContainer(DockerContainer):
     ----------
     image : str, optional
         Full Docker image reference. Defaults to
-        ``mockserver/mockserver:mockserver-7.0.0``.
+        ``mockserver/mockserver:mockserver-7.2.0``.
     port : int, optional
         The port MockServer listens on inside the container. Defaults to 1080.
 

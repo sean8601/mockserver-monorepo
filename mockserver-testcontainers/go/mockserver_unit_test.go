@@ -63,7 +63,7 @@ func TestDefaultImageContainsMockServer(t *testing.T) {
 		t.Error("DefaultImage should not be empty")
 	}
 	// Must reference the mockserver/mockserver image
-	expected := "mockserver/mockserver:mockserver-7.0.0"
+	expected := "mockserver/mockserver:mockserver-7.2.0"
 	if DefaultImage != expected {
 		t.Errorf("DefaultImage = %q, want %q", DefaultImage, expected)
 	}

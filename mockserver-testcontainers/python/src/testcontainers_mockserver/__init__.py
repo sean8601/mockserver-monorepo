@@ -17,4 +17,4 @@ Example::
 from testcontainers_mockserver.container import MockServerContainer
 
 __all__ = ["MockServerContainer"]
-__version__ = "7.0.0"
+__version__ = "7.2.0"

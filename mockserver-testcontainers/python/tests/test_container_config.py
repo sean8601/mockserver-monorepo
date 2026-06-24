@@ -180,9 +180,9 @@ class TestVersionPinning:
 
     def test_default_tag_matches_release_version(self):
         """The default tag must match the current MockServer release."""
-        assert _DEFAULT_TAG == "mockserver-7.0.0"
+        assert _DEFAULT_TAG == "mockserver-7.2.0"
 
     def test_module_version(self):
         """The package version must match the MockServer release."""
         import testcontainers_mockserver
-        assert testcontainers_mockserver.__version__ == "7.0.0"
+        assert testcontainers_mockserver.__version__ == "7.2.0"
