@@ -1509,7 +1509,18 @@ public class LoadScenarioOrchestrator {
             return verdict;
         }
 
-        synchronized boolean tryAcquireRpsToken(long now) {
+        /**
+         * Acquire one RPS token in a fixed 1-second window, or refuse when the window is full.
+         * <p>
+         * The window timestamp is re-read from the orchestrator clock <em>inside</em> the lock
+         * (the caller-supplied {@code now} is ignored) so the window reset is ordered by lock
+         * acquisition rather than by the caller's pre-lock clock snapshot. Reading {@code now}
+         * before the lock let threads enter out of timestamp order, which could reset the window
+         * to a slightly earlier instant and over-issue tokens beyond {@code maxRps} across the
+         * window edge; reading under the lock makes the window strictly monotonic per run.
+         */
+        synchronized boolean tryAcquireRpsToken(long ignoredNow) {
+            long now = clock.getAsLong();
             if (now - rpsWindowStart >= 1000) {
                 rpsWindowStart = now;
                 rpsTokensUsed = 0;
