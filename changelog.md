@@ -105,12 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Dashboard: load-scenario report download no longer navigates to a URL built from the connection
-  host.** The "download report" action previously called `window.open` on a URL whose host/port come
-  from the dashboard's own query string — a client-side open-redirect sink (CodeQL
-  `js/client-side-unvalidated-url-redirection`). It now fetches the report through the same control
-  plane as every other call and saves it as a file, so a crafted dashboard link can no longer redirect
-  the report tab to an arbitrary site, and the report downloads as a named `.json`/`.xml` file.
 - **OpenAPI `format: date`/`date-time` examples render as ISO strings again** ([#2370](https://github.com/mock-server/mockserver-monorepo/issues/2370)).
   An inline `example: '2021-01-30'` on a `type: string, format: date` property was serialised in generated
   responses as epoch-millis (`1611964800000`) instead of the ISO string, because swagger-parser deserialises

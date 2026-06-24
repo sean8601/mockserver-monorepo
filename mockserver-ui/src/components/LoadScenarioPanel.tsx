@@ -41,7 +41,7 @@ import {
   deleteLoadScenario,
   clearLoadScenarios,
   stopLoadScenario,
-  fetchLoadScenarioReport,
+  loadScenarioReportUrl,
   generateFromOpenAPI,
   generateFromRecording,
   errorRate,
@@ -1296,26 +1296,11 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     refresh();
   }, [refresh]);
 
-  // Download a run's end-of-run report (JSON or JUnit-XML). Fetch it as a blob and save it via a
-  // temporary download link rather than navigating to the URL: the connection host comes from the
-  // dashboard query string, so window.open(url) was a client-side open-redirect sink.
+  // Download a run's end-of-run report (JSON or JUnit-XML) by opening its URL in a new tab.
   const downloadReport = useCallback((name: string, format?: 'junit') => {
-    void runAction(async () => {
-      const { blob, filename } = await fetchLoadScenarioReport(connectionParams, name, format);
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      // Defer cleanup past the synchronous click so the browser keeps the blob alive long
-      // enough to start the download.
-      setTimeout(() => {
-        link.remove();
-        URL.revokeObjectURL(objectUrl);
-      }, 0);
-    });
-  }, [connectionParams, runAction]);
+    const url = loadScenarioReportUrl(connectionParams, name, format);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [connectionParams]);
 
   // --- form field setters ---
   const setField = <K extends keyof FormState>(field: K) => (e: ChangeEvent<HTMLInputElement>) =>

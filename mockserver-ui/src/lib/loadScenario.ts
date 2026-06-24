@@ -514,32 +514,18 @@ export async function stopLoadScenario(params: ConnectionParams): Promise<void> 
   await ensureOk(res);
 }
 
-/** Strip a scenario name down to characters safe for a download filename. */
-function reportFilename(name: string, format?: 'junit'): string {
-  const safe = name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'scenario';
-  return `load-scenario-${safe}-report.${format === 'junit' ? 'xml' : 'json'}`;
-}
-
 /**
- * Fetch a run's end-of-run summary report (GET /loadScenario/{name}/report) as a Blob plus a safe
- * download filename. Pass `format: 'junit'` for the JUnit-XML rendering (a load run becomes a
- * first-class CI test artifact); otherwise JSON.
- *
- * The report is fetched (not navigated to) on purpose: the connection host/port come from the
- * dashboard's own query string, so opening the URL with `window.open` was a client-side
- * open-redirect sink. Fetching keeps the user-controlled host out of any navigation, lets the
- * report download as a file, and goes through the same control plane (and auth) as every other call.
+ * URL of a run's end-of-run summary report (GET /loadScenario/{name}/report). Pass `format: 'junit'`
+ * for the JUnit-XML rendering (a load run becomes a first-class CI test artifact); otherwise JSON.
+ * Returned as a URL (rather than fetched) so the panel can drive a browser download directly.
  */
-export async function fetchLoadScenarioReport(
+export function loadScenarioReportUrl(
   params: ConnectionParams,
   name: string,
   format?: 'junit',
-  signal?: AbortSignal,
-): Promise<{ blob: Blob; filename: string }> {
+): string {
   const base = `${endpoint(params)}/${encodeURIComponent(name)}/report`;
-  const res = await fetch(format ? `${base}?format=${format}` : base, { signal });
-  await ensureOk(res);
-  return { blob: await res.blob(), filename: reportFilename(name, format) };
+  return format ? `${base}?format=${format}` : base;
 }
 
 /** Network target for a generated scenario's steps (shared by both generate endpoints). */
