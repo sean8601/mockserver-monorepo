@@ -179,9 +179,10 @@ public class Configuration {
     // default response headers
     private String defaultResponseHeaders;
     // memoised parse of defaultResponseHeaders() so the pipe-split parse runs once per distinct
-    // resolved value rather than per HTTP request (DefaultResponseHeaders is constructed per request)
-    private volatile List<Header> parsedDefaultResponseHeaders;
-    private volatile String parsedDefaultResponseHeadersSource;
+    // resolved value rather than per HTTP request (DefaultResponseHeaders is constructed per request).
+    // source and parsed result are held in a single volatile holder so they are always read/written
+    // atomically together (no torn read of a result against a mismatched source).
+    private volatile java.util.Map.Entry<String, List<Header>> parsedDefaultResponseHeaders;
 
     // template restrictions
     private String javascriptDisallowedClasses;
@@ -441,7 +442,7 @@ public class Configuration {
     }
 
     /**
-     * If true (the default) the ClientAndServer constructor will open the UI in the default browser when the log level is set to DEBUG.
+     * If true the ClientAndServer constructor will open the UI in the default browser when the log level is set to DEBUG. Default is false.
      *
      * @param launchUIForLogLevelDebug enabled ClientAndServer constructor launching UI when log level is DEBUG
      */
@@ -2509,16 +2510,16 @@ public class Configuration {
      */
     public List<Header> parsedDefaultResponseHeaders() {
         String source = defaultResponseHeaders();
-        // equality on the source string is the cache validity check; the two volatiles are not read
-        // or written atomically, but the parse is a pure deterministic function of source, so a race
-        // can at worst cause a redundant recompute (never a wrong result) and is self-correcting
-        List<Header> cached = parsedDefaultResponseHeaders;
-        if (cached == null || !Objects.equals(source, parsedDefaultResponseHeadersSource)) {
-            cached = DefaultResponseHeaders.parse(source);
+        // source and result are read together from a single volatile holder, so the validity check
+        // can never see a result paired with a mismatched source. The parse is a pure deterministic
+        // function of source, so a concurrent miss can at worst cause a redundant recompute (never a
+        // wrong result) and is self-correcting.
+        java.util.Map.Entry<String, List<Header>> cached = parsedDefaultResponseHeaders;
+        if (cached == null || !Objects.equals(source, cached.getKey())) {
+            cached = new java.util.AbstractMap.SimpleImmutableEntry<>(source, DefaultResponseHeaders.parse(source));
             parsedDefaultResponseHeaders = cached;
-            parsedDefaultResponseHeadersSource = source;
         }
-        return cached;
+        return cached.getValue();
     }
 
     /**
@@ -2534,7 +2535,6 @@ public class Configuration {
         // invalidate the memoised parse; parsedDefaultResponseHeaders() will recompute lazily,
         // also picking up any change in the global property when defaultResponseHeaders is null
         this.parsedDefaultResponseHeaders = null;
-        this.parsedDefaultResponseHeadersSource = null;
         return this;
     }
 

@@ -162,6 +162,8 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_LLM_SEMANTIC_MATCHING_ENABLED = "mockserver.llmSemanticMatchingEnabled";
     private static final String MOCKSERVER_LLM_INFER_USAGE_ENABLED = "mockserver.llmInferUsageEnabled";
     private static final String MOCKSERVER_LLM_METRICS_ENABLED = "mockserver.llmMetricsEnabled";
+    private static final String MOCKSERVER_PER_EXPECTATION_METRICS_ENABLED = "mockserver.perExpectationMetricsEnabled";
+    // legacy key kept for backward compatibility — the canonical key above adds the conventional "Enabled" suffix
     private static final String MOCKSERVER_PER_EXPECTATION_METRICS = "mockserver.perExpectationMetrics";
     private static final String MOCKSERVER_DEDUPLICATE_RECORDED_EXPECTATIONS = "mockserver.deduplicateRecordedExpectations";
     private static final String MOCKSERVER_TEMPLATIZE_RECORDED_VALUES = "mockserver.templatizeRecordedValues";
@@ -513,10 +515,14 @@ public class ConfigurationProperties {
     public static Level logLevel() {
         String logLevel = readPropertyHierarchically(PROPERTIES, MOCKSERVER_LOG_LEVEL, "MOCKSERVER_LOG_LEVEL", DEFAULT_LOG_LEVEL).toUpperCase();
         if (isNotBlank(logLevel)) {
-            if (getSLF4JOrJavaLoggerToSLF4JLevelMapping().get(logLevel).equals("OFF")) {
+            String slf4jLevel = getSLF4JOrJavaLoggerToSLF4JLevelMapping().get(logLevel);
+            if (slf4jLevel == null) {
+                throw new IllegalArgumentException("log level \"" + logLevel + "\" is not legal it must be one of SL4J levels: \"TRACE\", \"DEBUG\", \"INFO\", \"WARN\", \"ERROR\", \"OFF\", or the Java Logger levels: \"FINEST\", \"FINE\", \"INFO\", \"WARNING\", \"SEVERE\", \"OFF\"");
+            }
+            if (slf4jLevel.equals("OFF")) {
                 return null;
             } else {
-                return Level.valueOf(getSLF4JOrJavaLoggerToSLF4JLevelMapping().get(logLevel));
+                return Level.valueOf(slf4jLevel);
             }
         } else {
             return Level.INFO;
@@ -526,10 +532,14 @@ public class ConfigurationProperties {
     public static String javaLoggerLogLevel() {
         String logLevel = readPropertyHierarchically(PROPERTIES, MOCKSERVER_LOG_LEVEL, "MOCKSERVER_LOG_LEVEL", DEFAULT_LOG_LEVEL).toUpperCase();
         if (isNotBlank(logLevel)) {
-            if (getSLF4JOrJavaLoggerToJavaLoggerLevelMapping().get(logLevel).equals("OFF")) {
+            String javaLoggerLevel = getSLF4JOrJavaLoggerToJavaLoggerLevelMapping().get(logLevel);
+            if (javaLoggerLevel == null) {
+                throw new IllegalArgumentException("log level \"" + logLevel + "\" is not legal it must be one of SL4J levels: \"TRACE\", \"DEBUG\", \"INFO\", \"WARN\", \"ERROR\", \"OFF\", or the Java Logger levels: \"FINEST\", \"FINE\", \"INFO\", \"WARNING\", \"SEVERE\", \"OFF\"");
+            }
+            if (javaLoggerLevel.equals("OFF")) {
                 return "OFF";
             } else {
-                return getSLF4JOrJavaLoggerToJavaLoggerLevelMapping().get(logLevel);
+                return javaLoggerLevel;
             }
         } else {
             return "INFO";
@@ -611,7 +621,7 @@ public class ConfigurationProperties {
     }
 
     /**
-     * If true (the default) the ClientAndServer constructor will open the UI in the default browser when the log level is set to DEBUG.
+     * If true the ClientAndServer constructor will open the UI in the default browser when the log level is set to DEBUG. Default is false.
      *
      * @param enable enabled ClientAndServer constructor launching UI when log level is DEBUG
      */
@@ -2586,7 +2596,11 @@ public class ConfigurationProperties {
     }
 
     public static boolean perExpectationMetricsEnabled() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_PER_EXPECTATION_METRICS, "MOCKSERVER_PER_EXPECTATION_METRICS", "" + false));
+        // Read the legacy "mockserver.perExpectationMetrics" key first (default false), then the
+        // canonical "mockserver.perExpectationMetricsEnabled" key, using the legacy value as its
+        // default so the canonical key wins when set and the legacy key still works when it is not.
+        String legacy = readPropertyHierarchically(PROPERTIES, MOCKSERVER_PER_EXPECTATION_METRICS, "MOCKSERVER_PER_EXPECTATION_METRICS", "" + false);
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_PER_EXPECTATION_METRICS_ENABLED, "MOCKSERVER_PER_EXPECTATION_METRICS_ENABLED", legacy));
     }
 
     /**
@@ -2603,7 +2617,7 @@ public class ConfigurationProperties {
      * @param enabled enable per-expectation metrics
      */
     public static void perExpectationMetricsEnabled(boolean enabled) {
-        setProperty(MOCKSERVER_PER_EXPECTATION_METRICS, "" + enabled);
+        setProperty(MOCKSERVER_PER_EXPECTATION_METRICS_ENABLED, "" + enabled);
     }
 
     public static boolean deduplicateRecordedExpectations() {

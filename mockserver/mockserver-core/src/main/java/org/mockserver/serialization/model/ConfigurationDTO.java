@@ -106,6 +106,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String proxyAuthenticationUsername;
     private String proxyAuthenticationPassword;
     private String noProxyHosts;
+    private String proxyRemoteHost;
+    private Integer proxyRemotePort;
+    private java.util.List<org.mockserver.model.ProxyPassMapping> proxyPassMappings;
 
     private String livenessHttpGetPath;
 
@@ -244,6 +247,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Set<String> controlPlaneOidcRequiredScopes;
     private String controlPlaneOidcScopeClaim;
     private Boolean controlPlaneAuthorizationEnabled;
+    private Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping;
     private Boolean transparentProxyEnabled;
     private Boolean transparentProxyTproxy;
     private Boolean transparentProxyEbpf;
@@ -364,6 +368,10 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.proxyAuthenticationUsername = configuration.proxyAuthenticationUsername();
             this.proxyAuthenticationPassword = configuration.proxyAuthenticationPassword();
             this.noProxyHosts = configuration.noProxyHosts();
+            this.proxyRemoteHost = configuration.proxyRemoteHost();
+            this.proxyRemotePort = configuration.proxyRemotePort();
+            java.util.List<org.mockserver.model.ProxyPassMapping> proxyPassMappings = configuration.proxyPassMappings();
+            this.proxyPassMappings = proxyPassMappings != null && !proxyPassMappings.isEmpty() ? proxyPassMappings : null;
 
             this.livenessHttpGetPath = configuration.livenessHttpGetPath();
             this.matchNamespaceHeader = configuration.matchNamespaceHeader();
@@ -504,6 +512,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.controlPlaneOidcRequiredScopes = configuration.controlPlaneOidcRequiredScopes();
             this.controlPlaneOidcScopeClaim = configuration.controlPlaneOidcScopeClaim();
             this.controlPlaneAuthorizationEnabled = configuration.controlPlaneAuthorizationEnabled();
+            Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> scopeMapping = configuration.controlPlaneScopeMapping();
+            this.controlPlaneScopeMapping = scopeMapping != null && !scopeMapping.isEmpty() ? scopeMapping : null;
             this.transparentProxyEnabled = configuration.transparentProxyEnabled();
             this.transparentProxyTproxy = configuration.transparentProxyTproxy();
             this.transparentProxyEbpf = configuration.transparentProxyEbpf();
@@ -656,6 +666,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.proxyAuthenticationUsername(proxyAuthenticationUsername);
         configuration.proxyAuthenticationPassword(proxyAuthenticationPassword);
         configuration.noProxyHosts(noProxyHosts);
+        configuration.proxyRemoteHost(proxyRemoteHost);
+        configuration.proxyRemotePort(proxyRemotePort);
+        configuration.proxyPassMappings(proxyPassMappings);
 
         configuration.livenessHttpGetPath(livenessHttpGetPath);
 
@@ -808,6 +821,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         configuration.controlPlaneOidcScopeClaim(controlPlaneOidcScopeClaim);
         configuration.controlPlaneAuthorizationEnabled(controlPlaneAuthorizationEnabled);
+        configuration.controlPlaneScopeMapping(controlPlaneScopeMapping);
         configuration.transparentProxyEnabled(transparentProxyEnabled);
         configuration.transparentProxyTproxy(transparentProxyTproxy);
         configuration.transparentProxyEbpf(transparentProxyEbpf);
@@ -1055,6 +1069,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (noProxyHosts != null) {
             target.noProxyHosts(noProxyHosts);
+        }
+        if (proxyRemoteHost != null) {
+            target.proxyRemoteHost(proxyRemoteHost);
+        }
+        if (proxyRemotePort != null) {
+            target.proxyRemotePort(proxyRemotePort);
+        }
+        if (proxyPassMappings != null) {
+            target.proxyPassMappings(proxyPassMappings);
         }
         if (livenessHttpGetPath != null) {
             target.livenessHttpGetPath(livenessHttpGetPath);
@@ -1451,6 +1474,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (controlPlaneAuthorizationEnabled != null) {
             target.controlPlaneAuthorizationEnabled(controlPlaneAuthorizationEnabled);
+        }
+        if (controlPlaneScopeMapping != null) {
+            target.controlPlaneScopeMapping(controlPlaneScopeMapping);
         }
         if (transparentProxyEnabled != null) {
             target.transparentProxyEnabled(transparentProxyEnabled);
@@ -2195,6 +2221,33 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setNoProxyHosts(String noProxyHosts) {
         this.noProxyHosts = noProxyHosts;
+        return this;
+    }
+
+    public String getProxyRemoteHost() {
+        return proxyRemoteHost;
+    }
+
+    public ConfigurationDTO setProxyRemoteHost(String proxyRemoteHost) {
+        this.proxyRemoteHost = proxyRemoteHost;
+        return this;
+    }
+
+    public Integer getProxyRemotePort() {
+        return proxyRemotePort;
+    }
+
+    public ConfigurationDTO setProxyRemotePort(Integer proxyRemotePort) {
+        this.proxyRemotePort = proxyRemotePort;
+        return this;
+    }
+
+    public java.util.List<org.mockserver.model.ProxyPassMapping> getProxyPassMappings() {
+        return proxyPassMappings;
+    }
+
+    public ConfigurationDTO setProxyPassMappings(java.util.List<org.mockserver.model.ProxyPassMapping> proxyPassMappings) {
+        this.proxyPassMappings = proxyPassMappings;
         return this;
     }
 
@@ -3393,6 +3446,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setControlPlaneAuthorizationEnabled(Boolean controlPlaneAuthorizationEnabled) {
         this.controlPlaneAuthorizationEnabled = controlPlaneAuthorizationEnabled;
+        return this;
+    }
+
+    public Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> getControlPlaneScopeMapping() {
+        return controlPlaneScopeMapping;
+    }
+
+    public ConfigurationDTO setControlPlaneScopeMapping(Map<String, org.mockserver.authentication.authorization.ControlPlaneRole> controlPlaneScopeMapping) {
+        this.controlPlaneScopeMapping = controlPlaneScopeMapping;
         return this;
     }
 

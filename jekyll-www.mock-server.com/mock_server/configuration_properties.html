@@ -1883,11 +1883,12 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p>Java Code:</p>
     <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.perExpectationMetricsEnabled(boolean enabled)</code></pre>
     <p>System Property:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.perExpectationMetrics=...</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.perExpectationMetricsEnabled=...</code></pre>
     <p>Environment Variable:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PER_EXPECTATION_METRICS=...</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PER_EXPECTATION_METRICS_ENABLED=...</code></pre>
     <p>Example:</p>
-    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.perExpectationMetrics="true"</code></pre>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.perExpectationMetricsEnabled="true"</code></pre>
+    <p>The legacy <span class="inline_code">-Dmockserver.perExpectationMetrics</span> / <span class="inline_code">MOCKSERVER_PER_EXPECTATION_METRICS</span> form is still accepted for backward compatibility.</p>
 </div>
 
 <button id="button_configuration_slow_request_threshold_millis" class="accordion title"><strong>Slow Request Threshold</strong></button>
