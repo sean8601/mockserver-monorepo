@@ -13,7 +13,7 @@
 
 The system **must** minimise routine human intervention while preserving **explicit escalation** for ambiguity, policy, and high-risk decisions. It **must** maximise safe parallelism under hard caps (no more than **10 active subagents** and **10-way parallelism** at any one time). The main agent's primary job is to **orchestrate subagents**: it **must** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents and reserve its own context for planning, decomposition, routing, review, and escalation. Delegating each unit to a purpose-built subagent is what lets the system pick the **model, temperature, and reasoning effort** that fit the task, which is the primary lever for managing **inference cost** and **determinism**; these are explicit, auditable decision variables, and the system **may** use multi-pass temperature pipelines (explore high → converge low → validate very low). Every significant action **must** be reproducible and auditable.
 
-The five mandatory pillars are **Context, Consistency, Verification, Diagnosis, and Adversarial Review**, bound together by **Reproducibility**. Adversarial review **must** be driven by per-artefact-type **review constitutions** (a focused profile for specifications, plans, ADRs, coding, investigation, documentation, deployment, periodic sweeps, etc.) rather than one generic checklist, so each review probes what actually breaks that artefact type. The system is also defended against its **own** failure modes — resisting prompt injection from untrusted inputs, never weakening or gaming the controls it is judged by, running tool execution in a bounded sandbox under an operator-controlled halt, and treating its own prompts, constitutions, routing, and model versions as change-managed artefacts validated against an evaluation suite (the binding requirements are C16–C19, §12 V7, §16, §17, §18.5; this summary is descriptive, not independently normative). The central discipline of the document: *humans are removed from routine loops by making the loops verifiable, not by lowering the bar.*
+The five mandatory pillars are **Context, Consistency, Verification, Diagnosis, and Adversarial Review**, bound together by **Reproducibility**. Adversarial review **must** be performed by an independent clean-context reviewer, layered across every aggregation level (unit, group, wave/phase, whole plan), and driven by per-artefact-type **review constitutions** (a focused profile for specifications, plans, ADRs, coding, investigation, documentation, deployment, integration, periodic sweeps, etc.) rather than one generic checklist, so each review probes what actually breaks that artefact type; every critical and major finding must be fixed before a unit may ship. The system is also defended against its **own** failure modes — resisting prompt injection from untrusted inputs, never weakening or gaming the controls it is judged by, running tool execution in a bounded sandbox under an operator-controlled halt, and treating its own prompts, constitutions, routing, and model versions as change-managed artefacts validated against an evaluation suite (the binding requirements are C16–C19, §12 V7, §16, §17, §18.5; this summary is descriptive, not independently normative). The central discipline of the document: *humans are removed from routine loops by making the loops verifiable, not by lowering the bar.*
 
 ```mermaid
 flowchart LR
@@ -23,8 +23,8 @@ flowchart LR
     C -->|"high risk /\nambiguous"| E["Escalate to human\n(structured question)"]
     D --> F["Worktree-isolated\nsubagents (≤10)"]
     F --> G["Verification\n(machine-readable gates)"]
-    G --> H["Adversarial review\n(≤8 iterations)"]
-    H -->|"new major findings"| F
+    G --> H["Adversarial review\n(clean context, layered, ≤8 iterations)"]
+    H -->|"new critical/major findings"| F
     H -->|"converged"| I["Reintegrate +\ndecision log"]
     E --> B
     G -->|"fail / low confidence"| E
@@ -122,8 +122,8 @@ Parallelism **MUST** be an intentional design concern. The system **MUST** decom
 ### 5.5 Subagent-first execution
 The main agent's **primary job is to orchestrate subagents.** It **MUST** act as orchestrator/planner/coordinator/reviewer and **MUST** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents (§7), performing work directly only for the trivial residue where delegation would add no value (e.g. a one-line edit). It **MUST** preserve its context window and reasoning capacity for orchestration, decomposition, routing, review, and escalation. Delegating each unit to a purpose-built subagent is also the mechanism by which **model, temperature, and reasoning effort** are matched to the task — the primary lever for managing inference cost and determinism (§5.6, §9).
 
-### 5.6 Explicit, intentional model, temperature, and effort selection
-Model capability, temperature, **and reasoning effort** **MUST** be treated as explicit, auditable decision variables chosen from task classification (§9), not defaults. Per-task selection of these variables is the primary control for **inference cost** and **output determinism**; the per-subagent configuration is where they are set and recorded.
+### 5.6 Explicit, intentional model, temperature, effort, and permission selection
+Model capability, temperature, **reasoning effort**, **and the least-privilege tool/permission scope** (§16) **MUST** be treated as explicit, auditable decision variables chosen from task classification (§9), not defaults. Per-task selection of these variables is the primary control for **inference cost**, **output determinism**, and **blast radius**; the per-subagent configuration is where they are set and recorded. A subagent **type** **MAY** be defined as a fixed, named (model, temperature, effort, permission-scope) profile and tasks routed to it by classification — this is conformant provided the classification → profile routing is recorded (§9, §21); the spec does **not** require subagent types to be named after task semantics.
 
 ### 5.7 Multi-pass creativity-to-convergence
 Where it improves quality, the system **SHOULD** use multi-pass execution with descending temperature profiles (explore → refine → validate) as a structured pipeline, not ad hoc randomness (§9.4).
@@ -144,9 +144,9 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 - **C3 — Subagent-first.** The overwhelming majority of execution — implementation *and* investigation — **MUST** be delegated to subagents; the main agent acts primarily as orchestrator (§7).
 - **C4 — Worktree isolation.** All work **MUST** run inside a worktree, never the bare checkout — including read-only/investigation work that makes no changes; the isolation unit is the independent session, and helper subagents share the spawning session's worktree (§8.3). Branches local-only by default (§8.3).
 - **C5 — Concurrency caps.** ≤10 active subagents and ≤10-way parallelism at any time, with dynamic lower limits (§8).
-- **C6 — Explicit routing.** Model, temperature, **and reasoning effort** **MUST** be selected from task classification and recorded (§9, §21).
+- **C6 — Explicit routing.** Model, temperature, **reasoning effort**, **and least-privilege tool/permission scope** **MUST** be selected from task classification and recorded (§9, §16, §21).
 - **C7 — Verifiability.** Every AI output **MUST** be verifiable; unverifiable completion claims **MUST NOT** be accepted (§12).
-- **C8 — Adversarial review.** Key artefacts **MUST** undergo independent, iterative adversarial review to convergence or 8 iterations, with residual risk recorded if unconverged (§14).
+- **C8 — Adversarial review.** Key artefacts **MUST** undergo iterative adversarial review by a **separate, clean-context subagent** (never the generating agent), at **every aggregation level** (unit, group, wave/phase, whole plan — §14.6), looping until no critical or major findings remain or 8 iterations complete, with all critical and major findings **fixed** and residual risk recorded if unconverged (§14).
 - **C9 — Reproducibility.** Significant outputs **MUST** be reconstructable from recorded inputs, assumptions, evidence, and decisions (§15).
 - **C10 — Safe failure.** On any failure mode the system **MUST** fail safe, signal explicitly, and record an auditable reason (§20).
 - **C11 — Least privilege.** Agents **MUST** operate under least-privilege access scoped to the task and its authorised context (§16).
@@ -175,7 +175,7 @@ Where it improves quality, the system **SHOULD** use multi-pass execution with d
 
 ### 7.2 Delegation by default
 - The system **MUST** delegate the overwhelming majority of execution — implementation *and* investigation — to subagents so the orchestrator can optimise task–model–temperature–effort fit (the primary inference-cost and determinism lever) and preserve context. Direct execution by the orchestrator is reserved for the trivial residue (§7.1).
-- Delegated tasks **MUST** carry **delegation metadata**: scope and boundaries, explicit success criteria, required context references (§10), dependencies, selected model class, temperature, and reasoning effort with rationale, risk class, verification expectations, and concurrency/isolation requirements.
+- Delegated tasks **MUST** carry **delegation metadata**: scope and boundaries, explicit success criteria, required context references (§10), dependencies, selected model class, temperature, reasoning effort, and least-privilege tool/permission scope (§16) — each with rationale — risk class, verification expectations, and concurrency/isolation requirements.
 
 ### 7.3 Decomposition discipline (`MUST`)
 - Break work into the **smallest independent units** with clear interfaces.
@@ -208,12 +208,12 @@ The system **MUST** apply a *lower* effective concurrency limit when warranted b
 - Worktrees **MUST** prevent filesystem interference and state contamination between **independent sessions**.
 - Worktree branches **MUST** be **local-only** and **MUST NOT** be pushed to remote by default. Remote branch creation **MUST** require explicit policy-based approval if ever permitted.
 - Temporary work artefacts **MUST** be attributable to the agent and task that produced them.
-- Completed or abandoned worktrees **MUST** be cleaned up safely and predictably; cleanup **MUST NOT** discard unmerged work without an explicit, logged decision.
+- Completed or abandoned worktrees **MUST** be cleaned up **promptly**, safely, and predictably: a worktree **MUST** be removed as soon as its work has been reintegrated to the mainline (§8.4) — or as soon as the work is abandoned — so stale worktrees do not accumulate. Cleanup **MUST NOT** discard unmerged work without an explicit, logged decision; if a worktree still holds unreintegrated changes it **MUST NOT** be removed but **MUST** be surfaced for disposition.
 
 ### 8.4 Contention and merge safety (`MUST`)
 - Independent units **MUST** be partitioned to minimise shared-file contention.
 - Reintegration **MUST** be serialised through a defined merge discipline (e.g. rebase-then-merge under a lock) so concurrent units cannot corrupt shared branch state.
-- After merging independent parallel units, the **integrated** result **MUST** be re-verified and **SHOULD** be re-reviewed adversarially, because defects can emerge from the *combination* even when each unit was individually correct.
+- After merging independent parallel units, the **integrated** result **MUST** be re-verified **and MUST be re-reviewed adversarially** (§14.6), because defects can emerge from the *combination* even when each unit was individually correct. This integration-level review is the group/wave tier of the layered review model (§14.6) and is mandatory, not optional.
 
 ### 8.5 Non-filesystem shared state (`MUST`)
 Worktree isolation covers the filesystem only. Where agents touch shared mutable resources **beyond** the filesystem (databases, infrastructure, external services, ticket systems, message queues), the system **MUST** prevent unsafe concurrent mutation with the same discipline — via partitioning, locking, dedicated non-production targets, or serialisation. Such resources **MUST** be identified during decomposition (§7.3), their contention risk **MUST** feed the dynamic concurrency limit (§8.2), and their side effects **MUST** be made replay-safe (§15 R8).
@@ -222,7 +222,7 @@ Worktree isolation covers the filesystem only. Where agents touch shared mutable
 
 ---
 
-## 9. Subagent, model, temperature, and effort selection strategy
+## 9. Subagent, model, temperature, effort, and permission selection strategy
 
 **Intent:** Make capability, determinism, and reasoning effort explicit, intentional, and auditable optimisation controls — the primary levers for inference cost and output quality. Because nearly all execution is delegated (§5.5, §7), this per-subagent selection is where cost and determinism are actually managed.
 
@@ -230,7 +230,8 @@ Worktree isolation covers the filesystem only. Where agents touch shared mutable
 Before selection, each task **MUST** be classified by: **complexity, ambiguity, risk, required reasoning depth, required determinism, required creativity, and available verification strength.**
 
 ### 9.2 Selection rules (`MUST`)
-- Subagent, model, temperature, **and reasoning effort** **MUST** be selected from the classification.
+- Subagent, model, temperature, **reasoning effort**, **and least-privilege tool/permission scope** (§16 S1, S12) **MUST** be selected from the classification.
+- **Tool/permission scope MUST be the least capability the task requires** (§16 S12): a task is granted only the filesystem, network, credential, and tool access it needs, and no more. A subagent **type** **MAY** bundle a fixed permission scope with its model/temperature/effort profile (§5.6) so routing selects all four together.
 - **Deterministic** tasks **MUST** default to **low temperature**.
 - **Creative/exploratory** tasks **MAY** use **higher temperature** where beneficial.
 - **High-risk** tasks **MUST** default to **low temperature and/or stronger models**.
@@ -344,10 +345,10 @@ A unit of work is authorised to ship **only** by passing a fail-closed gate chai
 
 ## 14. Adversarial review requirements
 
-**Intent:** Important outputs are deliberately challenged, by an independent reviewer, iteratively, until they stop yielding major findings — within a hard limit.
+**Intent:** Important outputs are deliberately challenged, by an independent clean-context reviewer, iteratively, at every aggregation level, until they stop yielding critical or major findings — within a hard limit.
 
 ### 14.1 What MUST be reviewed
-Key SDLC artefacts **MUST** undergo structured adversarial review, including: specifications, plans, architectural decisions, code changes, test strategies, deployment changes, completed feature implementations, operational health assessments, runbooks, and documentation.
+Key SDLC artefacts **MUST** undergo structured adversarial review, including: specifications, plans, architectural decisions, code changes, test strategies, deployment changes, completed feature implementations, operational health assessments, runbooks, and documentation. Review is not a single end-of-work event: the same artefact class **MUST** be reviewed at each **aggregation level** at which it exists — the individual unit, the group of related units, the wave/phase, and the whole plan/programme — per the layered model in §14.6.
 
 ### 14.2 Baseline review dimensions (`MUST`)
 Every adversarial review, regardless of artefact, **MUST** at minimum probe for: ambiguity, incompleteness, inconsistency, infeasibility, insecurity, inoperability, incorrectness, lack of fitness-for-purpose, brittleness, hidden assumptions, overcomplexity, poor rollback characteristics, poor observability, excessive coupling, and unverifiable claims. This is the **floor**, not the whole review — the artefact-specific constitution (§14.3) extends it with what matters most for that artefact type.
@@ -359,7 +360,7 @@ Every adversarial review, regardless of artefact, **MUST** at minimum probe for:
 **Requirements:**
 - **RC1 — Constitution per artefact/task type (`MUST`).** Each reviewable artefact or task type **MUST** map to a review constitution. The system **MUST** select the constitution from the artefact's classification and record which constitution (and its version) was applied (§21).
 - **RC2 — Baseline inheritance (`MUST`).** Every constitution **MUST** include the baseline dimensions (§14.2) and **MUST** add type-specific focus areas; a constitution **MUST NOT** remove a baseline dimension, only extend or sharpen it.
-- **RC3 — Required content (`MUST`).** Each constitution **MUST** define: its scope (which artefact/task types it governs), its prioritised focus areas, the failure modes most likely for that type, the **evidence the reviewer must inspect** (e.g. test results, diffs, traces, source spec), and explicit **PASS criteria** (what "no major findings" means for this type).
+- **RC3 — Required content (`MUST`).** Each constitution **MUST** define: its scope (which artefact/task types it governs), its prioritised focus areas, the failure modes most likely for that type, the **evidence the reviewer must inspect** (e.g. test results, diffs, traces, source spec), and explicit **PASS criteria** (what "no critical or major findings" means for this type).
 - **RC4 — Governed and versioned (`MUST`).** Constitutions are governed artefacts owned by the policy owner (§21.3); they **MUST** be versioned, discoverable as structured context (§10), and improved via the learning loop (§21.5) as new failure patterns emerge.
 - **RC5 — Composition (`MAY`).** An artefact that spans types (e.g. an ADR embedded in a plan, or code plus its tests) **MAY** be reviewed under a composition of constitutions; the composition applied **MUST** be recorded.
 
@@ -374,31 +375,57 @@ Every adversarial review, regardless of artefact, **MUST** at minimum probe for:
 | **review-investigation** | Diagnoses, RCAs, operational analyses | Causal soundness (correlation vs causation), completeness of evidence, alternative hypotheses ruled out, reproducibility of the evidence trail, actionability of conclusions | Logs/metrics/traces + change records (§13) | Conclusion is evidence-backed and the trail is reproducible |
 | **review-documentation** | Docs, READMEs, runbooks | Accuracy vs current code/behaviour, completeness, staleness, audience fit, runnability of instructions, dead links/commands | Doc + the code/system it describes | Content is accurate, current, and executable as written |
 | **review-deployment** | Deployment/infra changes | Rollback characteristics, blast radius, progressive-delivery safety, observability/alerting of the change, policy/security conformance, capacity impact | Change + infra validation + policy checks | Change is reversible, observable, and within policy |
+| **review-integration** | Merged groups of units, waves/phases, and whole-plan reintegration (§14.6, §8.4) | Defects emerging from the *combination* (interface drift, duplicated/conflicting changes, cross-unit regressions), end-to-end coherence vs the plan's intent, completeness (no dropped unit), holistic fitness beyond any single unit | The integrated diff + full re-verification results + the plan/wave scope | The combination is correct, complete, and coherent — not merely each unit in isolation |
 | **review-periodic** | Scheduled health/drift/security sweeps | Drift from standards (§11), accumulating risk/debt, coverage gaps, regressions vs baseline, recurrence of known failure patterns (§21.5) | Trend/baseline comparisons (§18) | No unflagged regression, drift, or recurring failure pattern |
 
 ### 14.4 Independence (`MUST`)
-Adversarial review **MUST** be independent where possible — performed by a **separate, clean-context** subagent or a separately scoped process — so the reviewer is not biased by the original generation path. The reviewer **MUST** review the change set on its own merits regardless of prior passes, applying the relevant constitution (§14.3).
+Adversarial review **MUST** be performed by a **separate, freshly-spawned, clean-context subagent** — given only the artefact, the context it needs, and the relevant constitution — so the reviewer re-derives findings independently and is not biased by the generation path. The reviewer **MUST NOT** be the agent (or a resumed/context-anchored continuation of the agent) that produced the artefact, an implementer of it, or any agent carrying the generation context; a shared-context or self-review **MUST NOT** be accepted in its place. The reviewer **MUST** review the change set on its own merits regardless of prior passes, re-run the artefact's verification where applicable, and apply the relevant constitution (§14.3). This independence requirement holds at **every** aggregation level of the layered review model (§14.6).
 
 ### 14.5 Iteration protocol (`MUST`)
 
 ```mermaid
 flowchart TD
-    A["Review iteration\n(clean context)"] --> B{"New major\nfindings?"}
-    B -->|"yes"| C["Address or consciously\ndisposition each finding"]
+    A["Review iteration\n(separate clean-context subagent)"] --> B{"New critical or\nmajor findings?"}
+    B -->|"yes"| C["Fix every critical and\nmajor finding (no disposition)"]
     C --> D["Re-verify after\nmaterial change"]
     D --> E{"Iteration\ncount < 8?"}
     E -->|"yes"| A
-    E -->|"no (=8)"| F["Stop: record\nresidual risk"]
+    E -->|"no (=8)"| F["Stop: record\nresidual risk -> gated approval"]
     B -->|"no"| G["Converged: PASS"]
 ```
 
-- Each iteration **MUST** produce **explicit findings**.
-- **Major findings MUST** be addressed or **consciously dispositioned** (accepted with recorded rationale) before the next iteration.
-- After any material change, the artefact **MUST** be **re-verified** (§12).
-- The loop **MUST** terminate when **either** no new major findings remain (convergence → PASS) **or** **8 iterations** have completed.
-- If the 8-iteration limit is reached **before** convergence, the system **MUST** record the **unresolved residual risk explicitly** and **MUST** route the artefact to *gated approval* or escalation (it **MUST NOT** be auto-reintegrated as if converged).
+- Each iteration **MUST** produce **explicit findings**, each classified by severity (**critical**, **major**, or **minor**).
+- **Critical and major findings MUST be fixed** — corrected in the artefact — before the next iteration. They **MUST NOT** be merely accepted or "consciously dispositioned"; there is **no disposition path** that leaves a critical or major finding unfixed. (A finding that, on independent re-examination, proves to be a false positive is *not* a finding — that determination **MUST** itself be recorded with its reasoning.)
+- **Minor findings MUST** be fixed or **explicitly recorded with rationale** (the only severity for which conscious deferral is permitted); recorded minor findings **MUST** be visible in the decision log (§21).
+- After any change, the artefact **MUST** be **re-verified** (§12) and the next iteration **MUST** run in a fresh clean context (§14.4).
+- The loop **MUST** terminate when **either** no new critical or major findings remain (convergence → PASS) **or** **8 iterations** have completed.
+- If the 8-iteration limit is reached **before** convergence (critical or major findings still unfixed), the system **MUST** record the **unresolved residual risk explicitly** and **MUST** route the artefact to *gated approval* or escalation (it **MUST NOT** be auto-reintegrated as if converged).
 
-**Trade-off (rapid progress vs assurance):** Iterative review costs inference and time; the 8-iteration cap bounds that cost while the residual-risk recording prevents the cap from silently lowering quality.
+**Trade-off (rapid progress vs assurance):** Iterative review costs inference and time; the 8-iteration cap bounds that cost while the mandatory fixing of every critical/major finding — and the residual-risk recording when the cap is hit — prevents the cap from silently lowering quality. Severity classification keeps the must-fix obligation focused on findings that actually matter, so the loop converges rather than chasing cosmetic noise.
+
+### 14.6 Layered (tiered) adversarial review (`MUST`)
+
+**Intent:** Reviewing only individual units misses defects that exist only in the *aggregate* — interface drift between units, duplicated or conflicting changes, dropped work, and loss of coherence against the original intent. Reviewing only the whole at the end misses unit-level defects cheaply caught early, and makes findings expensive to localise. The system **MUST** therefore review adversarially at **every aggregation level**, so each level is challenged on the concerns that only become visible at that level.
+
+```mermaid
+flowchart TD
+    A["Unit / task complete"] --> B["Tier 1: unit review\n(constitution for the unit's type)"]
+    B --> C{"Group of related\nunits complete?"}
+    C -->|"yes"| D["Tier 2: group review\n(review-integration)"]
+    D --> E{"Wave / phase\ncomplete?"}
+    E -->|"yes"| F["Tier 3: wave/phase review\n(review-integration)"]
+    F --> G{"Whole plan /\nprogramme complete?"}
+    G -->|"yes"| H["Tier 4: whole-plan review\n(review-plan + review-integration)"]
+```
+
+**Requirements:**
+- **LR1 — Review at every tier (`MUST`).** Adversarial review **MUST** be applied at each aggregation tier that exists for the work: **(1) the individual unit/task**, **(2) the group of related units** once merged together, **(3) the wave/phase** once its groups are complete, and **(4) the whole plan/programme** once all waves are complete. Tiers that do not exist for a small piece of work are simply skipped (a trivial single-unit change has only Tier 1); the orchestrator **MUST** record which tiers applied.
+- **LR2 — Each tier is an independent clean-context review (`MUST`).** Every tier **MUST** satisfy §14.4 (separate, freshly-spawned, clean-context reviewer) and §14.5 (loop to convergence or 8 iterations, all critical/major findings fixed). A higher-tier PASS **MUST NOT** be inferred from lower-tier PASSes — the combination is reviewed on its own merits.
+- **LR3 — Tier-appropriate constitution (`MUST`).** Each tier **MUST** apply the constitution(s) fitting what it examines (§14.3): unit reviews use the artefact-type constitution (e.g. `review-coding`, `review-documentation`); group and wave reviews use `review-integration`; the whole-plan review composes `review-plan` with `review-integration` (RC5). The constitution(s) applied at each tier **MUST** be recorded (§21).
+- **LR4 — Integration tiers gate reintegration (`MUST`).** The group/wave integration review (Tier 2/3) is the mandatory re-review of the integrated result required by §8.4; reintegration of the combination **MUST NOT** complete until its integration-tier review reaches PASS (or its residual risk is gated-approved, §14.5).
+- **LR5 — Findings flow down (`MUST`).** A finding raised at a higher tier that is rooted in a specific lower-tier unit **MUST** be fixed at the correct layer (cf. the Fix Placement Policy) and the affected lower tier **MUST** be re-verified (§12) and, if materially changed, re-reviewed.
+
+**Trade-off (assurance vs cost):** Reviewing at four tiers costs more inference than a single end-of-work review, but each tier is scoped to only what is newly visible at that level (a group review does not re-litigate each unit), so the marginal cost is bounded while the combination — where integration defects actually hide — is no longer unreviewed.
 
 ---
 
@@ -598,8 +625,9 @@ For each significant AI action/decision, the system **MUST** record:
 - **what assumptions** were made (§15 R2);
 - **what model class** was selected and **why** (§9);
 - **what temperature** was selected and **why**, **what reasoning effort** was selected and **why**, and **whether a multi-pass strategy** was used (§9.4);
+- **what tool/permission scope** was granted and **why** (§9.2, §16 S12);
 - **what verification evidence** was observed (§12);
-- **which review constitution** (and version) was applied, and **what adversarial findings** were raised across iterations and their disposition (§14);
+- **which review constitution(s)** (and version) and **which review tiers** (unit/group/wave/plan, §14.6) were applied, **what adversarial findings** were raised across iterations and **how each critical/major finding was fixed** (and, for minor findings, any recorded deferral rationale) (§14);
 - **why** the output was accepted, rejected, escalated, retried, or re-routed;
 - **any security-relevant events** that affected the task — suspected injection, control-integrity flags, sandbox denials, or operator halts (§16, §17).
 
@@ -673,7 +701,7 @@ Adoption **MUST** be incremental and reversible:
 - Concrete **cost-budget values** and how budgets are allocated across concurrent work (§17 OP5).
 - The authoritative **model/temperature/effort routing policy** mapping classification → selection, and its review cadence (§9).
 - Whether, and under what policy, **remote branch creation** for agent work is ever permitted (§8.3).
-- The definition of "**major**" vs "minor" adversarial finding for the convergence test (§14.5), and whether the threshold differs per review constitution (§14.3).
+- The precise severity boundaries between "**critical**", "**major**", and "**minor**" adversarial findings (§14.5) — critical and major are must-fix and block convergence; only minor may be deferred with rationale — and whether those boundaries differ per review constitution (§14.3).
 - The authoritative **licence/IP policy** for generated artefacts and the allowed-licence set (§16 S13).
 - The **scope and authority** of the operator halt — who may trigger it, its granularity, and the resumption procedure (§17 OP10).
 - **Eval-suite regression thresholds** for correctness, safety, and cost that block an AI-component change (§18.5).
@@ -702,17 +730,19 @@ Adoption **MUST** be incremental and reversible:
 | Broad tool capability vs blast radius | Execution sandboxed to least capability under an operator halt (§16 S12, §17 OP10). |
 | Velocity of AI improvement vs stability | Prompt/constitution/routing/model changes are change-managed and eval-gated (§18.5, §22.5). |
 | Autonomy vs sensible escalation | Escalations are non-blocking and batched by default, but correctness/safety/authority decisions still reach a human promptly (§19.4). |
+| Unit-level vs whole-system defects | Layered adversarial review at every aggregation tier — unit, group, wave/phase, whole plan — each an independent clean-context review (§14.6). |
+| Review thoroughness vs convergence | Critical/major findings are must-fix; only minor findings may be deferred, so the loop converges without leaving real defects (§14.5). |
 
 ### Appendix B — Conformance checklist (mandatory requirements)
 
 - [ ] Autonomy derived from risk class + verification strength (C1, §19)
 - [ ] Fail-closed gate chain enforced as authority to ship (C2, §12.3)
 - [ ] Subagent-first execution; orchestrator delegates by default (C3, §7)
-- [ ] All work in isolated worktrees; branches local-only (C4, §8.3)
+- [ ] All work in isolated worktrees; branches local-only; worktrees cleaned up promptly on reintegration (C4, §8.3)
 - [ ] ≤10 active subagents and ≤10-way parallelism, with dynamic lower limits (C5, §8)
-- [ ] Model + temperature selected from classification and recorded (C6, §9)
+- [ ] Model + temperature + effort + least-privilege permission scope selected from classification and recorded (C6, §9, §16)
 - [ ] Every output verifiable; no unverifiable completion claims (C7, §12)
-- [ ] Independent adversarial review under an artefact-specific review constitution, to convergence or 8 iterations; residual risk recorded (C8, §14)
+- [ ] Adversarial review by a separate clean-context subagent, under an artefact-specific review constitution, at every aggregation tier (unit/group/wave/plan), looping to convergence or 8 iterations with all critical & major findings fixed; residual risk recorded if unconverged (C8, §14, §14.4, §14.5, §14.6)
 - [ ] Significant outputs reproducible from recorded inputs/assumptions/evidence/decisions (C9, §15)
 - [ ] Safe failure with explicit signalling and auditable reasons (C10, §20)
 - [ ] Least-privilege access scoped per task (C11, §16)
@@ -739,7 +769,10 @@ Terms used normatively in this specification. Where a term is defined here, its 
 | **Artefact** | Any output the integration produces or reviews — plan, specification, code change, test, documentation, ADR, runbook, investigation, review comment, operational analysis (§3.2). |
 | **Gate chain** | The fail-closed sequence (classify → validate → adversarial review PASS → re-verify) that authorises reintegration (§12.3). |
 | **Review constitution** | A named, versioned, per-artefact-type review profile that extends the baseline review dimensions with type-specific focus, evidence, and PASS criteria (§14.3). |
-| **Major finding** | An adversarial-review finding material enough to block convergence; the precise threshold is policy-defined, potentially per constitution (§14.5, §22.6). |
+| **Critical finding** | An adversarial-review finding of the highest severity (e.g. correctness, security, safety, or data-loss impact); **must be fixed**, never dispositioned, and blocks convergence (§14.5). |
+| **Major finding** | An adversarial-review finding material enough to block convergence; like a critical finding it **must be fixed** (not dispositioned). The critical/major boundary is policy-defined, potentially per constitution (§14.5, §22.6). |
+| **Minor finding** | A low-severity adversarial-review finding; the only severity that **MAY** be deferred — it must be fixed or explicitly recorded with rationale, and does not block convergence (§14.5). |
+| **Layered (tiered) review** | The model in which adversarial review runs at every aggregation level — unit, group, wave/phase, whole plan — each as an independent clean-context review (§14.6). |
 | **Authority class** | Act-autonomously / gated-approval / advisory / reserved — what AI may do with a given artefact or activity (§3.3). |
 | **Risk class** | Classification by blast radius, reversibility, sensitivity, verification strength, novelty, and dependency complexity that sets the permitted autonomy (§19.1). |
 | **Worktree isolation** | The mandatory model in which each agent works in its own dedicated, local-only working tree (§8.3). |
