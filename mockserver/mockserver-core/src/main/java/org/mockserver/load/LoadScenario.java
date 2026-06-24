@@ -25,6 +25,25 @@ import java.util.Map;
  */
 public class LoadScenario extends ObjectWithJsonToString {
 
+    /**
+     * How each iteration selects which steps to run from {@link #getSteps()}.
+     */
+    public enum StepSelection {
+        /**
+         * Default: every iteration runs ALL steps in declared order (a multi-step user journey).
+         * Per-step {@link LoadStep#getWeight() weights} are ignored.
+         */
+        SEQUENTIAL,
+        /**
+         * Each iteration runs exactly ONE step, chosen at random with probability proportional to the
+         * steps' {@link LoadStep#getWeight() weights} (mixed-workload modelling, e.g. 70% browse /
+         * 20% search / 10% checkout). Because a WEIGHTED iteration runs a single step, cross-step
+         * captures have no later step to consume them and so are meaningful only under SEQUENTIAL;
+         * feeder data and pacing apply to both modes.
+         */
+        WEIGHTED
+    }
+
     private String name;
     private List<LoadStep> steps = new ArrayList<>();
     private LoadProfile profile;
@@ -84,6 +103,13 @@ public class LoadScenario extends ObjectWithJsonToString {
      * the dataset is exhausted (each row used exactly once). See {@link LoadFeeder}.
      */
     private LoadFeeder feeder;
+    /**
+     * Per-iteration step selection mode (nullable = {@link StepSelection#SEQUENTIAL SEQUENTIAL}). Under
+     * SEQUENTIAL (the default and the original behaviour) every iteration runs all steps in order; under
+     * {@link StepSelection#WEIGHTED WEIGHTED} each iteration runs a single step chosen by
+     * {@link LoadStep#getWeight() weight}. See {@link StepSelection}.
+     */
+    private StepSelection stepSelection;
 
     public static LoadScenario loadScenario() {
         return new LoadScenario();
@@ -241,6 +267,19 @@ public class LoadScenario extends ObjectWithJsonToString {
 
     public LoadScenario withFeeder(LoadFeeder feeder) {
         this.feeder = feeder;
+        return this;
+    }
+
+    /**
+     * The per-iteration step selection mode (may be null = {@link StepSelection#SEQUENTIAL}). See
+     * {@link #stepSelection}.
+     */
+    public StepSelection getStepSelection() {
+        return stepSelection;
+    }
+
+    public LoadScenario withStepSelection(StepSelection stepSelection) {
+        this.stepSelection = stepSelection;
         return this;
     }
 }

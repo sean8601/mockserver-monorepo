@@ -4907,6 +4907,9 @@ components:
           description: "optional cross-step capture rules applied to this step's response. Each binds an extracted value to a variable name visible to SUBSEQUENT steps in the same iteration via $iteration.captured.<name> (Velocity) / {{iteration.captured.<name>}} (Mustache), in path, body and header templates. Scope is per-iteration (one virtual user's single pass through the steps)."
           items:
             $ref: "#/components/schemas/LoadCapture"
+        weight:
+          type: number
+          description: "relative selection weight, used only when the scenario's stepSelection is WEIGHTED: each iteration runs exactly ONE step chosen at random with probability proportional to its weight (e.g. weights 7 / 2 / 1 model a 70% / 20% / 10% mixed workload). Omitted means 1.0 in WEIGHTED mode; must be > 0 when WEIGHTED. Ignored under the default SEQUENTIAL mode (all steps run in order)."
     LoadCapture:
       description: "a declarative cross-step capture / correlation rule: extracts a value from a step's response and binds it to a variable name that a later step in the same iteration can reference from its templated request fields. Best-effort: on no match it falls back to defaultValue (when set) or leaves the variable unset, never failing the run."
       type: object
@@ -5039,9 +5042,14 @@ components:
           $ref: "#/components/schemas/LoadFeeder"
         profile:
           $ref: "#/components/schemas/LoadProfile"
+        stepSelection:
+          type: string
+          enum: [SEQUENTIAL, WEIGHTED]
+          default: SEQUENTIAL
+          description: "how each iteration selects which steps to run: SEQUENTIAL (default) runs ALL steps in declared order (a multi-step user journey); WEIGHTED runs exactly ONE step per iteration chosen at random proportional to each step's weight (mixed-workload modelling, e.g. 70% browse / 20% search / 10% checkout). Cross-step captures are meaningful only under SEQUENTIAL (a WEIGHTED iteration runs a single step); feeder data and pacing apply to both."
         steps:
           type: array
-          description: "ordered list of request steps fired in sequence each iteration (max 50)"
+          description: "ordered list of request steps. Under SEQUENTIAL stepSelection (default) all steps are fired in sequence each iteration; under WEIGHTED one step is chosen per iteration by weight (max 50)"
           items:
             $ref: "#/components/schemas/LoadStep"
     LoadScenarioListEntry:

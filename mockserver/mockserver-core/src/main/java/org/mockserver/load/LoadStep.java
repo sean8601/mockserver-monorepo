@@ -47,6 +47,17 @@ public class LoadStep extends ObjectWithJsonToString {
      * variable name visible to subsequent steps in the same iteration. See {@link LoadCapture}.
      */
     private List<LoadCapture> captures;
+    /**
+     * Relative selection weight, used only when the scenario's
+     * {@link LoadScenario#getStepSelection() stepSelection} is
+     * {@link LoadScenario.StepSelection#WEIGHTED WEIGHTED}: each iteration runs exactly ONE step chosen
+     * at random with probability proportional to its weight (e.g. weights {@code 7 / 2 / 1} model a
+     * 70% / 20% / 10% mixed workload). Nullable — an absent weight is treated as {@code 1.0} in
+     * WEIGHTED mode; a non-positive weight is rejected by validation. Ignored entirely under the default
+     * {@link LoadScenario.StepSelection#SEQUENTIAL SEQUENTIAL} mode (all steps run in order regardless
+     * of any weights present).
+     */
+    private Double weight;
 
     public static LoadStep loadStep() {
         return new LoadStep();
@@ -123,6 +134,18 @@ public class LoadStep extends ObjectWithJsonToString {
             this.captures = new ArrayList<>();
         }
         this.captures.add(capture);
+        return this;
+    }
+
+    /**
+     * Relative selection weight for WEIGHTED step selection (may be null = treated as 1.0). See {@link #weight}.
+     */
+    public Double getWeight() {
+        return weight;
+    }
+
+    public LoadStep withWeight(Double weight) {
+        this.weight = weight;
         return this;
     }
 }

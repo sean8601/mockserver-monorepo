@@ -575,8 +575,10 @@ curl -X PUT http://localhost:1080/mockserver/loadScenario/start -d '{ "name": "r
 A missing `name`, no recorded requests to convert (none recorded, or none matching `requestFilter`), an
 invalid `mode`, or a generated scenario that fails validation all return `400 {error}`.
 
-> Frequency-proportional **weighting** of routes (firing hotter routes more often within a run) is a
-> separate weighted-flows enhancement — `TEMPLATIZED` today emits ordered, unweighted steps.
+> The `TEMPLATIZED` seeder emits ordered, unweighted steps. To fire hotter routes more often, set the
+> generated scenario's [`stepSelection: WEIGHTED`](#weighted-step-selection) and assign per-step
+> `weight`s by hand; **auto**-deriving weights from observed hit frequencies remains a deferred
+> enhancement.
 
 ## Timing and concurrency
 
@@ -616,6 +618,50 @@ Scope and composition:
   coordinated-omission-corrected in-flight latency sample is untouched (no coordinated-omission games).
 
 `pacing.value` must be `> 0` when `mode` is not `NONE` (rejected by validation otherwise).
+
+### Weighted step selection
+
+By default every iteration runs **all** steps in declared order — a multi-step user journey
+(`stepSelection: SEQUENTIAL`, the original behaviour). An alternative mode lets one scenario model a
+**mixed workload**: with `stepSelection: WEIGHTED`, each iteration runs exactly **ONE** step, chosen at
+random with probability proportional to each step's `weight` (Gatling `randomSwitch`, Locust `@task`
+weights). This expresses, in a single run, a traffic mix such as 70% browse / 20% search / 10% checkout.
+
+| `stepSelection` | steps run per iteration | `weight` |
+|-----------------|-------------------------|----------|
+| `SEQUENTIAL` (default) | all steps, in declared order | ignored (may be present but unused) |
+| `WEIGHTED` | exactly one step, chosen by weight | per-step relative weight (absent = `1.0`); must be `> 0` |
+
+The pick uses a cumulative-weight scan over a uniform draw in `[0, totalWeight)`
+(`ThreadLocalRandom.nextDouble(totalWeight)`), computed once per iteration. After the chosen step runs,
+the iteration ends exactly as a SEQUENTIAL iteration does after its last step — the closed-model VU loop
+reschedules its next iteration (with pacing) and the one-shot `RATE` model ends the VU.
+
+```json
+{
+  "name": "mixed-shop-workload",
+  "stepSelection": "WEIGHTED",
+  "profile": { "stages": [ { "type": "VU", "vus": 20, "durationMillis": 60000 } ] },
+  "steps": [
+    { "name": "browse",   "weight": 7, "request": { "method": "GET",  "path": "/products" } },
+    { "name": "search",   "weight": 2, "request": { "method": "GET",  "path": "/search?q=shoes" } },
+    { "name": "checkout", "weight": 1, "request": { "method": "POST", "path": "/checkout" } }
+  ]
+}
+```
+
+Validation: under `WEIGHTED`, there must be at least one step and every step's effective weight
+(absent = `1.0`) must be `> 0` with a positive total; a non-positive weight is rejected. `SEQUENTIAL`
+ignores weights entirely (a weight may be present but is unused, so a scenario can be flipped between
+modes freely).
+
+Interaction with other features:
+
+- **Cross-step capture is meaningful only under `SEQUENTIAL`.** A WEIGHTED iteration runs a single step,
+  so there is no later step to consume a captured variable. (Capture rules on a WEIGHTED step do no harm
+  — they simply have no subsequent step to feed.)
+- **Feeder data and pacing apply to both modes.** One feeder row is selected per iteration and the
+  pacing cycle governs the next-iteration launch identically, regardless of `stepSelection`.
 
 ## Decoupling
 
@@ -848,10 +894,12 @@ The **Performance** panel (`LoadScenarioPanel.tsx`, view = `performance`) is the
 ## Deferred
 
 - Distributed / multi-node load.
-- Frequency-proportional **weighting** of routes within a run (a weighted-flows enhancement; the
-  `TEMPLATIZED` recording seeder today emits ordered, unweighted steps — see
-  [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic)).
-- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field and the [`generateFromRecording`](#seed-a-scenario-from-recorded-traffic) seeder.
+- **Automatic** frequency-proportional weighting of routes by the recording seeder (the `TEMPLATIZED`
+  recording seeder still emits ordered, unweighted steps — see
+  [Seed a scenario from recorded traffic](#seed-a-scenario-from-recorded-traffic)). Manual mixed-workload
+  weighting is now supported via [`stepSelection: WEIGHTED` + per-step `weight`](#weighted-step-selection);
+  what remains deferred is auto-deriving those weights from observed hit frequencies.
+- Dashboard UI, client libraries, and codegen for the registry/start/stop surface (later waves; the core + REST API land first) — including for the cross-step `captures` field, the `stepSelection`/`weight` fields, and the [`generateFromRecording`](#seed-a-scenario-from-recorded-traffic) seeder.
 
 > Seeding scenario *definitions* from recorded traffic **is now supported** via
 > [`PUT /mockserver/loadScenario/generateFromRecording`](#seed-a-scenario-from-recorded-traffic) (preloading

@@ -1727,4 +1727,154 @@ public class LoadScenarioOrchestratorTest {
 
         assertThat(orchestrator.validate(scenario), containsString("not a valid JSON array"));
     }
+
+    // ---- Weighted step selection ----------------------------------------------------------------
+
+    @Test
+    public void sequentialSelectionRunsAllStepsInOrderEachIteration() throws Exception {
+        // SEQUENTIAL (the default) is unchanged: a multi-step iteration fires all steps in declared
+        // order. One iteration (maxRequests = 3 == the three steps) so ordering is unambiguous.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("sequential-order")
+            .withMaxRequests(3)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withPath("/a").withHeader("Host", "target")),
+                new LoadStep().withRequest(request().withPath("/b").withHeader("Host", "target")),
+                new LoadStep().withRequest(request().withPath("/c").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 3, 5_000L), is(true));
+
+        java.util.List<String> paths = sender.sent.stream()
+            .map(r -> r.getPath().getValue())
+            .limit(3)
+            .collect(java.util.stream.Collectors.toList());
+        assertThat("default SEQUENTIAL runs all steps in declared order",
+            paths, contains("/a", "/b", "/c"));
+    }
+
+    @Test
+    public void weightedSelectionRunsExactlyOneStepPerIteration() throws Exception {
+        // Two steps, WEIGHTED. With maxRequests = 1, exactly one step (one request) is dispatched for
+        // the single iteration — proving a WEIGHTED iteration runs ONE step, not all of them.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("weighted-one-step")
+            .withStepSelection(LoadScenario.StepSelection.WEIGHTED)
+            .withMaxRequests(1)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withPath("/a").withHeader("Host", "target")).withWeight(1.0),
+                new LoadStep().withRequest(request().withPath("/b").withHeader("Host", "target")).withWeight(1.0));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 1, 5_000L), is(true));
+        // Let the scheduler settle: a WEIGHTED iteration must not fire a second step after the first.
+        Thread.sleep(200);
+        for (int i = 0; i < 5; i++) {
+            orchestrator.tickNow();
+        }
+        assertThat("a WEIGHTED iteration dispatches exactly one step", sender.sent.size(), is(1));
+        String path = sender.sent.peek().getPath().getValue();
+        assertThat(path, anyOf(is("/a"), is("/b")));
+    }
+
+    @Test
+    public void weightedSelectionDistributesProportionallyToWeights() throws Exception {
+        // Heavy 8:1:1 weighting over many iterations: every step is hit at least once and the dominant
+        // step is hit far more often. Tolerant bounds (and a deterministic-clock-driven volume) keep it
+        // non-flaky — we assert ordering of frequencies and presence, not exact ratios. The volume stays
+        // under the default 500 req/s RPS-token cap, which (with the frozen test clock) bounds the whole
+        // run to one window — so 450 requests dispatch deterministically without advancing the clock.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("weighted-distribution")
+            .withStepSelection(LoadScenario.StepSelection.WEIGHTED)
+            .withMaxRequests(450)
+            .withProfile(LoadProfile.constant(8, 60_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withPath("/heavy").withHeader("Host", "target")).withWeight(8.0),
+                new LoadStep().withRequest(request().withPath("/light1").withHeader("Host", "target")).withWeight(1.0),
+                new LoadStep().withRequest(request().withPath("/light2").withHeader("Host", "target")).withWeight(1.0));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 450, 10_000L), is(true));
+
+        java.util.Map<String, Long> counts = sender.sent.stream()
+            .map(r -> r.getPath().getValue())
+            .collect(java.util.stream.Collectors.groupingBy(p -> p, java.util.stream.Collectors.counting()));
+        long heavy = counts.getOrDefault("/heavy", 0L);
+        long light1 = counts.getOrDefault("/light1", 0L);
+        long light2 = counts.getOrDefault("/light2", 0L);
+
+        // Every step is selected at least once.
+        assertThat("heavy step hit", heavy, greaterThan(0L));
+        assertThat("light1 step hit", light1, greaterThan(0L));
+        assertThat("light2 step hit", light2, greaterThan(0L));
+        // The dominant (weight 8 of 10) step dominates: well over half of all picks, and clearly more
+        // than either light step. Expected ~80%; assert a wide-margin lower bound to avoid flakiness.
+        long total = heavy + light1 + light2;
+        assertThat("heavily-weighted step dominates", heavy, greaterThan(total / 2));
+        assertThat(heavy, greaterThan(light1));
+        assertThat(heavy, greaterThan(light2));
+    }
+
+    @Test
+    public void validateRejectsWeightedWithNonPositiveWeight() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("weighted-zero")
+            .withStepSelection(LoadScenario.StepSelection.WEIGHTED)
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withPath("/a")).withWeight(1.0),
+                new LoadStep().withRequest(request().withPath("/b")).withWeight(0.0));
+
+        assertThat(orchestrator.validate(scenario),
+            containsString("step[1].weight must be > 0 when stepSelection is WEIGHTED"));
+    }
+
+    @Test
+    public void validateRejectsWeightedWithNegativeWeight() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("weighted-negative")
+            .withStepSelection(LoadScenario.StepSelection.WEIGHTED)
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/a")).withWeight(-2.0));
+
+        assertThat(orchestrator.validate(scenario),
+            containsString("step[0].weight must be > 0 when stepSelection is WEIGHTED"));
+    }
+
+    @Test
+    public void validateAcceptsWeightedWithDefaultedAbsentWeights() {
+        // Absent weights default to 1.0 in WEIGHTED mode, so a scenario with no explicit weights is valid.
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("weighted-defaulted")
+            .withStepSelection(LoadScenario.StepSelection.WEIGHTED)
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withPath("/a")),
+                new LoadStep().withRequest(request().withPath("/b")));
+
+        assertThat(orchestrator.validate(scenario), is(nullValue()));
+    }
+
+    @Test
+    public void validateAcceptsSequentialWithWeightsPresentButIgnored() {
+        // SEQUENTIAL ignores weights — even a zero/negative weight is accepted (and unused).
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("sequential-with-weights")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withPath("/a")).withWeight(5.0),
+                new LoadStep().withRequest(request().withPath("/b")).withWeight(0.0));
+
+        assertThat(orchestrator.validate(scenario), is(nullValue()));
+    }
 }

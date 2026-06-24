@@ -20,6 +20,7 @@ public class LoadStepDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
     private String name;
     private Map<String, String> labels;
     private List<LoadCapture> captures;
+    private Double weight;
 
     public LoadStepDTO(LoadStep step) {
         if (step != null) {
@@ -36,6 +37,7 @@ public class LoadStepDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
             if (step.getCaptures() != null && !step.getCaptures().isEmpty()) {
                 captures = new ArrayList<>(step.getCaptures());
             }
+            weight = step.getWeight();
         }
     }
 
@@ -59,6 +61,9 @@ public class LoadStepDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
         }
         if (captures != null && !captures.isEmpty()) {
             step.withCaptures(captures);
+        }
+        if (weight != null) {
+            step.withWeight(weight);
         }
         return step;
     }
@@ -105,6 +110,15 @@ public class LoadStepDTO extends ObjectWithReflectiveEqualsHashCodeToString impl
 
     public LoadStepDTO setCaptures(List<LoadCapture> captures) {
         this.captures = captures;
+        return this;
+    }
+
+    public Double getWeight() {
+        return weight;
+    }
+
+    public LoadStepDTO setWeight(Double weight) {
+        this.weight = weight;
         return this;
     }
 }

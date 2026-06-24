@@ -29,6 +29,7 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private Long abortGraceMillis;
     private LoadPacingDTO pacing;
     private LoadFeeder feeder;
+    private LoadScenario.StepSelection stepSelection;
 
     public LoadScenarioDTO(LoadScenario scenario) {
         if (scenario != null) {
@@ -69,6 +70,11 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             // mirroring how LoadCapture is embedded directly. Echoing the model object preserves the
             // raw data/format source of truth, so a data-driven feeder round-trips without re-parsing.
             feeder = scenario.getFeeder();
+            // Emit only when non-default so existing SEQUENTIAL scenarios serialize unchanged.
+            if (scenario.getStepSelection() != null
+                && scenario.getStepSelection() != LoadScenario.StepSelection.SEQUENTIAL) {
+                stepSelection = scenario.getStepSelection();
+            }
         }
     }
 
@@ -92,7 +98,8 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withAbortOnFail(abortOnFail != null && abortOnFail)
             .withAbortGraceMillis(abortGraceMillis != null ? abortGraceMillis : 0L)
             .withPacing(pacing != null ? pacing.buildObject() : null)
-            .withFeeder(feeder);
+            .withFeeder(feeder)
+            .withStepSelection(stepSelection);
         if (labels != null && !labels.isEmpty()) {
             scenario.withLabels(labels);
         }
@@ -211,6 +218,15 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public LoadScenarioDTO setFeeder(LoadFeeder feeder) {
         this.feeder = feeder;
+        return this;
+    }
+
+    public LoadScenario.StepSelection getStepSelection() {
+        return stepSelection;
+    }
+
+    public LoadScenarioDTO setStepSelection(LoadScenario.StepSelection stepSelection) {
+        this.stepSelection = stepSelection;
         return this;
     }
 }

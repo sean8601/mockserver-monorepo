@@ -640,7 +640,49 @@ public class LoadScenarioOrchestrator {
         // chained fireStep calls below and never shared across VUs or across a VU's successive iterations,
         // so cross-step correlation is race-free and captures never leak between users or iterations.
         Map<String, String> captured = new ConcurrentHashMap<>();
-        fireStep(run, vuId, vuIteration, 0, looping, captured, data, iterationStartNanos);
+        // Per-iteration ordered step sequence: SEQUENTIAL runs all steps in declared order (the original
+        // behaviour); WEIGHTED runs a single step chosen at random proportional to the steps' weights, so
+        // one run can model a mixed workload. Computed once here and threaded through the chained fireStep
+        // calls (like {@code captured}) so the dispatch logic — pacing, capture, feeder, cap handling and
+        // the closed/one-shot iteration boundary — stays a single code path that simply indexes this list.
+        List<LoadStep> iterationSteps = selectIterationSteps(run.scenario);
+        fireStep(run, vuId, vuIteration, 0, looping, captured, data, iterationStartNanos, iterationSteps);
+    }
+
+    /**
+     * Build the ordered list of steps a single iteration will run. SEQUENTIAL (default) returns the
+     * scenario's full ordered step list unchanged. WEIGHTED returns a single-element list containing one
+     * step chosen by weighted random over the steps' weights (cumulative-weight + a uniform draw in
+     * {@code [0, totalWeight)}); an absent weight counts as {@code 1.0}. validate() has already proved a
+     * WEIGHTED scenario has at least one step and a positive total weight, so the selection always
+     * resolves to exactly one step.
+     */
+    private static List<LoadStep> selectIterationSteps(LoadScenario scenario) {
+        List<LoadStep> steps = scenario.getSteps();
+        if (scenario.getStepSelection() != LoadScenario.StepSelection.WEIGHTED || steps == null || steps.isEmpty()) {
+            return steps;
+        }
+        double totalWeight = 0;
+        for (LoadStep step : steps) {
+            totalWeight += weightOf(step);
+        }
+        // Defensive: validate() rejects a non-positive total, but never index past the end on a rounding
+        // edge — fall back to the last step.
+        double target = ThreadLocalRandom.current().nextDouble(totalWeight);
+        double cumulative = 0;
+        for (LoadStep step : steps) {
+            cumulative += weightOf(step);
+            if (target < cumulative) {
+                return Collections.singletonList(step);
+            }
+        }
+        return Collections.singletonList(steps.get(steps.size() - 1));
+    }
+
+    /** A step's effective selection weight: its explicit weight, or {@code 1.0} when absent. */
+    private static double weightOf(LoadStep step) {
+        Double weight = step != null ? step.getWeight() : null;
+        return weight != null ? weight : 1.0;
     }
 
     /**
@@ -669,7 +711,7 @@ public class LoadScenarioOrchestrator {
         run.activeVUs.decrementAndGet();
     }
 
-    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured, Map<String, String> data, long iterationStartNanos) {
+    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured, Map<String, String> data, long iterationStartNanos, List<LoadStep> iterationSteps) {
         // Coordinated-omission correction: capture the scheduled-due timestamp at the very start of the
         // dispatch path — BEFORE the in-flight permit and RPS-token acquire below — so the latency we
         // record measures from the moment dispatch was requested, INCLUDING any queueing wait the
@@ -689,8 +731,8 @@ public class LoadScenarioOrchestrator {
             completeInternal(run);
             return;
         }
-        List<LoadStep> steps = run.scenario.getSteps();
-        if (stepIndex >= steps.size()) {
+        List<LoadStep> steps = iterationSteps;
+        if (steps == null || stepIndex >= steps.size()) {
             // Iteration finished: account it.
             Metrics.incrementLoadIteration(run.scenario.getName(), run.runId);
             if (!looping) {
@@ -728,7 +770,7 @@ public class LoadScenarioOrchestrator {
             run.failed.incrementAndGet();
             run.requestsSent.incrementAndGet();
             Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos, iterationSteps);
             return;
         }
 
@@ -750,14 +792,14 @@ public class LoadScenarioOrchestrator {
         if (!run.inFlight.tryAcquire()) {
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos, iterationSteps);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos, iterationSteps);
             return;
         }
 
@@ -775,14 +817,14 @@ public class LoadScenarioOrchestrator {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "connection");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos, iterationSteps);
             return;
         }
         if (future == null) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "null_response");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos, iterationSteps);
             return;
         }
         future.whenComplete((response, throwable) -> {
@@ -797,7 +839,7 @@ public class LoadScenarioOrchestrator {
             // and never throws out of the dispatch path: a missing value or extraction error falls back
             // to the capture's defaultValue (when set) or leaves the variable unset.
             applyCaptures(run, step, response, captured);
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos, iterationSteps);
         });
     }
 
@@ -931,7 +973,7 @@ public class LoadScenarioOrchestrator {
         return null;
     }
 
-    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured, Map<String, String> data, long iterationStartNanos) {
+    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured, Map<String, String> data, long iterationStartNanos, List<LoadStep> iterationSteps) {
         if (run.stopped.get() || !isCurrent(run)) {
             // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
             // genuine loop-exit point, so release the slot exactly once.
@@ -939,7 +981,7 @@ public class LoadScenarioOrchestrator {
             return;
         }
         long thinkMillis = step.getThinkTime() != null ? Math.max(0, step.getThinkTime().sampleValueMillis()) : 0;
-        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured, data, iterationStartNanos), thinkMillis, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured, data, iterationStartNanos, iterationSteps), thinkMillis, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -1105,6 +1147,24 @@ public class LoadScenarioOrchestrator {
         for (int i = 0; i < steps.size(); i++) {
             if (steps.get(i) == null || steps.get(i).getRequest() == null) {
                 return "step[" + i + "] must have a request";
+            }
+        }
+        // WEIGHTED step selection: each iteration runs one step chosen proportional to its weight, so
+        // every step's effective weight (absent = 1.0) must be > 0 and the total positive. SEQUENTIAL
+        // (the default) runs all steps in order and ignores any weights — a weight may be present but is
+        // unused, and is not rejected (lenient, so a scenario can be flipped between modes freely).
+        if (scenario.getStepSelection() == LoadScenario.StepSelection.WEIGHTED) {
+            double totalWeight = 0;
+            for (int i = 0; i < steps.size(); i++) {
+                Double weight = steps.get(i).getWeight();
+                double effective = weight != null ? weight : 1.0;
+                if (effective <= 0) {
+                    return "step[" + i + "].weight must be > 0 when stepSelection is WEIGHTED";
+                }
+                totalWeight += effective;
+            }
+            if (totalWeight <= 0) {
+                return "'steps' total weight must be > 0 when stepSelection is WEIGHTED";
             }
         }
         LoadProfile profile = scenario.getProfile();

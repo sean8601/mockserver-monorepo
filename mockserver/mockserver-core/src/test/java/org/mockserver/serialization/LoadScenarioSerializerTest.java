@@ -409,4 +409,43 @@ public class LoadScenarioSerializerTest {
     public void rejectsMalformedJson() {
         serializer.deserialize("{ not valid json ");
     }
+
+    @Test
+    public void roundTripsWeightedStepSelectionAndStepWeights() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("weighted")
+            .withStepSelection(LoadScenario.StepSelection.WEIGHTED)
+            .withProfile(LoadProfile.constant(5, 30_000L))
+            .withSteps(
+                new LoadStep().withRequest(request().withMethod("GET").withPath("/browse")).withWeight(7.0),
+                new LoadStep().withRequest(request().withMethod("GET").withPath("/search")).withWeight(2.0),
+                new LoadStep().withRequest(request().withMethod("POST").withPath("/checkout")).withWeight(1.0));
+
+        String json = serializer.serialize(scenario);
+        assertThat(json, containsString("WEIGHTED"));
+        LoadScenario parsed = serializer.deserialize(json);
+
+        assertThat(parsed.getStepSelection(), is(LoadScenario.StepSelection.WEIGHTED));
+        assertThat(parsed.getSteps(), hasSize(3));
+        assertThat(parsed.getSteps().get(0).getWeight(), is(7.0));
+        assertThat(parsed.getSteps().get(1).getWeight(), is(2.0));
+        assertThat(parsed.getSteps().get(2).getWeight(), is(1.0));
+    }
+
+    @Test
+    public void defaultSequentialSelectionAndAbsentWeightsAreNotSerialized() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("plain")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String json = serializer.serialize(scenario);
+        // Backward compatible: a default SEQUENTIAL scenario with no weights emits neither field.
+        assertThat(json, not(containsString("stepSelection")));
+        assertThat(json, not(containsString("weight")));
+
+        LoadScenario parsed = serializer.deserialize(json);
+        assertThat(parsed.getStepSelection(), is(nullValue()));
+        assertThat(parsed.getSteps().get(0).getWeight(), is(nullValue()));
+    }
 }
