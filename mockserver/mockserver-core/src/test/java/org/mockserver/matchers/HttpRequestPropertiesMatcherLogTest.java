@@ -2002,7 +2002,11 @@ public class HttpRequestPropertiesMatcherLogTest {
                     NEW_LINE +
                     "  {" + NEW_LINE +
                     "    \"body\" : {" + NEW_LINE +
-                    "      \"some_field\" : \"some_value\"" + NEW_LINE +
+                    "      \"type\" : \"JSON\"," + NEW_LINE +
+                    "      \"json\" : {" + NEW_LINE +
+                    "        \"some_field\" : \"some_value\"" + NEW_LINE +
+                    "      }," + NEW_LINE +
+                    "      \"rawBytes\" : \"eyAic29tZV9maWVsZCI6ICJzb21lX3ZhbHVlIiB9\"" + NEW_LINE +
                     "    }" + NEW_LINE +
                     "  }" + NEW_LINE +
                     NEW_LINE +
