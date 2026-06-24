@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mustache response templates can now read scenario state by name.** Velocity
+  (`$scenario.get('orderId')`) and JavaScript (`scenario.get('orderId')`) could already read
+  scenario/captured state in a response template; the Mustache engine now exposes the same through a
+  section lambda — `{{#scenario.get}}orderId{{/scenario.get}}`, where the state name is the section
+  body (jmustache cannot pass a method argument inline the way Velocity and JavaScript can). This
+  completes `capture` → template value reuse across all three template engines, so an id captured
+  from one request can be returned in the response body of a later request regardless of template
+  engine. Documented on the Stateful Scenarios page with a per-engine example.
 - **Validate recorded traffic against an OpenAPI spec** (`PUT /mockserver/trafficValidate`). A new
   control-plane endpoint validates the request/response traffic MockServer has already recorded against a
   provided OpenAPI spec (URL, file path, or inline), returning a structured pass/fail report

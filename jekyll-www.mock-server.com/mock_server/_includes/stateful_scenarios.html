@@ -355,35 +355,68 @@ $client-&gt;upsertExpectation(
 
 <p>To <strong>persist a value from one request and reuse it in a later response</strong> &mdash; for example an order id sent in the first of three calls that must appear in the response body of the third call &mdash; add a <span class="inline_code">capture</span> rule to the first expectation, then read the value back with <span class="inline_code">scenario.get(...)</span> in a <a href="/mock_server/response_templates.html">response template</a> on the later expectation. The captured value is held in scenario state, so it survives across the separate requests.</p>
 
-<p>A <span class="inline_code">capture</span> rule extracts a value from the matched request and stores it under a name you choose. The <span class="inline_code">source</span> can be <span class="inline_code">jsonPath</span>, <span class="inline_code">xpath</span>, <span class="inline_code">header</span>, <span class="inline_code">queryStringParameter</span>, <span class="inline_code">pathParameter</span> or <span class="inline_code">cookie</span>. The captured value is read back with the <strong>Velocity</strong> or <strong>JavaScript</strong> template engine &mdash; <span class="inline_code">$!scenario.get('name')</span> or <span class="inline_code">scenario.get('name')</span>. The <strong>Mustache</strong> engine cannot read scenario state by name, so use Velocity or JavaScript for this pattern.</p>
+<p>A <span class="inline_code">capture</span> rule extracts a value from the matched request and stores it under a name you choose. The <span class="inline_code">source</span> can be <span class="inline_code">jsonPath</span>, <span class="inline_code">xpath</span>, <span class="inline_code">header</span>, <span class="inline_code">queryStringParameter</span>, <span class="inline_code">pathParameter</span> or <span class="inline_code">cookie</span>. The captured value can be read back from <strong>any of the three response-template engines</strong>:</p>
 
-<p><span class="inline_code">capture</span> rules require <strong>MockServer 7.2.0 or later</strong>. On earlier versions, write the value into scenario state from a Velocity/JavaScript template on the first request with <span class="inline_code">scenario.set('name', ...)</span> and read it back with <span class="inline_code">scenario.get('name')</span> on the later request.</p>
+<ul>
+    <li><strong>Velocity</strong> &mdash; <span class="inline_code">$!scenario.get('orderId')</span></li>
+    <li><strong>JavaScript</strong> &mdash; <span class="inline_code">scenario.get('orderId')</span></li>
+    <li><strong>Mustache</strong> &mdash; <span class="inline_code">{% raw %}{{#scenario.get}}orderId{{/scenario.get}}{% endraw %}</span> (a <em>section</em>, with the state name as the section body &mdash; Mustache cannot pass a method argument inline the way Velocity and JavaScript can)</li>
+</ul>
+
+<p><span class="inline_code">capture</span> rules require <strong>MockServer 7.2.0 or later</strong>; reading scenario state from a <strong>Mustache</strong> template requires <strong>7.2.1 or later</strong> (Velocity and JavaScript work from 7.2.0). On earlier versions, write the value into scenario state from a Velocity/JavaScript template on the first request with <span class="inline_code">scenario.set('name', ...)</span> and read it back with <span class="inline_code">scenario.get('name')</span> on the later request.</p>
 
 <button class="accordion title"><strong>Three-Step Order Flow</strong> &mdash; capture the order id in step 1, then return it in the response body of step 3</button>
 <div class="panel title">
-    <p>The first expectation captures <span class="inline_code">$.id</span> from the request body into the scenario state key <span class="inline_code">orderId</span>. The third expectation uses a Velocity response template that reads it back with <span class="inline_code">$!scenario.get('orderId')</span>, so the id sent in step 1 appears in the response body of step 3.</p>
+    <p>The first expectation captures <span class="inline_code">$.id</span> from the request body into the scenario state key <span class="inline_code">orderId</span>. A later expectation reads it back in its response template, so the id sent in step 1 appears in the response body of step 3. The <strong>capture step is identical for every template engine</strong> &mdash; only the step-3 template differs, so the three template tabs below are interchangeable.</p>
 
-    <button class="accordion"><strong>JSON</strong></button>
+    <button class="accordion"><strong>Step 1 &mdash; capture the value (JSON)</strong></button>
     <div class="panel">
-        <pre class="prettyprint lang-java code"><code class="code">[
-  {
-    "httpRequest": { "method": "POST", "path": "/order/step1" },
-    "capture": [
-      { "source": "jsonPath", "expression": "$.id", "into": "orderId" }
-    ],
-    "httpResponse": { "statusCode": 200, "body": "{\"step\": 1}" }
-  },
-  {
-    "httpRequest": { "method": "POST", "path": "/order/step3" },
-    "httpResponseTemplate": {
-      "templateType": "VELOCITY",
-      "template": "{ \"statusCode\": 200, \"body\": \"{\\\"orderId\\\": \\\"$!scenario.get('orderId')\\\", \\\"status\\\": \\\"complete\\\"}\" }"
-    }
-  }
-]</code></pre>
+        <pre class="prettyprint lang-java code"><code class="code">{
+  "httpRequest": { "method": "POST", "path": "/order/step1" },
+  "capture": [
+    { "source": "jsonPath", "expression": "$.id", "into": "orderId" }
+  ],
+  "httpResponse": { "statusCode": 200, "body": "{\"step\": 1}" }
+}</code></pre>
     </div>
 
-    <button class="accordion"><strong>REST (curl)</strong></button>
+    <button class="accordion"><strong>Step 3 &mdash; Velocity template</strong></button>
+    <div class="panel">
+        <p>Read the captured value with <span class="inline_code">$!scenario.get('orderId')</span>.</p>
+        <pre class="prettyprint lang-java code"><code class="code">{
+  "httpRequest": { "method": "POST", "path": "/order/step3" },
+  "httpResponseTemplate": {
+    "templateType": "VELOCITY",
+    "template": "{ \"statusCode\": 200, \"body\": \"{\\\"orderId\\\": \\\"$!scenario.get('orderId')\\\", \\\"status\\\": \\\"complete\\\"}\" }"
+  }
+}</code></pre>
+    </div>
+
+    <button class="accordion"><strong>Step 3 &mdash; JavaScript template</strong></button>
+    <div class="panel">
+        <p>Read the captured value with <span class="inline_code">scenario.get('orderId')</span> (often cleaner for building a JSON body).</p>
+        <pre class="prettyprint lang-java code"><code class="code">{
+  "httpRequest": { "method": "POST", "path": "/order/step3" },
+  "httpResponseTemplate": {
+    "templateType": "JAVASCRIPT",
+    "template": "return { statusCode: 200, body: JSON.stringify({ orderId: scenario.get('orderId'), status: 'complete' }) };"
+  }
+}</code></pre>
+    </div>
+
+    <button class="accordion"><strong>Step 3 &mdash; Mustache template</strong></button>
+    <div class="panel">
+        <p>Read the captured value with the section form <span class="inline_code">{% raw %}{{#scenario.get}}orderId{{/scenario.get}}{% endraw %}</span> &mdash; the state name is the section body. Requires MockServer 7.2.1 or later.</p>
+        <pre class="prettyprint lang-java code"><code class="code">{
+  "httpRequest": { "method": "POST", "path": "/order/step3" },
+  "httpResponseTemplate": {
+    "templateType": "MUSTACHE",
+    "template": "{ \"statusCode\": 200, \"body\": \"{\\\"orderId\\\": \\\"{% raw %}{{#scenario.get}}orderId{{/scenario.get}}{% endraw %}\\\", \\\"status\\\": \\\"complete\\\"}\" }"
+  }
+}</code></pre>
+    </div>
+
+    <button class="accordion"><strong>REST (curl) &mdash; run the full flow</strong></button>
     <div class="panel">
         <pre class="prettyprint lang-bash code"><code class="code"># Step 1: capture the order id from the request body into scenario state "orderId"
 curl -X PUT http://localhost:1080/mockserver/expectation -d '{
@@ -394,7 +427,7 @@ curl -X PUT http://localhost:1080/mockserver/expectation -d '{
   "httpResponse": { "statusCode": 200, "body": "{\"step\": 1}" }
 }'
 
-# Step 3: read the captured id back in a Velocity response template
+# Step 3: read the captured id back in a response template (Velocity shown; swap templateType/template for JavaScript or Mustache)
 curl -X PUT http://localhost:1080/mockserver/expectation -d '{
   "httpRequest": { "method": "POST", "path": "/order/step3" },
   "httpResponseTemplate": {
@@ -409,18 +442,6 @@ curl -X POST http://localhost:1080/order/step1 -d '{"id": "ORDER-123"}'
 # Send step 3 - the response body now contains the id captured in step 1
 curl -X POST http://localhost:1080/order/step3
 # => {"orderId": "ORDER-123", "status": "complete"}</code></pre>
-    </div>
-
-    <button class="accordion"><strong>JavaScript template (alternative)</strong></button>
-    <div class="panel">
-        <p>The same flow using a JavaScript response template for step 3 (often cleaner for building a JSON body):</p>
-        <pre class="prettyprint lang-java code"><code class="code">{
-  "httpRequest": { "method": "POST", "path": "/order/step3" },
-  "httpResponseTemplate": {
-    "templateType": "JAVASCRIPT",
-    "template": "return { statusCode: 200, body: JSON.stringify({ orderId: scenario.get('orderId'), status: 'complete' }) };"
-  }
-}</code></pre>
     </div>
 
     <p>Runnable example: <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/tree/master/examples/curl/scenario">examples/curl/scenario</a> (and the same under <span class="inline_code">examples/&lt;language&gt;/scenario</span>).</p>

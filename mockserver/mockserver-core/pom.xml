@@ -698,6 +698,7 @@
                         <!-- WS2.1 scenario-state template tests mutate the CrossProtocolEventBus singleton (live ScenarioManager) -->
                         <exclude>**/VelocityScenarioStateTemplateTest.java</exclude>
                         <exclude>**/JavaScriptScenarioStateTemplateTest.java</exclude>
+                        <exclude>**/MustacheScenarioStateTemplateTest.java</exclude>
                         <!-- WS2.6 gRPC bidi scenario-state template test mutates the CrossProtocolEventBus singleton (live ScenarioManager) -->
                         <exclude>**/GrpcStreamMessageScenarioTemplateTest.java</exclude>
                         <!-- WS2.2 capture-rule test mutates the CrossProtocolEventBus singleton (live ScenarioManager) -->
@@ -839,6 +840,7 @@
                                 <include>**/VelocityTemplateEngineTest.java</include>
                                 <include>**/VelocityScenarioStateTemplateTest.java</include>
                                 <include>**/JavaScriptScenarioStateTemplateTest.java</include>
+                                <include>**/MustacheScenarioStateTemplateTest.java</include>
                                 <include>**/GrpcStreamMessageScenarioTemplateTest.java</include>
                                 <include>**/CaptureProcessorTest.java</include>
                                 <include>**/OidcProviderGeneratorTest.java</include>

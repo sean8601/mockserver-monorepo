@@ -514,11 +514,10 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
     // the GraalVM JS dependency is optional and absent from this module's runtime, so the template cannot run.
 
     @Test
-    public void shouldNotReadCapturedScenarioStateFromMustacheResponseTemplate() {
-        // The Mustache engine (jmustache) cannot invoke helper methods that take an argument - its
-        // helpers are section lambdas - so scenario.get('name') is NOT available in a Mustache template.
-        // This test locks in that limitation so the docs never claim Mustache can read captured state:
-        // use Velocity or JavaScript instead. See shouldCaptureRequestValueAndReuseItIn{Velocity,JavaScript}...
+    public void shouldCaptureRequestValueAndReuseItInMustacheResponseTemplate() {
+        // given - same flow as the Velocity test using a Mustache response template. jmustache cannot
+        // invoke a helper method with an argument inline, so scenario state is read by name as a section
+        // lambda whose body is the key: {{#scenario.get}}orderIdMustache{{/scenario.get}}
         mockServerClient.upsert(
             when(request().withMethod("POST").withPath(calculatePath("order/mustache/step1")))
                 .withCapture(CaptureRule.capture(CaptureRule.Source.jsonPath, "$.id", "orderIdMustache"))
@@ -531,12 +530,12 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
                     HttpTemplate.TemplateType.MUSTACHE,
                     "{" + NEW_LINE +
                         "     \"statusCode\": 200," + NEW_LINE +
-                        "     \"body\": \"orderId={{ scenario.orderIdMustache }}\"" + NEW_LINE +
+                        "     \"body\": \"orderId={{#scenario.get}}orderIdMustache{{/scenario.get}}\"" + NEW_LINE +
                         "}" + NEW_LINE
                 )
             );
 
-        // when - the first request supplies the id (captured into scenario state as usual)
+        // when - the first request supplies the id (capture fires when this request is served)
         makeRequest(
             request()
                 .withMethod("POST")
@@ -545,15 +544,18 @@ public abstract class AbstractBasicMockingIntegrationTest extends AbstractTransp
             getHeadersToRemove()
         );
 
-        // then - the captured id does NOT appear in the Mustache response (unresolved -> empty)
-        assertThat(
+        // then - the later request reproduces the captured id in its response body
+        assertEquals(
+            response()
+                .withStatusCode(OK_200.code())
+                .withReasonPhrase(OK_200.reasonPhrase())
+                .withBody("orderId=ORDER-MUSTACHE"),
             makeRequest(
                 request()
                     .withMethod("POST")
                     .withPath(calculatePath("order/mustache/step3")),
                 getHeadersToRemove()
-            ).getBodyAsString(),
-            not(containsString("ORDER-MUSTACHE"))
+            )
         );
     }
 
