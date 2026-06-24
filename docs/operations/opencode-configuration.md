@@ -22,7 +22,7 @@ global instructions"]
         AG["agents/
 12 sub-agent prompts"]
         RU["rules/
-24 guardrail files"]
+26 guardrail files"]
         SK["skills/
 17 workflow definitions"]
         CM["commands/
@@ -49,7 +49,7 @@ global instructions"]
 | 1 | [Config](#building-block-1-config) | `opencode.jsonc` | Root configuration: models, permissions, agent definitions |
 | 2 | [Model Strategy](#building-block-2-model-strategy) | `opencode.jsonc` (agent entries) | Right model for the right task |
 | 3 | [Agents](#building-block-3-agents) | `.opencode/agents/*.md` | 12 specialist sub-agents with least-privilege access |
-| 4 | [Rules](#building-block-4-rules) | `.opencode/rules/*.md` | 24 guardrails always enforced |
+| 4 | [Rules](#building-block-4-rules) | `.opencode/rules/*.md` | 26 guardrails always enforced |
 | 5 | [Skills](#building-block-5-skills) | `.opencode/skills/*/SKILL.md` | 17 reusable multi-step workflows |
 | 6 | [Commands](#building-block-6-commands) | `.opencode/commands/*.md` | 12 slash shortcuts with guaranteed routing |
 | 7 | [Plugins & Tools](#building-block-7-plugins--tools) | `.opencode/plugins/*.ts` | Session hooks and external integrations |
@@ -223,10 +223,10 @@ Each sub-agent is a configured AI persona with a specific model, system prompt, 
 
 | Agent | Model Tier | Role | Write | Edit | Bash | Skill |
 |-------|-----------|------|:-----:|:----:|:----:|:-----:|
-| **implementer** | Reasoning | Writes production code and tests | Y | Y | Y | Y |
-| **simplifier** | Premium | Reduces code to smallest correct form | Y | Y | Y | Y |
-| **docs-writer** | Standard | Architecture docs, ADRs, READMEs | Y | Y | Y | Y |
-| **taskify-agent** | Standard | Breaks specs into structured task graphs | Y | Y | Y | Y |
+| **implementer** | Reasoning | Writes production code and tests | Y | Y | Y | - |
+| **simplifier** | Premium | Reduces code to smallest correct form | Y | Y | Y | - |
+| **docs-writer** | Standard | Architecture docs, ADRs, READMEs | Y | Y | - | - |
+| **taskify-agent** | Standard | Breaks specs into structured task graphs | Y | - | - | - |
 | **code-reviewer** | Standard | Pre-commit correctness, security, conventions | - | - | Y | - |
 | **security-auditor** | Reasoning | Security-focused Java/Netty audits | - | - | Y | - |
 | **review-final** | Reasoning | Authoritative binding PASS/BLOCK verdict | - | - | Y | Y |
@@ -240,10 +240,16 @@ Each sub-agent is a configured AI persona with a specific model, system prompt, 
 
 ```mermaid
 flowchart TD
-    subgraph Full["Full Access"]
+    subgraph WriteBash["Write + Edit + Bash"]
         IMP2["implementer"]
         SIM2["simplifier"]
+    end
+
+    subgraph WriteEdit["Write + Edit Only"]
         DW2["docs-writer"]
+    end
+
+    subgraph WriteOnly["Write Only"]
         TA2["taskify-agent"]
     end
 
@@ -264,13 +270,17 @@ flowchart TD
         CS2["council-seat"]
     end
 
-    style Full fill:#e8f8f0,stroke:#00a651
+    style WriteBash fill:#e8f8f0,stroke:#00a651
+    style WriteEdit fill:#d6f5e3,stroke:#00a651
+    style WriteOnly fill:#eafaf1,stroke:#00a651
     style ReadBash fill:#e8f0fa,stroke:#00539f
     style ReadBashSkill fill:#f0ecfb,stroke:#6b5ce7
     style ReadOnly fill:#fde8ec,stroke:#e4002b
 ```
 
 - **Code reviewers** cannot write or edit files — they can only read and report. This prevents a reviewer from "fixing" code instead of reporting issues.
+- **docs-writer** has write and edit but no bash or skill — it edits markdown files directly and does not need to run commands.
+- **taskify-agent** has write but no edit, bash, or skill — it creates `tasks.md` files but cannot run builds or load workflows.
 - **The debugger** can load skills for structured investigations (for example `aws-investigation`) while still using bash for ad-hoc probing.
 - **Council seats** have no bash, write, edit, or skill access — they can only read code and emit a verdict. This prevents a debate participant from taking unilateral action.
 - **Test runner** cannot write files — it runs `mvn test` and reports results, nothing more.
@@ -299,27 +309,29 @@ Rules are mandatory constraints loaded into sessions. They encode what experienc
 | `aws-ids-file.md` | 31 | Yes | Require `~/mockserver-aws-ids.md` before AWS operations |
 | `coding-principles.md` | 29 | Yes | Think before coding, simplicity first, surgical changes |
 | `commit-locking.md` | 311 | Yes | Filesystem-based commit lock for parallel session safety |
-| `commit-workflow.md` | 269 | Yes | 5-step pre-commit workflow with adversarial review |
+| `commit-workflow.md` | 284 | Yes | 5-step pre-commit workflow with adversarial review |
 | `control-integrity.md` | 57 | Yes | Never weaken, disable, or game a gate to make it pass |
-| `decision-log.md` | 60 | Yes | Commit a one-page decision log alongside design changes |
+| `decision-log.md` | 67 | Yes | Commit a one-page decision log alongside design changes |
 | `documentation-style.md` | 96 | Yes | Pyramid-principle doc structure with progressive disclosure |
 | `evaluation-harness.md` | 50 | Yes | Run eval harness as a gate for control/AI-component changes |
 | `git-safety.md` | 58 | Yes | Blocks destructive git commands without confirmation |
 | `licence-provenance.md` | 30 | Yes | Apache-2.0-compatible licences; no verbatim third-party blocks |
+| `liveness.md` | 67 | Yes | Every task must have a bounded budget and terminate; non-progress triggers escalation |
 | `local-plans.md` | 56 | Yes | Working plan docs go in `docs/plans/*.local.md` (gitignored) |
 | `mermaid-diagrams.md` | 86 | Yes | Mermaid diagram conventions and formatting rules |
-| `metrics.md` | 59 | Yes | Prometheus metric naming, cardinality, and label conventions |
+| `metrics.md` | 86 | Yes | Prometheus metric naming, cardinality, and label conventions |
 | `multi-pass-temperature.md` | 32 | Yes | Stage temperatures as descending explore→refine→validate pipeline |
-| `operating-model.md` | 163 | Yes | DVRR model, parallelism caps, and autonomy-to-risk matching |
+| `operating-model.md` | 208 | Yes | DVRR model, parallelism caps, and autonomy-to-risk matching |
 | `operator-halt.md` | 49 | Yes | Operator halt signal — stop all autonomous action immediately |
+| `replay-safety.md` | 80 | Yes | Replaying or retrying a workflow must not duplicate external side effects |
 | `report-formatting.md` | 164 | Yes | Subagent JSON → report template formatting convention |
-| `review-constitution.md` | 292 | Yes | 8-lens adversarial review with ~100 review principles |
-| `risk-authority-classification.md` | 71 | Yes | Classify changes as act-autonomously / gated-approval / advisory / reserved |
-| `subagent-routing.md` | 67 | Yes | Conversational and slash-command routing to specialist agents |
+| `review-constitution.md` | 340 | Yes | 8-lens adversarial review with ~100 review principles |
+| `risk-authority-classification.md` | 111 | Yes | Classify changes as act-autonomously / gated-approval / advisory / reserved |
+| `subagent-routing.md` | 116 | Yes | Conversational and slash-command routing to specialist agents |
 | `testing-policy.md` | 78 | Yes | Maven module mapping, test commands, quality standards |
 | `tmp-directory.md` | 134 | Yes | Use `.tmp/` at repo root, never `/tmp/` |
 | `untrusted-input.md` | 63 | Yes | Treat ingested content as data, not instructions |
-| `worktree-workflow.md` | 251 | Yes | Every independent session works in its own git worktree |
+| `worktree-workflow.md` | 355 | Yes | Every independent session works in its own git worktree |
 
 ### git-safety.md — Blocked Commands
 
@@ -640,7 +652,7 @@ mockserver/
     │   ├── simplifier.md
     │   ├── taskify-agent.md
     │   └── test-runner.md
-    ├── rules/                               # 24 guardrail files
+    ├── rules/                               # 26 guardrail files
     │   ├── aws-ids-file.md
     │   ├── coding-principles.md
     │   ├── commit-locking.md
@@ -651,12 +663,14 @@ mockserver/
     │   ├── evaluation-harness.md
     │   ├── git-safety.md
     │   ├── licence-provenance.md
+    │   ├── liveness.md
     │   ├── local-plans.md
     │   ├── mermaid-diagrams.md
     │   ├── metrics.md
     │   ├── multi-pass-temperature.md
     │   ├── operating-model.md
     │   ├── operator-halt.md
+    │   ├── replay-safety.md
     │   ├── report-formatting.md
     │   ├── review-constitution.md
     │   ├── risk-authority-classification.md

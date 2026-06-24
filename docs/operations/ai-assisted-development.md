@@ -64,11 +64,11 @@ The AI harness defines 12 specialist agents, each with its own model, tools, and
 | Review (intermediate) | No | Read-only | Adversarial review using independent model |
 | Review (final) | No | Read-only | Authoritative PASS/BLOCK verdict using a different AI provider |
 | Test Runner | No | Test commands only | Runs tests and reports results |
-| Docs Writer | Yes | Yes | Technical documentation |
+| Docs Writer | Yes | No | Technical documentation |
 | Debugger | No | Read-only | Investigates issues via logs and CI data |
 | Pipeline Investigator | No | Read-only | Analyses CI/CD failures |
 | Council Seat | No | No | Design debate participant |
-| Task Decomposer | Yes | Yes | Breaks specifications into task graphs |
+| Task Decomposer | Yes | No | Breaks specifications into task graphs |
 
 Key design decisions:
 - **Reviewers cannot edit files.** A code reviewer that can also edit code is not a reviewer.

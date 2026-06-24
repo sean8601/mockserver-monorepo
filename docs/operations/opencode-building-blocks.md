@@ -255,10 +255,17 @@ Each agent has exactly the access it needs. This is enforced structurally — a 
 
 ```mermaid
 flowchart TD
-    subgraph Full["Full Access (write + edit + bash + skill)"]
+    subgraph WriteBash["Write + Edit + Bash"]
         IMP["implementer"]
         SIM["simplifier"]
+    end
+
+    subgraph WriteEdit["Write + Edit Only"]
         DW["docs-writer"]
+    end
+
+    subgraph WriteOnly["Write Only"]
+        TA["taskify-agent"]
     end
 
     subgraph ReadBashSkill["Read + Bash + Skill"]
@@ -278,7 +285,9 @@ flowchart TD
         CS["council-seat"]
     end
 
-    style Full fill:#e8f8f0,stroke:#00a651
+    style WriteBash fill:#e8f8f0,stroke:#00a651
+    style WriteEdit fill:#d6f5e3,stroke:#00a651
+    style WriteOnly fill:#eafaf1,stroke:#00a651
     style ReadBashSkill fill:#f0ecfb,stroke:#6b5ce7
     style ReadBash fill:#e8f0fa,stroke:#00539f
     style ReadOnly fill:#fde8ec,stroke:#e4002b
@@ -289,6 +298,8 @@ Why this matters:
 - A **council seat** cannot take unilateral action — it has no bash, write, or skill access.
 - A **test runner** runs `mvn test` and reports results, nothing more — it cannot modify code.
 - A **debugger** can load investigation skills and run CLI commands but cannot modify the codebase.
+- **docs-writer** has write and edit but no bash or skill — sufficient for editing markdown files, no shell access needed.
+- **taskify-agent** has write only — it creates task files but cannot edit existing files, run builds, or load workflows.
 
 ### Model Strategy — Right Model for the Right Task
 
