@@ -76,10 +76,10 @@ Validation principle: prefer executable verification over static inspection. Whe
 Changes to the controls AI is judged by (rules, agent prompts, `opencode.jsonc`, the review constitution, CI/test gates) MUST run the evaluation harness as a gate:
 
 ```bash
-bash .opencode/evals/run-evals.sh    # exits non-zero on a regressed golden task or a malformed fixture
+STRICT=1 bash .opencode/evals/run-evals.sh    # fail-closed: exits non-zero on a regressed golden task, a malformed fixture, OR a missing/PENDING baseline
 ```
 
-A **regression** (a recorded `.result` flips from its expected verdict) or a malformed fixture **blocks** the change ([[evaluation-harness]]). Where the baseline for an affected agent is missing (fixtures show `PENDING`), establish it — run the agent on the relevant fixtures and record the results — or record the gap as residual risk for the user's gated approval. (This is in addition to the per-category validations above, e.g. `docs`/`config` link and JSON checks.)
+A **regression** (a recorded `.result` flips from its expected verdict), a malformed fixture, **or a missing/`PENDING` baseline** **blocks** the change ([[evaluation-harness]]). `STRICT=1` makes the gate **fail-closed** so a missing baseline can no longer pass vacuously: where the baseline for an affected agent is missing (fixtures show `PENDING`), you **MUST** establish it — run the agent on the relevant fixtures and record the results — before the gate can PASS, or record the gap as residual risk and route to the user's **gated approval** rather than committing. (This is in addition to the per-category validations above, e.g. `docs`/`config` link and JSON checks.)
 
 ### Java changes (`java`)
 1. Identify affected Maven modules from file paths (see testing-policy.md for module mapping)
@@ -165,7 +165,18 @@ If the change is **not** user-facing (tests, CI, internal refactors with no beha
 
 ## Step 4: Adversarial Code Review (MANDATORY for all commits)
 
-After validations and the changelog review pass, launch an adversarial review using a subagent with a **fresh context** (a different model where a stronger tier is provisioned; on opencode, fresh context + low temperature — see `docs/operations/opencode-configuration.md`). The reviewer MUST be a distinct agent from the one that authored the change (**separation of duties**). This catches issues the implementing agent may have blind spots for.
+After validations and the changelog review pass, launch an adversarial review using a subagent that is **separate, freshly-spawned, and clean-context** (a different model where a stronger tier is provisioned; on opencode, fresh context + low temperature — see `docs/operations/opencode-configuration.md`). Reviewer **independence** is mandatory (spec §14.4): the reviewer MUST NOT be the agent that authored the change, an implementer of it, or a **resumed / context-anchored** continuation of any agent carrying the generation context (**separation of duties**). A shared-context or self-review does not satisfy this gate. This catches issues the implementing agent may have blind spots for.
+
+**Select the review tier and the fitting constitution, and RECORD both.** Per the layered review model (spec §14.6), pick the aggregation tier this review covers and apply the matching constitution profile (spec §14.6 LR3):
+
+| Tier | What it reviews | Constitution profile |
+|------|-----------------|----------------------|
+| **1 — unit** | a single unit/task's change | the artefact-type profile (e.g. `review-coding`, `review-deployment`, `review-documentation`) |
+| **2 — group** | a group of related units, once merged | `review-integration` |
+| **3 — wave/phase** | a wave/phase, once its groups are complete | `review-integration` |
+| **4 — whole plan** | the whole plan/programme, once all waves complete | `review-plan` + `review-integration` (composition) |
+
+A plain single-unit commit is Tier 1; an **integrated / group / wave review of merged units MUST use `review-integration`** (a higher-tier PASS is never inferred from lower-tier PASSes). Record **which constitution(s) and which tier** were applied in the decision trail ([[decision-log]]).
 
 **Control / AI-component changes use the authoritative `review-final`** (not `review-cheap`), and are **gated-approval, not act-autonomously**: after a PASS, present the change and the verdict to the user and get explicit approval before committing (per the higher-scrutiny note in Step 1). All other changes use `review-cheap` as below.
 
@@ -199,7 +210,9 @@ Provide PASS or BLOCK verdict with severity-ranked findings.
 
 **Security:** Before sending the diff to the reviewer, scan for obvious secrets (API keys, tokens, passwords, `.env` content). If found, warn the user and do NOT include the secret values in the review prompt — redact them or exclude those files from the review.
 
-If the review returns **BLOCK**, fix the issues, re-run any affected validations (Step 2), and re-run the review before committing. Iterate until the review returns PASS — but you **MUST cap the loop at 8 review iterations** (per the Iteration Protocol in [[review-constitution]]). If 8 iterations complete without a PASS, **do not commit**: record the unresolved residual risk explicitly (the outstanding findings and why they remain) and escalate to the user rather than reintegrating as if converged.
+**Findings handling — must-fix model (spec §14.5).** Every **CRITICAL and MAJOR** finding **MUST be FIXED** in the artefact before convergence — there is **no disposition path** that leaves a critical or major finding unfixed; it may NOT be "accepted" or "consciously dispositioned". The **only** severity that may be deferred is **MINOR**, which must be either fixed or **explicitly recorded with rationale** in the decision log ([[decision-log]]). A finding that, on independent re-examination, proves to be a **false positive** is not a finding — but that determination MUST itself be recorded with its reasoning. (Disposition therefore applies only to minor findings and false-positive determinations, never to critical/major.)
+
+If the review returns **BLOCK**, fix every critical/major finding, re-run any affected validations (Step 2), and re-run the review (in a fresh clean context, spec §14.4) before committing. Iterate until the review returns PASS — but you **MUST cap the loop at 8 review iterations** (per the Iteration Protocol in [[review-constitution]]). If 8 iterations complete without a PASS (critical/major findings still unfixed), **do not commit**: record the unresolved residual risk explicitly (the outstanding findings and why they remain) and escalate to the user rather than reintegrating as if converged.
 If the review returns **PASS**, proceed to commit.
 
 ## Step 5: Acquire Lock and Commit
@@ -211,7 +224,7 @@ Only after all validations, the changelog review, and the adversarial review pas
    - If lock is held by another session, this will wait (up to 5 minutes)
    - If lock acquisition fails, stop and inform the user
 2. **Verify staged files**: Run `git status` to ensure only your session's files are staged
-3. **Create commit**: Run `git commit` with a descriptive message — the commit message is the durable record of *why* and *what*. For a significant or escalated unit, also capture the fuller decision trail (model/temperature, assumptions, review findings + disposition, evidence) per [[decision-log]].
+3. **Create commit**: Run `git commit` with a descriptive message — the commit message is the durable record of *why* and *what*. For a significant or escalated unit, also capture the fuller decision trail (model/temperature/effort, tool-permission scope, assumptions, review findings — the fix for each critical/major and any deferral rationale for minor — evidence) per [[decision-log]].
 4. **Release lock**: Run `.opencode/scripts/release-commit-lock.sh` (ALWAYS, even if commit fails)
 
 **IMPORTANT**: Use this bash pattern to ensure lock is always released:
@@ -250,14 +263,16 @@ flowchart TD
     D --> CL["Changelog review
     update changelog.md if user-facing"]
     CL --> E["Adversarial review
-    review-cheap agent via Task tool
-    fresh context, different model"]
+    select tier + constitution (record both)
+    independent clean-context subagent
+    review-cheap / review-integration / review-final"]
     E --> F{PASS?}
     F -->|Yes| HALT{"Operator halt?"}
     HALT -->|"engaged"| HSTOP["Stop — wait for operator"]
     HALT -->|"clear"| G["Acquire commit lock
     acquire-commit-lock.sh"]
-    F -->|"No (<8 iters)"| H["Fix issues"] --> D
+    F -->|"No (<8 iters)"| H["Fix every critical/major
+    (minor may defer w/ rationale)"] --> D
     F -->|"No (8th iter)"| CAP["Record residual risk
     escalate — do NOT commit"]
     G --> I{Lock acquired?}

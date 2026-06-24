@@ -5,20 +5,22 @@ Follow the COMPLETE pre-commit workflow defined in `.opencode/rules/commit-workf
 
 Validation is mandatory and must be executable where possible. Do not rely only on static inspection.
 
-Stage only files you changed in this session. Never use blanket staging (`git add .` / `git add -A`).
+Parallel session safety is mandatory: commit only files changed in the current session. Never include files you did not edit in this session, and never use blanket staging (`git add .` / `git add -A`).
 
-The workflow is:
+The authoritative steps are in `commit-workflow.md`; do not re-derive or skip any:
 
-1. **Classify** — run `git status --short`, identify only files YOU changed in this session, classify by category (java/terraform/bash/docker/docs/config/helm/website)
-2. **Validate** — run category-specific validations and command-based verification:
+1. **Classify** — `git status --short`; identify only files YOU changed this session; classify by category (java/terraform/bash/docker/docs/config/helm/npm/python/ruby/**control**). Files under `.opencode/rules/**`, `.opencode/agents/**`, `.claude/agents/**`, `opencode.jsonc`, the review constitution, or CI/test gates are the **control** (AI-component) class — higher-scrutiny (see steps 2 and 4).
+2. **Validate** — run category-specific, executable validations:
    - Java: `./mvnw test -pl <modules>`
-   - Terraform: `terraform fmt -check`, `terraform validate`, and `terraform plan`
-   - Bash: `bash -n <script>` and execute each changed script in a safe mode (`--help`, `--version`, or `--dry-run` when available)
-   - Docker: run `docker build` for each changed Dockerfile and run a basic smoke command from the built image when feasible
+   - Terraform: `terraform fmt -check`, `terraform validate`, `terraform plan`
+   - Bash: `bash -n <script>` and execute in a safe mode (`--help`/`--version`/`--dry-run`)
+   - Docker: `docker build` per changed Dockerfile + a basic smoke command
    - Helm: `helm lint` and `helm template`
    - Website: `bundle exec jekyll build`
-   - Docs/config: syntax and link checks as applicable
-3. **Adversarial review** — use the Agent tool to spawn a `review-cheap` subagent (different model, fresh context) to review the diff. Must return PASS before proceeding.
-4. **Commit** — only after all steps pass: stage files by explicit path (NEVER `git add .`), create commit with descriptive message
+   - Docs/config: syntax and link checks
+   - **control**: run the evaluation harness for control / AI-component changes — `STRICT=1 bash .opencode/evals/run-evals.sh` (a regression blocks)
+3. **Changelog** — if the change is user-facing, add or correct a `## [Unreleased]` entry in `changelog.md` (MANDATORY); if not user-facing, state explicitly why no entry is needed.
+4. **Adversarial review** — launch a `review-cheap` subagent (fresh, clean context) on the diff; must return PASS. **Control / AI-component changes use the authoritative `review-final` and are gated-approval** — present the PASS to the user and get explicit approval before committing (separation of duties; never auto-commit a control change).
+5. **Commit** — only after all gates pass: stage files by explicit path (NEVER `git add .`), then commit with a descriptive message.
 
 If the user provided additional instructions: $ARGUMENTS

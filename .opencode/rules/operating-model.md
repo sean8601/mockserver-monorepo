@@ -10,10 +10,12 @@ temperature, and reasoning effort** are chosen for each task (the primary lever
 for inference cost and determinism) and where the orchestrator's context is
 preserved. Concretely: **decompose** the work into the smallest independent
 units, **delegate** them to subagents and run them in parallel, **verify** each
-unit as fully as can be done safely, subject each to **adversarial review until
-no major findings remain (capped at 8 iterations — then record residual risk and
-escalate)**, **re-verify** after any review-driven change, then **commit
-each unit separately and reintegrate it onto `master`**. The gate chain — not a
+unit as fully as can be done safely, subject the work to **layered adversarial
+review at every aggregation tier (unit → group → wave/phase → whole plan), each
+an independent clean-context review that fixes every critical/major finding
+(capped at 8 iterations — then record residual risk and escalate)**, **re-verify**
+after any review-driven change, then **commit each unit separately and reintegrate
+it onto `master`**. The gate chain — not a
 human prompt — is the authority to ship. Scale the ceremony to the task: full
 DVRR for substantial/risky work, a lightweight path for small changes, a direct
 edit for trivial ones.
@@ -30,12 +32,15 @@ flowchart LR
     subagents, in parallel"]
     B --> C["Verify
     tests, build, lint, dry-run"]
-    C --> D["Adversarial review
-    until no major findings
-    (≤8 iterations)"]
-    D --> E{Findings?}
-    E -->|"major (<8 iters)"| F["Fix"] --> C
-    E -->|"major (8th iter)"| X["Record residual risk
+    C --> D["Layered adversarial review
+    unit → group → wave → plan
+    independent clean-context per tier
+    (≤8 iterations each)"]
+    D --> E{"Critical / major
+    findings?"}
+    E -->|"yes (<8 iters)"| F["Fix (must-fix;
+    minor may defer)"] --> C
+    E -->|"yes (8th iter)"| X["Record residual risk
     escalate — do not commit"]
     E -->|none| G["Commit unit
     separately"]
@@ -53,10 +58,10 @@ flowchart LR
 | **Delegate** | The orchestrator's primary job is to delegate, not to do. Hand the **overwhelming majority of execution — implementation *and* investigation** — to subagents and run independent units concurrently. Delegating is also how routing happens: a subagent is where the right **model, temperature, and reasoning effort** are selected for the task, which is the main lever for inference cost and determinism. Do work inline only for the trivial residue where delegation adds no value. Default to delegation unless the work is tightly coupled, must be sequenced, or is too ambiguous to split safely. | [[subagent-routing]], AGENTS.md routing table |
 | **Isolate** | **No work runs in the bare checkout** — every independent *session* (the primary interactive session, parallel windows, long autonomous runs) works in its **own worktree** on a local-only branch, **even when it makes no changes** (read-only investigation/analysis/review included). Helper subagents spawned by a primary **share its tree** so they can review its uncommitted in-flight work; isolating them would break the review gate. Isolation is **between independent sessions, not within one**. | [[worktree-workflow]] |
 | **Verify** | Verify each unit as fully as is *safe*: unit/integration/e2e tests, build, lint, static analysis, type checks, Docker builds, and non-destructive runtime checks (`--dry-run`, `terraform plan`, `--version`, validation flags, executing scripts you wrote). **If it can be safely verified, verify it**; otherwise use the strongest safe substitute. | [[testing-policy]], [[commit-workflow]] (Step 2) |
-| **Review** | Subject each unit to adversarial review on a fresh context / different model, applying the 8-lens constitution. The reviewer tries to *disprove* the change, not bless it. Repeat until no major (CRITICAL/MAJOR) findings remain **or 8 review iterations are reached** — at the cap, record residual risk and escalate rather than reintegrate as if converged (see [[review-constitution]] Iteration Protocol). | [[review-constitution]]; commit gate uses `review-cheap` (per [[commit-workflow]] Step 4), merge-to-master escalates to `review-final`; `code-reviewer` is the quick pre-commit check only |
+| **Review** | Subject the work to **layered (tiered) adversarial review — at every aggregation tier that exists**: unit → group → wave/phase → whole plan (§14.6). Each tier is an **independent** review: a separate, freshly-spawned, **clean-context** subagent — **never** the generator/implementer, nor a resumed/context-anchored continuation of it (§14.4). Each tier applies the **fitting constitution**: a unit review uses the artefact-type profile; group and wave reviews use `review-integration`; the whole-plan review composes `review-plan` with `review-integration` (§14.6 LR3). A higher-tier PASS is never inferred from lower-tier PASSes — the combination is reviewed on its own merits. The reviewer tries to *disprove* the change. **CRITICAL and MAJOR findings MUST be FIXED** (there is no "disposition" path that leaves them unfixed); **only MINOR findings may be deferred** with recorded rationale (a finding that proves a false positive is recorded as such, with reasoning). Repeat each tier until no critical/major findings remain **or 8 review iterations are reached** — at the cap, record residual risk and escalate rather than reintegrate as if converged (§14.5; see [[review-constitution]] Iteration Protocol). | [[review-constitution]]; commit gate uses `review-cheap` (per [[commit-workflow]] Step 4), merge-to-master and integration tiers escalate to `review-final`/`review-integration`; `code-reviewer` is the quick pre-commit check only |
 | **Re-verify** | Any review-driven change re-triggers the relevant verification — fixes regress. No unit is complete until post-review verification passes. | [[commit-workflow]] (Step 4 — re-run on BLOCK) |
 | **Commit** | One coherent unit → one commit. Never bundle unrelated changes. Preserves traceability, reviewability, and clean rollback. | [[commit-workflow]] |
-| **Reintegrate** | Rebase the unit onto the latest `master` and push. Conflicts surface here; resolve them, then re-verify. Concurrent rebases serialise through the `flock` rebase lock. | [[worktree-workflow]] (steps 7–8), `/worktree-merge` |
+| **Reintegrate** | Under a **held merge lock**, rebase the unit onto the latest `master`, then — **before pushing** — re-verify the integrated tree (§8.4) and run the Tier-2/3 `review-integration` adversarial review (§14.6); **push only on PASS**, then clean up the worktree. Conflicts surface during the rebase; resolve them in the worktree. The lock serialises concurrent rebases so the pushed result is exactly the gated result (the integration tier genuinely gates reintegration, not after the fact). | [[worktree-workflow]] (reintegration steps), `/worktree-merge` |
 
 ## Parallelism Limits (Hard Caps)
 
@@ -142,6 +147,22 @@ structured question (the `AskUserQuestion` tool) that states:
 
 Never force the user to reconstruct context from scratch.
 
+**Escalation interaction mechanics (§19.4).** Escalation is the exception, not
+the loop — the interaction model maximises autonomy while still routing genuine
+correctness/safety/authority decisions promptly and decidably:
+
+- **Non-blocking where safe.** An escalation **MUST NOT** idle the agent: continue
+  independent work and proceed on the strongest safe assumption (see [[coding-principles]]),
+  escalating *synchronously* **only** when the decision actually gates correctness,
+  safety, or authority.
+- **Batch, don't drip.** Related questions and escalations **MUST** be consolidated
+  into a **single decision point** rather than surfaced one at a time; suppress
+  repeated low-value interruptions.
+- **Carry a priority.** Each escalation **MUST** carry a priority so high-risk items
+  surface promptly and low-risk ones do not bury them.
+- **Never silently expire.** A pending escalation **MUST NOT** lapse into a default
+  action; the affected work **stays in a safe, non-reintegrated state until decided**.
+
 ## Summarise After Each Batch
 
 When a batch of parallel units completes, give a concise summary so a human can
@@ -153,6 +174,30 @@ grasp status at a glance:
   recommended steps, and whether further parallelisation is possible.
 
 Lead with the bottom line, per [[documentation-style]].
+
+## Feedback & Learning Loop
+
+DVRR does not end at reintegration — the system **MUST** learn from how its work
+went so the same failures do not recur and autonomy tracks evidence (§21.5). The
+loop **MUST**:
+
+- **Capture failures and near-misses structurally** — record what went wrong (and
+  what *nearly* went wrong) in a consistent, reviewable form (see [[decision-log]]),
+  not just in transient session memory.
+- **Prevent recurrence of known patterns** — update prompts, context, policies,
+  review constitutions, or guardrails on the evidence; control/AI-component changes
+  go through the higher-scrutiny path and the evaluation harness before rollout
+  ([[control-integrity]], [[evaluation-harness]]).
+- **Periodically review the routing and cost picture** — model-routing,
+  temperature-routing, and effort-routing effectiveness, **inference-cost trends**,
+  **verification gaps**, and standardisation opportunities (informed by
+  [[metrics]]).
+- **Feed into autonomy promotion/demotion** — a work type's authority class is
+  *earned* by a track record of verified success and **demoted** on evidence of
+  failure ([[risk-authority-classification]]).
+
+This is the `[[operating-model]]` feedback loop that [[metrics]] and
+[[evaluation-harness]] reference.
 
 ## Relationship To Heavy Orchestration
 
