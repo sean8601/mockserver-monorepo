@@ -207,8 +207,11 @@ mod tests {
 
     #[test]
     fn custom_tag() {
-        let image = MockServer::new("mockserver-5.15.0");
-        assert_eq!(image.tag(), "mockserver-5.15.0");
+        // mockserver-version-guard:ignore — intentional non-default tag proving a
+        // caller-supplied image is respected; not the default image, so the release
+        // version guard (assert_testcontainers_versions) must not flag these lines.
+        let image = MockServer::new("mockserver-5.15.0"); // mockserver-version-guard:ignore
+        assert_eq!(image.tag(), "mockserver-5.15.0"); // mockserver-version-guard:ignore
     }
 
     #[test]

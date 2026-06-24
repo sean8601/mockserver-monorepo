@@ -51,8 +51,86 @@ sed_i() {
   if sed --version 2>/dev/null | grep -q GNU; then sed -i "$@"; else sed -i '' "$@"; fi
 }
 
+# Release-time guard (fail-closed): after the bump, prove EVERY testcontainers
+# client carries the new RELEASE_VERSION as its default image, so a stale default
+# (the 7.2.0 incident) — or a NEW client that nobody wired into the bump list
+# above — can never silently ship. Two checks:
+#   (a) every "mockserver-X.Y.Z" image tag anywhere under mockserver-testcontainers/
+#       equals "mockserver-$RELEASE_VERSION";
+#   (b) the three bare version constants (__version__ / DefaultVersion /
+#       MOCKSERVER_VERSION) each equal "$RELEASE_VERSION".
+# Lines tagged "mockserver-version-guard:ignore" are intentional non-default
+# examples (e.g. the rust custom_tag test) and are skipped. Build artifacts and
+# lockfiles are excluded. On ANY mismatch we list every offender file:line and
+# exit 1. Run ONLY outside dry-run: in dry-run the constants are deliberately
+# left un-bumped, so this would always (correctly) fail there.
+assert_testcontainers_versions() {
+  local tc_dir="$REPO_ROOT/mockserver-testcontainers"
+  [[ -d "$tc_dir" ]] || { log_info "No mockserver-testcontainers/ dir — skipping default-image guard"; return 0; }
+
+  local expected_tag="mockserver-$RELEASE_VERSION"
+  local failures=0
+
+  # Shared exclusion set for both scans: prune build/vcs dirs, and post-filter
+  # out lockfiles (*.lock, package-lock.json) — they can carry the OLD version
+  # in a resolved-dependency entry and are never the place a default image lives.
+  local -a prune=(
+    -name node_modules -o -name target -o -name dist -o -name build -o -name .git
+  )
+  local lock_re='(/package-lock\.json|\.lock):'
+
+  # (a) Image-tag pattern. grep -n gives file-relative line numbers; we prefix the
+  # path. Anchor each match's full X.Y.Z so a tag that is NOT the release version
+  # is reported. Skip guard-ignored lines.
+  while IFS= read -r match; do
+    [[ -z "$match" ]] && continue
+    # match is path:lineno:content
+    case "$match" in *mockserver-version-guard:ignore*) continue ;; esac
+    # Extract every mockserver-X.Y.Z on the line and verify each equals the release tag.
+    local tok
+    while IFS= read -r tok; do
+      [[ -z "$tok" ]] && continue
+      if [[ "$tok" != "$expected_tag" ]]; then
+        log_error "stale testcontainers default image: $match (found $tok, expected $expected_tag)"
+        failures=$((failures + 1))
+      fi
+    done < <(grep -oE 'mockserver-[0-9]+\.[0-9]+\.[0-9]+' <<<"$match")
+  done < <(find "$tc_dir" \( "${prune[@]}" \) -prune -o -type f -print0 2>/dev/null \
+    | xargs -0 grep -nE 'mockserver-[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null \
+    | sed "s#^$REPO_ROOT/##" \
+    | grep -vE "$lock_re" || true)
+
+  # (b) Bare constants — exact match required for each named identifier.
+  local id
+  for id in '__version__' 'DefaultVersion' 'MOCKSERVER_VERSION'; do
+    while IFS= read -r match; do
+      [[ -z "$match" ]] && continue
+      case "$match" in *mockserver-version-guard:ignore*) continue ;; esac
+      # Pull the X.Y.Z that this identifier is assigned. The assignment forms are
+      #   __version__ = "X.Y.Z"   DefaultVersion = "X.Y.Z";   MOCKSERVER_VERSION: &str = "X.Y.Z";
+      local found
+      found=$(grep -oE "$id[^\"']*[\"'][0-9]+\.[0-9]+\.[0-9]+" <<<"$match" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' || true)
+      [[ -z "$found" ]] && continue
+      if [[ "$found" != "$RELEASE_VERSION" ]]; then
+        log_error "stale testcontainers constant $id: $match (found $found, expected $RELEASE_VERSION)"
+        failures=$((failures + 1))
+      fi
+    done < <(find "$tc_dir" \( "${prune[@]}" \) -prune -o -type f -print0 2>/dev/null \
+      | xargs -0 grep -nE "(^|[^A-Za-z0-9_])$id[[:space:]:=]" 2>/dev/null \
+      | sed "s#^$REPO_ROOT/##" \
+      | grep -vE "$lock_re" || true)
+  done
+
+  if (( failures > 0 )); then
+    log_error "assert_testcontainers_versions: $failures testcontainers default-image version(s) are NOT $RELEASE_VERSION."
+    log_error "A testcontainers client default image is stale, OR a new client needs wiring into the TESTCONTAINERS_VERSION_FILES bump block in $(basename "$0")."
+    exit 1
+  fi
+  log_info "assert_testcontainers_versions: all testcontainers client default images = $RELEASE_VERSION"
+}
+
 if is_dry_run; then
-  log_dry "would: rewrite version refs across changelog, jekyll config, packages, docs"
+  log_dry "would: rewrite version refs across changelog, jekyll config, packages, docs, and testcontainers client default-image constants"
 else
   # Roll the changelog: open a fresh empty [Unreleased] and stamp a dated
   # [RELEASE_VERSION] section from the previous Unreleased content.
@@ -109,9 +187,23 @@ else
   RUBY_README="$REPO_ROOT/mockserver-client-ruby/README.md"
   [[ -f "$RUBY_README" ]] && sed_i "s/$OLD_VERSION/$RELEASE_VERSION/g" "$RUBY_README"
 
-  # General find-and-replace across docs (excluding changelog, target, etc.)
+  # Testcontainers client default-image version constants live in SOURCE files
+  # (.go/.ts/.py/.rs/.cs), not in the *.html/*.md/*.yaml/*.json/*.txt set the
+  # blanket find loop below sweeps — so without this explicit bump the READMEs
+  # got the new tag but the compiled-in DEFAULT image stayed stale. That is
+  # exactly what shipped a 7.2.0 client defaulting to the previous image until
+  # it was hand-fixed; this block + the assert_testcontainers_versions guard
+  # below make it impossible to ship a stale default again. Each client's
+  # constant and its test assertion are listed together so they bump in lock-step
+  # (a half-bump would otherwise red the client's own test, not the release).
+  #
+  # These files contain no third-party semver tokens, so the SAME anchored
+  # replacement the general loop uses is safe here — do NOT add these source
+  # extensions to the blanket find loop (it would sweep node_modules/target).
+  # The rust custom_tag test literal "mockserver-5.15.0" is intentionally a
+  # non-default example; the anchored OLD_VERSION->NEW sed never touches it
+  # (OLD_VERSION != 5.15.0) and the guard skips its tagged lines.
   OLD_PAT=$(escape_sed "$OLD_VERSION"); NEW_REP=$(escape_sed "$RELEASE_VERSION")
-  OLD_API_PAT=$(escape_sed "$OLD_API_VERSION"); NEW_API=$(escape_sed "$API_VERSION")
   # Skip the substitution on lines that describe a HISTORICAL milestone
   # (e.g. "Fixed in 6.0.x", "Before 6.0.0", "removed in 6.0.0", "switched
   # to X in 6.0.0", "Since 5.15.0"). On those lines the version is a
@@ -123,8 +215,31 @@ else
   # commit. The list is intentionally broad (covers "Fixed in", "removed
   # in", "switched ... in", etc.) because this step runs unattended and we
   # prefer false negatives (missed bump) over false positives (mangled
-  # documentation lie).
+  # documentation lie). Defined here (before the testcontainers bump) because
+  # both the explicit source-file bump and the general doc loop use it.
   HISTORICAL_RE='([Bb]efore|[Uu]ntil|[Ss]ince|[Ff]ixed in|[Rr]emoved in|[Ii]ntroduced in|[Dd]eprecated in|[Aa]dded in|[Uu]pdated in|[Rr]eleased in|[Cc]hanged in|[Aa]s of|[Rr]equires|[Mm]inimum version[:]?|switched [^.]+ in|moved [^.]+ in|migrated [^.]+ in|renamed [^.]+ in|published [^.]+ in)[[:space:]]+[0-9]+\.[0-9]+'
+  declare -a TESTCONTAINERS_VERSION_FILES=(
+    mockserver-testcontainers/go/mockserver.go
+    mockserver-testcontainers/go/doc.go
+    mockserver-testcontainers/go/mockserver_unit_test.go
+    mockserver-testcontainers/node/src/mockserver-container.ts
+    mockserver-testcontainers/python/src/testcontainers_mockserver/__init__.py
+    mockserver-testcontainers/python/src/testcontainers_mockserver/container.py
+    mockserver-testcontainers/python/tests/test_container_config.py
+    mockserver-testcontainers/rust/src/lib.rs
+    mockserver-testcontainers/dotnet/src/Testcontainers.MockServer/MockServerContainer.cs
+    mockserver-testcontainers/dotnet/tests/Testcontainers.MockServer.Tests/MockServerBuilderTest.cs
+  )
+  for rel in "${TESTCONTAINERS_VERSION_FILES[@]}"; do
+    file="$REPO_ROOT/$rel"
+    [[ -f "$file" ]] || continue
+    sed_i -E "/${HISTORICAL_RE}/!s/(^|[^0-9.])${OLD_PAT}([^0-9]|\$)/\1${NEW_REP}\2/g" "$file"
+  done
+
+  # General find-and-replace across docs (excluding changelog, target, etc.)
+  # OLD_PAT/NEW_REP and HISTORICAL_RE are defined above (shared with the
+  # testcontainers source-file bump).
+  OLD_API_PAT=$(escape_sed "$OLD_API_VERSION"); NEW_API=$(escape_sed "$API_VERSION")
   # mockserver-{node,client-node}/package.json are excluded from the general
   # find-and-replace because their version references are bumped explicitly
   # with jq above (precise field targeting). Without this guard the blanket
@@ -156,6 +271,11 @@ else
         fi
       done
   done
+
+  # Fail-closed release-time guard: validate the bump took on EVERY testcontainers
+  # client (and catch an unwired/new client) BEFORE committing. Only meaningful
+  # outside dry-run, where the bump actually ran.
+  assert_testcontainers_versions
 fi
 
 log_info "Diff summary:"
@@ -184,6 +304,13 @@ else
   [[ -f mockserver-client-python/pyproject.toml ]] && UPDATED_PATHS+=(mockserver-client-python/pyproject.toml)
   [[ -f mockserver-client-ruby/lib/mockserver/version.rb ]] && UPDATED_PATHS+=(mockserver-client-ruby/lib/mockserver/version.rb)
   [[ -f mockserver-client-ruby/README.md ]]        && UPDATED_PATHS+=(mockserver-client-ruby/README.md)
+  # Testcontainers client default-image source/test files bumped above. The .ts
+  # is also caught by the general doc loop's *.ts? no — that loop only sweeps
+  # *.html/*.md/*.yaml/*.yml/*.json/*.txt, so the .go/.ts/.py/.rs/.cs SOURCE files
+  # are NOT staged by it and must be listed explicitly here.
+  for rel in "${TESTCONTAINERS_VERSION_FILES[@]}"; do
+    [[ -f "$rel" ]] && UPDATED_PATHS+=("$rel")
+  done
   # General find-and-replace touched docs across the repo. Stage only the
   # files that the find/replace loop above actually edited — NEVER a catch-all
   # `git diff --name-only` which would stage unrelated pre-existing changes
