@@ -27,6 +27,8 @@ import {
   type DriftRecord,
   type DriftResponse,
 } from '../lib/drift';
+import { severityColor } from '../lib/severityColor';
+import { monospaceFontFamily } from '../theme';
 
 interface DriftPanelProps {
   connectionParams: ConnectionParams;
@@ -74,19 +76,6 @@ function driftTypeColor(driftType: string): 'warning' | 'error' | 'info' | 'defa
     case 'HEADER_REMOVED':
     case 'HEADER_CHANGED':
       return 'default';
-    default:
-      return 'default';
-  }
-}
-
-function severityColor(severity: string | undefined): 'error' | 'warning' | 'info' | 'default' {
-  switch (severity) {
-    case 'BREAKING':
-      return 'error';
-    case 'WARNING':
-      return 'warning';
-    case 'INFORMATIONAL':
-      return 'info';
     default:
       return 'default';
   }
@@ -146,7 +135,7 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
 
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap', rowGap: 1 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
           Drift Detection
         </Typography>
@@ -163,7 +152,7 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
           placeholder="expectation ID..."
           value={filterText}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value)}
-          sx={{ width: 220 }}
+          sx={{ width: { xs: '100%', sm: 220 } }}
         />
         <Tooltip title="Clear all drift records">
           <span>
@@ -220,7 +209,7 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
             No drift detected. MockServer compares proxied responses against stubs in proxy mode.
           </Typography>
         ) : (
-          <TableContainer>
+          <TableContainer sx={{ overflow: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -238,7 +227,7 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
                 {filteredDrifts.map((drift: DriftRecord, i: number) => (
                   <TableRow key={`${drift.expectationId}-${drift.field}-${i}`}>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                         {drift.expectationId}
                       </Typography>
                     </TableCell>
@@ -252,20 +241,20 @@ export default function DriftPanel({ connectionParams }: DriftPanelProps) {
                       />
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                         {drift.field}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Tooltip title={drift.expectedValue ?? '-'}>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
+                        <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
                           {drift.expectedValue ?? '-'}
                         </Typography>
                       </Tooltip>
                     </TableCell>
                     <TableCell>
                       <Tooltip title={drift.actualValue ?? '-'}>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
+                        <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
                           {drift.actualValue ?? '-'}
                         </Typography>
                       </Tooltip>

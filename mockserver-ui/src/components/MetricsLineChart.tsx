@@ -24,6 +24,12 @@ interface MetricsLineChartProps {
    * length-mismatched.
    */
   timestamps?: number[];
+  /**
+   * Accessible description of the chart for screen readers. The chart SVG is
+   * otherwise an unlabelled image; this is announced on the wrapping `role="img"`
+   * element. Falls back to a description derived from the series labels.
+   */
+  ariaLabel?: string;
 }
 
 /** HH:MM in the viewer's locale, used for the time x-axis tick labels. */
@@ -40,8 +46,15 @@ export function formatTimeLabel(epochMillis: number): string {
  * live line, and shows a "collecting…" placeholder until at least two samples
  * exist.
  */
-export default function MetricsLineChart({ series, height = 220, valueFormatter, timestamps }: MetricsLineChartProps) {
+export default function MetricsLineChart({ series, height = 220, valueFormatter, timestamps, ariaLabel }: MetricsLineChartProps) {
   const theme = useTheme();
+  // Describe the chart for assistive tech: an SVG line chart is otherwise an
+  // unlabelled image. Prefer a caller-supplied label, else summarise the series.
+  const description =
+    ariaLabel ??
+    (series.length > 0
+      ? `Line chart over time of ${series.map((s) => s.label).join(', ')}`
+      : 'Line chart');
   // shortest series length, so an accidental ragged input shows the placeholder
   // rather than silently clipping points.
   const length = series.length === 0 ? 0 : Math.min(...series.map((s) => s.data.length));
@@ -80,6 +93,7 @@ export default function MetricsLineChart({ series, height = 220, valueFormatter,
   const fillArea = series.length === 1;
 
   return (
+    <Box role="img" aria-label={description}>
     <LineChart
       height={height}
       series={series.map((s, i) => ({
@@ -112,5 +126,6 @@ export default function MetricsLineChart({ series, height = 220, valueFormatter,
         },
       }}
     />
+    </Box>
   );
 }

@@ -29,11 +29,11 @@ import {
   type OptimisationReport,
   type OptimisationSignal,
   type OptimisationVerdict,
-  type SignalSeverity,
 } from '../lib/optimisation';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import HumanErrorAlert from './HumanErrorAlert';
+import { severityColor } from '../lib/severityColor';
 import { monospaceFontFamily, transitions } from '../theme';
 
 // ---------------------------------------------------------------------------
@@ -54,15 +54,6 @@ function formatMs(ms: number): string {
   if (!Number.isFinite(ms)) return '—';
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)} s`;
   return `${Math.round(ms)} ms`;
-}
-
-function severityColor(severity: SignalSeverity | string): 'error' | 'warning' | 'info' | 'default' {
-  switch (severity) {
-    case 'HIGH': return 'error';
-    case 'MEDIUM': return 'warning';
-    case 'LOW': return 'info';
-    default: return 'default';
-  }
 }
 
 /** A 0..1 ratio rendered as a whole-number percent, e.g. 0.62 → "62%". */
@@ -481,7 +472,7 @@ export default function OptimiseView({ connectionParams }: OptimiseViewProps) {
 
       {isEmpty && (
         <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary">No LLM traffic captured</Typography>
+          <Typography variant="body2" color="text.secondary">No LLM traffic captured yet</Typography>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
             Proxy LLM calls through MockServer, then return here to analyse them for cost-saving opportunities.
           </Typography>

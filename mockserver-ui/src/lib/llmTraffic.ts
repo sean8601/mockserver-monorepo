@@ -604,6 +604,9 @@ function parseOpenAiRequest(
     // Reassemble streamed OpenAI response
     const contentParts: string[] = [];
     const toolCalls: Map<number, { id?: string; type?: string; function?: { name: string; arguments: string } }> = new Map();
+    // The index of the tool call currently being assembled from the stream.
+    // Advances only when a delta carries an explicit `index`.
+    let currentToolCallIndex: number | null = null;
     let finishReason: string | null = null;
     let model: string | null = null;
 
@@ -624,18 +627,43 @@ function parseOpenAiRequest(
             if (toolCallsArr) {
               for (const tc of toolCallsArr) {
                 const tcObj = tc as Record<string, unknown>;
-                const index = getNumber(tcObj, 'index') ?? 0;
-                const existing = toolCalls.get(index) ?? {};
+                // OpenAI streams the index on the first delta of each tool call
+                // and repeats it on subsequent argument deltas. Track a running
+                // "current index" so argument fragments attach to the tool call
+                // currently being assembled rather than being merged into
+                // bucket 0 (which corrupts arguments across multiple tool calls).
+                //
+                // Non-conformant streams may omit the index entirely. To avoid
+                // either merging distinct calls OR silently dropping fragments,
+                // attribute by the natural "new tool call" signal: an explicit
+                // index always wins; otherwise a fresh id or function.name starts
+                // a NEW bucket; otherwise (a bare argument fragment) the fragment
+                // continues the current bucket. The very first fragment with no
+                // signal at all falls back to bucket 0 (single-call behaviour).
+                const fn = getObject(tcObj, 'function');
                 const id = getString(tcObj, 'id');
+                const name = fn ? getString(fn, 'name') : null;
+                const explicitIndex = getNumber(tcObj, 'index');
+                if (explicitIndex !== null) {
+                  currentToolCallIndex = explicitIndex;
+                } else if (id || name) {
+                  // Start of a new tool call without an explicit index: open a
+                  // fresh bucket so it is not merged into the previous call.
+                  currentToolCallIndex = toolCalls.size;
+                } else if (currentToolCallIndex === null) {
+                  // First fragment of the stream with no index and no id/name:
+                  // treat it as a single tool call in bucket 0.
+                  currentToolCallIndex = 0;
+                }
+                const index = currentToolCallIndex;
+                const existing = toolCalls.get(index) ?? {};
                 if (id) existing.id = id;
                 const type = getString(tcObj, 'type');
                 if (type) existing.type = type;
-                const fn = getObject(tcObj, 'function');
                 if (fn) {
                   if (!existing.function) {
                     existing.function = { name: '', arguments: '' };
                   }
-                  const name = getString(fn, 'name');
                   if (name) existing.function.name = name;
                   const args = getString(fn, 'arguments');
                   if (args !== null) existing.function.arguments += args;
@@ -688,18 +716,32 @@ function parseMcpRequest(requestBody: unknown, responseBody: unknown): McpParsed
   const req = safeParseJson(requestBody) as Record<string, unknown> | undefined;
   const res = safeParseJson(responseBody) as Record<string, unknown> | undefined;
 
-  // Could be a request or a response in JSON-RPC
-  const isResponse = req ? !('method' in req) : false;
-  const primary = isResponse ? res : req;
-  const secondary = isResponse ? req : res;
+  // Classify each body independently rather than inferring direction solely
+  // from the absence of `method` on the request body. A JSON-RPC body is a
+  // response side when it carries `result` or `error`; it is a request side
+  // when it carries `method` (this covers notifications, which have a method
+  // but no id, and result-in-request edge cases).
+  const isResponseSide = (body: Record<string, unknown> | undefined): boolean =>
+    !!body && ('result' in body || 'error' in body);
+  const isRequestSide = (body: Record<string, unknown> | undefined): boolean =>
+    !!body && 'method' in body;
+
+  // Find the body that holds the request part (method/id/params) and the body
+  // that holds the response part (result/error), inspecting both bodies.
+  const requestPart = isRequestSide(req) ? req : (isRequestSide(res) ? res : (req ?? res));
+  const responsePart = isResponseSide(res) ? res : (isResponseSide(req) ? req : undefined);
+
+  // The exchange is "a response" for display purposes when we actually have a
+  // response part (result/error present on either body).
+  const isResponse = !!responsePart;
 
   return {
     kind: 'mcp',
-    method: primary ? getString(primary, 'method') : null,
-    id: primary ? primary['id'] ?? null : null,
-    params: primary ? (primary['params'] ?? null) : null,
-    result: secondary ? (secondary['result'] ?? null) : (primary ? (primary['result'] ?? null) : null),
-    error: secondary ? (secondary['error'] ?? null) : (primary ? (primary['error'] ?? null) : null),
+    method: requestPart ? getString(requestPart, 'method') : null,
+    id: requestPart ? (requestPart['id'] ?? null) : (responsePart ? (responsePart['id'] ?? null) : null),
+    params: requestPart ? (requestPart['params'] ?? null) : null,
+    result: responsePart ? (responsePart['result'] ?? null) : null,
+    error: responsePart ? (responsePart['error'] ?? null) : null,
     isResponse,
   };
 }
@@ -1021,20 +1063,39 @@ export function extractBodyContent(body: unknown): unknown {
   const obj = body as Record<string, unknown>;
 
   // MockServer body wrapper: { type: "STRING"|"JSON"|"BINARY", string|json|base64Bytes: ... }
+  // Branch on the `type` discriminator first so a wrapper that happens to carry
+  // a stray sibling field (e.g. type:"STRING" alongside a leftover `json` key)
+  // decodes from the field its declared type names, not the first key present.
+  const decodeBinary = (): unknown => {
+    if (typeof obj['base64Bytes'] !== 'string') return body;
+    try {
+      const bytes = atob(obj['base64Bytes'] as string);
+      return new TextDecoder().decode(
+        Uint8Array.from(bytes, (c) => c.charCodeAt(0)),
+      );
+    } catch {
+      // Fall through to return the original object if decoding fails
+      return body;
+    }
+  };
+
   if ('type' in obj) {
+    switch (obj['type']) {
+      case 'STRING':
+        if ('string' in obj) return obj['string'];
+        break;
+      case 'JSON':
+        if ('json' in obj) return obj['json'];
+        break;
+      case 'BINARY':
+        return decodeBinary();
+      default:
+        break;
+    }
+    // `type` present but the expected field is missing (or an unknown type):
+    // fall back to the original key-presence heuristics below.
     if ('string' in obj) return obj['string'];
     if ('json' in obj) return obj['json'];
-    if (obj['type'] === 'BINARY' && typeof obj['base64Bytes'] === 'string') {
-      try {
-        const bytes = atob(obj['base64Bytes'] as string);
-        return new TextDecoder().decode(
-          Uint8Array.from(bytes, (c) => c.charCodeAt(0)),
-        );
-      } catch {
-        // Fall through to return the original object if decoding fails
-        return body;
-      }
-    }
   }
 
   // Already a plain object (e.g., already-parsed JSON body)

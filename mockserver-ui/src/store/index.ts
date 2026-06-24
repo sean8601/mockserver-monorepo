@@ -383,7 +383,15 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       activeExpectations: reconcileByKey(s.activeExpectations, message.activeExpectations ?? [], activeExpectationsCache),
       recordedRequests: reconcileByKey(s.recordedRequests, message.recordedRequests ?? [], recordedRequestsCache),
       proxiedRequests: reconcileByKey(s.proxiedRequests, message.proxiedRequests ?? [], proxiedRequestsCache),
-      error: message.error ?? null,
+      // Only touch `error` when this frame actually carries one. Routine data
+      // frames (~1/sec) must not clobber an action error set elsewhere (e.g. a
+      // failed clear/delete via setError) — previously `?? null` wiped it
+      // within a second.
+      // Trade-off: a server filter-error frame now persists until the next frame
+      // that carries an error (or a reconnect / explicit clear) rather than
+      // self-clearing on the next data frame; we accept that to preserve
+      // clear/delete action errors, which are the higher-value signal.
+      ...(message.error !== undefined ? { error: message.error } : {}),
     })),
 
   clearUI: () => {

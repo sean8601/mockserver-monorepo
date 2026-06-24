@@ -80,8 +80,8 @@ export default function BaselineCompareDialog({ open, onClose, connectionParams 
   }, [busy, onClose]);
 
   return (
-    <Dialog open={open} onClose={handleClose} fullScreen={fullScreen} maxWidth="md" fullWidth>
-      <DialogTitle>Compare against baseline</DialogTitle>
+    <Dialog open={open} onClose={handleClose} fullScreen={fullScreen} maxWidth="md" fullWidth aria-labelledby="baseline-compare-dialog-title">
+      <DialogTitle id="baseline-compare-dialog-title">Compare against baseline</DialogTitle>
       <DialogContent dividers>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Paste a known-good <strong>baseline</strong> array of expectations to

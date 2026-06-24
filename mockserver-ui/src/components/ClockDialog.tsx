@@ -17,6 +17,7 @@ import { getClock, freezeClock, advanceClock, resetClock, type ClockStatus } fro
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
 import HumanErrorAlert from './HumanErrorAlert';
+import { useDashboardStore } from '../store';
 
 const UNIT_MS: Record<string, number> = { ms: 1, s: 1000, m: 60000, h: 3600000 };
 
@@ -31,6 +32,7 @@ export default function ClockDialog({
 }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const setNotification = useDashboardStore((s) => s.setNotification);
   const [status, setStatus] = useState<ClockStatus | null>(null);
   const [error, setError] = useState<HumanError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,18 +62,19 @@ export default function ClockDialog({
     return () => { cancelled = true; };
   }, [open, connectionParams, refreshTick]);
 
-  const run = useCallback(async (fn: () => Promise<void>) => {
+  const run = useCallback(async (fn: () => Promise<void>, successMessage: string) => {
     setBusy(true);
     setError(null);
     try {
       await fn();
       refresh();
+      setNotification({ message: successMessage, severity: 'success' });
     } catch (e) {
       setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, setNotification]);
 
   const handleClose = useCallback(() => {
     setError(null);
@@ -96,10 +99,10 @@ export default function ClockDialog({
           </Box>
         )}
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button size="small" variant="outlined" disabled={busy} onClick={() => void run(() => freezeClock(connectionParams))}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => void run(() => freezeClock(connectionParams), 'Clock frozen')}>
             Freeze now
           </Button>
-          <Button size="small" variant="outlined" disabled={busy} onClick={() => void run(() => resetClock(connectionParams))}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => void run(() => resetClock(connectionParams), 'Clock reset to live')}>
             Reset to live
           </Button>
         </Box>
@@ -114,7 +117,7 @@ export default function ClockDialog({
             <MenuItem value="h">hr</MenuItem>
           </Select>
           <Button size="small" variant="contained" disabled={busy}
-            onClick={() => void run(() => advanceClock(connectionParams, amount * UNIT_MS[unit]!))}>
+            onClick={() => void run(() => advanceClock(connectionParams, amount * UNIT_MS[unit]!), 'Clock advanced')}>
             Advance
           </Button>
         </Box>

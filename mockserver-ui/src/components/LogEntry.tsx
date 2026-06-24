@@ -363,6 +363,13 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
         color: style.color ?? 'inherit',
         position: 'relative',
         '&:hover .copy-btn': { opacity: 1 },
+        // Subtle left accent flags unmatched requests so the "Explain why /
+        // Generate stub / Set breakpoint" actions on these rows are discoverable.
+        ...(isUnmatched && {
+          borderLeft: 2,
+          borderLeftColor: 'warning.main',
+          pl: indent ? 3.75 : 0.25,
+        }),
         ...(divider && {
           borderBottom: 1,
           borderColor: 'divider',
@@ -403,6 +410,15 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
               {descriptionText(entry) || 'SYSTEM_MESSAGE'}
             </Box>
             {traceparent && <TraceparentPill info={traceparent} />}
+            {isUnmatched && (
+              <Chip
+                label="unmatched"
+                size="small"
+                color="warning"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', ml: 0.5, '& .MuiChip-label': { px: 0.5 } }}
+              />
+            )}
             {showWhyButton && (
               <Tooltip title="Analyze why this request didn't match">
                 <IconButton
@@ -492,6 +508,15 @@ function LogEntry({ entry, indent = false, divider = false, collapsible = false,
               {entry.timestamp && <LogTime timestamp={entry.timestamp} />}
               {descriptionText(entry)}
               {traceparent && <TraceparentPill info={traceparent} />}
+              {isUnmatched && (
+                <Chip
+                  label="unmatched"
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: '0.6rem', ml: 0.5, '& .MuiChip-label': { px: 0.5 } }}
+                />
+              )}
             </Box>
           ) : (
             entry.timestamp && <LogTime timestamp={entry.timestamp} />

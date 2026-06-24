@@ -16,6 +16,7 @@ import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { createOidcProvider, type OidcConfig } from '../lib/oidc';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import HumanErrorAlert from './HumanErrorAlert';
+import { useDashboardStore } from '../store';
 
 export default function OidcDialog({
   open,
@@ -28,6 +29,7 @@ export default function OidcDialog({
 }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const setNotification = useDashboardStore((s) => s.setNotification);
   const [issuer, setIssuer] = useState('');
   const [subject, setSubject] = useState('');
   const [clientId, setClientId] = useState('');
@@ -61,12 +63,13 @@ export default function OidcDialog({
     if (tamperedSignature) config.tamperedSignature = true;
     try {
       setCreated(await createOidcProvider(connectionParams, config));
+      setNotification({ message: 'OIDC provider mocked', severity: 'success' });
     } catch (e) {
       setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
-  }, [connectionParams, issuer, subject, clientId, audience, scopes, tokenExpiry, issueExpiredToken, wrongIssuer, tamperedSignature]);
+  }, [connectionParams, issuer, subject, clientId, audience, scopes, tokenExpiry, issueExpiredToken, wrongIssuer, tamperedSignature, setNotification]);
 
   const handleClose = useCallback(() => {
     setIssuer('');

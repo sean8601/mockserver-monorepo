@@ -231,8 +231,8 @@ export default function DebugMismatchDialog({ connectionParams }: DebugMismatchD
 
   return (
     <>
-      <Dialog open={open} onClose={close} maxWidth="md" fullWidth fullScreen={fullScreen}>
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
+      <Dialog open={open} onClose={close} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="debug-mismatch-dialog-title">
+        <DialogTitle id="debug-mismatch-dialog-title" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             Why Didn&apos;t This Match?
             {result && (

@@ -6,15 +6,16 @@ import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
-import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TimerIcon from '@mui/icons-material/Timer';
 import ConfirmDialog from './ConfirmDialog';
-import { humanizeError } from '../lib/errorMessage';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 import { useDashboardStore } from '../store';
+import { monospaceFontFamily } from '../theme';
 import {
   buildScenarioGraphModel,
   toScenarioMermaid,
@@ -134,7 +135,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
   // Query section
   const [scenarioName, setScenarioName] = useState('');
   const [currentState, setCurrentState] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Existing-scenarios list (populated from GET /mockserver/scenario)
@@ -213,7 +214,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       // refreshes). When nothing moved, only the state node is (re)recorded.
       recordObservation({ scenario: scenarioName.trim(), state: result.currentState, fromState: priorState });
     } catch (err) {
-      setError(humanizeError(err).message);
+      setError(humanizeError(err));
       setCurrentState(null);
     } finally {
       setLoading(false);
@@ -250,7 +251,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       }
       refreshList();
     } catch (err) {
-      setError(humanizeError(err).message);
+      setError(humanizeError(err));
     } finally {
       setLoading(false);
     }
@@ -269,7 +270,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       setScheduledNextState(null);
       refreshList();
     } catch (err) {
-      setError(humanizeError(err).message);
+      setError(humanizeError(err));
     } finally {
       setLoading(false);
     }
@@ -314,7 +315,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
                   variant={s.scenarioName === scenarioName ? 'filled' : 'outlined'}
                   color={s.scenarioName === scenarioName ? 'primary' : 'default'}
                   onClick={() => handleSelectScenario(s)}
-                  sx={{ height: 20, fontSize: '0.6rem', fontFamily: 'monospace', maxWidth: 280 }}
+                  sx={{ height: 20, fontSize: '0.6rem', fontFamily: monospaceFontFamily, maxWidth: 280 }}
                 />
               </Tooltip>
             ))}
@@ -359,7 +360,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
             label={currentState}
             size="small"
             color="primary"
-            sx={{ height: 20, fontSize: '0.65rem', fontFamily: 'monospace' }}
+            sx={{ height: 20, fontSize: '0.65rem', fontFamily: monospaceFontFamily }}
           />
           {countdown !== null && countdown > 0 && scheduledNextState && (
             <Tooltip title={`Auto-transition to "${scheduledNextState}" in ${formatCountdown(countdown)}`}>
@@ -369,7 +370,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
                 size="small"
                 color="warning"
                 variant="outlined"
-                sx={{ height: 20, fontSize: '0.6rem', fontFamily: 'monospace' }}
+                sx={{ height: 20, fontSize: '0.6rem', fontFamily: monospaceFontFamily }}
               />
             </Tooltip>
           )}
@@ -388,9 +389,7 @@ export default function ScenarioPanel({ connectionParams }: ScenarioPanelProps) 
       )}
 
       {error && (
-        <Alert severity="error" sx={{ mb: 1, py: 0, '& .MuiAlert-message': { fontSize: '0.7rem' } }}>
-          {error}
-        </Alert>
+        <HumanErrorAlert error={error} sx={{ mb: 1, py: 0, '& .MuiAlert-message': { fontSize: '0.7rem' } }} />
       )}
 
       <Divider sx={{ my: 1 }} />

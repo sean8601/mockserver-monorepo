@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, type ChangeEvent } from 'react';
+import { Fragment, useState, useCallback, useEffect, useMemo, useRef, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Paper from '@mui/material/Paper';
@@ -21,7 +21,9 @@ import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Radio from '@mui/material/Radio';
 import Tooltip from '@mui/material/Tooltip';
+import Collapse from '@mui/material/Collapse';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopyOutlined';
 import RefreshIcon from '@mui/icons-material/RefreshOutlined';
@@ -29,6 +31,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFileOutlined';
 import { CassetteManagerBody } from './CassetteManager';
 import ImportForm from './ImportForm';
 import HumanErrorAlert from './HumanErrorAlert';
+import TruncatedText from './TruncatedText';
 import { humanizeError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
@@ -36,10 +39,14 @@ import {
   listWasmModules,
   uploadWasmModule,
   deleteWasmModule,
+  testWasmModule,
+  type WasmTestRequest,
+  type WasmTestResult,
 } from '../lib/wasm';
 import { buildBaseUrl } from '../lib/mcpClient';
 import { uploadDescriptorSet, listGrpcServices, clearGrpcDescriptors, type GrpcService } from '../lib/grpcDescriptors';
 import ConfirmDialog from './ConfirmDialog';
+import JsonViewer from './JsonViewer';
 import {
   verifyToJava,
   verifyToNode,
@@ -458,7 +465,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
   }, [fetchText]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: { xs: '100%', sm: 720 } }}>
       <Typography variant="body2" color="text.secondary">
         Download captured traffic or registered expectations as a file. The file is
         produced by the running MockServer instance — what you see in the dashboard
@@ -488,7 +495,7 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
         value={format}
         onChange={(e) => setFormat(e.target.value as ExportFormat)}
         helperText={detail.description}
-        sx={{ maxWidth: 360 }}
+        sx={{ width: '100%', maxWidth: { xs: '100%', sm: 360 } }}
       >
         {availableFormats.map((f) => (
           <MenuItem key={f.value} value={f.value}>
@@ -533,6 +540,14 @@ function ExportTab({ connectionParams }: { connectionParams: ConnectionParams })
 
 const WASM_POLL_INTERVAL_MS = 8000;
 
+// Starter sample request for the WASM module dry-run panel (the server's WasmRequest shape).
+const DEFAULT_WASM_TEST_INPUT = `{
+  "method": "GET",
+  "path": "/",
+  "headers": {},
+  "body": ""
+}`;
+
 function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionParams }) {
   const [modules, setModules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -543,6 +558,53 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
   const [refreshTick, setRefreshTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Per-module test (dry-run) panel state.
+  const [testModule, setTestModule] = useState<string | null>(null);
+  const [testInput, setTestInput] = useState(DEFAULT_WASM_TEST_INPUT);
+  const [testBusy, setTestBusy] = useState(false);
+  const [testError, setTestError] = useState<ReturnType<typeof humanizeError> | null>(null);
+  const [testResult, setTestResult] = useState<WasmTestResult | null>(null);
+
+  const toggleTest = useCallback((name: string) => {
+    setTestModule((current) => {
+      if (current === name) return null;
+      // opening (or switching) the panel resets its transient result/error
+      setTestInput(DEFAULT_WASM_TEST_INPUT);
+      setTestResult(null);
+      setTestError(null);
+      return name;
+    });
+  }, []);
+
+  const handleTest = useCallback(async (name: string) => {
+    let request: WasmTestRequest | undefined;
+    const trimmed = testInput.trim();
+    if (trimmed !== '') {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          setTestError({ message: 'Sample request must be a JSON object (e.g. { "method": "GET", "path": "/" }).' });
+          return;
+        }
+        request = parsed as WasmTestRequest;
+      } catch {
+        setTestError({ message: 'Sample request is not valid JSON.' });
+        return;
+      }
+    }
+    setTestBusy(true);
+    setTestError(null);
+    setTestResult(null);
+    try {
+      const result = await testWasmModule(connectionParams, { moduleName: name, request });
+      setTestResult(result);
+    } catch (e) {
+      setTestError(humanizeError(e));
+    } finally {
+      setTestBusy(false);
+    }
+  }, [connectionParams, testInput]);
 
   // Poll modules list
   useEffect(() => {
@@ -614,7 +676,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
   }, [connectionParams]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: { xs: '100%', sm: 720 } }}>
       <Typography variant="body2" color="text.secondary">
         Upload and manage WASM custom rule modules. Each module can be referenced
         by name in expectation actions.
@@ -628,7 +690,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
           placeholder="my-rule"
           value={uploadName}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setUploadName(e.target.value)}
-          sx={{ minWidth: 180 }}
+          sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 180 } }}
         />
         <Button
           size="small"
@@ -675,7 +737,7 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
       ) : modules.length === 0 ? (
         <Typography variant="body2" color="text.secondary">No WASM modules loaded.</Typography>
       ) : (
-        <TableContainer>
+        <TableContainer sx={{ overflow: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -685,25 +747,84 @@ function WasmModulesTab({ connectionParams }: { connectionParams: ConnectionPara
             </TableHead>
             <TableBody>
               {modules.map((name) => (
-                <TableRow key={name}>
-                  <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{name}</Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Delete module">
-                      <span>
-                        <IconButton
-                          size="small"
-                          aria-label={`Delete WASM module ${name}`}
-                          disabled={busy}
-                          onClick={() => setDeleteTarget(name)}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
+                <Fragment key={name}>
+                  <TableRow>
+                    <TableCell sx={{ maxWidth: 320 }}>
+                      <TruncatedText text={name} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Tooltip title={testModule === name ? 'Hide test panel' : 'Test module against a sample request'}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            color={testModule === name ? 'primary' : 'default'}
+                            aria-label={`Test WASM module ${name}`}
+                            aria-expanded={testModule === name}
+                            onClick={() => toggleTest(name)}
+                          >
+                            <ScienceOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Delete module">
+                        <span>
+                          <IconButton
+                            size="small"
+                            aria-label={`Delete WASM module ${name}`}
+                            disabled={busy}
+                            onClick={() => setDeleteTarget(name)}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={2} sx={{ p: 0, border: 0 }}>
+                      <Collapse in={testModule === name} unmountOnExit>
+                        <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            Dry-run the module&apos;s match function against a sample request (JSON: method, path, headers, body). No expectation is created.
+                          </Typography>
+                          <TextField
+                            size="small"
+                            label="Sample request (JSON)"
+                            value={testInput}
+                            onChange={(e: ChangeEvent<HTMLInputElement>) => setTestInput(e.target.value)}
+                            multiline
+                            minRows={4}
+                            slotProps={{ input: { sx: { fontFamily: monospaceFontFamily, fontSize: '0.8rem' } } }}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              disabled={testBusy}
+                              onClick={() => void handleTest(name)}
+                            >
+                              Run test
+                            </Button>
+                            {testBusy && <Typography variant="caption" color="text.secondary">Running…</Typography>}
+                          </Box>
+                          {testError && <HumanErrorAlert error={testError} onClose={() => setTestError(null)} />}
+                          {testResult && (
+                            <Box>
+                              <Typography
+                                variant="caption"
+                                sx={{ fontWeight: 600 }}
+                                color={testResult.matched ? 'success.main' : 'text.secondary'}
+                              >
+                                {testResult.matched ? 'Matched' : 'Did not match'}
+                              </Typography>
+                              <JsonViewer data={{ matched: testResult.matched }} enableClipboard={false} />
+                            </Box>
+                          )}
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </Fragment>
               ))}
             </TableBody>
           </Table>
@@ -787,7 +908,7 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
   }, [connectionParams]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 820 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: { xs: '100%', sm: 820 } }}>
       <Typography variant="body2" color="text.secondary">
         Upload a compiled protobuf <code>FileDescriptorSet</code> (e.g. <code>protoc --descriptor_set_out</code>)
         so MockServer can transcode and mock the declared gRPC services.
@@ -818,9 +939,9 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
         <Typography variant="body2" color="text.secondary">No gRPC descriptors loaded.</Typography>
       ) : (
         services.map((svc) => (
-          <Box key={svc.name}>
-            <Typography variant="subtitle2" sx={{ fontFamily: monospaceFontFamily }}>{svc.name}</Typography>
-            <TableContainer>
+          <Box key={svc.name} sx={{ minWidth: 0 }}>
+            <TruncatedText text={svc.name} component="div" sx={{ fontFamily: monospaceFontFamily, typography: 'subtitle2' }} />
+            <TableContainer sx={{ overflow: 'auto' }}>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -832,8 +953,8 @@ function GrpcDescriptorsTab({ connectionParams }: { connectionParams: Connection
                 <TableBody>
                   {svc.methods.map((m) => (
                     <TableRow key={m.name}>
-                      <TableCell><Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{m.name}</Typography></TableCell>
-                      <TableCell><Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{m.inputType} → {m.outputType}</Typography></TableCell>
+                      <TableCell sx={{ maxWidth: 200 }}><TruncatedText text={m.name} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} /></TableCell>
+                      <TableCell sx={{ maxWidth: 280 }}><TruncatedText text={`${m.inputType} → ${m.outputType}`} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} /></TableCell>
                       <TableCell>
                         <Typography variant="caption">
                           {m.clientStreaming && m.serverStreaming ? 'bidi' : m.clientStreaming ? 'client' : m.serverStreaming ? 'server' : 'unary'}
@@ -887,7 +1008,7 @@ export default function LibraryView({ connectionParams }: LibraryViewProps) {
         </Tabs>
         <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
           {tab === 0 && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 720 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: { xs: '100%', sm: 720 } }}>
               <ImportForm connectionParams={connectionParams} />
             </Box>
           )}

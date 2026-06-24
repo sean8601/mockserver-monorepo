@@ -326,6 +326,146 @@ describe('parseTraffic — OpenAI streaming SSE', () => {
     expect(parsed.choices[0]!.message?.content).toBe('Hello world');
     expect(parsed.choices[0]!.finish_reason).toBe('stop');
   });
+
+  it('reassembles two distinct streamed tool calls without merging into bucket 0', () => {
+    // OpenAI streams the index on the first delta of each tool_call and repeats
+    // it (or omits it) on subsequent argument deltas. Argument deltas here omit
+    // the index, so the parser must attribute them to the current tool call
+    // rather than defaulting a missing index to 0.
+    const sseBody = [
+      // First tool call: index 0, name + first arg fragment
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{\\"city\\":"}}]},"finish_reason":null}]}',
+      '',
+      // Continuation of first tool call's arguments (no index repeated)
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"\\"London\\"}"}}]},"finish_reason":null}]}',
+      '',
+      // Second tool call: index 1, name + first arg fragment
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","type":"function","function":{"name":"get_time","arguments":"{\\"tz\\":"}}]},"finish_reason":null}]}',
+      '',
+      // Continuation of second tool call's arguments (no index repeated)
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"\\"UTC\\"}"}}]},"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/chat/completions',
+        body: { type: 'JSON', json: JSON.stringify({ model: 'gpt-4', stream: true, messages: [] }) },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+
+    type ToolCall = { id?: string; type?: string; function?: { name?: string; arguments?: string } };
+    const toolCalls = parsed.choices[0]!.message?.tool_calls as ToolCall[] | undefined;
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls![0]!.id).toBe('call_a');
+    expect(toolCalls![0]!.function?.name).toBe('get_weather');
+    expect(toolCalls![0]!.function?.arguments).toBe('{"city":"London"}');
+    expect(toolCalls![1]!.id).toBe('call_b');
+    expect(toolCalls![1]!.function?.name).toBe('get_time');
+    expect(toolCalls![1]!.function?.arguments).toBe('{"tz":"UTC"}');
+  });
+
+  it('reassembles a single tool call when NO delta carries an index', () => {
+    // Non-conformant stream: not a single fragment carries `index`. The parser
+    // must still produce exactly one tool call (bucket 0), not drop it.
+    const sseBody = [
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_x","type":"function","function":{"name":"lookup","arguments":"{\\"q\\":"}}]},"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"\\"hi\\"}"}}]},"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/chat/completions',
+        body: { type: 'JSON', json: JSON.stringify({ model: 'gpt-4', stream: true, messages: [] }) },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+
+    type ToolCall = { id?: string; function?: { name?: string; arguments?: string } };
+    const toolCalls = parsed.choices[0]!.message?.tool_calls as ToolCall[] | undefined;
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls![0]!.id).toBe('call_x');
+    expect(toolCalls![0]!.function?.name).toBe('lookup');
+    expect(toolCalls![0]!.function?.arguments).toBe('{"q":"hi"}');
+  });
+
+  it('keeps both tool calls when the first omits index and a later one carries index:1', () => {
+    // First tool call's deltas omit `index` (start signalled by id/name); the
+    // second carries an explicit index:1. Neither call may be dropped or merged.
+    const sseBody = [
+      // First tool call: NO index, identified by id + function.name
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{\\"city\\":"}}]},"finish_reason":null}]}',
+      '',
+      // Continuation of first tool call (no index, bare argument fragment)
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"\\"London\\"}"}}]},"finish_reason":null}]}',
+      '',
+      // Second tool call: explicit index 1
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","type":"function","function":{"name":"get_time","arguments":"{\\"tz\\":"}}]},"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\\"UTC\\"}"}}]},"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v1/chat/completions',
+        body: { type: 'JSON', json: JSON.stringify({ model: 'gpt-4', stream: true, messages: [] }) },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+
+    type ToolCall = { id?: string; function?: { name?: string; arguments?: string } };
+    const toolCalls = parsed.choices[0]!.message?.tool_calls as ToolCall[] | undefined;
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls![0]!.id).toBe('call_a');
+    expect(toolCalls![0]!.function?.name).toBe('get_weather');
+    expect(toolCalls![0]!.function?.arguments).toBe('{"city":"London"}');
+    expect(toolCalls![1]!.id).toBe('call_b');
+    expect(toolCalls![1]!.function?.name).toBe('get_time');
+    expect(toolCalls![1]!.function?.arguments).toBe('{"tz":"UTC"}');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -397,6 +537,56 @@ describe('parseTraffic — MCP JSON-RPC', () => {
     expect(parsed.kind).toBe('mcp');
     if (parsed.kind !== 'mcp') return;
     expect(parsed.method).toBe('resources/read');
+  });
+
+  it('treats a JSON-RPC notification (method, no id) as a request, not a response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/mcp',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/initialized',
+            params: {},
+          }),
+        },
+      },
+      // No response body (notifications get no response)
+      httpResponse: { statusCode: 202 },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('mcp');
+    if (parsed.kind !== 'mcp') return;
+    expect(parsed.method).toBe('notifications/initialized');
+    expect(parsed.params).toEqual({});
+    expect(parsed.isResponse).toBe(false);
+    expect(parsed.result).toBeNull();
+  });
+
+  it('classifies a response body (result, no method) as a response', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/mcp',
+        // The captured request body is itself a JSON-RPC result (result-in-request edge case)
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({ jsonrpc: '2.0', id: 7, result: { ok: true } }),
+        },
+      },
+      httpResponse: { statusCode: 200 },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('mcp');
+    if (parsed.kind !== 'mcp') return;
+    expect(parsed.method).toBeNull();
+    expect(parsed.isResponse).toBe(true);
+    expect(parsed.result).toEqual({ ok: true });
+    expect(parsed.id).toBe(7);
   });
 });
 
@@ -687,6 +877,18 @@ describe('extractBodyContent', () => {
   it('still handles JSON bodies correctly', () => {
     const body = { type: 'JSON', json: '{"key":"value"}' };
     expect(extractBodyContent(body)).toBe('{"key":"value"}');
+  });
+
+  it('decodes from the field named by the type discriminator, ignoring stray sibling fields', () => {
+    // A STRING body that also carries a stray `json` key must decode the
+    // `string` field, not the `json` field (key-presence order would pick json).
+    const body = { type: 'STRING', string: 'the real value', json: { wrong: true } };
+    expect(extractBodyContent(body)).toBe('the real value');
+  });
+
+  it('decodes a JSON body even when a stray string field is also present', () => {
+    const body = { type: 'JSON', json: { key: 'value' }, string: 'stray' };
+    expect(extractBodyContent(body)).toEqual({ key: 'value' });
   });
 
   it('passes through plain strings', () => {

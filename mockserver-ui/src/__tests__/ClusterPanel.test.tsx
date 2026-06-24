@@ -125,7 +125,7 @@ describe('ClusterPanel', () => {
     await waitFor(() => {
       expect(screen.getByText('Cluster status not available')).toBeInTheDocument();
     });
-    expect(screen.getByText(/does not expose cluster status/)).toBeInTheDocument();
+    expect(screen.getByText(/does not support cluster status/)).toBeInTheDocument();
   });
 
   it('has a Refresh button that triggers a new poll', async () => {

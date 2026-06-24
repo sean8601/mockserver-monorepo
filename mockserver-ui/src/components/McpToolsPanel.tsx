@@ -13,9 +13,11 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { buildBaseUrl, callMcpTool } from '../lib/mcpClient';
-import { humanizeError } from '../lib/errorMessage';
+import { humanizeError, type HumanError } from '../lib/errorMessage';
+import HumanErrorAlert from './HumanErrorAlert';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { monospaceFontFamily } from '../theme';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -43,7 +45,7 @@ interface McpToolsPanelProps {
 export default function McpToolsPanel({ connectionParams, selectedExpectationId }: McpToolsPanelProps) {
   const [tools, setTools] = useState<McpTool[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HumanError | null>(null);
   const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
 
   // The read-only tool list auto-refreshes; the spinner is shown only for the
@@ -53,7 +55,7 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
     try {
       const res = await callMcpTool(buildBaseUrl(connectionParams), 'list_mock_tools', {}, signal);
       if (!res.ok) {
-        setError(typeof res.error === 'string' ? res.error : 'failed to generate MCP tools');
+        setError({ message: typeof res.error === 'string' ? res.error : 'failed to generate MCP tools' });
         setTools([]);
         return;
       }
@@ -63,7 +65,7 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
       setError(null);
     } catch (e) {
       if (signal?.aborted) return;
-      setError(humanizeError(e).message);
+      setError(humanizeError(e));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -93,7 +95,7 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
         </Typography>
         <Button
           size="small"
-          startIcon={loading ? <CircularProgress size={14} /> : <RefreshIcon fontSize="small" />}
+          startIcon={loading ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
           onClick={refresh}
           disabled={loading}
         >
@@ -105,9 +107,7 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
         agent sees when it connects to this MockServer's MCP endpoint.
       </Typography>
       {error !== null && (
-        <Alert severity="error" sx={{ mb: 1 }}>
-          {error}
-        </Alert>
+        <HumanErrorAlert error={error} sx={{ mb: 1 }} />
       )}
       {!loading && error === null && tools.length === 0 && (
         <Alert severity="info">No tools — add response expectations to generate MCP tools.</Alert>
@@ -134,10 +134,10 @@ export default function McpToolsPanel({ connectionParams, selectedExpectationId 
                     selected={isSelected}
                     sx={isSelected ? { '& td': { fontWeight: 600 }, borderLeft: 3, borderLeftColor: 'primary.main' } : undefined}
                   >
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                    <TableCell sx={{ fontFamily: monospaceFontFamily, fontSize: '0.8rem' }}>
                       {tool.name ?? '—'}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                    <TableCell sx={{ fontFamily: monospaceFontFamily, fontSize: '0.8rem' }}>
                       {tool._mockserver?.method ?? ''} {tool._mockserver?.path ?? ''}
                     </TableCell>
                     <TableCell>{tool.description ?? ''}</TableCell>

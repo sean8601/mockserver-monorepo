@@ -156,12 +156,26 @@ describe('AppBar', () => {
     expect(screen.queryByText(/^H3 :/)).not.toBeInTheDocument();
   });
 
-  it('opens the keyboard shortcuts dialog from the keyboard icon', async () => {
+  it('opens the keyboard shortcuts dialog from the Tools menu', async () => {
     const user = userEvent.setup();
     renderAppBar();
 
-    await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
+    // Keyboard shortcuts now lives inside the grouped Tools/diagnostics menu.
+    await user.click(screen.getByRole('button', { name: 'Tools and diagnostics' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Keyboard shortcuts' }));
     expect(screen.getByText('Focus the log search field')).toBeInTheDocument();
+  });
+
+  it('opens the server configuration dialog from the Tools menu', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    await user.click(screen.getByRole('button', { name: 'Tools and diagnostics' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Server configuration' }));
+    // The menu closes and the configuration dialog actually opens (asserting the
+    // dialog by its accessible name catches a MenuItem wired to the wrong dialog).
+    expect(screen.queryByRole('menuitem', { name: 'Server configuration' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Server configuration' })).toBeInTheDocument();
   });
 
   it('opens the SAML dialog from the tools menu', async () => {
@@ -177,6 +191,35 @@ describe('AppBar', () => {
     await user.click(screen.getByText('Mock SAML provider…'));
     // The dialog title appears once the SAML dialog opens.
     expect(screen.getByText('Mock SAML provider')).toBeInTheDocument();
+  });
+
+  it('opens the GraphQL import dialog from the tools menu', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    const toolsButton = screen.getAllByRole('button').find(
+      (b) => b.getAttribute('aria-label') === 'Import / export tools',
+    );
+    expect(toolsButton).toBeDefined();
+    await user.click(toolsButton!);
+
+    await user.click(screen.getByText('Import GraphQL schema…'));
+    // Asserting the dialog by accessible name catches a menu item wired to the wrong dialog.
+    expect(await screen.findByRole('dialog', { name: 'Import GraphQL schema' })).toBeInTheDocument();
+  });
+
+  it('opens the SCIM provider dialog from the tools menu', async () => {
+    const user = userEvent.setup();
+    renderAppBar();
+
+    const toolsButton = screen.getAllByRole('button').find(
+      (b) => b.getAttribute('aria-label') === 'Import / export tools',
+    );
+    expect(toolsButton).toBeDefined();
+    await user.click(toolsButton!);
+
+    await user.click(screen.getByText('Mock SCIM provider…'));
+    expect(await screen.findByRole('dialog', { name: 'Mock SCIM provider' })).toBeInTheDocument();
   });
 
   it('opens the baseline compare dialog from the tools menu', async () => {
@@ -339,12 +382,15 @@ describe('AppBar responsive navigation', () => {
     expect(NAV_TAB_DESCRIPTIONS.traffic).toMatch(/select an item/i);
   });
 
-  it('does not render the keyboard-shortcut caption (the ? dialog replaces it)', () => {
+  it('does not render the keyboard-shortcut caption (the ? dialog replaces it)', async () => {
+    const user = userEvent.setup();
     renderAppBar();
     expect(screen.queryByText(/clear logs/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Esc filter/i)).not.toBeInTheDocument();
-    // The Keyboard-shortcuts dialog button remains the discoverability path.
-    expect(screen.getByRole('button', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+    // The Keyboard-shortcuts dialog remains the discoverability path, now reached
+    // through the grouped Tools/diagnostics menu.
+    await user.click(screen.getByRole('button', { name: 'Tools and diagnostics' }));
+    expect(screen.getByRole('menuitem', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
   });
 
   it('navigates to the gRPC view from the hamburger menu on narrow screens', async () => {

@@ -69,15 +69,31 @@ describe('DashboardStore', () => {
       expect(useDashboardStore.getState().error).toBe('invalid filter');
     });
 
-    it('clears error when no error in message', () => {
-      useDashboardStore.setState({ error: 'old error' });
+    it('preserves an existing error when a routine data frame carries no error', () => {
+      // Data frames arrive ~1/sec. An error set by another code path (e.g. a
+      // failed clear/delete via setError) must survive routine frames that do
+      // not themselves carry an error, rather than being wiped within a second.
+      useDashboardStore.setState({ error: 'action failed' });
       useDashboardStore.getState().applyMessage({
         logMessages: [],
         activeExpectations: [],
         recordedRequests: [],
         proxiedRequests: [],
       });
-      expect(useDashboardStore.getState().error).toBeNull();
+      expect(useDashboardStore.getState().error).toBe('action failed');
+    });
+
+    it('still clears a stale error when the server sends an empty error in a frame', () => {
+      useDashboardStore.setState({ error: 'old error' });
+      useDashboardStore.getState().applyMessage({
+        logMessages: [],
+        activeExpectations: [],
+        recordedRequests: [],
+        proxiedRequests: [],
+        error: '',
+      } as WebSocketMessage);
+      // An explicit (present) error value, including empty string, is applied.
+      expect(useDashboardStore.getState().error).toBe('');
     });
 
     it('stays on get-started when the first data arrives (no auto-switch)', () => {

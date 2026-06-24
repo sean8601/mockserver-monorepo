@@ -125,10 +125,30 @@ When `resetKeys` changes (the user navigates to another tab), the boundary clear
 | AsyncAPI | `useAutoRefresh` (interval, 5 s) |
 | gRPC Services | `useAutoRefresh` (interval, 5 s) |
 | MCP tools panel | `useAutoRefresh` (interval, 3 s) |
-| Chaos | `setInterval` poll every 4 s (predates `useAutoRefresh`) |
+| Chaos (HTTP / gRPC / TCP) | `setInterval` poll every 4 s (predates `useAutoRefresh`) |
+| Chaos — Preemption status | Polled on the same 4 s tick; also fetched on mount and on section expand |
 | Performance — live status | `useAutoRefresh` (interval, 1 s) polling `GET /mockserver/loadScenario` |
 | Performance — metrics graph | `usePolling` (interval, 3 s) scraping `GET /mockserver/metrics` (shared with Metrics view) |
 | Metrics | `usePolling` directly in `useMetricsPolling` (3 s) |
+
+## Shared UI Utilities
+
+### Severity Colour Helper
+
+`src/lib/severityColor.ts` exports `severityColor(severity)`, which maps a case-insensitive severity string to an MUI colour token:
+
+| Input words | MUI colour |
+|-------------|-----------|
+| `HIGH`, `CRITICAL`, `BREAKING` | `error` |
+| `MEDIUM`, `WARNING` | `warning` |
+| `LOW`, `INFORMATIONAL`, `INFO` | `info` |
+| anything else / undefined | `default` |
+
+This consolidates the near-identical inline helpers that previously lived in `OptimiseView` and `DriftPanel`. Domain-specific colour mappings that are not severity tiers (HTTP status codes, connection state, drift type, load-run state) intentionally keep their own local helpers.
+
+### Accessibility
+
+Collapsible section headers throughout the dashboard (e.g. the four chaos dimensions in `ServiceChaosPanel`) carry `role="button"`, `tabIndex={0}`, `aria-expanded`, and `onKeyDown` handlers for Enter and Space, making them keyboard-navigable and screen-reader-announced. Metrics and load-scenario charts (`@mui/x-charts` `AreaChart` / `LineChart`) are rendered with MUI's built-in ARIA support; each chart's data series is labelled.
 
 ## Shared Error Helpers
 
@@ -269,11 +289,32 @@ There is **no charting dependency** (inline SVG) and no server change required. 
 
 ## Chaos View
 
-`ServiceChaosPanel.tsx` (view = `chaos`) manages **service-scoped chaos** interactively. Like the Metrics view it **polls** rather than using the WebSocket — `GET /mockserver/serviceChaos` every 4s via the control-plane helpers in `lib/serviceChaos.ts` (`fetchServiceChaos` / `registerServiceChaos` / `removeServiceChaos` / `clearServiceChaos`). It renders:
+`ServiceChaosPanel.tsx` (view = `chaos`) manages **service-scoped chaos** interactively across four collapsible dimensions. Like the Metrics view it **polls** rather than using the WebSocket — `GET /mockserver/serviceChaos` every 4s via the control-plane helpers in `lib/serviceChaos.ts` (`fetchServiceChaos` / `registerServiceChaos` / `removeServiceChaos` / `clearServiceChaos`).
+
+The panel is divided into four collapsible sections; each section header is keyboard-accessible (`role="button"`, `tabIndex`, `onKeyDown` Enter/Space) and carries an `aria-expanded` attribute:
+
+| Section | Controls | Endpoint |
+|---------|----------|----------|
+| **HTTP chaos** | Host, error-status, error-probability, drop-probability, latency-ms, optional TTL-ms; active registrations list with live TTL countdown chip and per-host Remove; Clear all | `GET/PUT/DELETE /mockserver/serviceChaos` |
+| **gRPC chaos** | Per-service gRPC status code injection and health-check override | `GET/PUT/DELETE /mockserver/serviceChaos` (gRPC sub-type) |
+| **TCP chaos** | Per-host TCP fault injection (drop/reset) | `GET/PUT/DELETE /mockserver/serviceChaos` (TCP sub-type) |
+| **Preemption** | Whole-server graceful-shutdown simulation (see below) | `GET/PUT/DELETE /mockserver/preemption` |
+
+**HTTP chaos detail:**
 - a **register form** — host plus error status / error probability / drop probability / latency-ms / optional TTL-ms fields; only the populated fields are sent in the `chaos` object (`buildChaosProfile`), and the register is rejected client-side if no fault is set,
 - a list of **active registrations**, each with a `summarizeChaosProfile` chip breakdown of its faults and a per-host **Remove** button,
 - a **live TTL auto-revert countdown** chip for any TTL-bearing registration — the remaining ms returned by the server's `ttlRemainingMillis` is decremented client-side by a 1s tick between polls (`formatTtl`),
 - a **Clear all** button.
+
+**Preemption section** (`lib/preemption.ts`) simulates a graceful server cordon — new exchanges are rejected / drained without stopping the JVM. The section header chip shows the live state (`inactive` / `draining` / `drained`). Controls:
+
+| Field | Description |
+|-------|-------------|
+| Mode | `reject503` — new exchanges get 503 + Retry-After + `Connection: close`; `goaway` — HTTP/2 clients receive a GOAWAY frame (HTTP/1.1 degrades to a 503 close); `both` — reject + GOAWAY |
+| Drain window (ms) | How long in-flight requests are allowed to drain before the cordon is fully "drained" |
+| TTL (ms) | Dead-man's switch: auto-uncordon after this many ms (0 or omitted = no auto-uncordon) |
+
+Actions: **Start preemption** (`PUT /mockserver/preemption`), **Clear** (`DELETE /mockserver/preemption`). The status response contains `{ state, inFlight, drainRemainingMillis, mode? }`. The section polls alongside the HTTP chaos refresh tick so the header chip updates live.
 
 `lib/serviceChaos.ts` is framework-agnostic (plain `fetch`) so it is unit-tested independently of the component; it surfaces the server's `{"error": ...}` message on a 4xx.
 
@@ -509,6 +550,8 @@ The edit-existing flow works because `ComposerView.tsx` collects the current exp
 | **Runs** | Pick two captured sessions (Run A / Run B) and see a side-by-side structural trajectory diff (tool-call chain + per-turn token usage table). |
 | **Export** | Single dropdown that crosses scope (registered expectations / recorded requests) with file format (MockServer JSON / HAR / OpenAPI 3 / Postman v2.1 / Bruno zip). Each option maps to a `PUT /mockserver/retrieve?type=ACTIVE_EXPECTATIONS\|REQUEST_RESPONSES&format=JSON\|HAR\|OPENAPI\|POSTMAN\|BRUNO` call. BRUNO returns `application/zip` since Bruno collections are multi-file (`.bru` per request + `bruno.json` manifest). Generation lives in `mockserver-core`'s `ExpectationExportSerializer` — best-effort for the non-MockServer formats (positive-string matchers round-trip, NottableString negation and dynamic actions appear as placeholders). |
 
+The Cassettes sub-tab also contains a **WASM modules** section. Each loaded module row exposes a **Test** action alongside Delete. Clicking Test opens an inline form that collects an optional sample request (method, path, headers, body), calls `POST /mockserver/wasm/test` via `testWasmModule` in `lib/wasm.ts`, and shows a `matched: true/false` verdict chip. The test runs against the named module without loading or replacing it. The `aria-label` on each Test button is `Test WASM module <name>` (keyboard-accessible).
+
 ## Verification View
 
 `VerificationView.tsx` (view = `verification`, AppBar label **Verify**) builds and runs request verifications against the requests MockServer has already received. A toggle switches between two modes:
@@ -625,6 +668,18 @@ See [docs/code/breakpoints.md](breakpoints.md) for the server-side architecture 
 
 ## AppBar Styling and Responsive Behaviour
 
+### Tools and Diagnostics Menu
+
+The five diagnostic tool buttons — keyboard shortcuts, server clock, explain-unmatched, matcher playground, and server configuration — are grouped under a single **TuneIcon** (`aria-label="Tools and diagnostics"`) that opens a labelled `Menu`. This keeps the toolbar from wrapping on narrow screens. Theme toggle and auto-scroll pause/resume remain as direct icon buttons. The menu items:
+
+| Menu item | Dialog | Action |
+|-----------|--------|--------|
+| Keyboard shortcuts | `ShortcutsDialog` | Lists all keyboard bindings |
+| Server clock (freeze / advance time) | `ClockDialog` | Freeze or advance MockServer's virtual clock |
+| Explain unmatched requests | `ExplainUnmatchedDialog` | Diagnose why a request did not match |
+| Matcher test playground | `MatcherPlaygroundDialog` | Test a matcher against an example request |
+| Server configuration | `ConfigurationDialog` | View and edit server configuration properties |
+
 The AppBar navigation is driven by `NAV_GROUPS` — six top-level group-button entries, each of which opens a dropdown `Menu` of its member views. Groups, in order:
 
 | Group | Views |
@@ -657,19 +712,22 @@ Icon-only toolbar buttons carry both a `Tooltip` and an `aria-label`.
 
 ## Tools Menu
 
-The AppBar "Import / export" (wrench) menu groups one-off control-plane tools, each opening a dialog:
+The AppBar "Import / export" (wrench/BuildIcon) menu groups one-off control-plane tools, each opening a dialog:
 
 | Menu item | Dialog | Endpoint(s) |
 |-----------|--------|-------------|
-| Import OpenAPI / WSDL | `OpenApiImportDialog` / `WsdlImportDialog` | `PUT /mockserver/openapi` / WSDL import |
-| Pact contract (export / verify) | `PactExportDialog` | `PUT /mockserver/pact`, `PUT /mockserver/pact/verify` |
-| Mock OIDC provider | `OidcDialog` | `PUT /mockserver/oidc` |
-| Mock SAML provider | `SamlDialog` | `PUT /mockserver/saml` |
-| AsyncAPI broker mock | `AsyncApiDialog` | `PUT/GET /mockserver/asyncapi`, `PUT /mockserver/asyncapi/verify` |
-| Register CRUD resource | `CrudDialog` | `PUT /mockserver/crud` |
-| Mock file store | `FileStoreDialog` | `PUT /mockserver/files/{store,list,retrieve,delete}` |
-| Diff two requests | `DiffRequestsDialog` | `PUT /mockserver/diff` (renders `DiffPanel`) |
-| Compare against baseline | `BaselineCompareDialog` | `PUT /mockserver/baseline/compare` |
+| Import OpenAPI… | `OpenApiImportDialog` | `PUT /mockserver/openapi` |
+| Import WSDL… | `WsdlImportDialog` | WSDL import |
+| Import GraphQL schema… | `GraphqlImportDialog` | `PUT /mockserver/graphql` — body is raw SDL text or an introspection JSON result; optional `?path=` query param sets the request path the generated mocks match (server default: `/graphql`) |
+| Pact contract (export / verify)… | `PactExportDialog` | `PUT /mockserver/pact`, `PUT /mockserver/pact/verify` |
+| Mock OIDC provider… | `OidcDialog` | `PUT /mockserver/oidc` |
+| Mock SAML provider… | `SamlDialog` | `PUT /mockserver/saml` |
+| Mock SCIM provider… | `ScimDialog` | `PUT /mockserver/scim` — registers a full SCIM 2.0 provider (Users, Groups, discovery); all config fields optional, server supplies defaults (`lib/scim.ts`) |
+| AsyncAPI broker mock… | `AsyncApiDialog` | `PUT/GET /mockserver/asyncapi`, `PUT /mockserver/asyncapi/verify` |
+| Register CRUD resource… | `CrudDialog` | `PUT /mockserver/crud` |
+| Mock file store… | `FileStoreDialog` | `PUT /mockserver/files/{store,list,retrieve,delete}` |
+| Diff two requests… | `DiffRequestsDialog` | `PUT /mockserver/diff` (renders `DiffPanel`) |
+| Compare against baseline… | `BaselineCompareDialog` | `PUT /mockserver/baseline/compare` |
 
 **Baseline Compare** (`BaselineCompareDialog.tsx`, backed by `lib/baseline.ts`) lets the user paste a known-good array of expectations as the baseline and optionally a second array as the current state. When the current array is omitted, the server diffs the baseline against its live recorded expectations. It calls `PUT /mockserver/baseline/compare` with `{ baseline: [...], current?: [...] }` and displays a `BaselineDiffReport` with `added`, `removed`, and `changed` arrays keyed by `METHOD path`, plus a `hasDrift` boolean, rendered as summary chips and a `JsonViewer` tree. The dialog is full-screen below the `sm` breakpoint and surfaces errors via `HumanErrorAlert`.
 
@@ -822,7 +880,7 @@ Expandable match failure reasons"]
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, keyboard shortcut hints, auto-scroll toggle, dark/light mode toggle, clear/reset menu; on wide screens (`>= lg`): six grouped dropdown buttons (Mock / Observe / Verify / Resilience / AI / Inspect), each opening a `Menu` of its views; on narrow screens: hamburger icon with all 18 views in labelled sections |
+| `AppBar` | `AppBar.tsx` | Title bar with connection status chip, auto-scroll toggle, theme toggle, "Tools and diagnostics" overflow menu (TuneIcon — keyboard shortcuts / server clock / explain-unmatched / matcher playground / configuration), "Import / export" wrench menu, and clear/reset menu; on wide screens (`>= lg`): six grouped dropdown buttons (Mock / Observe / Verify / Resilience / AI / Inspect), each opening a `Menu` of its views; on narrow screens: hamburger icon with all 18 views in labelled sections |
 | `FilterPanel` | `FilterPanel.tsx` | Collapsible request filter form (method, path, headers, query params, cookies) with debounced WebSocket send; shown on dashboard/traffic/sessions |
 | `DashboardGrid` | `DashboardGrid.tsx` | 2×2 CSS grid layout for the four panels |
 | `TrafficInspector` | `TrafficInspector.tsx` | Full-width master list + adaptive detail pane for all captured traffic (mock-matched + proxied) |

@@ -18,6 +18,8 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError } from '../lib/errorMessage';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { fetchClusterInfo, type ClusterInfo } from '../lib/cluster';
+import TruncatedText from './TruncatedText';
+import { monospaceFontFamily } from '../theme';
 
 interface ClusterPanelProps {
   connectionParams: ConnectionParams;
@@ -112,7 +114,7 @@ export default function ClusterPanel({ connectionParams }: ClusterPanelProps) {
               : 'Could not load cluster status'}
           </AlertTitle>
           {isUnavailable(loadError)
-            ? 'The connected server does not expose cluster status. This feature requires a newer version of MockServer.'
+            ? 'The connected server does not support cluster status. This feature requires a newer version of MockServer.'
             : loadError}
         </Alert>
       )}
@@ -120,30 +122,24 @@ export default function ClusterPanel({ connectionParams }: ClusterPanelProps) {
       {data && (
         <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-            <Box>
+            <Box sx={{ minWidth: 0, maxWidth: { xs: '100%', sm: 320 } }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 Node ID
               </Typography>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                {data.nodeId}
-              </Typography>
+              <TruncatedText text={data.nodeId} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.875rem' }} />
             </Box>
-            <Box>
+            <Box sx={{ minWidth: 0, maxWidth: { xs: '100%', sm: 320 } }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 Coordinator
               </Typography>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                {data.coordinator}
-              </Typography>
+              <TruncatedText text={data.coordinator} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.875rem' }} />
             </Box>
             {data.clusterName && (
-              <Box>
+              <Box sx={{ minWidth: 0, maxWidth: { xs: '100%', sm: 320 } }}>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   Cluster name
                 </Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                  {data.clusterName}
-                </Typography>
+                <TruncatedText text={data.clusterName} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.875rem' }} />
               </Box>
             )}
           </Box>
@@ -156,7 +152,7 @@ export default function ClusterPanel({ connectionParams }: ClusterPanelProps) {
             {data ? 'No cluster members reported.' : 'Loading cluster status…'}
           </Typography>
         ) : (
-          <TableContainer>
+          <TableContainer sx={{ overflow: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -168,10 +164,11 @@ export default function ClusterPanel({ connectionParams }: ClusterPanelProps) {
               <TableBody>
                 {members.map((member) => (
                   <TableRow key={member.id}>
-                    <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                        {member.id}
-                      </Typography>
+                    <TableCell sx={{ maxWidth: 260 }}>
+                      <TruncatedText
+                        text={member.id}
+                        sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
+                      />
                     </TableCell>
                     <TableCell>
                       <Chip

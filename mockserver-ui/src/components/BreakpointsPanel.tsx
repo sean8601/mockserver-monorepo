@@ -59,6 +59,7 @@ import TruncatedText from './TruncatedText';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError } from '../lib/errorMessage';
 import { useDashboardStore } from '../store';
+import { monospaceFontFamily } from '../theme';
 
 const MATCHERS_POLL_INTERVAL_MS = 5000;
 
@@ -104,6 +105,7 @@ const MAX_PAUSED_ITEMS = 500;
 // ---------------------------------------------------------------------------
 
 export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelProps) {
+  const setNotification = useDashboardStore((s) => s.setNotification);
   const [tab, setTab] = useState(0);
 
   // -- Matchers state --
@@ -303,6 +305,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         skipCount,
       );
       refreshMatchers();
+      setNotification({ message: 'Matcher registered', severity: 'success' });
       // Reset form
       setFormMethod('');
       setFormPath('');
@@ -315,7 +318,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     } finally {
       setFormBusy(false);
     }
-  }, [connectionParams, clientId, formMethod, formPath, formHeaders, formQueryParams, formCookies, formPhases, formSkipCount, refreshMatchers]);
+  }, [connectionParams, clientId, formMethod, formPath, formHeaders, formQueryParams, formCookies, formPhases, formSkipCount, refreshMatchers, setNotification]);
 
   const handleRemoveMatcher = useCallback(async (id: string) => {
     setBusy(true);
@@ -323,12 +326,13 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     try {
       await removeBreakpointMatcher(connectionParams, id);
       refreshMatchers();
+      setNotification({ message: 'Matcher removed', severity: 'success' });
     } catch (e) {
       setActionError(humanizeError(e).message);
     } finally {
       setBusy(false);
     }
-  }, [connectionParams, refreshMatchers]);
+  }, [connectionParams, refreshMatchers, setNotification]);
 
   const handleClearMatchers = useCallback(async () => {
     setBusy(true);
@@ -336,12 +340,13 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     try {
       await clearBreakpointMatchers(connectionParams);
       refreshMatchers();
+      setNotification({ message: 'All matchers cleared', severity: 'success' });
     } catch (e) {
       setActionError(humanizeError(e).message);
     } finally {
       setBusy(false);
     }
-  }, [connectionParams, refreshMatchers]);
+  }, [connectionParams, refreshMatchers, setNotification]);
 
   const togglePhase = useCallback((phase: MatcherPhase) => {
     setFormPhases((prev) => {
@@ -371,7 +376,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       client.resolveResponse(item.correlationId, item.response ?? {});
     }
     removeItem(item.key);
-  }, [removeItem]);
+    setNotification({ message: 'Exchange continued', severity: 'success' });
+  }, [removeItem, setNotification]);
 
   const handleAbortExchange = useCallback((item: PausedItem & { key: number }) => {
     // Abort only genuinely applies to the REQUEST phase, where it sends an
@@ -384,8 +390,9 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
         body: 'Aborted by breakpoint',
       });
       removeItem(item.key);
+      setNotification({ message: 'Exchange aborted', severity: 'success' });
     }
-  }, [removeItem]);
+  }, [removeItem, setNotification]);
 
   const openModifyExchangeDialog = useCallback((item: PausedItem & { key: number }) => {
     setModifyTarget(item);
@@ -414,7 +421,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
     }
     removeItem(modifyTarget.key);
     setModifyTarget(null);
-  }, [modifyTarget, modifyJson, removeItem]);
+    setNotification({ message: 'Modified exchange sent', severity: 'success' });
+  }, [modifyTarget, modifyJson, removeItem, setNotification]);
 
   // -------------------------------------------------------------------------
   // WS-based resolution (frames)
@@ -423,7 +431,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
   const resolveFrame = useCallback((item: PausedItem & { key: number }, decision: StreamFrameDecision) => {
     clientRef.current.resolveFrame(decision);
     removeItem(item.key);
-  }, [removeItem]);
+    setNotification({ message: 'Frame resolved', severity: 'success' });
+  }, [removeItem, setNotification]);
 
   const handleFrameContinue = useCallback((item: PausedItem & { key: number }) => {
     if (item.phase !== 'RESPONSE_STREAM' && item.phase !== 'INBOUND_STREAM') return;
@@ -649,15 +658,19 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                 {formError}
               </Alert>
             )}
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<AddIcon />}
-              disabled={formBusy || wsState !== 'connected'}
-              onClick={() => void handleRegister()}
-            >
-              Register Matcher
-            </Button>
+            <Tooltip title={wsState !== 'connected' ? 'Connect the callback WebSocket first' : ''}>
+              <span>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  disabled={formBusy || wsState !== 'connected'}
+                  onClick={() => void handleRegister()}
+                >
+                  Register Matcher
+                </Button>
+              </span>
+            </Tooltip>
           </Paper>
 
           {/* Matcher list */}
@@ -721,10 +734,10 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                     {matchers.map((m) => (
                       <TableRow key={m.id}>
                         <TableCell>
-                          <TruncatedText text={m.id} maxWidth={120} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
+                          <TruncatedText text={m.id} maxWidth={120} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                             {m.httpRequest ? `${(m.httpRequest.method as string) ?? '*'} ${(m.httpRequest.path as string) ?? '/'}` : '*'}
                           </Typography>
                         </TableCell>
@@ -743,12 +756,12 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           </Box>
                         </TableCell>
                         <TableCell align="right">
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                             {m.skipCount && m.skipCount > 0 ? m.skipCount : '-'}
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <TruncatedText text={m.clientId ?? '-'} maxWidth={100} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
+                          <TruncatedText text={m.clientId ?? '-'} maxWidth={100} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell align="right">
                           <Tooltip title="Remove matcher">
@@ -831,14 +844,14 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                             />
                           </TableCell>
                           <TableCell>
-                            <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                            <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                               {isResponse && item.response
                                 ? (item.response.reasonPhrase ?? '-')
                                 : ((item.phase === 'REQUEST' ? item.request?.path : '-') ?? '/')}
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <TruncatedText text={item.breakpointId ?? '-'} maxWidth={100} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
+                            <TruncatedText text={item.breakpointId ?? '-'} maxWidth={100} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} />
                           </TableCell>
                           <TableCell align="right">
                             <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
@@ -970,23 +983,23 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
                           />
                         </TableCell>
                         <TableCell>
-                          <TruncatedText text={item.frame.streamId} maxWidth={120} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
+                          <TruncatedText text={item.frame.streamId} maxWidth={120} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell>
                           <Chip size="small" label={`#${item.frame.sequenceNumber}`} variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                             {item.frame.requestMethod ?? '-'}
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
                             {item.frame.requestPath ?? '-'}
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <TruncatedText text={item.frame.body || '-'} maxWidth={150} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
+                          <TruncatedText text={item.frame.body || '-'} maxWidth={150} sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }} />
                         </TableCell>
                         <TableCell align="right">
                           <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
@@ -1038,8 +1051,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       )}
 
       {/* Modify dialog (request/response exchanges) */}
-      <Dialog open={modifyTarget !== null} onClose={() => setModifyTarget(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>
+      <Dialog open={modifyTarget !== null} onClose={() => setModifyTarget(null)} maxWidth="sm" fullWidth aria-labelledby="breakpoint-modify-dialog-title">
+        <DialogTitle id="breakpoint-modify-dialog-title">
           {modifyTarget?.phase === 'RESPONSE' ? 'Modify Response' : 'Modify Request'}
         </DialogTitle>
         <DialogContent>
@@ -1062,7 +1075,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
             onChange={(e) => setModifyJson(e.target.value)}
             slotProps={{
               input: {
-                sx: { fontFamily: 'monospace', fontSize: '0.8rem' },
+                sx: { fontFamily: monospaceFontFamily, fontSize: '0.8rem' },
               },
             }}
           />
@@ -1076,8 +1089,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       </Dialog>
 
       {/* Frame modify dialog */}
-      <Dialog open={frameModifyTarget !== null} onClose={() => setFrameModifyTarget(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Modify Stream Frame</DialogTitle>
+      <Dialog open={frameModifyTarget !== null} onClose={() => setFrameModifyTarget(null)} maxWidth="sm" fullWidth aria-labelledby="breakpoint-frame-modify-dialog-title">
+        <DialogTitle id="breakpoint-frame-modify-dialog-title">Modify Stream Frame</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Edit the frame body, then send the modified frame.
@@ -1096,7 +1109,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
             onChange={(e) => setFrameModifyBody(e.target.value)}
             slotProps={{
               input: {
-                sx: { fontFamily: 'monospace', fontSize: '0.8rem' },
+                sx: { fontFamily: monospaceFontFamily, fontSize: '0.8rem' },
               },
             }}
           />
@@ -1110,8 +1123,8 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
       </Dialog>
 
       {/* Frame inject dialog */}
-      <Dialog open={frameInjectTarget !== null} onClose={() => setFrameInjectTarget(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Inject Extra Frame</DialogTitle>
+      <Dialog open={frameInjectTarget !== null} onClose={() => setFrameInjectTarget(null)} maxWidth="sm" fullWidth aria-labelledby="breakpoint-frame-inject-dialog-title">
+        <DialogTitle id="breakpoint-frame-inject-dialog-title">Inject Extra Frame</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Enter the body for the extra frame to inject after the held frame.
@@ -1130,7 +1143,7 @@ export default function BreakpointsPanel({ connectionParams }: BreakpointsPanelP
             onChange={(e) => setFrameInjectBody(e.target.value)}
             slotProps={{
               input: {
-                sx: { fontFamily: 'monospace', fontSize: '0.8rem' },
+                sx: { fontFamily: monospaceFontFamily, fontSize: '0.8rem' },
               },
             }}
           />

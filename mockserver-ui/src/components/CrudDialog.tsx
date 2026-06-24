@@ -16,6 +16,7 @@ import { registerCrudResource, type CrudConfig, type CrudResult } from '../lib/c
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import HumanErrorAlert from './HumanErrorAlert';
 import { monospaceFontFamily } from '../theme';
+import { useDashboardStore } from '../store';
 
 export default function CrudDialog({
   open,
@@ -28,6 +29,7 @@ export default function CrudDialog({
 }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const setNotification = useDashboardStore((s) => s.setNotification);
 
   const [basePath, setBasePath] = useState('');
   const [idField, setIdField] = useState('');
@@ -74,12 +76,13 @@ export default function CrudDialog({
     setBusy(true);
     try {
       setResult(await registerCrudResource(connectionParams, config));
+      setNotification({ message: 'CRUD resource registered', severity: 'success' });
     } catch (e) {
       setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
-  }, [connectionParams, basePath, idField, idStrategy, initialData]);
+  }, [connectionParams, basePath, idField, idStrategy, initialData, setNotification]);
 
   const handleClose = useCallback(() => {
     setBasePath('');
