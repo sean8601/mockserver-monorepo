@@ -2999,8 +2999,9 @@ paths:
         in recorded order, preserving the concrete path, body and headers — with an optional "maxSteps"
         cap. TEMPLATIZED deduplicates recorded requests by (method, templatised-path) — id-shaped path
         segments such as /orders/123 collapse to /orders/{id} — keeping one representative example per
-        unique route, ordered by descending hit frequency (most-hit routes first); no per-step weight is
-        added. An optional "requestFilter" (an HttpRequest matcher) selects which recorded requests to
+        unique route, ordered by descending hit frequency (most-hit routes first); each step's "weight" is
+        set to its route's observed hit count and the scenario uses "stepSelection": "WEIGHTED" so replay
+        reproduces the recorded traffic mix. An optional "requestFilter" (an HttpRequest matcher) selects which recorded requests to
         include; absent means all recorded requests. An optional "target" is applied to every step
         (overriding each recorded request's own Host/secure routing); absent leaves each recorded
         request's routing untouched. When no "profile" is supplied a conservative default is applied (one
