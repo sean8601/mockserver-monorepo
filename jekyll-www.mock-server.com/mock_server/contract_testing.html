@@ -124,6 +124,8 @@ keywords: contract testing, consumer-driven contracts, Pact, OpenAPI contract te
   } ]
 }</code></pre>
 
+<p><strong>Note on error field names:</strong> the REST JSON report returns a single combined <span class="inline_code">validationErrors</span> array per result, whereas the typed Java client splits the same errors into <span class="inline_code">requestErrors()</span> and <span class="inline_code">responseErrors()</span> on <span class="inline_code">ContractResult</span> (request-side errors first, then response-side).</p>
+
 <button id="button_contract_test_openapi" class="accordion">run OpenAPI contract tests against a live service</button>
 <div class="panel">
   <button class="accordion inner">REST API</button>

@@ -247,15 +247,6 @@ export default function CaptureAsMockDialog({
     return !draft.path;
   }, [registering, draft]);
 
-  // When disabled (and not merely mid-request), explain what input is still
-  // missing so the disabled Register/Refine buttons aren't a dead end.
-  const disabledReason = useMemo(() => {
-    if (registering) return '';
-    if (!draft.path) return 'Enter a path';
-    if (draft.kind === 'llm' && !draft.provider) return 'Select a provider';
-    return '';
-  }, [registering, draft]);
-
   const tabLabels = ['Edit', 'Preview diff', 'Copy as JSON', 'Copy as Java'];
 
   return (
@@ -542,29 +533,21 @@ export default function CaptureAsMockDialog({
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>
           {draft.kind === 'generic' && (
-            <Tooltip title={!draft.path && !registering ? 'Enter a path' : ''}>
-              <span>
-                <Button
-                  onClick={handleRefineInComposer}
-                  startIcon={<EditOutlinedIcon sx={{ fontSize: '0.875rem' }} />}
-                  disabled={registering || !draft.path}
-                >
-                  Refine in Composer
-                </Button>
-              </span>
-            </Tooltip>
+            <Button
+              onClick={handleRefineInComposer}
+              startIcon={<EditOutlinedIcon sx={{ fontSize: '0.875rem' }} />}
+              disabled={registering || !draft.path}
+            >
+              Refine in Composer
+            </Button>
           )}
-          <Tooltip title={disabledReason}>
-            <span>
-              <Button
-                variant="contained"
-                onClick={() => void handleRegister()}
-                disabled={registerDisabled}
-              >
-                {registering ? 'Registering...' : 'Register'}
-              </Button>
-            </span>
-          </Tooltip>
+          <Button
+            variant="contained"
+            onClick={() => void handleRegister()}
+            disabled={registerDisabled}
+          >
+            {registering ? 'Registering...' : 'Register'}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

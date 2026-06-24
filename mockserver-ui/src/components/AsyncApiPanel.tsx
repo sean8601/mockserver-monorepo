@@ -23,7 +23,6 @@ import { getAsyncApiStatus } from '../lib/asyncApi';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
-import TruncatedText from './TruncatedText';
 
 interface AsyncApiPanelProps {
   connectionParams: ConnectionParams;
@@ -63,6 +62,11 @@ function formatTimestamp(ts: string | undefined): string {
   } catch {
     return ts;
   }
+}
+
+function truncatePayload(payload: string, maxLength = 120): string {
+  if (payload.length <= maxLength) return payload;
+  return payload.substring(0, maxLength) + '...';
 }
 
 export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) {
@@ -190,7 +194,7 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
             No channels loaded. Load an AsyncAPI spec to start mocking broker channels.
           </Typography>
         ) : (
-          <TableContainer sx={{ overflow: 'auto' }}>
+          <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -202,11 +206,10 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
               <TableBody>
                 {channels.map((ch) => (
                   <TableRow key={ch.name}>
-                    <TableCell sx={{ maxWidth: 280 }}>
-                      <TruncatedText
-                        text={ch.name}
-                        sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                      />
+                    <TableCell>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                        {ch.name}
+                      </Typography>
                     </TableCell>
                     <TableCell align="center">
                       {ch.hasSchema ? (
@@ -271,7 +274,7 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
               : 'Load an AsyncAPI spec with consumer subscriptions to see recorded messages.'}
           </Typography>
         ) : (
-          <TableContainer sx={{ maxHeight: 400, overflow: 'auto' }}>
+          <TableContainer sx={{ maxHeight: 400 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
@@ -285,23 +288,32 @@ export default function AsyncApiPanel({ connectionParams }: AsyncApiPanelProps) 
               <TableBody>
                 {filteredMessages.map((msg, i) => (
                   <TableRow key={`${msg.channel}-${msg.timestamp ?? i}-${i}`}>
-                    <TableCell sx={{ maxWidth: 200 }}>
-                      <TruncatedText
-                        text={msg.channel}
-                        sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                      />
+                    <TableCell>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                        {msg.channel}
+                      </Typography>
                     </TableCell>
-                    <TableCell sx={{ maxWidth: 140 }}>
-                      <TruncatedText
-                        text={msg.key ?? '-'}
-                        sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                      />
+                    <TableCell>
+                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                        {msg.key ?? '-'}
+                      </Typography>
                     </TableCell>
-                    <TableCell sx={{ maxWidth: 300 }}>
-                      <TruncatedText
-                        text={msg.payload}
-                        sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                      />
+                    <TableCell>
+                      <Tooltip title={msg.payload}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontFamily: monospaceFontFamily,
+                            maxWidth: 300,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: 'block',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {truncatePayload(msg.payload)}
+                        </Typography>
+                      </Tooltip>
                     </TableCell>
                     <TableCell align="center">
                       {msg.schemaValid === true && (

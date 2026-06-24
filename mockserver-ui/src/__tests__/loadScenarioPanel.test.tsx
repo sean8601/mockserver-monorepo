@@ -595,9 +595,6 @@ describe('LoadScenarioPanel', () => {
     await waitFor(() => expect(screen.getByTestId('load-clear-all')).not.toBeDisabled());
 
     fireEvent.click(screen.getByTestId('load-clear-all'));
-    // "Clear all" is now guarded by a confirmation dialog — confirm it.
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear all' }));
     await waitFor(() =>
       expect(calls.find((c) => c.method === 'DELETE' && c.url.endsWith('/mockserver/loadScenario'))).toBeTruthy(),
     );

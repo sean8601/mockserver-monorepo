@@ -453,7 +453,7 @@ See the "Breakpoint matcher registry" section above for the matcher endpoints
 
 ## Configuration properties
 
-Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher registry" above), not by global flags. The two remaining properties are safety rails only:
+Breakpoint activation is driven by the matcher registry (see "Breakpoint matcher registry" below), not by global flags. The two remaining properties are safety rails only:
 
 | Property | Default | Description |
 |----------|---------|-------------|
@@ -496,7 +496,7 @@ The dashboard is also a full callback WebSocket client: it connects to `/_mockse
 
 ### Stream frame breakpoints (WS-callback path)
 - `StreamFrameCallbackDispatcher` — process-wide singleton for per-frame WS-callback dispatch; dispatches `PausedStreamFrameDTO` to owning client, receives `StreamFrameDecisionDTO` replies, manages in-flight tracking, timeouts, and disconnect cleanup
-- `PausedStreamFrameDTO` — server-to-client WS message: correlationId, streamId, sequenceNumber, direction, phase, body (Base64), requestMethod, requestPath, breakpointId, requestTimestamp
+- `PausedStreamFrameDTO` — server-to-client WS message: correlationId, streamId, sequenceNumber, direction, phase, body (Base64), requestMethod, requestPath
 - `StreamFrameDecisionDTO` — client-to-server WS reply: correlationId, action (CONTINUE/MODIFY/DROP/INJECT/CLOSE), optional body (Base64)
 - `WebSocketClientRegistry.sendStreamFrameMessage` — sends a `PausedStreamFrameDTO` to a client
 - `WebSocketClientRegistry.registerStreamFrameCallbackHandler` — registers a callback for `StreamFrameDecisionDTO` replies by correlationId

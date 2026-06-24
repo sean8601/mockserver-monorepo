@@ -53,7 +53,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-testcontainers-mockserver = "7.2.0"
+testcontainers-mockserver = "7.0"
 testcontainers = { version = "0.23", features = ["blocking"] }
 ```
 
@@ -97,7 +97,7 @@ async fn test_async() {
 ## Links
 
 - crates.io: https://crates.io/crates/testcontainers-mockserver
-- Source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/rust
+- Source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/rust
 - MockServer docs: https://www.mock-server.com
 ```
 

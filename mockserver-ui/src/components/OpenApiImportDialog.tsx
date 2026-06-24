@@ -9,7 +9,6 @@ import MenuItem from '@mui/material/MenuItem';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import Tooltip from '@mui/material/Tooltip';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import {
@@ -20,7 +19,6 @@ import {
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import HumanErrorAlert from './HumanErrorAlert';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
-import { useDashboardStore } from '../store';
 
 interface OpenApiImportDialogProps {
   open: boolean;
@@ -45,7 +43,6 @@ const DEFAULT_EXAMPLE = '';
 export default function OpenApiImportDialog({ open, onClose, connectionParams }: OpenApiImportDialogProps) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const setNotification = useDashboardStore((s) => s.setNotification);
   const [spec, setSpec] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HumanError | null>(null);
@@ -76,10 +73,6 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
       }
       const created = await importOpenApi(connectionParams, spec.trim(), selections);
       setCreatedCount(created.length);
-      setNotification({
-        message: `Imported ${created.length} expectation${created.length === 1 ? '' : 's'}`,
-        severity: 'success',
-      });
     } catch (e) {
       setError(humanizeError(e));
     } finally {
@@ -156,17 +149,13 @@ export default function OpenApiImportDialog({ open, onClose, connectionParams }:
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose}>Close</Button>
-        <Tooltip title={spec.trim().length === 0 ? 'Provide a spec URL or paste a spec' : ''}>
-          <span>
-            <Button
-              variant="contained"
-              onClick={() => void handleImport()}
-              disabled={busy || spec.trim().length === 0}
-            >
-              {busy ? 'Importing…' : 'Import'}
-            </Button>
-          </span>
-        </Tooltip>
+        <Button
+          variant="contained"
+          onClick={() => void handleImport()}
+          disabled={busy || spec.trim().length === 0}
+        >
+          {busy ? 'Importing…' : 'Import'}
+        </Button>
       </DialogActions>
     </Dialog>
   );

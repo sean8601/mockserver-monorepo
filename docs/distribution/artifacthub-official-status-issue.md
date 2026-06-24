@@ -80,7 +80,7 @@ vendor publishing their own software.
 ### Versions published
 
 The chart has been published to `oci://ghcr.io/mock-server/charts/mockserver` for every
-MockServer release since 5.3.0, automated via the release pipeline. The current version is 7.2.0.
+MockServer release since 5.3.0, automated via the release pipeline. The current version is 7.0.0.
 
 Thank you for considering this request.
 ```

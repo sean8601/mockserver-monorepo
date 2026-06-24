@@ -19,7 +19,6 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
 import HumanErrorAlert from './HumanErrorAlert';
-import TruncatedText from './TruncatedText';
 
 interface GrpcServicesPanelProps {
   connectionParams: ConnectionParams;
@@ -172,7 +171,7 @@ export default function GrpcServicesPanel({ connectionParams }: GrpcServicesPane
                   {service.methods?.length ?? 0} method(s)
                 </Typography>
               </Box>
-              <TableContainer sx={{ overflow: 'auto' }}>
+              <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
@@ -185,23 +184,20 @@ export default function GrpcServicesPanel({ connectionParams }: GrpcServicesPane
                   <TableBody>
                     {(service.methods ?? []).map((method) => (
                       <TableRow key={method.name}>
-                        <TableCell sx={{ maxWidth: 220 }}>
-                          <TruncatedText
-                            text={method.name}
-                            sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                          />
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                            {method.name}
+                          </Typography>
                         </TableCell>
-                        <TableCell sx={{ maxWidth: 220 }}>
-                          <TruncatedText
-                            text={method.inputType}
-                            sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem', color: 'text.secondary' }}
-                          />
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }} color="text.secondary">
+                            {method.inputType}
+                          </Typography>
                         </TableCell>
-                        <TableCell sx={{ maxWidth: 220 }}>
-                          <TruncatedText
-                            text={method.outputType}
-                            sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem', color: 'text.secondary' }}
-                          />
+                        <TableCell>
+                          <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }} color="text.secondary">
+                            {method.outputType}
+                          </Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Chip

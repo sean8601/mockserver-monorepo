@@ -64,11 +64,11 @@ The AI harness defines 12 specialist agents, each with its own model, tools, and
 | Review (intermediate) | No | Read-only | Adversarial review using independent model |
 | Review (final) | No | Read-only | Authoritative PASS/BLOCK verdict using a different AI provider |
 | Test Runner | No | Test commands only | Runs tests and reports results |
-| Docs Writer | Yes | No | Technical documentation |
+| Docs Writer | Yes | Yes | Technical documentation |
 | Debugger | No | Read-only | Investigates issues via logs and CI data |
 | Pipeline Investigator | No | Read-only | Analyses CI/CD failures |
 | Council Seat | No | No | Design debate participant |
-| Task Decomposer | Yes | No | Breaks specifications into task graphs |
+| Task Decomposer | Yes | Yes | Breaks specifications into task graphs |
 
 Key design decisions:
 - **Reviewers cannot edit files.** A code reviewer that can also edit code is not a reviewer.
@@ -77,19 +77,17 @@ Key design decisions:
 
 ## Mandatory Pre-Commit Workflow
 
-Every commit follows a 5-step workflow. Steps cannot be skipped without explicit human override.
+Every commit follows a 4-step workflow. Steps cannot be skipped without explicit human override.
 
 ```mermaid
 flowchart LR
     S1["1. Classify
     changed files"] --> S2["2. Validate
     (tests, lint, build)"]
-    S2 --> S3["3. Changelog
+    S2 --> S3["3. Adversarial
     review"]
-    S3 --> S4["4. Adversarial
-    review"]
-    S4 -->|BLOCK| S2
-    S4 -->|PASS| S5["5. Commit"]
+    S3 -->|BLOCK| S2
+    S3 -->|PASS| S4["4. Commit"]
 ```
 
 ### Step 1: Classify Changed Files
@@ -104,17 +102,13 @@ Executable verification, not static inspection:
 - **Helm:** `helm lint` + `helm template`
 - **Node.js/Python/Ruby:** Language-specific test and lint commands
 
-### Step 3: Changelog Review
+### Step 3: Adversarial Code Review
 
-Every commit is checked against `changelog.md`. User-facing changes require a matching entry under `## [Unreleased]`. Non-user-facing changes (tests, CI, internal refactors) require an explicit note that no entry is needed.
+After validations pass, an independent reviewer (running on a **different AI model** with a **fresh context**) performs an adversarial review using the full Review Constitution. If it issues a **BLOCK**, the code is fixed and the cycle repeats.
 
-### Step 4: Adversarial Code Review
+### Step 4: Commit
 
-After validations and the changelog review pass, an independent reviewer (running on a **different AI model** with a **fresh context**) performs an adversarial review using the full Review Constitution. If it issues a **BLOCK**, the code is fixed and the cycle repeats.
-
-### Step 5: Commit
-
-Only after tests pass, changelog is reviewed, and the adversarial review approves. A filesystem-based commit lock prevents concurrent AI sessions from creating conflicting commits.
+Only after tests pass and review approves. A filesystem-based commit lock prevents concurrent AI sessions from creating conflicting commits.
 
 ## The Testing Backstop
 

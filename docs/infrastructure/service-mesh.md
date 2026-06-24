@@ -42,8 +42,6 @@ Environment variable: `MOCKSERVER_TRANSPARENT_PROXY_ENABLED`
 
 The UID-based RETURN rule **must come before** any REDIRECT rules to prevent an infinite redirect loop: when MockServer forwards a request upstream, its own outgoing packet would otherwise match the REDIRECT and loop back to itself.
 
-Note: the standalone `sidecar.iptables.image` value (for the non-webhook sidecar) defaults to `istio/proxyv2:1.20.0` (see `helm/mockserver/values.yaml`). The admission webhook's injected init container defaults to `alpine:3.19` (see `webhook.sidecar.iptablesImage` and `webhook-deployment.yaml`). The example below uses `alpine:3.19` as a minimal illustration; swap in `istio/proxyv2:1.20.0` if using the Helm sidecar directly.
-
 ```yaml
 initContainers:
   - name: iptables-init

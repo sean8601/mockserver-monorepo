@@ -247,7 +247,7 @@ describe('OptimiseView', () => {
     };
     stubFetch(emptyWire);
     renderView();
-    expect(await screen.findByText('No LLM traffic captured yet')).toBeInTheDocument();
+    expect(await screen.findByText('No LLM traffic captured')).toBeInTheDocument();
   });
 
   it('degrades gracefully on a server error', async () => {

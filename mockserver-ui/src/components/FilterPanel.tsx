@@ -29,7 +29,6 @@ import {
   validateRegex,
   type FilterPreset,
 } from '../lib/filterPresets';
-import ConfirmDialog from './ConfirmDialog';
 
 const HTTP_METHODS = ['', 'CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'];
 
@@ -254,9 +253,6 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
   // Saved filter presets (persisted to localStorage, like the theme).
   const [presets, setPresets] = useState<FilterPreset[]>(() => loadPresets());
   const [presetName, setPresetName] = useState('');
-  // Preset pending deletion confirmation (null when none) — guards a single
-  // misclick on a chip's delete icon from silently losing a saved preset.
-  const [presetToDelete, setPresetToDelete] = useState<string | null>(null);
 
   // Validate the path as a regex only when regex mode is on; surfaces a subtle
   // error state instead of crashing or silently shipping a broken pattern.
@@ -559,7 +555,7 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
                     variant="outlined"
                     color="primary"
                     onClick={() => applyPreset(preset)}
-                    onDelete={() => setPresetToDelete(preset.name)}
+                    onDelete={() => handleDeletePreset(preset.name)}
                     sx={{ height: 24 }}
                   />
                 ))}
@@ -568,14 +564,6 @@ export default function FilterPanel({ onFilterChange }: FilterPanelProps) {
           </Box>
         </CardContent>
       </Collapse>
-      <ConfirmDialog
-        open={presetToDelete !== null}
-        title="Delete saved preset?"
-        message={`Delete the saved filter preset "${presetToDelete ?? ''}"? This cannot be undone.`}
-        confirmLabel="Delete preset"
-        onConfirm={() => { if (presetToDelete !== null) handleDeletePreset(presetToDelete); }}
-        onClose={() => setPresetToDelete(null)}
-      />
     </Card>
   );
 }

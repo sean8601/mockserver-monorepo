@@ -167,7 +167,7 @@ curl http://localhost:1080/mockserver/metrics</code></pre>
 </p>
 
 <ul>
-    <li><span class="inline_code">mock_server_http_chaos_injected_total</span> &mdash; counter with a <span class="inline_code">fault_type</span> label (drop, error, latency, truncate, malformed, slow, quota, graphql)</li>
+    <li><span class="inline_code">mock_server_http_chaos_injected_total</span> &mdash; counter with a <span class="inline_code">fault_type</span> label (drop, error, latency, truncate, malformed, slow, quota, rateLimit, graphql)</li>
     <li><span class="inline_code">mock_server_active_service_chaos</span> &mdash; gauge per <span class="inline_code">fault_type</span> of currently active chaos profiles</li>
     <li><span class="inline_code">mock_server_chaos_auto_halt_total</span> &mdash; counter that increments each time the <a href="/mock_server/chaos_testing.html">chaos auto-halt circuit-breaker</a> triggers</li>
 </ul>

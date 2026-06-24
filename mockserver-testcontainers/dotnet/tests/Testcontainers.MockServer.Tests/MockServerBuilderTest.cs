@@ -29,7 +29,7 @@ public class MockServerBuilderTest
     public void DefaultVersionMatchesExpected()
     {
         // The version should be derived from the MockServer release (stripped -SNAPSHOT).
-        MockServerContainer.DefaultVersion.Should().Be("7.2.0");
+        MockServerContainer.DefaultVersion.Should().Be("7.0.0");
     }
 
     [Fact]

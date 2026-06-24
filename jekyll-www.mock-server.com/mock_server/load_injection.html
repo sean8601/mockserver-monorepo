@@ -3,7 +3,7 @@ title: Load Injection (Load Scenarios)
 shortTitle: Load Injection
 description: Drive API traffic from MockServer using declarative load scenarios — ramp virtual users, vary data across iterations with templates, and assert SLO verdicts over the generated traffic.
 layout: page
-pageOrder: 2.5
+pageOrder: 1
 section: 'Performance Testing'
 subsection: true
 sitemap:
@@ -366,7 +366,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
 
 <h3>Load Profile</h3>
 
-<p>The profile is an ordered list of <code class="inline code">stages</code> (maximum 20) run one after another. The total run length is the sum of the stage durations. Each stage is one of three types:</p>
+<p>The profile is an ordered list of <code class="inline code">stages</code> (maximum 20 by default; raise via <code class="inline code">loadGenerationMaxStages</code>) run one after another. The total run length is the sum of the stage durations. Each stage is one of three types:</p>
 
 <ul>
     <li><strong><code class="inline code">VU</code> (closed model)</strong> — hold or ramp the number of concurrent <em>virtual users</em>. Each VU loops the steps back-to-back; throughput is whatever the target can sustain. Answers "how does my service behave with N concurrent clients?"</li>
@@ -399,7 +399,7 @@ curl -s -X PUT http://localhost:1080/mockserver/loadScenario/stop \
         <tr>
             <td><code class="inline code">durationMillis</code></td>
             <td>integer</td>
-            <td>How long this stage runs (milliseconds, &gt; 0). The total across all stages must not exceed 3 600 000 ms (1 hour).</td>
+            <td>How long this stage runs (milliseconds, &gt; 0). The total across all stages must not exceed 3 600 000 ms (1 hour) by default; raise via <code class="inline code">loadGenerationMaxDurationMillis</code>.</td>
         </tr>
         <tr>
             <td><code class="inline code">curve</code></td>
@@ -1460,6 +1460,8 @@ sum by (kind) (rate(mock_server_load_errors_total[1m]))
 # Is the scenario being throttled?
 rate(mock_server_load_throttled_total[1m])</code></pre>
 
+<p>Note: Prometheus renders counters with a <code class="inline code">_total</code> suffix, so the counters listed without the suffix in the metric catalogue above (e.g. <code class="inline code">mock_server_load_errors</code>) are queried as <code class="inline code">mock_server_load_errors_total</code>.</p>
+
 <p>The Prometheus endpoint requires <code class="inline code">metricsEnabled=true</code>; OTLP export additionally requires <code class="inline code">otelEndpoint</code> and <code class="inline code">otelMetricsEnabled=true</code> — see <a href="#observability_exposure">How the metrics are exposed</a> above.</p>
 
 <a id="configuration" class="anchor" href="#configuration">&nbsp;</a>
@@ -1480,7 +1482,7 @@ rate(mock_server_load_throttled_total[1m])</code></pre>
             <td><code class="inline code">mockserver.loadGenerationEnabled</code></td>
             <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_ENABLED</code></td>
             <td><code class="inline code">false</code></td>
-            <td>Master switch. Must be <code class="inline code">true</code> for <code class="inline code">PUT /mockserver/loadScenario</code> to succeed. Set at startup to avoid a restart.</td>
+            <td>Master switch. Must be <code class="inline code">true</code> to TRIGGER a run (<code class="inline code">PUT /mockserver/loadScenario/start</code>); loading/registering a scenario (<code class="inline code">PUT /mockserver/loadScenario</code>) is always allowed. Set at startup to avoid a restart.</td>
         </tr>
         <tr>
             <td><code class="inline code">mockserver.loadGenerationMaxVirtualUsers</code></td>
@@ -1499,6 +1501,18 @@ rate(mock_server_load_throttled_total[1m])</code></pre>
             <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_REQUESTS_PER_SECOND</code></td>
             <td>500</td>
             <td>Maximum dispatches per second (token bucket). Dispatches that would exceed this are counted in <code class="inline code">mock_server_load_throttled</code> with reason <code class="inline code">rate_limit</code>.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxRate</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_RATE</code></td>
+            <td>5000</td>
+            <td>Maximum arrival rate (iterations per second) a <code class="inline code">RATE</code> stage may request. Stages asking for a higher rate are rejected at PUT.</td>
+        </tr>
+        <tr>
+            <td><code class="inline code">mockserver.loadGenerationMaxStages</code></td>
+            <td><code class="inline code">MOCKSERVER_LOAD_GENERATION_MAX_STAGES</code></td>
+            <td>20</td>
+            <td>Maximum number of stages a single load profile may define. Profiles with more stages are rejected at PUT.</td>
         </tr>
         <tr>
             <td><code class="inline code">mockserver.loadGenerationMaxDurationMillis</code></td>
@@ -1544,8 +1558,8 @@ rate(mock_server_load_throttled_total[1m])</code></pre>
     <li><a href="#thresholds">In-Run Thresholds &amp; Verdicts</a> &mdash; fail the run the moment a metric breaches its budget (this page)</li>
     <li><a href="#summary_report">Summary Report</a> &mdash; JSON and JUnit-XML CI artifacts from a completed run (this page)</li>
     <li><a href="/mock_server/response_templates.html">Response Templates</a> &mdash; the Velocity / Mustache template engines used for <code class="inline code">path</code>, <code class="inline code">body</code>, and header rendering in steps</li>
-    <li><a href="/mock_server/proxy_configuration.html">Proxy Configuration</a> &mdash; configure MockServer as a proxy to record real traffic for use with <a href="#generate_from_recording">generateFromRecording</a></li>
-    <li><a href="/mock_server/openapi.html">OpenAPI</a> &mdash; import an OpenAPI spec; the same spec can seed a load scenario via <a href="#generate_from_openapi">generateFromOpenAPI</a></li>
+    <li><a href="/proxy/record_and_replay.html">Record &amp; Replay</a> &mdash; configure MockServer as a proxy to record real traffic for use with <a href="#generate_from_recording">generateFromRecording</a></li>
+    <li><a href="/mock_server/using_openapi.html">OpenAPI</a> &mdash; import an OpenAPI spec; the same spec can seed a load scenario via <a href="#generate_from_openapi">generateFromOpenAPI</a></li>
     <li><a href="/mock_server/observability.html">Observability</a> &mdash; Prometheus and OpenTelemetry configuration; the <code class="inline code">mock_server_load_*</code> family feeds into the same pipeline</li>
     <li><a href="#observability">Observability &amp; Metrics</a> &mdash; load-specific metrics, custom labels, exemplars, and PromQL examples (this page)</li>
 </ul>

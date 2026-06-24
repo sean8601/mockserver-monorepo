@@ -255,17 +255,10 @@ Each agent has exactly the access it needs. This is enforced structurally — a 
 
 ```mermaid
 flowchart TD
-    subgraph WriteBash["Write + Edit + Bash"]
+    subgraph Full["Full Access (write + edit + bash + skill)"]
         IMP["implementer"]
         SIM["simplifier"]
-    end
-
-    subgraph WriteEdit["Write + Edit Only"]
         DW["docs-writer"]
-    end
-
-    subgraph WriteOnly["Write Only"]
-        TA["taskify-agent"]
     end
 
     subgraph ReadBashSkill["Read + Bash + Skill"]
@@ -285,9 +278,7 @@ flowchart TD
         CS["council-seat"]
     end
 
-    style WriteBash fill:#e8f8f0,stroke:#00a651
-    style WriteEdit fill:#d6f5e3,stroke:#00a651
-    style WriteOnly fill:#eafaf1,stroke:#00a651
+    style Full fill:#e8f8f0,stroke:#00a651
     style ReadBashSkill fill:#f0ecfb,stroke:#6b5ce7
     style ReadBash fill:#e8f0fa,stroke:#00539f
     style ReadOnly fill:#fde8ec,stroke:#e4002b
@@ -298,19 +289,18 @@ Why this matters:
 - A **council seat** cannot take unilateral action — it has no bash, write, or skill access.
 - A **test runner** runs `mvn test` and reports results, nothing more — it cannot modify code.
 - A **debugger** can load investigation skills and run CLI commands but cannot modify the codebase.
-- **docs-writer** has write and edit but no bash or skill — sufficient for editing markdown files, no shell access needed.
-- **taskify-agent** has write only — it creates task files but cannot edit existing files, run builds, or load workflows.
 
 ### Model Strategy — Right Model for the Right Task
 
 Different tasks have different cognitive demands. Using a premium model for test execution wastes money; using a cheap model for security auditing misses vulnerabilities.
 
-| Tier | opencode (OpenAI) | Claude Code (Anthropic) | Agents | Rationale |
-|------|-------------------|--------------------------|--------|-----------|
-| Reasoning | `openai/gpt-5` | `claude-opus-4-8` | review-final, security-auditor, debugger, implementer | Highest-stakes work — binding review, security audit, hard debugging, production code |
-| Premium | `openai/gpt-4o` | `claude-opus-4-8` | simplifier, pipeline-investigator | Strong reasoning for refactoring and CI investigation |
-| Standard | `openai/gpt-4o` | `claude-sonnet-4-6` | code-reviewer, docs-writer, taskify-agent, review-cheap | Strong analysis and writing at moderate cost |
-| Fast | `openai/gpt-4o-mini` | `claude-haiku-4-5-20251001` | test-runner, council-seat | Rote operations — speed over depth |
+| Tier | Model | Agents | Rationale |
+|------|-------|--------|-----------|
+| Premium | `opus-4.6` | implementer, simplifier | Highest quality for production code and complex refactoring |
+| Standard | `sonnet-4.6` | code-reviewer, security-auditor, docs-writer | Strong analysis at moderate cost |
+| Independent | `gpt-5.5` | review-final, debugger, pipeline-investigator | Different provider avoids "same model reviewing its own output" |
+| Budget | `kimi-k2.6` | review-cheap | Non-authoritative intermediate review; cheap enough to iterate |
+| Fast | `haiku-4.5` | test-runner, council-seat | Rote operations — speed over depth |
 
 The `review-final` agent deliberately uses a different provider (OpenAI) than the implementation agents (Anthropic). This ensures the final quality gate has genuinely independent reasoning.
 
@@ -680,7 +670,7 @@ sequenceDiagram
     CMD->>FW: Route to pipeline-investigator agent
     FW->>A: Create subagent session
 
-    Note over A: Model: openai/gpt-5
+    Note over A: Model: gpt-5.5
     Note over A: Tools: read + bash + skill
     Note over A: No write, no edit
 
@@ -710,7 +700,7 @@ sequenceDiagram
 | Block | Role in This Trace |
 |-------|-------------------|
 | **Command** (`pipeline-investigation.md`) | Guaranteed routing to `pipeline-investigator` agent. Without this, the parent LLM would have to decide which agent to use. |
-| **Config** (`opencode.jsonc`) | Defined the agent's model (`openai/gpt-5`) and tool permissions (no write/edit). Also blocked destructive bash commands globally. |
+| **Config** (`opencode.jsonc`) | Defined the agent's model (gpt-5.5) and tool permissions (no write/edit). Also blocked destructive bash commands globally. |
 | **Agent prompt** (`pipeline-investigator.md`) | Defined the agent's identity, constraints, and output format. |
 | **Rules** (`git-safety.md`, `tmp-directory.md`, etc.) | Cross-cutting constraints: don't force-push, use `.tmp/` for scratch files. |
 | **Skill** (`pipeline-investigation/SKILL.md`) | The 10-step investigation workflow: what commands to run, what to look for, how to classify failures. |

@@ -827,8 +827,8 @@ function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogPro
   }, [connectionParams, item]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth aria-labelledby="replay-request-dialog-title">
-      <DialogTitle id="replay-request-dialog-title" sx={{ fontSize: '0.95rem' }}>Replay Request</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ fontSize: '0.95rem' }}>Replay Request</DialogTitle>
       <DialogContent dividers>
         {!replayResponse && !error && !loading && (() => {
           const httpRequest = (item.value['httpRequest'] as Record<string, unknown> | undefined) ?? {};
@@ -846,7 +846,7 @@ function ReplayDialog({ open, onClose, item, connectionParams }: ReplayDialogPro
         })()}
         {loading && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-            <CircularProgress size={24} />
+            <CircularProgress size={20} />
             <Typography variant="body2">Sending request...</Typography>
           </Box>
         )}
@@ -1301,19 +1301,15 @@ export default function TrafficInspector() {
             </ToggleButton>
           </Tooltip>
           {compareMode && (
-            <Tooltip title={canDiff ? '' : 'Select exactly 2 rows to compare'}>
-              <span>
-                <Button
-                  size="small"
-                  variant="contained"
-                  disabled={!canDiff}
-                  onClick={() => setDiffDialogOpen(true)}
-                  sx={{ height: 28, px: 1, fontSize: '0.7rem', textTransform: 'none', flexShrink: 0 }}
-                >
-                  Diff ({validCompareKeys.length}/2)
-                </Button>
-              </span>
-            </Tooltip>
+            <Button
+              size="small"
+              variant="contained"
+              disabled={!canDiff}
+              onClick={() => setDiffDialogOpen(true)}
+              sx={{ height: 28, px: 1, fontSize: '0.7rem', textTransform: 'none', flexShrink: 0 }}
+            >
+              Diff ({validCompareKeys.length}/2)
+            </Button>
           )}
         </Box>
         <Box sx={{ flex: 1, overflowY: 'auto', bgcolor: 'background.default' }}>

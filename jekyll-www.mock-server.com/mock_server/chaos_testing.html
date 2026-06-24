@@ -649,7 +649,7 @@ PUT /mockserver/serviceChaos
     <li><strong>Kubernetes sidecar or egress proxy:</strong> deploy MockServer as a sidecar container or egress proxy in your K8s pod/namespace and route specific traffic through it with chaos injection enabled</li>
 </ul>
 
-<p>MockServer operates at the <strong>HTTP layer (L7)</strong> and requires either explicit routing <strong>or</strong> transparent interception (Linux iptables <code class="inline code">REDIRECT</code> / <code class="inline code">TPROXY</code>) to place it in-path — see <a href="/mock_server/chaos_testing_kubernetes.html">Service Mesh / Sidecar Mode</a>. See <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for detailed proxy deployment patterns.</p>
+<p>MockServer operates at the <strong>HTTP layer (L7)</strong> and requires either explicit routing <strong>or</strong> transparent interception (Linux iptables <code class="inline code">REDIRECT</code> / <code class="inline code">TPROXY</code>) to place it in-path — see <a href="/mock_server/service_mesh.html">Transparent Proxy / Sidecar Mode</a>. See <a href="/mock_server/isolating_single_service.html">Isolating Single Service</a> for detailed proxy deployment patterns.</p>
 
 <a id="stateful_count_based_faults" class="anchor" href="#stateful_count_based_faults">&nbsp;</a>
 
@@ -1740,7 +1740,7 @@ mock_server_chaos_auto_halt_total &gt; 0</code></pre>
 
 <p>The following chaos features are planned for future releases:</p>
 <ul>
-    <li><strong>Advanced stateful fault injection</strong> — token-bucket rate limiting (429 that depletes and refills) and circuit-breaker windows</li>
+    <li><strong>Advanced stateful fault injection</strong> — token-bucket (depleting/refilling) rate limiting, beyond the existing fixed-window quota, and circuit-breaker windows</li>
 </ul>
 
 <a id="chaos_examples" class="anchor" href="#chaos_examples">&nbsp;</a>
@@ -1755,7 +1755,7 @@ mock_server_chaos_auto_halt_total &gt; 0</code></pre>
 
 <button id="button_faq_rate_limit" class="accordion">How do I simulate a 429 rate limit with MockServer?</button>
 <div class="panel">
-    <p>Add a chaos profile to your expectation with <code class="inline code">errorStatus</code> set to <code class="inline code">429</code>, <code class="inline code">errorProbability</code> set to <code class="inline code">1.0</code> (for every request) or a fraction like <code class="inline code">0.3</code> (for 30% of requests), and an optional <code class="inline code">retryAfter</code> value. The chaos profile works on both mocked responses and forwarded/proxied upstream calls. See the <a href="#request_quota">Request Quota</a> section above.</p>
+    <p>There are two ways. For a <strong>probabilistic</strong> 429, add a chaos profile to your expectation with <code class="inline code">errorStatus</code> set to <code class="inline code">429</code>, <code class="inline code">errorProbability</code> set to <code class="inline code">1.0</code> (for every request) or a fraction like <code class="inline code">0.3</code> (for 30% of requests), and an optional <code class="inline code">retryAfter</code> value &mdash; see <a href="#error_injection">Error injection</a> above. For a <strong>deterministic</strong> "the Nth call within the window gets 429" hard limit, use the stateful <a href="#request_quota">Request Quota</a> instead. The chaos profile works on both mocked responses and forwarded/proxied upstream calls.</p>
 </div>
 
 <button id="button_faq_latency" class="accordion">How do I inject latency into API responses?</button>
@@ -1799,7 +1799,7 @@ mock_server_chaos_auto_halt_total &gt; 0</code></pre>
 
 <ul>
     <li><a href="/mock_server/load_injection.html">Performance Testing / Load Injection</a> &mdash; drive synthetic API traffic with multi-stage VU or arrival-rate profiles and assert SLOs over the results — the natural complement to chaos testing</li>
-    <li><a href="/mock_server/service_mesh.html">Service Mesh / Sidecar Mode</a> &mdash; deploy MockServer in-path as a transparent sidecar so you can inject the faults above into live traffic without changing application config</li>
+    <li><a href="/mock_server/service_mesh.html">Transparent Proxy / Sidecar Mode</a> &mdash; deploy MockServer in-path as a transparent sidecar so you can inject the faults above into live traffic without changing application config</li>
     <li><a href="/mock_server/transparent_interception_recipes.html">Transparent Interception Recipes</a> &mdash; iptables REDIRECT / TPROXY recipes for routing real traffic through MockServer to apply chaos profiles</li>
     <li><a href="/mock_server/chaos_testing_kubernetes.html">Chaos Proxy in Kubernetes</a> &mdash; sidecar, egress, and reverse-proxy deployment patterns for injecting faults in a cluster</li>
     <li><a href="/mock_server/chaos_testing_orchestrators.html">Driving MockServer from Chaos Orchestrators</a> &mdash; Chaos Toolkit, AWS FIS, Azure Chaos Studio and LitmusChaos recipes against the control plane</li>

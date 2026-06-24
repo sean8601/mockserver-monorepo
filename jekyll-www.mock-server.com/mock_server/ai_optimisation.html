@@ -4,7 +4,7 @@ shortTitle: LLM Cost Optimisation
 description: Proxy your AI agent's LLM calls through MockServer, then export a one-click optimisation brief (Markdown) or JSON bundle to find ways to cut inference cost — tighter prompts, prompt caching, fewer tool round-trips, and direct HTTP/MCP endpoints.
 layout: page
 pageOrder: 10
-section: 'AI Integration'
+section: 'AI & MCP'
 subsection: true
 sitemap:
   priority: 0.8
@@ -274,7 +274,7 @@ curl -s "http://localhost:1080/mockserver/llm/optimisationReport?format=markdown
         </tr>
         <tr>
             <td><code class="code inline">provider</code></td>
-            <td><code class="code inline">OPENAI</code> | <code class="code inline">ANTHROPIC</code> | <code class="code inline">GEMINI</code> | <code class="code inline">BEDROCK</code> | <code class="code inline">AZURE_OPENAI</code> | <code class="code inline">OLLAMA</code></td>
+            <td><code class="code inline">OPENAI</code> | <code class="code inline">OPENAI_RESPONSES</code> | <code class="code inline">ANTHROPIC</code> | <code class="code inline">GEMINI</code> | <code class="code inline">BEDROCK</code> | <code class="code inline">AZURE_OPENAI</code> | <code class="code inline">OLLAMA</code></td>
             <td>all providers</td>
             <td>Filter to one LLM provider. Provider is auto-detected from request paths.</td>
         </tr>

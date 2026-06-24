@@ -7,10 +7,10 @@ MockServer uses a multi-layered testing strategy spanning unit tests, integratio
 ```mermaid
 graph TB
     subgraph "Unit Tests (Surefire)"
-        UT["*Test.java — ~850 files"]
+        UT["*Test.java — ~251 files"]
     end
     subgraph "Integration Tests (Failsafe)"
-        IT["*IntegrationTest.java — ~150 files"]
+        IT["*IntegrationTest.java — ~184 files"]
     end
     subgraph "Packaging Integration Tests"
         MI["Maven Invoker — 3 sub-builds"]
@@ -31,13 +31,13 @@ graph TB
 | Framework | Version | Usage |
 |-----------|---------|-------|
 | JUnit 4 | 4.13.2 | Primary test framework across almost all modules |
-| JUnit Jupiter (JUnit 5) | 6.1.0 | Used exclusively in `mockserver-junit-jupiter` |
+| JUnit Jupiter (JUnit 5) | 5.14.4 | Used exclusively in `mockserver-junit-jupiter` |
 | Mockito Core | 5.23.0 | Mocking framework used in most modules |
 | Mockito JUnit Jupiter | 5.23.0 | JUnit 5 Mockito integration (`mockserver-junit-jupiter` only) |
 | Hamcrest | 3.0 | Assertion matchers used across all modules |
 | JSONAssert | 1.5.3 | JSON assertion library (`mockserver-core`) |
-| Spring Test | 7.0.8 | `mockserver-core`, `mockserver-war`, `mockserver-proxy-war`, `mockserver-spring-test-listener`, `mockserver-examples` |
-| XMLUnit | 2.12.0 | XML comparison (production dependency, also supports test assertions) |
+| Spring Test | 5.3.39 | `mockserver-core`, `mockserver-war`, `mockserver-proxy-war`, `mockserver-spring-test-listener`, `mockserver-examples` |
+| XMLUnit | 2.11.0 | XML comparison (production dependency, also supports test assertions) |
 
 No TestNG is used anywhere in the project.
 
@@ -45,18 +45,18 @@ No TestNG is used anywhere in the project.
 
 | Module | Unit Tests | Integration Tests | Total Test Files | Description |
 |--------|-----------|-------------------|-----------------|-------------|
-| `mockserver-core` | 731 | 0 | 731 | Largest suite: matchers, serialization, validators, actions, collections, auth, logging |
-| `mockserver-netty` | 80 | 110 | 190 | Server lifecycle, TLS, proxy, CORS, authenticated control plane |
-| `mockserver-examples` | 1 | 20 | 21 | End-to-end examples with various HTTP clients |
-| `mockserver-junit-jupiter` | 11 | 5 | 16 | JUnit 5 extension tests (injection, parallel safety, settings) |
-| `mockserver-junit-rule` | 3 | 2 | 5 | JUnit 4 Rule/ClassRule tests |
-| `mockserver-war` | 2 | 3 | 5 | WAR deployment integration tests (embedded Tomcat) |
-| `mockserver-client-java` | 15 | 1 | 16 | Client API unit tests, event bus, serialization |
-| `mockserver-spring-test-listener` | 8 | 1 | 9 | Spring TestExecutionListener tests |
-| `mockserver-proxy-war` | 1 | 2 | 3 | Proxy WAR integration tests (embedded Tomcat) |
+| `mockserver-core` | ~220 | ~62 | ~282 | Largest suite: matchers, serialization, validators, actions, collections, auth, logging |
+| `mockserver-netty` | ~13 | ~64 | ~77 | Server lifecycle, TLS, proxy, CORS, authenticated control plane |
+| `mockserver-examples` | 0 | ~25 | ~25 | End-to-end examples with various HTTP clients |
+| `mockserver-junit-jupiter` | ~6 | ~12 | ~18 | JUnit 5 extension tests (injection, parallel safety, settings) |
+| `mockserver-junit-rule` | ~4 | ~4 | ~8 | JUnit 4 Rule/ClassRule tests |
+| `mockserver-war` | 0 | ~8 | ~8 | WAR deployment integration tests (embedded Tomcat) |
+| `mockserver-client-java` | ~5 | ~2 | ~7 | Client API unit tests, event bus, serialization |
+| `mockserver-spring-test-listener` | ~2 | ~4 | ~6 | Spring TestExecutionListener tests |
+| `mockserver-proxy-war` | 0 | ~3 | ~3 | Proxy WAR integration tests (embedded Tomcat) |
 | `mockserver-testing` | 1 | 0 | 1 | Self-test for the `Assert` utility class |
 | `mockserver-integration-testing` | 0 | 0 | 0 | No tests of its own — it IS the shared test infrastructure |
-| **Total** | **853** | **144** | **997** | |
+| **Total** | **~251** | **~184** | **~435** | |
 
 ## Test Architecture
 
@@ -359,7 +359,7 @@ sequenceDiagram
 
 ### Docker Image Variant Coverage
 
-There are 8 production Docker image variants. Only the main nonroot variant is tested:
+There are 6 production Docker image variants. Only the main nonroot variant is tested:
 
 | Variant | Dockerfile | Base Image | Tested? |
 |---------|-----------|------------|---------|
@@ -369,8 +369,6 @@ There are 8 production Docker image variants. Only the main nonroot variant is t
 | Snapshot (debug) | `docker/snapshot/Dockerfile` | `distroless/java17:debug-nonroot` | NO |
 | Root Snapshot | `docker/root-snapshot/Dockerfile` | `distroless/java17` | NO |
 | Local build | `docker/local/Dockerfile` | `distroless/java17:nonroot` | NO |
-| Clustered | `docker/clustered/Dockerfile` | `distroless/java17:nonroot` | NO |
-| Webhook | `docker/webhook/Dockerfile` | `distroless/java17:nonroot` | NO |
 
 The integration tests always build with `--build-arg source=copy` (local JAR). The default `source=download` mode (downloads from Sonatype) used by real users is never tested.
 
@@ -397,7 +395,7 @@ The integration tests always build with `--build-arg source=copy` (local JAR). T
 
 ### What Helm Features Are Tested
 
-The 8 Helm tests cover basic deployment, custom image tags, custom server port, remote host/port forwarding, inline configuration, ConfigMap injection, the standalone mockserver-config chart, and clustered state convergence. All use the same validation pattern: create expectation via PUT, verify response via GET.
+The 5 Helm tests cover basic deployment, custom image tags, custom server port, inline configuration, and inter-service proxy forwarding. All use the same validation pattern: create expectation via PUT, verify response via GET.
 
 ### What Helm Features Are NOT Tested
 

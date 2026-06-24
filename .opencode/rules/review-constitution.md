@@ -24,11 +24,9 @@ that matter most for that artefact (spec §14.3). This raises signal (probe what
 actually breaks this artefact type) and cuts noise (don't force-fit irrelevant
 generic concerns) — but a profile may never excuse skipping a baseline lens.
 
-**Profile set version: 1.1** (2026-06-24). Changes to the baseline or any profile
+**Profile set version: 1.0** (2026-06-15). Changes to the baseline or any profile
 require a version bump and a control-integrity review ([[control-integrity]]); the
-version applied is recorded in the decision log. (1.1: added the `review-integration`
-profile, the layered/tiered review model, the independence requirement, and the
-must-fix-all-critical/major iteration semantics — aligning with spec §14.4–§14.6.)
+version applied is recorded in the decision log.
 
 Rules:
 
@@ -37,9 +35,8 @@ Rules:
   review-documentation; `.tf` / Dockerfile / pipeline YAML → review-deployment; a
   spec / plan / ADR doc → the matching profile). If **no profile matches**, apply
   the **baseline only** and note why. Record which profile + version (and any
-  composition) **and which review tier(s)** (unit / group / wave / plan — see
-  *Layered review* below) were applied in the decision log ([[decision-log]]) for
-  significant or control-change reviews.
+  composition) was applied in the decision log ([[decision-log]]) for significant
+  or control-change reviews.
 - **Baseline always included** — a profile sharpens the lenses; it never removes one.
 - **Composition** — an artefact spanning types (code + its tests, an ADR inside a
   plan) is reviewed under a composition of profiles; record the composition.
@@ -53,7 +50,6 @@ Rules:
 | **review-investigation** | diagnoses, RCAs, ops analyses | causal soundness (correlation vs causation), evidence completeness, alternatives ruled out, reproducible evidence trail, actionability | logs / metrics / traces + change records | conclusion is evidence-backed and the trail is reproducible |
 | **review-documentation** | docs, READMEs, runbooks | accuracy vs current behaviour, completeness, staleness, audience fit, runnable instructions, dead links/commands | doc + the code/system it describes | content is accurate, current, and executable as written |
 | **review-deployment** | deployment / infra changes | rollback characteristics, blast radius, progressive-delivery safety, observability/alerting, policy/security conformance, capacity impact | change + infra validation + policy checks | change is reversible, observable, and within policy |
-| **review-integration** | merged groups of units, waves/phases, whole-plan reintegration (layered review, spec §14.6, §8.4) | defects from the *combination* (interface drift, duplicated/conflicting changes, cross-unit regressions), end-to-end coherence vs the plan's intent, completeness (no dropped unit), holistic fitness beyond any single unit | the integrated diff + full re-verification results + the plan/wave scope | the combination is correct, complete, and coherent — not merely each unit in isolation |
 | **review-periodic** | scheduled health / drift / security sweeps | drift from standards, accumulating risk/debt, coverage gaps, regressions vs baseline, recurrence of known failure patterns | trend / baseline comparisons | no unflagged regression, drift, or recurring failure pattern |
 
 The **MockServer-Specific Review Triggers** section below applies to **all
@@ -273,41 +269,6 @@ After applying all lenses and completing the checklist, return ONE of:
 
 Do NOT use "PASS with reservations" or similar hedging language. Either it passes or it blocks.
 
-## Independence
-
-The reviewer **must** be a **separate, freshly-spawned, clean-context subagent** —
-given only the artefact, the context it needs, and this constitution — so it
-re-derives findings independently. The reviewer **must NOT** be the agent (or a
-resumed / context-anchored continuation of the agent) that produced the artefact,
-an implementer of it, or any agent carrying the generation context; a
-shared-context or self-review **must not** be accepted in its place. This holds at
-**every** review tier below. (Spec: `docs/operations/ai-sdlc-integration-spec.md`
-§14.4.)
-
-## Layered (tiered) review
-
-Review runs at **every aggregation level** the work has, not just the unit — so
-defects visible only in the *combination* are caught:
-
-| Tier | What is reviewed | Profile(s) to apply |
-|------|------------------|---------------------|
-| **1 — unit** | the individual unit/task | the artefact-type profile (e.g. `review-coding`, `review-documentation`) |
-| **2 — group** | a group of related units, once merged | `review-integration` |
-| **3 — wave/phase** | a wave/phase, once its groups are complete | `review-integration` |
-| **4 — whole plan** | the whole plan/programme, once all waves are complete | `review-plan` + `review-integration` (composition) |
-
-- Tiers that do not exist for a small piece of work are skipped (a trivial
-  single-unit change has only Tier 1); **record which tiers applied.**
-- **Each tier is its own independent clean-context review** (see *Independence*)
-  and runs the full *Iteration Protocol* below. A higher-tier PASS **must not** be
-  inferred from lower-tier PASSes — the combination is reviewed on its own merits.
-- The Tier 2/3 integration review is the mandatory re-review of the integrated
-  result; reintegration of the combination **must not** complete until its
-  integration-tier review reaches PASS (or its residual risk is gated-approved).
-- A higher-tier finding rooted in a specific lower-tier unit **must** be fixed at
-  the correct layer (cf. Fix Placement Policy), and the affected lower tier
-  re-verified and, if materially changed, re-reviewed. (Spec: §14.6, §8.4.)
-
 ## Iteration Protocol
 
 Adversarial review is **iterative** — the author fixes BLOCK findings and the
@@ -315,26 +276,17 @@ artefact is re-reviewed on a fresh context until it converges. The loop is
 bounded. **One iteration = one review subagent invocation**: the initial review
 is iteration 1, and each re-review after a fix is the next iteration.
 
-- Each iteration **must** produce explicit findings (or an explicit PASS), each
-  classified by severity (CRITICAL, MAJOR, MINOR, OBSERVATION).
-- **CRITICAL and MAJOR findings must be FIXED** — corrected in the artefact —
-  before the next iteration. There is **no disposition path**: they **must not**
-  be accepted, waived, or "consciously dispositioned" to advance toward the cap.
-  (A finding that, on independent re-examination, is a genuine false positive is
-  *not* a finding — record that determination, with reasoning, in the decision
-  log. Do not relabel a real CRITICAL/MAJOR as MINOR to evade the fix obligation.)
-- **MINOR findings must be fixed or explicitly recorded with rationale** — the
-  only severity for which deferral is permitted; recorded deferrals **must** be
-  visible in the decision log.
+- Each iteration **must** produce explicit findings (or an explicit PASS).
+- Each MAJOR/CRITICAL finding **must** be addressed or **consciously
+  dispositioned** (accepted with a recorded rationale) before the next iteration.
+  Dispositioning anything above MINOR **requires user approval** — an agent must
+  not self-approve findings to advance toward the cap.
 - After any material change, **re-verify** (re-run the affected validations)
-  before re-reviewing — fixes regress — and run the next iteration in a fresh
-  clean context.
-- Terminate when **either** the review returns PASS (no CRITICAL or MAJOR findings
-  remain — a fresh iteration surfaces none new and all prior ones are fixed)
+  before re-reviewing — fixes regress.
+- Terminate when **either** the review returns PASS (no new major findings)
   **or** **8 review iterations** have completed — whichever comes first.
-- If the **8-iteration cap** is reached **without** a PASS (CRITICAL or MAJOR
-  findings still unfixed), do **not** proceed as if converged: **record the
-  unresolved residual risk explicitly** — the outstanding findings and why they
-  remain, in `docs/plans/<task>.local.md` or inline in the escalation message —
-  and **escalate to the user**. The 8-iteration ceiling is a hard cap. (Spec:
-  `docs/operations/ai-sdlc-integration-spec.md` §14.5.)
+- If the **8-iteration cap** is reached **without** a PASS, do **not** proceed as
+  if converged: **record the unresolved residual risk explicitly** — the
+  outstanding findings and why they remain, in `docs/plans/<task>.local.md` or
+  inline in the escalation message — and **escalate to the user**. The
+  8-iteration ceiling is a hard cap. (Spec: `docs/operations/ai-sdlc-integration-spec.md` §14.5.)

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
-import ButtonBase from '@mui/material/ButtonBase';
 import Collapse from '@mui/material/Collapse';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -40,13 +39,6 @@ import {
   type HttpChaosProfileDTO,
   type ServiceChaosResponse,
 } from '../lib/serviceChaos';
-import {
-  getPreemption,
-  registerPreemption,
-  clearPreemption,
-  type PreemptionMode,
-  type PreemptionStatus,
-} from '../lib/preemption';
 import {
   fetchGrpcHealth,
   setGrpcHealth,
@@ -99,8 +91,6 @@ import { getConfiguration, updateConfiguration, type Configuration } from '../li
 import ConfirmDialog from './ConfirmDialog';
 import HumanErrorAlert from './HumanErrorAlert';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
-import { useDashboardStore } from '../store';
-import { monospaceFontFamily } from '../theme';
 
 // Responsive width helper for fixed-px form fields: full-width on a phone (xs),
 // the original fixed pixel width from `sm` up so the desktop layout is unchanged.
@@ -531,7 +521,6 @@ function servingStatusColor(status: ServingStatus): 'success' | 'error' | 'defau
 }
 
 export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPanelProps) {
-  const setNotification = useDashboardStore((s) => s.setNotification);
   const [data, setData] = useState<ServiceChaosResponse>({ services: {} });
   const [polledAt, setPolledAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -583,13 +572,6 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   const [grpcChaosData, setGrpcChaosData] = useState<GrpcChaosResponse>({ services: {} });
   const [grpcChaosPolledAt, setGrpcChaosPolledAt] = useState(0);
   const [grpcChaosForm, setGrpcChaosForm] = useState<GrpcChaosFormState>(EMPTY_GRPC_CHAOS_FORM);
-
-  // --- Preemption (graceful-shutdown / node-drain) chaos state ---
-  const [preemptionExpanded, setPreemptionExpanded] = useState(false);
-  const [preemptionStatus, setPreemptionStatus] = useState<PreemptionStatus | null>(null);
-  const [preemptionMode, setPreemptionMode] = useState<PreemptionMode>('both');
-  const [preemptionDrainMs, setPreemptionDrainMs] = useState('');
-  const [preemptionTtlMs, setPreemptionTtlMs] = useState('');
 
   // --- Auto-halt state (effects below, after `refresh` is declared) ---
   const [autoHaltEnabled, setAutoHaltEnabled] = useState<boolean | null>(null);
@@ -787,36 +769,6 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     };
   }, [connectionParams, grpcPanelExpanded, grpcFaultExpanded, refreshTick]);
 
-  // Fetch preemption status on mount (so the collapsed header chip shows the real
-  // state), then keep polling only while the section is expanded. Polls faster (1s)
-  // while a drain is in progress so the in-flight / drain-remaining figures update.
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function poll(): Promise<void> {
-      try {
-        const status = await getPreemption(connectionParams, controller.signal);
-        if (!cancelled) setPreemptionStatus(status);
-      } catch {
-        // ignore — preemption is best-effort in the UI (older servers 404)
-      } finally {
-        if (!cancelled && preemptionExpanded) {
-          const draining = preemptionStatus?.state === 'draining';
-          timer = setTimeout(() => void poll(), draining ? 1000 : POLL_INTERVAL_MS);
-        }
-      }
-    }
-
-    void poll();
-    return () => {
-      cancelled = true;
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [connectionParams, preemptionExpanded, preemptionStatus?.state, refreshTick]);
-
   // Poll chaos experiment status on mount and while the experiments section is
   // expanded. Poll more frequently (2s) while a running experiment is active.
   useEffect(() => {
@@ -880,20 +832,19 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
   };
 
   const runAction = useCallback(
-    async (action: () => Promise<void>, successMessage?: string) => {
+    async (action: () => Promise<void>) => {
       setBusy(true);
       setActionError(null);
       try {
         await action();
         refresh();
-        if (successMessage) setNotification({ message: successMessage, severity: 'success' });
       } catch (e) {
         setActionError(humanizeError(e));
       } finally {
         setBusy(false);
       }
     },
-    [refresh, setNotification],
+    [refresh],
   );
 
   const handleRegister = useCallback(() => {
@@ -908,7 +859,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     void runAction(async () => {
       await registerServiceChaos(connectionParams, host, profile, ttl);
       setForm(EMPTY_FORM);
-    }, 'HTTP chaos registered');
+    });
   }, [connectionParams, form, runAction]);
 
   const setField = (field: keyof FormState) => (e: ChangeEvent<HTMLInputElement>) =>
@@ -1013,7 +964,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     void runAction(async () => {
       await patchServiceChaos(connectionParams, host, partial);
       setEditingHost(null);
-    }, 'Chaos profile updated');
+    });
   }, [connectionParams, editingHost, editForm, runAction]);
 
   const setEditField = (field: keyof EditFormState) => (e: ChangeEvent<HTMLInputElement>) =>
@@ -1027,13 +978,13 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     void runAction(async () => {
       await setGrpcHealth(connectionParams, grpcNewService.trim(), grpcNewStatus);
       setGrpcNewService('');
-    }, 'gRPC health set');
+    });
   }, [connectionParams, grpcNewService, grpcNewStatus, runAction]);
 
   const handleResetGrpcHealth = useCallback((service: string) => {
     void runAction(async () => {
       await resetGrpcHealth(connectionParams, service);
-    }, 'gRPC health reset');
+    });
   }, [connectionParams, runAction]);
 
   // Null-safe: a control-plane response with an unexpected/missing shape must never
@@ -1067,7 +1018,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     void runAction(async () => {
       await registerTcpChaos(connectionParams, host, profile, ttl);
       setTcpForm(EMPTY_TCP_FORM);
-    }, 'TCP chaos registered');
+    });
   }, [connectionParams, tcpForm, runAction]);
 
   // gRPC fault injection chaos helpers
@@ -1097,40 +1048,8 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
     void runAction(async () => {
       await registerGrpcChaos(connectionParams, service, profile, ttl);
       setGrpcChaosForm(EMPTY_GRPC_CHAOS_FORM);
-    }, 'gRPC chaos registered');
+    });
   }, [connectionParams, grpcChaosForm, runAction]);
-
-  // --- Preemption handlers ---
-
-  const handleStartPreemption = useCallback(() => {
-    const drain = num(preemptionDrainMs);
-    if (drain != null && (!Number.isInteger(drain) || drain < 0)) {
-      setActionError({ message: 'Drain must be a whole number of milliseconds >= 0' });
-      return;
-    }
-    const ttl = num(preemptionTtlMs);
-    if (ttl != null && (!Number.isInteger(ttl) || ttl < 1)) {
-      setActionError({ message: 'TTL must be a whole number of milliseconds >= 1' });
-      return;
-    }
-    void runAction(async () => {
-      const status = await registerPreemption(connectionParams, {
-        mode: preemptionMode,
-        ...(drain != null ? { drainMillis: drain } : {}),
-        ...(ttl != null ? { ttlMillis: ttl } : {}),
-      });
-      setPreemptionStatus(status);
-    }, 'Preemption registered');
-  }, [connectionParams, preemptionMode, preemptionDrainMs, preemptionTtlMs, runAction]);
-
-  const handleClearPreemption = useCallback(() => {
-    void runAction(async () => {
-      await clearPreemption(connectionParams);
-      setPreemptionStatus(await getPreemption(connectionParams));
-    }, 'Preemption cleared');
-  }, [connectionParams, runAction]);
-
-  const preemptionActive = preemptionStatus != null && preemptionStatus.state !== 'inactive';
 
   // --- Chaos Experiment handlers ---
 
@@ -1409,7 +1328,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                     title: 'Clear all HTTP chaos?',
                     message: `This removes chaos profiles for all ${hosts.length} registered host${hosts.length === 1 ? '' : 's'}. Live traffic will no longer be faulted. This cannot be undone.`,
                     confirmLabel: 'Clear HTTP chaos',
-                    onConfirm: () => void runAction(() => clearServiceChaos(connectionParams), 'All HTTP chaos cleared'),
+                    onConfirm: () => void runAction(() => clearServiceChaos(connectionParams)),
                   });
                 }}
               >
@@ -1417,7 +1336,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               </Button>
             </span>
           </Tooltip>
-          <IconButton size="small" aria-expanded={httpExpanded} onClick={(e) => { e.stopPropagation(); setHttpExpanded((v) => !v); }} aria-label={httpExpanded ? 'Collapse HTTP chaos' : 'Expand HTTP chaos'}>
+          <IconButton size="small" aria-label={httpExpanded ? 'Collapse HTTP chaos' : 'Expand HTTP chaos'}>
             {httpExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
         </Box>
@@ -1535,7 +1454,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                               size="small"
                               aria-label={`Remove chaos for ${host}`}
                               disabled={busy}
-                              onClick={() => void runAction(() => removeServiceChaos(connectionParams, host), 'HTTP chaos removed')}
+                              onClick={() => void runAction(() => removeServiceChaos(connectionParams, host))}
                             >
                               <DeleteIcon fontSize="small" />
                             </IconButton>
@@ -1644,7 +1563,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                         for (const svc of grpcHealthOverrides) {
                           await resetGrpcHealth(connectionParams, svc === '_default' ? '' : svc);
                         }
-                      }, 'All gRPC chaos cleared');
+                      });
                     },
                   });
                 }}
@@ -1653,7 +1572,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               </Button>
             </span>
           </Tooltip>
-          <IconButton size="small" aria-expanded={grpcPanelExpanded} onClick={(e) => { e.stopPropagation(); setGrpcPanelExpanded((v) => !v); }} aria-label={grpcPanelExpanded ? 'Collapse gRPC chaos' : 'Expand gRPC chaos'}>
+          <IconButton size="small" aria-label={grpcPanelExpanded ? 'Collapse gRPC chaos' : 'Expand gRPC chaos'}>
             {grpcPanelExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
         </Box>
@@ -1671,7 +1590,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 </Typography>
                 <Chip size="small" label={`${grpcServices.length} services`} variant="outlined" />
                 <Box sx={{ flex: 1 }} />
-                <IconButton size="small" aria-expanded={grpcHealthExpanded} onClick={(e) => { e.stopPropagation(); setGrpcHealthExpanded((v) => !v); }} aria-label={grpcHealthExpanded ? 'Collapse gRPC health' : 'Expand gRPC health'}>
+                <IconButton size="small" aria-label={grpcHealthExpanded ? 'Collapse gRPC health' : 'Expand gRPC health'}>
                   {grpcHealthExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                 </IconButton>
               </Box>
@@ -1725,7 +1644,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                           {grpcServices.map((svc) => (
                             <TableRow key={svc}>
                               <TableCell>
-                                <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>{svc}</Typography>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{svc}</Typography>
                               </TableCell>
                               <TableCell>
                                 <Chip
@@ -1770,7 +1689,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                 </Typography>
                 <Chip size="small" label={`${grpcChaosServices.length} services`} color={grpcChaosServices.length > 0 ? 'warning' : 'default'} variant="outlined" />
                 <Box sx={{ flex: 1 }} />
-                <IconButton size="small" aria-expanded={grpcFaultExpanded} onClick={(e) => { e.stopPropagation(); setGrpcFaultExpanded((v) => !v); }} aria-label={grpcFaultExpanded ? 'Collapse gRPC fault injection' : 'Expand gRPC fault injection'}>
+                <IconButton size="small" aria-label={grpcFaultExpanded ? 'Collapse gRPC fault injection' : 'Expand gRPC fault injection'}>
                   {grpcFaultExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                 </IconButton>
               </Box>
@@ -1868,7 +1787,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                                   size="small"
                                   aria-label={`Remove gRPC chaos for ${service}`}
                                   disabled={busy}
-                                  onClick={() => void runAction(() => removeGrpcChaos(connectionParams, service), 'gRPC chaos removed')}
+                                  onClick={() => void runAction(() => removeGrpcChaos(connectionParams, service))}
                                 >
                                   <DeleteIcon fontSize="small" />
                                 </IconButton>
@@ -1911,7 +1830,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                     title: 'Clear all TCP chaos?',
                     message: `This removes TCP chaos profiles for all ${tcpHosts.length} registered host${tcpHosts.length === 1 ? '' : 's'}. This cannot be undone.`,
                     confirmLabel: 'Clear TCP chaos',
-                    onConfirm: () => void runAction(() => clearTcpChaos(connectionParams), 'All TCP chaos cleared'),
+                    onConfirm: () => void runAction(() => clearTcpChaos(connectionParams)),
                   });
                 }}
               >
@@ -1919,7 +1838,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               </Button>
             </span>
           </Tooltip>
-          <IconButton size="small" aria-expanded={tcpExpanded} onClick={(e) => { e.stopPropagation(); setTcpExpanded((v) => !v); }} aria-label={tcpExpanded ? 'Collapse TCP chaos' : 'Expand TCP chaos'}>
+          <IconButton size="small" aria-label={tcpExpanded ? 'Collapse TCP chaos' : 'Expand TCP chaos'}>
             {tcpExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
         </Box>
@@ -1982,7 +1901,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                             size="small"
                             aria-label={`Remove TCP chaos for ${host}`}
                             disabled={busy}
-                            onClick={() => void runAction(() => removeTcpChaos(connectionParams, host), 'TCP chaos removed')}
+                            onClick={() => void runAction(() => removeTcpChaos(connectionParams, host))}
                           >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
@@ -1992,121 +1911,6 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
                   );
                 })}
               </Box>
-            )}
-          </Box>
-        </Collapse>
-      </Paper>
-
-      {/* Preemption (graceful-shutdown / node-drain) chaos */}
-      <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
-        <ButtonBase
-          component="div"
-          role="button"
-          tabIndex={0}
-          aria-expanded={preemptionExpanded}
-          aria-label={preemptionExpanded ? 'Collapse preemption chaos' : 'Expand preemption chaos'}
-          onClick={() => setPreemptionExpanded((v) => !v)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setPreemptionExpanded((v) => !v);
-            }
-          }}
-          sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', justifyContent: 'flex-start', textAlign: 'left' }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-            Preemption (graceful shutdown)
-          </Typography>
-          <Chip
-            size="small"
-            label={preemptionActive ? (preemptionStatus?.state ?? 'active') : 'inactive'}
-            color={preemptionActive ? 'warning' : 'default'}
-            variant="outlined"
-          />
-          <Box sx={{ flex: 1 }} />
-          {preemptionExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-        </ButtonBase>
-        <Collapse in={preemptionExpanded} unmountOnExit>
-          <Box sx={{ mt: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Simulate a Kubernetes node drain / Spot reclamation / pre-SIGTERM: the server cordons
-              itself (rejecting new exchanges with 503 and/or signalling HTTP/2 clients with a GOAWAY)
-              and drains in-flight requests. It is a simulation only and never stops the JVM; add a TTL
-              to auto-uncordon after a bounded window (a dead-man&apos;s switch).
-            </Typography>
-
-            {/* Register form */}
-            <Paper variant="outlined" sx={{ p: 1, mb: 1 }}>
-              <Typography variant="caption" color="text.secondary">Start a preemption simulation</Typography>
-              <Box sx={{ ...CHAOS_GRID, mt: 0.75 }}>
-                <TextField
-                  size="small"
-                  select
-                  label="Mode"
-                  value={preemptionMode}
-                  onChange={(e) => setPreemptionMode(e.target.value as PreemptionMode)}
-                  fullWidth
-                >
-                  <MenuItem value="both">both (503 + GOAWAY)</MenuItem>
-                  <MenuItem value="reject503">reject503 (503 only)</MenuItem>
-                  <MenuItem value="goaway">goaway (HTTP/2 GOAWAY)</MenuItem>
-                </TextField>
-                <TextField
-                  size="small"
-                  label="Drain ms"
-                  placeholder="server default"
-                  value={preemptionDrainMs}
-                  onChange={(e) => setPreemptionDrainMs(e.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  size="small"
-                  label="TTL ms"
-                  placeholder="60000"
-                  value={preemptionTtlMs}
-                  onChange={(e) => setPreemptionTtlMs(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleStartPreemption(); }}
-                  fullWidth
-                />
-              </Box>
-              <Box sx={{ display: 'flex', gap: 1, mt: 0.5, alignItems: 'center' }}>
-                <Tooltip title="Clear (uncordon) any active preemption">
-                  <span>
-                    <Button
-                      size="small"
-                      color="error"
-                      startIcon={<RestoreIcon fontSize="small" />}
-                      disabled={busy || !preemptionActive}
-                      onClick={() => setConfirm({
-                        title: 'Clear preemption?',
-                        message: 'This uncordons the server so it accepts new exchanges again. This cannot be undone.',
-                        confirmLabel: 'Clear preemption',
-                        onConfirm: handleClearPreemption,
-                      })}
-                    >
-                      Clear
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Box sx={{ flex: 1 }} />
-                <Button variant="contained" size="small" disabled={busy} onClick={handleStartPreemption}>
-                  Start preemption
-                </Button>
-              </Box>
-            </Paper>
-
-            {/* Active status */}
-            {preemptionActive ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', py: 0.5 }}>
-                <Chip size="small" color="warning" label={`state: ${preemptionStatus?.state}`} />
-                {preemptionStatus?.mode && <Chip size="small" variant="outlined" label={`mode: ${preemptionStatus.mode}`} />}
-                <Chip size="small" variant="outlined" label={`in-flight: ${preemptionStatus?.inFlight ?? 0}`} />
-                <Chip size="small" variant="outlined" label={`drain remaining: ${formatTtl(preemptionStatus?.drainRemainingMillis ?? 0)}`} />
-              </Box>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                No preemption active. The server is accepting new exchanges normally.
-              </Typography>
             )}
           </Box>
         </Collapse>
@@ -2163,7 +1967,7 @@ export default function ServiceChaosPanel({ connectionParams }: ServiceChaosPane
               Stop
             </Button>
           )}
-          <IconButton size="small" aria-expanded={experimentsExpanded} onClick={(e) => { e.stopPropagation(); setExperimentsExpanded((v) => !v); }} aria-label={experimentsExpanded ? 'Collapse experiments' : 'Expand experiments'}>
+          <IconButton size="small" aria-label={experimentsExpanded ? 'Collapse experiments' : 'Expand experiments'}>
             {experimentsExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
           </IconButton>
         </Box>

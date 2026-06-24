@@ -7,7 +7,7 @@
 // Usage:
 //
 //	ctx := context.Background()
-//	ctr, err := mockserver.Run(ctx, "mockserver/mockserver:mockserver-7.2.0")
+//	ctr, err := mockserver.Run(ctx, "mockserver/mockserver:mockserver-7.0.0")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
@@ -32,7 +32,7 @@ const (
 
 	// DefaultImage is the default Docker image used when Run is called without an explicit image.
 	// The tag corresponds to the latest released MockServer version.
-	DefaultImage = "mockserver/mockserver:mockserver-7.2.0"
+	DefaultImage = "mockserver/mockserver:mockserver-7.0.0"
 )
 
 // MockServerContainer wraps a testcontainers.Container with MockServer-specific helpers.
@@ -63,7 +63,7 @@ func (c *MockServerContainer) ServerPort(ctx context.Context) (int, error) {
 }
 
 // Run creates and starts a MockServer container. The image parameter specifies the Docker
-// image to use (e.g. "mockserver/mockserver:mockserver-7.2.0"). Pass testcontainers
+// image to use (e.g. "mockserver/mockserver:mockserver-7.0.0"). Pass testcontainers
 // CustomizeRequestOption values to configure the container request further.
 //
 // The container waits for an HTTP 200 response on PUT /mockserver/status before

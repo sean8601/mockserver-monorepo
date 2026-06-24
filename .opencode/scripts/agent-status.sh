@@ -7,8 +7,7 @@
 #   - age (minutes since worktree creation)
 #   - activity (first line of `.tmp/agent-activity` inside the worktree, if present)
 #   - commit count ahead of origin/master
-#   - lock status (* if this worktree holds the merge lock — the directory
-#     "agent-rebase.lockdir" in the shared git common-dir, $(git rev-parse --git-common-dir))
+#   - lock status (* if this worktree appears to hold .git/agent-rebase.lock)
 #
 # Companion to `/worktree` and `/worktree-merge`. See
 # `.opencode/rules/worktree-workflow.md` for the broader workflow.
@@ -27,18 +26,11 @@ if [ -z "${REPO_ROOT}" ]; then
 fi
 
 WORKTREE_BASE="${REPO_ROOT}/.worktrees"
-# Canonical merge lock is a held directory mutex (see worktree-workflow.md Step 7),
-# living in the SHARED git common dir so it serialises across all worktrees (inside
-# a linked worktree ".git" is a file, not a dir). Existence == lock held; its
-# `holder` file records "<worktree-path> <pid> <epoch>". (A mkdir mutex has no fd
-# holder, so lsof cannot detect it — read the directory + marker instead.)
-GIT_COMMON_DIR="$(cd "${REPO_ROOT}" && git rev-parse --git-common-dir 2>/dev/null || echo "${REPO_ROOT}/.git")"
-case "${GIT_COMMON_DIR}" in /*) ;; *) GIT_COMMON_DIR="${REPO_ROOT}/${GIT_COMMON_DIR}" ;; esac
-LOCK_DIR="${GIT_COMMON_DIR}/agent-rebase.lockdir"
+LOCK_FILE="${REPO_ROOT}/.git/agent-rebase.lock"
 
 if [ ! -d "${WORKTREE_BASE}" ]; then
     echo "No agent worktrees active (${WORKTREE_BASE} does not exist)."
-    echo "Start or resume work in a worktree with /worktree — no work runs in the bare checkout (spec C4 / §8.3)."
+    echo "Start one with /worktree, or just keep working in the main checkout."
     exit 0
 fi
 
@@ -52,19 +44,12 @@ if [ "${#WORKTREE_DIRS[@]}" -eq 0 ]; then
     exit 0
 fi
 
-# Detect the held merge lock (directory mutex) and its recorded holder.
-# Held == the lock directory exists. The holder marker (best-effort, written by
-# the merge flow) names the holding worktree and PID; absence just means the
-# holder wasn't recorded, not that the lock is free.
-LOCK_HELD=""
-LOCK_HOLDER_WT=""
+# Identify the lock holder PID (if any). Best-effort: lsof may not be installed
+# everywhere, and on macOS the file-existence check is racey, so treat absence
+# as "not held".
 LOCK_HOLDER_PID=""
-if [ -d "${LOCK_DIR}" ]; then
-    LOCK_HELD="yes"
-    if [ -f "${LOCK_DIR}/holder" ]; then
-        LOCK_HOLDER_WT="$(awk 'NR==1 {print $1; exit}' "${LOCK_DIR}/holder" 2>/dev/null || true)"
-        LOCK_HOLDER_PID="$(awk 'NR==1 {print $2; exit}' "${LOCK_DIR}/holder" 2>/dev/null || true)"
-    fi
+if [ -e "${LOCK_FILE}" ] && command -v lsof >/dev/null 2>&1; then
+    LOCK_HOLDER_PID="$(lsof "${LOCK_FILE}" 2>/dev/null | awk 'NR>1 {print $2; exit}')"
 fi
 
 now_epoch="$(date +%s)"
@@ -97,22 +82,23 @@ for wt in "${WORKTREE_DIRS[@]}"; do
     # Commits ahead of master
     commits="$(git -C "${wt}" rev-list --count origin/master..HEAD 2>/dev/null || echo '?')"
 
-    # Lock indicator: mark "*" if the recorded holder of the merge lock is this
-    # worktree (matched by basename, since the holder path may be relative).
+    # Lock indicator: per-agent lock-holder detection is unreliable across
+    # subshells; just mark "*" if the lock file exists and the agent has any
+    # background process. Treat "*" as "this worktree might be rebasing".
     lock="-"
-    if [ -n "${LOCK_HOLDER_WT}" ] && [ "$(basename "${LOCK_HOLDER_WT}")" = "$(basename "${wt}")" ]; then
-        lock="*"
+    if [ -n "${LOCK_HOLDER_PID}" ]; then
+        # If the lock holder's CWD is this worktree, mark it
+        lock_cwd="$(lsof -p "${LOCK_HOLDER_PID}" 2>/dev/null | awk '$4 == "cwd" {print $NF; exit}')"
+        if [ "${lock_cwd}" = "${wt}" ] || [ "${lock_cwd}" = "${wt}/" ]; then
+            lock="*"
+        fi
     fi
 
     printf "%-26s  %-44s  %-8s  %-32s  %-7s  %s\n" \
         "${agent_id}" "${branch}" "${age}" "${activity}" "${commits}" "${lock}"
 done
 
-if [ -n "${LOCK_HELD}" ]; then
+if [ -n "${LOCK_HOLDER_PID}" ]; then
     echo
-    if [ -n "${LOCK_HOLDER_PID}" ] || [ -n "${LOCK_HOLDER_WT}" ]; then
-        echo "Merge lock held by PID ${LOCK_HOLDER_PID:-?} (${LOCK_HOLDER_WT:-unknown worktree}) — a merge is rebasing/re-verifying/integration-reviewing."
-    else
-        echo "Merge lock is currently held (${LOCK_DIR} present) — a merge is in progress."
-    fi
+    echo "Rebase lock currently held by PID ${LOCK_HOLDER_PID}."
 fi

@@ -149,7 +149,7 @@ cd mockserver
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/buildkite_quick_build.sh` | CI build — `mvnw clean install` with 6GB heap (`-Xms2048m -Xmx6144m`) |
+| `scripts/buildkite_quick_build.sh` | CI build — `mvnw clean install` with 8GB heap |
 | `scripts/buildkite_deploy_snapshot.sh` | CI deploy — `mvnw clean deploy` to Sonatype snapshots |
 | `scripts/local_quick_build.sh` | Local build — Java 17, 3 threads, includes integration tests |
 | `scripts/local_online_build.sh` | Local build — Java 17, includes integration tests |

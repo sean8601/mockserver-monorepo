@@ -120,7 +120,7 @@ mockserver.enableCORSForAllResponses=false</code></pre>
             <td><span class="this_value">(none)</span></td>
             <td>Load a set of expectations from a JSON file when MockServer starts — useful for shared or CI setups</td>
         </tr>
-        <tr>
+        <tr id="button_configuration_metrics_enabled">
             <td><span class="inline_code">metricsEnabled</span></td>
             <td><span class="inline_code">MOCKSERVER_METRICS_ENABLED</span></td>
             <td><span class="this_value">false</span></td>
@@ -1603,7 +1603,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p><strong>Required scopes</strong> &mdash; a comma- or space-separated list of scopes the token must contain to be accepted. When empty (the default) any validly-signed, in-audience token is accepted.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
     <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcRequiredScopes(String requiredScopes)</code></pre>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneOidcRequiredScopes(Set&lt;String&gt; requiredScopes)</code></pre>
     <p>System Property:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneOidcRequiredScopes=...</code></pre>
     <p>Environment Variable:</p>
@@ -1638,7 +1638,7 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <p><strong>Scope mapping</strong> &mdash; maps required scopes (or groups) to control-plane operations such as read and write, letting fine-grained scopes gate which admin actions a caller may perform. Has effect only when control-plane authorization is enabled.</p>
     <p>Type: <span class="keyword">string</span> Default: <span class="this_value">""</span></p>
     <p>Java Code:</p>
-    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneScopeMapping(String scopeMapping)</code></pre>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.controlPlaneScopeMapping(Map&lt;String, ControlPlaneRole&gt; scopeMapping)</code></pre>
     <p>System Property:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.controlPlaneScopeMapping=...</code></pre>
     <p>Environment Variable:</p>
@@ -1888,6 +1888,36 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PER_EXPECTATION_METRICS=...</code></pre>
     <p>Example:</p>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.perExpectationMetrics="true"</code></pre>
+</div>
+
+<button id="button_configuration_slow_request_threshold_millis" class="accordion title"><strong>Slow Request Threshold</strong></button>
+<div class="panel title">
+    <p>Threshold in milliseconds for flagging slow forwarded requests. When a forwarded request's total time exceeds this threshold, MockServer emits a <span class="inline_code">WARN</span>-level log entry identifying the slow request and increments the <span class="inline_code">mock_server_slow_requests_total</span> Prometheus counter (visible when <span class="inline_code">metricsEnabled</span> is on). This makes it easy to spot upstreams that are responding slowly without trawling the full event log.</p>
+    <p>This is <strong>off by default</strong> (threshold <span class="this_value">0</span>, no requests flagged). Set it to the latency above which a forwarded request should be considered slow for your environment.</p>
+    <p>Type: <span class="keyword">long</span> Default: <span class="this_value">0</span> (disabled)</p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.slowRequestThresholdMillis(long milliseconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.slowRequestThresholdMillis=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.slowRequestThresholdMillis="2000"</code></pre>
+</div>
+
+<button id="button_configuration_metrics_request_duration_route_labels" class="accordion title"><strong>Metrics Request Duration Route Labels</strong></button>
+<div class="panel title">
+    <p>When enabled (alongside <span class="inline_code">metricsEnabled</span>), MockServer registers an additional histogram <span class="inline_code">mock_server_request_duration_by_method_seconds</span> with a <span class="inline_code">method</span> label for the HTTP method (GET, POST, etc.), alongside the unlabelled <span class="inline_code">mock_server_request_duration_seconds</span>. This lets you break request-latency percentiles down per HTTP method.</p>
+    <p>This is <strong>off by default</strong>. Cardinality is bounded to the set of standard HTTP methods, so enabling it adds only a small, fixed number of label values.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.metricsRequestDurationRouteLabels(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsRequestDurationRouteLabels=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.metricsEnabled="true" -Dmockserver.metricsRequestDurationRouteLabels="true"</code></pre>
 </div>
 
 <button id="button_configuration_redact_secrets_in_recorded_expectations" class="accordion title"><strong>Redact Secrets In Recorded Expectations</strong></button>

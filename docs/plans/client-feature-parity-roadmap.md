@@ -41,22 +41,13 @@ A precise, file:line re-verification of every claimed gap found **most were alre
   carry `crossProtocolScenarios`/`responseWeights`/`switchAfter`/`rateLimit`/full `responseMode`);
   fixed the generator's reference-file list (`rateLimit`, `conditionalRequestDefinition`, `recoverAfter`).
 
-## Callbacks — DONE
+## The ONE real remaining gap: callbacks
 
-Class callbacks (`httpResponseClassCallback`/`httpForwardClassCallback`) and object/closure
-callbacks (`httpObjectCallback` over the callback WebSocket) are now implemented across all
-applicable clients. PHP supports only class callbacks (REST-only; no WebSocket).
-
-| Client | Class callback | Object callback |
-|--------|---------------|-----------------|
-| Java | DONE | DONE |
-| Go | DONE (`callback.go`: `HttpClassCallback`, `MockWithCallback`) | DONE (`HttpObjectCallback`, `MockWithCallback`) |
-| .NET | DONE (`RespondWithClassCallback`, `ForwardWithClassCallback`) | DONE (`BreakpointWebSocketClient`) |
-| Rust | DONE (`HttpClassCallback` in `model.rs`) | DONE (`mock_with_callback` via `breakpoint.rs`) |
-| Node | DONE (`respond(HttpClassCallback)`, `.callback(handler)`) | DONE (`.callback()` over WS) |
-| Python | DONE (model + builder) | DONE (WS client) |
-| Ruby | verify — no explicit check done | verify |
-| PHP | DONE (`HttpClassCallback.php`) | infeasible (REST-only, no WS) |
+| Capability | Missing in | Effort | Validation |
+|------------|-----------|--------|-----------|
+| **Class callbacks** (`httpResponseClassCallback`/`httpForwardClassCallback` — declarative, REST-only) | Go, .NET, Rust, PHP, Node; Python has model not builder | S per client (model + builder; server accepts it) | harness: assert the server accepts the expectation |
+| **Object/closure callbacks** (`httpObjectCallback` over the callback WebSocket — write the response in your language) | Go, .NET, Rust (reuse their existing breakpoint WS client + clientId handshake + request/response envelope); Python has WS, needs builders | M-L per client | harness end-to-end: register a closure, send a request, assert the dynamic response |
+| Object/closure callbacks in PHP | — | **infeasible** (REST-only, no WS) — document the limitation | — |
 
 Callback wire contract (from `httpClassCallback.json` / `httpObjectCallback.json` + `CallbackWebSocketServerHandler`): class = `{callbackClass, delay?, primary?}`; object = `{clientId, responseCallback, delay?, primary?}`; the WS registers a clientId, the server sends `{type:"org.mockserver.model.HttpRequest", value}` and the client replies `{type:"org.mockserver.model.HttpResponse", value}` carrying a `WebSocketCorrelationId` header. Reference: Node `webSocketClient.js`, Java `BreakpointWebSocketClient`.
 
@@ -80,7 +71,7 @@ high-value fixes:
 | `chaos_testing.html` | ~1,770 | feature/overview matrix + wrap long example sequences in accordions | M |
 | `using_openapi.html` | ~1,508 | capability feature table (generate / match / verify / clear × OpenAPI / WSDL) | S |
 | `debugging_issues.html` | ~904 | top feature table of retrieval methods | S |
-| `jekyll-www.mock-server.com/proxy/configuring_sut.html` | ~448 | anchor every h3 + brief proxy-type TOC | S |
+| `proxy/configuring_sut.html` | ~448 | anchor every h3 + brief proxy-type TOC | S |
 
 ## How to validate each wave
 

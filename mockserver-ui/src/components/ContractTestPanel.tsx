@@ -17,10 +17,8 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import HumanErrorAlert from './HumanErrorAlert';
-import TruncatedText from './TruncatedText';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
-import { monospaceFontFamily } from '../theme';
 import {
   runContractTest,
   type ContractTestReport,
@@ -152,7 +150,7 @@ export default function ContractTestPanel({ connectionParams }: ContractTestPane
               The spec produced no testable operations.
             </Typography>
           ) : (
-            <TableContainer sx={{ overflow: 'auto' }}>
+            <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -188,29 +186,27 @@ export default function ContractTestPanel({ connectionParams }: ContractTestPane
                           />
                         )}
                       </TableCell>
-                      <TableCell sx={{ maxWidth: 200 }}>
-                        <TruncatedText
-                          text={result.operationId}
-                          sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                        />
+                      <TableCell>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          {result.operationId}
+                        </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
                           {result.method}
                         </Typography>
                       </TableCell>
-                      <TableCell sx={{ maxWidth: 240 }}>
-                        <TruncatedText
-                          text={result.path}
-                          sx={{ fontFamily: monospaceFontFamily, fontSize: '0.75rem' }}
-                        />
+                      <TableCell>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          {result.path}
+                        </Typography>
                       </TableCell>
                       <TableCell align="right">
                         <Typography variant="caption">
                           {result.statusCodeReceived}
                         </Typography>
                       </TableCell>
-                      <TableCell sx={{ maxWidth: 320 }}>
+                      <TableCell>
                         {result.validationErrors.length === 0 ? (
                           <Typography variant="caption" color="text.secondary">
                             —
@@ -223,7 +219,7 @@ export default function ContractTestPanel({ connectionParams }: ContractTestPane
                                 component="li"
                                 variant="caption"
                                 color="error"
-                                sx={{ fontFamily: monospaceFontFamily, wordBreak: 'break-word' }}
+                                sx={{ fontFamily: 'monospace' }}
                               >
                                 {err}
                               </Typography>

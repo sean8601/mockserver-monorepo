@@ -18,7 +18,7 @@ Key facts:
 
 ```mermaid
 flowchart TB
-    core["mockserver-core\nmodel/schema/*.json\n(50 source schema files)"]
+    core["mockserver-core\nmodel/schema/*.json\n(45 source schema files)"]
     gen["scripts/generate-editor-expectation-schema.mjs\n(schema assembly — run locally)"]
     schema["mockserver-expectation.schema.json\n(generated, committed artifact)"]
     vsc_schema["mockserver-vscode/schemas/\nmockserver-expectation.schema.json"]
@@ -122,7 +122,7 @@ Read fresh on every use from `vscode.workspace.getConfiguration("mockserver")`:
 
 **Location:** `mockserver-jetbrains/`
 
-**Language:** Kotlin, compiled against IntelliJ Platform `2024.3` (`IC`), since build `243`, with no upper build bound (open-ended compatibility).
+**Language:** Kotlin, compiled against IntelliJ Platform `2024.3` (`IC`), since build `243`, until build `253.*`.
 
 **Build:** Gradle (`build.gradle.kts`) using the IntelliJ Platform Gradle Plugin 2.16. Requires Gradle 9.5.1+ (provided by the Gradle wrapper). JVM toolchain: 17.
 
@@ -165,7 +165,7 @@ Stored in `mockserver.xml` via `PersistentStateComponent`:
 
 **Script:** `scripts/generate-editor-expectation-schema.mjs`
 
-The `mockserver-core` JSON Schema set consists of ~50 cross-referencing files under
+The `mockserver-core` JSON Schema set consists of ~45 cross-referencing files under
 `mockserver/mockserver-core/src/main/resources/org/mockserver/model/schema/`. The
 server assembles them at runtime in
 `org.mockserver.validator.jsonschema.JsonSchemaValidator#addReferencesIntoSchema`.

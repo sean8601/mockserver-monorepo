@@ -58,7 +58,7 @@ name: MockServer (Node)
 description: Officially maintained Testcontainers module for MockServer — starts a mockserver/mockserver Docker container for integration testing in Node.js/TypeScript.
 language: nodejs
 homepage: https://www.mock-server.com
-source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/node
+source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/node
 package: https://www.npmjs.com/package/@mockserver/testcontainers
 maintainer: official
 ---
@@ -72,7 +72,7 @@ name: MockServer (Python)
 description: Officially maintained Testcontainers module for MockServer — starts a mockserver/mockserver Docker container for integration testing in Python.
 language: python
 homepage: https://www.mock-server.com
-source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/python
+source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/python
 package: https://pypi.org/project/testcontainers-mockserver/
 maintainer: official
 ---
@@ -86,7 +86,7 @@ name: MockServer (.NET)
 description: Officially maintained Testcontainers module for MockServer — starts a mockserver/mockserver Docker container for integration testing in .NET.
 language: dotnet
 homepage: https://www.mock-server.com
-source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/dotnet
+source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/dotnet
 package: https://www.nuget.org/packages/MockServer.Testcontainers/
 maintainer: official
 ---
@@ -100,7 +100,7 @@ name: MockServer (Go)
 description: Officially maintained Testcontainers module for MockServer — starts a mockserver/mockserver Docker container for integration testing in Go.
 language: go
 homepage: https://www.mock-server.com
-source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/go
+source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/go
 package: https://pkg.go.dev/github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go
 maintainer: official
 ---
@@ -114,7 +114,7 @@ name: MockServer (Rust)
 description: Officially maintained Testcontainers module for MockServer — starts a mockserver/mockserver Docker container for integration testing in Rust.
 language: rust
 homepage: https://www.mock-server.com
-source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/rust
+source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/rust
 package: https://crates.io/crates/testcontainers-mockserver
 maintainer: official
 ---
@@ -130,7 +130,7 @@ maintainer: official
 | Python | `pip install testcontainers-mockserver` |
 | .NET | `dotnet add package MockServer.Testcontainers` |
 | Go | `go get github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go` |
-| Rust | `testcontainers-mockserver = "7.2.0"` in `[dev-dependencies]` |
+| Rust | `testcontainers-mockserver = "7.0"` in `[dev-dependencies]` |
 
 Related: Java module update in #184.
 ```

@@ -50,17 +50,13 @@ Isolation is **between independent sessions, not within one**.
 ## Workflow
 
 ```
-1. /worktree              ──→  Agent creates worktree, switches CWD into it
-2. Agent makes changes          (commits as it goes, all on the worktree branch)
-3. Agent runs tests             (verification gate 1)
-4. Agent runs lint/checkstyle   (verification gate 2)
-5. Agent spawns review-final    (verification gate 3 — unit/Tier-1, this worktree's diff)
-6. Agent shows diff summary      (verification gate 4 — summarise & proceed)
-7. Acquire held lock + rebase    (produce integrated result; NO push yet)
-8. Re-verify integrated result   (under held lock, §8.4)
-9. review-integration on merge   (under held lock, Tier-2/3 integration review, §14.6)
-10. Push only on PASS, release   (the gated reintegration — LR4; push then frees the lock)
-11. Cleanup                      (remove worktree only after a clean reintegration)
+1. /worktree            ──→  Agent creates worktree, switches CWD into it
+2. Agent makes changes        (commits as it goes, all on the worktree branch)
+3. Agent runs tests           (verification gate 1)
+4. Agent runs lint/checkstyle (verification gate 2)
+5. Agent spawns review-final  (verification gate 3)
+6. Agent shows diff summary    (verification gate 4 — summarise & proceed)
+7. flock + rebase + cleanup   (atomic merge to master)
 ```
 
 ### Step 1 — Create the worktree
@@ -86,14 +82,6 @@ so a session resumption can find it again.
 All edits, commits, builds, tests happen inside `WORKTREE_DIR`. The
 agent commits incrementally on the worktree branch (no rebase to master
 yet).
-
-**Attributable work artefacts (§8.3).** Temporary/scratch artefacts —
-`.tmp/` scratch files, activity files, intermediate build logs — live
-**inside this worktree** (e.g. `WORKTREE_DIR/.tmp/`), so they are
-namespaced by the worktree / agent ID and are attributable to the agent
-and task that produced them. Do not write scratch to the bare checkout's
-`.tmp/` or to a shared system temp dir; keeping them worktree-local also
-means they are cleaned up with the worktree (Step 10).
 
 #### Activity recording for `/agent-status`
 
@@ -139,13 +127,8 @@ already runs checkstyle. For frontend changes in `mockserver-ui` or
 `mockserver-client-node`, also run `npm run lint` and `npm run build`
 (strict tsc).
 
-**Gate 3 — Adversarial review (unit/Tier-1).** Spawn the `review-final`
-agent on the worktree's diff vs master. This is the **pre-rebase,
-unit-level** review of *this* worktree's own changes. Block on BLOCK
-verdict, proceed on PASS. (The **integration** review of the merged
-result happens *after* the rebase, under `review-integration` — Step 9,
-§14.6 — because combination defects only become visible once concurrent
-work is pulled in.)
+**Gate 3 — Adversarial review.** Spawn the `review-final` agent on the
+worktree's diff vs master. Block on BLOCK verdict, proceed on PASS.
 
 ```
 Agent(
@@ -164,119 +147,42 @@ interject at any point to halt or amend. This gate is **fail-closed**:
 if any of gates 1–3 did not return a clean PASS, do NOT merge — leave
 the worktree unmerged for inspection.
 
-### Step 7 — Acquire the merge lock and rebase (produce, do NOT yet push, the integrated result)
-
-The rebase below brings concurrent work from `master` into this worktree;
-its result is the **integrated** result that Steps 8–9 gate **before** it
-reaches the shared trunk. **The push does NOT happen here.** The merge
-lock is acquired now and **held across Steps 7–10** so that the result
-pushed in Step 10 is exactly the result that was re-verified (Step 8) and
-integration-reviewed (Step 9) — i.e. the integration tier genuinely
-*gates reintegration* (§8.4, §14.6 LR4), rather than running after a push
-has already landed the combination on master.
+### Step 7 — Atomic merge via flock
 
 ```bash
 # Respect the operator halt before any reintegration (see [[operator-halt]]).
 .opencode/scripts/check-halt.sh || { echo "operator halt engaged — not merging"; exit 1; }
 
-# Acquire a HELD lock (released only in Step 10, after a PASS push or on abort).
-# mkdir is an atomic POSIX mutex; the lock spans the agent-driven gate steps,
-# so it is NOT a single flock bash -c (which would release before the review runs).
-# The lock lives in the SHARED git common dir (not ".git/…": inside a linked
-# worktree ".git" is a *file*, and a per-worktree gitdir would not serialise
-# across sessions). git rev-parse --git-common-dir resolves it from any worktree.
-LOCK_DIR="$(git rev-parse --git-common-dir)/agent-rebase.lockdir"; START=$(date +%s)
+LOCK_FILE=".git/agent-rebase.lock"
+flock --timeout 300 "${LOCK_FILE}" bash -c '
+    set -euo pipefail
+    git fetch origin master --quiet
+    git rebase origin/master   # may resolve interactively if conflicts
+    git push origin HEAD:master
+'
+```
+
+5-minute (`--timeout 300`) wait if another agent holds the lock. If
+timeout exceeded, fail with a clear error: *"Rebase lock held for >5m
+by another session — retry in a few minutes or check `lsof
+.git/agent-rebase.lock` for the holder."*
+
+`flock` is POSIX, present by default on macOS and Linux. On older macOS
+without `flock`, fall back to `mkdir`-based mutex (atomic on POSIX):
+
+```bash
+LOCK_DIR=".git/agent-rebase.lockdir"
 while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
-    [ "$(($(date +%s) - START))" -gt 300 ] && { echo "Merge lock held >5m by another session — retry shortly or check ${LOCK_DIR}/holder"; exit 1; }
+    [ "$(($(date +%s) - START))" -gt 300 ] && { echo "Lock timeout"; exit 1; }
     sleep 2
 done
-# Record the holder so /agent-status can attribute the lock (a mkdir mutex has no
-# fd holder for lsof to find — see agent-status.sh). Format: "<worktree> <pid> <epoch>".
-printf '%s %s %s\n' "$(git rev-parse --show-toplevel)" "$$" "$(date +%s)" > "${LOCK_DIR}/holder"
-# From here the lock is held; every exit path below MUST release it with
-#   rm -rf "${LOCK_DIR}"   (plain rmdir fails — the holder file makes it non-empty).
-git fetch origin master --quiet
-git rebase origin/master   # may resolve interactively if conflicts
-# NOTE: no push yet — Steps 8–9 must PASS first.
+trap "rmdir ${LOCK_DIR}" EXIT
+# ... rebase + push ...
 ```
 
-The lock is held for the duration of the integration gate. This
-intentionally serialises merges (correctness/safety over throughput,
-spec O1/O9 > O3): a second session's merge waits up to 5 minutes for the
-lock and retries. `flock --timeout 300 "${LOCK_DIR}.f"` may be used
-instead where available, **provided** the same descriptor is held open
-across Steps 8–10 (not a self-contained `flock bash -c`).
-
-### Step 8 — Re-verify the integrated result, under the held lock (§8.4 / §14.6)
-
-A clean rebase is **not** proof of a correct integration: concurrent
-work pulled in from `master` can introduce *semantic* breakage even when
-git reports no textual conflict (interface drift, a method another
-session renamed, a duplicated change). So after the rebase brings in
-concurrent work, **re-run the affected validations on the integrated
-tree** — at minimum re-run Gate 1's targeted module tests plus
-mockserver-core, and Gate 2's lint/type checks — against the rebased
-`HEAD`, not the pre-rebase commits. This re-verification is mandatory
-(§8.4) and **gates the push** (Step 10). If it fails, do not push and do
-not remove the worktree; release the lock, leave the worktree intact for
-inspection and disposition (§8.3 "cleanup MUST NOT discard unmerged
-work"), and fix forward (a follow-up commit on the worktree branch,
-re-running Steps 7–9).
-
-### Step 9 — Integration adversarial review, under the held lock (§14.6)
-
-The merge-gate adversarial review is the **Tier-2/3 integration
-review**, not a generic final pass, and it runs **before the push** while
-the lock is held. Spawn a *separate, freshly-spawned, clean-context*
-reviewer — the **`review-final`** agent **applying the `review-integration`
-constitution** (the constitution is a profile, not a separate agent) (§14.3) — given
-the integrated diff (`git diff origin/master...HEAD` *after* the rebase),
-the re-verification results from Step 8, and the plan/wave scope — to
-probe what only becomes visible in the combination: **combination
-defects, interface drift between units, duplicated or conflicting
-changes, dropped units, and end-to-end coherence vs the plan's intent.**
-This reviewer MUST NOT be the implementer or any context-anchored
-continuation of it, and MUST NOT be a resumed `review-final` session
-applying its default profile instead of the `review-integration`
-constitution. Loop to convergence or the 8-iteration cap per §14.5. **On
-BLOCK:** do not push; release the lock; leave the worktree for fix-forward
-(re-run Steps 7–9). **On PASS:** proceed to Step 10.
-
-### Step 10 — Push the gated result, then release the lock
-
-Only now — after Step 8 re-verify PASS and Step 9 integration-review PASS,
-still holding the lock from Step 7 — push the integrated result and
-release the lock:
+### Step 8 — Cleanup
 
 ```bash
-git push origin HEAD:master
-rm -rf "${LOCK_DIR}"   # release the merge lock (also do this on any abort above; rm -rf because the holder file makes it non-empty)
-```
-
-If the push is rejected because `master` advanced while the gate ran
-(another session merged after this rebase), release the lock and restart
-from Step 7 (re-fetch, re-rebase, re-gate) — never force-push.
-
-### Step 11 — Cleanup
-
-Remove the worktree **promptly** once — and only once — its work has
-been cleanly reintegrated to `master` (Steps 7–10 all PASS, push landed)
-or the work has been explicitly abandoned (§8.3). A worktree that still holds
-**unreintegrated** changes (a failed/blocked gate, an aborted rebase,
-uncommitted or unpushed work) **MUST NOT** be removed: surface it for
-disposition (it shows up in `/agent-status`) and let the user decide.
-**Cleanup MUST NOT discard unmerged work without an explicit, logged
-decision** — the `--force` below is safe only because reaching this step
-means the branch was successfully pushed.
-
-```bash
-# Guard: only clean up after the branch has actually landed on master.
-git fetch origin master --quiet
-if ! git merge-base --is-ancestor HEAD origin/master; then
-    echo "Worktree holds unreintegrated work — NOT removing. Surfacing for disposition (see /agent-status)." >&2
-    exit 1
-fi
-
 cd "$(git rev-parse --show-toplevel)/.."  # navigate to the parent of the worktree directory
 git worktree remove "${WORKTREE_DIR}" --force
 git branch -D "${BRANCH}"
@@ -290,23 +196,19 @@ rm -f .tmp/active-worktree
 - Agent A creates `.worktrees/agent-20260528-141500-abc123`
 - Agent B creates `.worktrees/agent-20260528-141512-def456`
 - Both edit files independently in their own worktrees — no interference
-- A finishes first, acquires the merge lock, rebases onto master,
-  re-verifies + runs the integration review **under the held lock**, and
-  pushes only on PASS, then releases the lock
-- B finishes second, acquires the lock (waits while A holds it through its
-  gate), rebases onto **updated** master (includes A's changes),
-  re-verifies + integration-reviews, pushes on PASS
+- A finishes first, acquires `flock`, rebases onto master, pushes, releases lock
+- B finishes second, acquires `flock` (waits if A still rebasing),
+  rebases onto **updated** master (includes A's changes), pushes
 - If B's rebase finds conflicts with A's changes, B resolves them
   inside the worktree before pushing
 
 ### Lock contention timeout
 
-- Agent C tries to acquire the merge lock while Agent D has held it >5m
-  (something pathological — e.g., D is blocking on an interactive conflict
-  resolution, or its integration review is stuck)
-- C's `mkdir`-lock acquisition loop exceeds its 300s budget and exits non-zero
-- C surfaces a clear message and stops; the user investigates D's worktree
-  (and can read the `holder` file in `$(git rev-parse --git-common-dir)/agent-rebase.lockdir` to see who holds it)
+- Agent C tries to rebase while Agent D's rebase has been running >5m
+  (something pathological — e.g., D is blocking on an interactive
+  conflict resolution)
+- C's `flock --timeout 300` exits non-zero
+- C surfaces a clear message and stops; user investigates D's worktree
 
 ## Failure Modes
 
@@ -316,19 +218,11 @@ rm -f .tmp/active-worktree
 | Gate 2 (lint) fails | Same — fix lint and re-run merge |
 | Gate 3 (review-final) returns BLOCK | Worktree preserved; agent shows review verdict; user decides |
 | Gate 4 (a gate 1–3 not a clean PASS, or user interjects) | Worktree preserved; merge halted; user keeps the diff to iterate |
-| Merge-lock timeout | Worktree preserved; agent reports lock holder (the `holder` file in `$(git rev-parse --git-common-dir)/agent-rebase.lockdir`); retry later |
+| flock timeout | Worktree preserved; agent reports lock holder; retry later |
 | Rebase conflict | Worktree preserved; agent attempts resolution or hands back to user |
-| Step 8 re-verify fails on integrated tree | Worktree preserved; push not finalised; integration breakage surfaced |
-| Step 9 `review-integration` returns BLOCK | Worktree preserved; integrated diff shown; user decides |
 
-The invariant: **no failed merge ever destroys work** (§8.3 — cleanup
-MUST NOT discard unmerged work without an explicit, logged decision). A
-worktree is removed (Step 11) **only** once its work has been cleanly
-reintegrated to `master` — all of Gates 1–4, the locked rebase, the
-under-lock re-verification (§8.4) and `review-integration` pass (§14.6),
-and the gated push (Step 10) — or once the work is explicitly abandoned. A worktree still
-holding unreintegrated changes is **never** removed; it is surfaced for
-disposition via `/agent-status`.
+The invariant: **no failed merge ever destroys work**. The worktree is
+deleted only after a successful push.
 
 ## What This Replaces (Partially)
 

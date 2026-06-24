@@ -90,7 +90,7 @@ two properties:
   replicate across the fleet via the same CRUD-entity replication as the chaos
   registries.
 
-Profile names are validated (`isValidName`): 1–128 chars of `[A-Za-z0-9._ -]` (letters, digits, dot, underscore, hyphen, and interior space), with no leading or trailing space.
+Profile names are validated (`isValidName`): 1–128 chars of `[A-Za-z0-9._-]`.
 
 The dashboard Chaos panel (`mockserver-ui` `ServiceChaosPanel`) exposes the
 library as a *Saved Profiles* chip list with a "Save as Profile" button (saves
@@ -353,7 +353,6 @@ The three faults are carried as new fields on `TcpChaosProfile` and are register
 | Layer | Field | Behaviour |
 |-------|-------|-----------|
 | L1 | `resetMidResponse` | After the response head is flushed, forces a TCP RST (SO_LINGER 0 + `channel.close()`, the same RST mechanism as `TcpChaosHandler`) instead of a clean FIN. The client sees "connection reset" mid-stream — the "server crashed while replying" fault. |
-| L1 | `resetAfterResponseChunks` | Number of response body chunks to write before the mid-response RST. `null` or `0` means reset immediately after the response head. v1 treats values > 0 on non-chunked bodies as "after head" (deferred). Has no effect unless `resetMidResponse` is also `true`. |
 | L2 | `slowCloseDelay` | A `Delay` (with optional jitter) applied before the socket FIN on the response path, even when `ConnectionOptions.closeSocketDelay` is null. Lets a host linger on close without a per-expectation connection option. |
 | L3 | `http2GoAway` | On HTTP/2 connections, emits a GOAWAY frame on the response path before the response head so the client stops opening new streams. `http2GoAwayErrorCode` (default 0 = NO_ERROR) and `http2GoAwayLastStreamId` (default: current connection last-stream) are also configurable. HTTP/1.1 connections have no GOAWAY concept; callers degrade to `Connection: close` + 503 instead. |
 

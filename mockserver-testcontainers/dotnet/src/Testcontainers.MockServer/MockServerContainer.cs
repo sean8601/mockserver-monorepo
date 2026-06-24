@@ -14,7 +14,7 @@ public sealed class MockServerContainer : DockerContainer
     /// <summary>
     /// The default MockServer version matching this package release.
     /// </summary>
-    public const string DefaultVersion = "7.2.0";
+    public const string DefaultVersion = "7.0.0";
 
     /// <summary>
     /// The default container port (HTTP, HTTPS, SOCKS, and HTTP CONNECT all served on one port).

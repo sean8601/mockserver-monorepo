@@ -7,7 +7,6 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
-import ButtonBase from '@mui/material/ButtonBase';
 import Alert from '@mui/material/Alert';
 import Collapse from '@mui/material/Collapse';
 import ToggleButton from '@mui/material/ToggleButton';
@@ -30,7 +29,6 @@ import VerificationReview from './VerificationReview';
 import HumanErrorAlert from './HumanErrorAlert';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
-import { useDashboardStore } from '../store';
 
 const METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -148,30 +146,20 @@ function MatcherSection({
 }) {
   return (
     <Box sx={{ mt: 1.5 }}>
-      <ButtonBase
+      <Box
         onClick={onToggle}
+        sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+        role="button"
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          width: '100%',
-          justifyContent: 'flex-start',
-          textAlign: 'left',
-          userSelect: 'none',
-          borderRadius: 1,
-          py: 0.5,
-        }}
       >
-        {expanded ? (
-          <ExpandLessIcon fontSize="small" sx={{ mx: 1 }} />
-        ) : (
-          <ExpandMoreIcon fontSize="small" sx={{ mx: 1 }} />
-        )}
+        <IconButton size="small" aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}>
+          {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+        </IconButton>
         <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
           {title}
         </Typography>
-      </ButtonBase>
+      </Box>
       <Collapse in={expanded}>
         <Box sx={{ mt: 1, pl: 1 }}>
           {caption && (
@@ -206,7 +194,6 @@ function ResultAlert({ result }: { result: VerifyResult | null }) {
 }
 
 export default function VerificationView({ connectionParams }: { connectionParams: ConnectionParams }) {
-  const setNotification = useDashboardStore((s) => s.setNotification);
   const [mode, setMode] = useState<'single' | 'sequence'>('single');
 
   // Single-request verification
@@ -239,15 +226,12 @@ export default function VerificationView({ connectionParams }: { connectionParam
     setResult(null);
     try {
       setResult(await fn());
-      // The PASS/FAIL outcome is shown inline below; the toast only confirms the
-      // verification actually ran against the server.
-      setNotification({ message: 'Verification ran', severity: 'success' });
     } catch (e) {
       setError(humanizeError(e));
     } finally {
       setBusy(false);
     }
-  }, [setNotification]);
+  }, []);
 
   const verifySingle = () => run(() => {
     const httpResponse = buildHttpResponse(singleResponse);

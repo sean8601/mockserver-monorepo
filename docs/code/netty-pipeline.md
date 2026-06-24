@@ -205,10 +205,7 @@ graph LR
     G --> MCP["McpStreamableHttpHandler
 (conditional)"]
     MCP --> H[MockServerHttpServerCodec]
-    H --> TC[TraceContextHandler]
-    TC --> AS["AltSvcHeaderHandler
-(conditional)"]
-    AS --> I[HttpRequestHandler]
+    H --> I[HttpRequestHandler]
 ```
 
 | Handler | Class | Purpose |
@@ -224,8 +221,6 @@ graph LR
 | DashboardWebSocketHandler | `o.m.dashboard` | Intercepts `/_mockserver_ui_websocket` |
 | McpStreamableHttpHandler | `o.m.netty.mcp` | Intercepts `/mockserver/mcp` for MCP (Model Context Protocol) Streamable HTTP transport. Only added when `ConfigurationProperties.mcpEnabled()` is true. POST requests are offloaded to a dedicated executor (`McpSessionManager.getExecutor()`) to avoid blocking the Netty event loop during blocking tool calls (e.g., `Future.get()`) |
 | MockServerHttpServerCodec | `o.m.codec` | Converts Netty HTTP ↔ MockServer model |
-| TraceContextHandler | `o.m.netty.unification` | Extracts W3C `traceparent`/`tracestate` headers and propagates trace context for OpenTelemetry integration |
-| AltSvcHeaderHandler | `o.m.netty.unification` | (Conditional) Adds `Alt-Svc` response header advertising the HTTP/3 QUIC port. Only added when `http3Port` is configured |
 | HttpRequestHandler | `o.m.netty` | Main request processing |
 
 #### HTTP/2 Pipeline

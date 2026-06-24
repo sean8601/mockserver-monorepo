@@ -15,7 +15,6 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SettingsIcon from '@mui/icons-material/Settings';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
-import TuneIcon from '@mui/icons-material/Tune';
 import RuleIcon from '@mui/icons-material/Rule';
 import ClockDialog from './ClockDialog';
 import ConfigurationDialog from './ConfigurationDialog';
@@ -56,8 +55,6 @@ import type { ReactNode } from 'react';
 import BuildIcon from '@mui/icons-material/Build';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import SchemaIcon from '@mui/icons-material/Schema';
-import BadgeIcon from '@mui/icons-material/Badge';
 import { useState, useEffect } from 'react';
 import { useDashboardStore, type ViewMode } from '../store';
 import type { ConnectionStatus } from '../types';
@@ -76,8 +73,6 @@ import OpenApiImportDialog from './OpenApiImportDialog';
 import PactExportDialog from './PactExportDialog';
 import OidcDialog from './OidcDialog';
 import SamlDialog from './SamlDialog';
-import ScimDialog from './ScimDialog';
-import GraphqlImportDialog from './GraphqlImportDialog';
 import ShortcutsDialog from './ShortcutsDialog';
 import AsyncApiDialog from './AsyncApiDialog';
 import CrudDialog from './CrudDialog';
@@ -310,19 +305,12 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [modeTooltipOpen, setModeTooltipOpen] = useState(false);
   const [toolsAnchorEl, setToolsAnchorEl] = useState<null | HTMLElement>(null);
-  // Anchor for the grouped "Tools" (diagnostics) overflow menu — keyboard
-  // shortcuts, server clock, explain-unmatched, matcher playground, and server
-  // configuration live here as labelled items rather than as a row of icon
-  // buttons, keeping the toolbar from wrapping on narrow screens.
-  const [diagnosticsAnchorEl, setDiagnosticsAnchorEl] = useState<null | HTMLElement>(null);
   const [clockOpen, setClockOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [oidcOpen, setOidcOpen] = useState(false);
   const [samlOpen, setSamlOpen] = useState(false);
-  const [scimOpen, setScimOpen] = useState(false);
-  const [graphqlOpen, setGraphqlOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [asyncApiOpen, setAsyncApiOpen] = useState(false);
   const [wsdlOpen, setWsdlOpen] = useState(false);
@@ -559,74 +547,31 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           </Box>
         )}
         <Box sx={{ flex: compactNav ? 1 : '0 0 auto' }} />
-        <Tooltip title="Tools — shortcuts, clock, diagnostics, configuration">
-          <IconButton
-            size="small"
-            color="inherit"
-            aria-label="Tools and diagnostics"
-            aria-haspopup="menu"
-            aria-expanded={Boolean(diagnosticsAnchorEl)}
-            onClick={(e) => setDiagnosticsAnchorEl(e.currentTarget)}
-          >
-            <TuneIcon fontSize="small" />
+        <Tooltip title="Keyboard shortcuts">
+          <IconButton size="small" color="inherit" onClick={() => setShortcutsOpen(true)} aria-label="Keyboard shortcuts">
+            <KeyboardIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Menu
-          anchorEl={diagnosticsAnchorEl}
-          open={Boolean(diagnosticsAnchorEl)}
-          onClose={() => setDiagnosticsAnchorEl(null)}
-        >
-          <MenuItem
-            aria-label="Keyboard shortcuts"
-            onClick={() => {
-              setShortcutsOpen(true);
-              setDiagnosticsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><KeyboardIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Keyboard shortcuts</ListItemText>
-          </MenuItem>
-          <MenuItem
-            aria-label="Server clock"
-            onClick={() => {
-              setClockOpen(true);
-              setDiagnosticsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><AccessTimeIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Server clock (freeze / advance time)</ListItemText>
-          </MenuItem>
-          <MenuItem
-            aria-label="Explain unmatched requests"
-            onClick={() => {
-              setExplainOpen(true);
-              setDiagnosticsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><TroubleshootIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Explain unmatched requests</ListItemText>
-          </MenuItem>
-          <MenuItem
-            aria-label="Matcher test playground"
-            onClick={() => {
-              setPlaygroundOpen(true);
-              setDiagnosticsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><RuleIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Matcher test playground</ListItemText>
-          </MenuItem>
-          <MenuItem
-            aria-label="Server configuration"
-            onClick={() => {
-              setConfigOpen(true);
-              setDiagnosticsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Server configuration</ListItemText>
-          </MenuItem>
-        </Menu>
+        <Tooltip title="Server clock (freeze / advance time)">
+          <IconButton size="small" color="inherit" onClick={() => setClockOpen(true)} aria-label="Server clock">
+            <AccessTimeIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Explain unmatched requests">
+          <IconButton size="small" color="inherit" onClick={() => setExplainOpen(true)} aria-label="Explain unmatched requests">
+            <TroubleshootIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Matcher test playground — try a request against a candidate expectation">
+          <IconButton size="small" color="inherit" onClick={() => setPlaygroundOpen(true)} aria-label="Matcher test playground">
+            <RuleIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Server configuration">
+          <IconButton size="small" color="inherit" onClick={() => setConfigOpen(true)} aria-label="Server configuration">
+            <SettingsIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title={autoScroll ? 'Pause auto-scroll' : 'Resume auto-scroll'}>
           <IconButton size="small" color="inherit" onClick={toggleAutoScroll} aria-label={autoScroll ? 'Pause auto-scroll' : 'Resume auto-scroll'}>
             {autoScroll ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
@@ -758,15 +703,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           </MenuItem>
           <MenuItem
             onClick={() => {
-              setGraphqlOpen(true);
-              setToolsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><SchemaIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Import GraphQL schema…</ListItemText>
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
               setPactOpen(true);
               setToolsAnchorEl(null);
             }}
@@ -791,15 +727,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
           >
             <ListItemIcon><VpnKeyIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Mock SAML provider…</ListItemText>
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setScimOpen(true);
-              setToolsAnchorEl(null);
-            }}
-          >
-            <ListItemIcon><BadgeIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Mock SCIM provider…</ListItemText>
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -871,8 +798,6 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
       <MatcherPlaygroundDialog open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} />
       <OidcDialog open={oidcOpen} onClose={() => setOidcOpen(false)} connectionParams={connectionParams} />
       <SamlDialog open={samlOpen} onClose={() => setSamlOpen(false)} connectionParams={connectionParams} />
-      <ScimDialog open={scimOpen} onClose={() => setScimOpen(false)} connectionParams={connectionParams} />
-      <GraphqlImportDialog open={graphqlOpen} onClose={() => setGraphqlOpen(false)} connectionParams={connectionParams} />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <AsyncApiDialog open={asyncApiOpen} onClose={() => setAsyncApiOpen(false)} connectionParams={connectionParams} />
       <CrudDialog open={crudOpen} onClose={() => setCrudOpen(false)} connectionParams={connectionParams} />

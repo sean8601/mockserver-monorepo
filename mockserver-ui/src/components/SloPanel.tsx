@@ -21,7 +21,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import RuleIcon from '@mui/icons-material/Rule';
 import { humanizeError } from '../lib/errorMessage';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
-import { monospaceFontFamily } from '../theme';
 import {
   verifySlo,
   COMPARATOR_SYMBOLS,
@@ -186,7 +185,7 @@ export default function SloPanel({ connectionParams }: SloPanelProps) {
             label="Name"
             value={name}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-            sx={{ width: { xs: '100%', sm: 200 } }}
+            sx={{ width: 200 }}
           />
           <TextField
             size="small"
@@ -194,7 +193,7 @@ export default function SloPanel({ connectionParams }: SloPanelProps) {
             label="Lookback (seconds)"
             value={lookbackSeconds}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setLookbackSeconds(e.target.value)}
-            sx={{ width: { xs: '100%', sm: 160 } }}
+            sx={{ width: 160 }}
             slotProps={{ htmlInput: { min: 0, 'aria-label': 'Lookback window in seconds' } }}
           />
           <TextField
@@ -203,7 +202,7 @@ export default function SloPanel({ connectionParams }: SloPanelProps) {
             label="Min samples"
             value={minimumSampleCount}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setMinimumSampleCount(e.target.value)}
-            sx={{ width: { xs: '100%', sm: 140 } }}
+            sx={{ width: 140 }}
             slotProps={{ htmlInput: { min: 1, 'aria-label': 'Minimum sample count' } }}
           />
           <TextField
@@ -212,14 +211,14 @@ export default function SloPanel({ connectionParams }: SloPanelProps) {
             placeholder="payments.svc, orders.svc"
             value={upstreamHosts}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setUpstreamHosts(e.target.value)}
-            sx={{ flex: 1, width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 220 } }}
+            sx={{ flex: 1, minWidth: 220 }}
           />
         </Box>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
           Objectives
         </Typography>
-        <TableContainer sx={{ overflow: 'auto' }}>
+        <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -328,7 +327,7 @@ export default function SloPanel({ connectionParams }: SloPanelProps) {
             Evaluated window: {formatInstant(verdict.windowFromEpochMillis)} – {formatInstant(verdict.windowToEpochMillis)}
           </Typography>
 
-          <TableContainer sx={{ overflow: 'auto' }}>
+          <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -348,13 +347,13 @@ export default function SloPanel({ connectionParams }: SloPanelProps) {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
                         {COMPARATOR_SYMBOLS[objectiveResult.comparator] ?? objectiveResult.comparator}{' '}
                         {objectiveResult.threshold}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <Typography variant="caption" sx={{ fontFamily: monospaceFontFamily }}>
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
                         {formatObserved(objectiveResult.observedValue)}
                       </Typography>
                     </TableCell>

@@ -346,7 +346,7 @@ function SessionLane({ session, connectionParams }: SessionLaneProps) {
             sx={{
               fontWeight: 600,
               fontSize: '0.8rem',
-              fontFamily: isUnscoped ? undefined : monospaceFontFamily,
+              fontFamily: isUnscoped ? undefined : 'monospace',
               fontStyle: isUnscoped ? 'italic' : 'normal',
               maxWidth: 300,
               overflow: 'hidden',

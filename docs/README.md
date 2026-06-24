@@ -71,13 +71,10 @@ Build process, releases, dependencies, security scanning, and the documentation 
 | [Website](operations/website.md) | Jekyll documentation site structure and publishing |
 | [Testing](testing.md) | Test frameworks, module inventory, architecture, configuration, coverage gaps, CI execution |
 | [Performance Tuning](operations/performance-tuning.md) | Internal companion to the website performance page: where the budget goes, rules of thumb, JVM flags, measuring, regression triage |
-| [AI-SDLC Integration Spec](operations/ai-sdlc-integration-spec.md) | **Authoritative spec** for how AI is used in this repo's SDLC — autonomy, parallelism caps, model/temperature, verification, control integrity, operator halt |
 | [AI-Native SDLC Principles](operations/ai-native-sdlc-principles.md) | Principles for working with AI across the SDLC: spec-first, verification, context, guardrails, the lethal trifecta |
 | [AI-Assisted Development](operations/ai-assisted-development.md) | AI development approach, adversarial review, testing backstop, structural safety |
 | [OpenCode Configuration](operations/opencode-configuration.md) | AI harness: config, agents, rules, skills, commands, plugins |
 | [OpenCode Building Blocks](operations/opencode-building-blocks.md) | Generic guide to the 9 building blocks: what each controls, when to use which, and how they fit together |
-| [Publish Secrets Setup](operations/publish-secrets-setup.md) | Setting up publish secrets in AWS Secrets Manager for the release pipeline |
-| [Publish Secrets Terraform Snippet](operations/publish-secrets-terraform-snippet.md) | Terraform snippet for provisioning publish secrets |
 | [MCP Registry Publishing](operations/mcp-registry-publishing.md) | Publishing MockServer's MCP server to public MCP registries |
 | [Migration: Java 17 + Jakarta](operations/migration-java17-jakarta.md) | Completed javax→jakarta namespace migration: scope, approach, and verification |
 | [Release Principles](operations/release-principles.md) | Principles and rules governing the release scripts and Buildkite release pipeline |
@@ -86,8 +83,7 @@ Build process, releases, dependencies, security scanning, and the documentation 
 
 | Document | Description |
 |----------|-------------|
-| [Security Defaults](plans/later/security-defaults.md) | Insecure default flips planned for the next major release |
-| [Client Feature Parity Roadmap](plans/client-feature-parity-roadmap.md) | Feature parity tracking across all language clients |
+| [Security Defaults](plans/security-defaults.md) | Insecure default flips planned for the next major release |
 
 ### Other
 
@@ -120,15 +116,15 @@ mockserver-monorepo/
 ├── container_integration_tests/    # Docker & Helm integration tests
 ├── jekyll-www.mock-server.com/     # Jekyll documentation website
 ├── helm/                           # Helm charts (mockserver + mockserver-config)
-├── docker/                         # Production Docker images (8 variants)
+├── docker/                         # Production Docker images (5 variants)
 ├── docker_build/                   # CI build Docker images
 ├── terraform/                      # Terraform IaC (Buildkite agents + pipelines)
 ├── scripts/                        # Build, deploy, and utility scripts
 └── docs/                           # This documentation (you are here)
-    ├── code/                       #   Code architecture (27 docs)
+    ├── code/                       #   Code architecture (25 docs)
     ├── infrastructure/             #   AWS, CI/CD, Docker, Helm, Service Mesh (6 docs)
-    ├── operations/                 #   Build, release, deps, security, website, perf (16 docs)
-    ├── plans/                      #   Active plans and RFCs (2 docs)
+    ├── operations/                 #   Build, release, deps, security, website, perf (15 docs)
+    ├── plans/                      #   Active plans and RFCs (1 doc)
     └── testing.md                  #   Test frameworks, architecture, config, coverage, CI
 ```
 

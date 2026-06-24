@@ -35,8 +35,7 @@ import {
   registerServerCassette,
   deleteServerCassette,
 } from '../lib/cassetteServer';
-import { humanizeError, type HumanError } from '../lib/errorMessage';
-import HumanErrorAlert from './HumanErrorAlert';
+import { humanizeError } from '../lib/errorMessage';
 import { monospaceFontFamily } from '../theme';
 
 // ---------------------------------------------------------------------------
@@ -156,7 +155,7 @@ function RecordTab({
   const [requestPath, setRequestPath] = useState('');
   const [host, setHost] = useState('');
   const [recording, setRecording] = useState(false);
-  const [error, setError] = useState<HumanError | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const handleRecord = useCallback(async () => {
@@ -187,17 +186,16 @@ function RecordTab({
         onRecorded();
       } else {
         const errMsg = result.error;
-        setError({
-          message:
-            typeof errMsg === 'string'
-              ? errMsg
-              : typeof errMsg === 'object' && errMsg !== null && 'message' in (errMsg as Record<string, unknown>)
-                ? String((errMsg as Record<string, unknown>)['message'])
-                : JSON.stringify(errMsg),
-        });
+        setError(
+          typeof errMsg === 'string'
+            ? errMsg
+            : typeof errMsg === 'object' && errMsg !== null && 'message' in (errMsg as Record<string, unknown>)
+              ? String((errMsg as Record<string, unknown>)['message'])
+              : JSON.stringify(errMsg),
+        );
       }
     } catch (err) {
-      setError(humanizeError(err));
+      setError(humanizeError(err).message);
     } finally {
       setRecording(false);
     }
@@ -240,7 +238,7 @@ function RecordTab({
       >
         {recording ? 'Recording...' : 'Record'}
       </Button>
-      {error && <HumanErrorAlert error={error} />}
+      {error && <Alert severity="error">{error}</Alert>}
       {success && <Alert severity="success">{success}</Alert>}
     </Box>
   );
@@ -255,7 +253,7 @@ function LoadTab({
 }) {
   const [filePath, setFilePath] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<HumanError | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const handleLoad = useCallback(async () => {
@@ -280,17 +278,16 @@ function LoadTab({
         onLoaded();
       } else {
         const errMsg = result.error;
-        setError({
-          message:
-            typeof errMsg === 'string'
-              ? errMsg
-              : typeof errMsg === 'object' && errMsg !== null && 'message' in (errMsg as Record<string, unknown>)
-                ? String((errMsg as Record<string, unknown>)['message'])
-                : JSON.stringify(errMsg),
-        });
+        setError(
+          typeof errMsg === 'string'
+            ? errMsg
+            : typeof errMsg === 'object' && errMsg !== null && 'message' in (errMsg as Record<string, unknown>)
+              ? String((errMsg as Record<string, unknown>)['message'])
+              : JSON.stringify(errMsg),
+        );
       }
     } catch (err) {
-      setError(humanizeError(err));
+      setError(humanizeError(err).message);
     } finally {
       setLoading(false);
     }
@@ -315,7 +312,7 @@ function LoadTab({
       >
         {loading ? 'Loading…' : 'Load Expectations'}
       </Button>
-      {error && <HumanErrorAlert error={error} />}
+      {error && <Alert severity="error">{error}</Alert>}
       {success && <Alert severity="success">{success}</Alert>}
     </Box>
   );

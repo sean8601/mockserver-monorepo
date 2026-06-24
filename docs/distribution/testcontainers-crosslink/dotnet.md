@@ -91,7 +91,7 @@ var response = await httpClient.GetStringAsync($"{url}/hello");
 ## Links
 
 - NuGet: https://www.nuget.org/packages/MockServer.Testcontainers/
-- Source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/dotnet
+- Source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/dotnet
 - MockServer docs: https://www.mock-server.com
 ```
 

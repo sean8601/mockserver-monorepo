@@ -38,7 +38,7 @@ use testcontainers::core::WaitFor;
 use testcontainers::Image;
 
 /// The default MockServer version matching this crate release.
-pub const MOCKSERVER_VERSION: &str = "7.2.0";
+pub const MOCKSERVER_VERSION: &str = "7.0.0";
 
 /// The Docker image name on Docker Hub.
 const IMAGE_NAME: &str = "mockserver/mockserver";
@@ -61,7 +61,7 @@ const READY_LOG_MESSAGE: &str = "started on port:";
 /// ```rust
 /// use testcontainers_mockserver::MockServer;
 ///
-/// let image = MockServer::new("mockserver-7.2.0")
+/// let image = MockServer::new("mockserver-7.0.0")
 ///     .with_env("MOCKSERVER_LOG_LEVEL", "DEBUG")
 ///     .with_env("MOCKSERVER_MAX_EXPECTATIONS", "500");
 /// ```
@@ -75,7 +75,7 @@ pub struct MockServer {
 impl MockServer {
     /// Creates a new `MockServer` image with the given Docker image tag.
     ///
-    /// The tag typically follows the pattern `mockserver-<version>` (e.g. `mockserver-7.2.0`).
+    /// The tag typically follows the pattern `mockserver-<version>` (e.g. `mockserver-7.0.0`).
     pub fn new(tag: impl Into<String>) -> Self {
         Self {
             tag: tag.into(),
@@ -207,11 +207,8 @@ mod tests {
 
     #[test]
     fn custom_tag() {
-        // mockserver-version-guard:ignore — intentional non-default tag proving a
-        // caller-supplied image is respected; not the default image, so the release
-        // version guard (assert_testcontainers_versions) must not flag these lines.
-        let image = MockServer::new("mockserver-5.15.0"); // mockserver-version-guard:ignore
-        assert_eq!(image.tag(), "mockserver-5.15.0"); // mockserver-version-guard:ignore
+        let image = MockServer::new("mockserver-5.15.0");
+        assert_eq!(image.tag(), "mockserver-5.15.0");
     }
 
     #[test]

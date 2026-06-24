@@ -12,34 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step's `weight` is set to the route's observed hit count and the scenario uses `stepSelection: WEIGHTED`,
   so replaying picks routes in proportion to how often they appeared in the recording (instead of plain
   ordered steps). `VERBATIM` mode is unchanged.
-- **Dashboard UI consistency, accessibility & usability pass.** A deep review drove a sweep across the
-  dashboard: collapsible section headers (Chaos, Verify) and the live charts are now keyboard- and
-  screen-reader-operable; action panels (load scenarios, breakpoints, chaos, imports) confirm success
-  with a toast and explain why a button is disabled; unmatched-request log rows are visually flagged so
-  the "explain / generate stub" actions are discoverable; destructive actions ("clear all scenarios",
-  delete saved preset, replace a running scenario) now confirm first; wide tables truncate long values
-  with a full-text tooltip and forms reflow on small screens; and error rendering, the monospace font
-  stack, status-colour mapping, and dialog labelling were unified on the shared components.
-
-### Fixed
-
-- **Dashboard LLM-traffic parsing and error display.** Fixed three dashboard parser/store defects found
-  during the UI review: streamed OpenAI tool-call deltas with an omitted `index` no longer collapse
-  distinct tool calls into one (corrupting the reassembled arguments) and are no longer dropped; the
-  captured-body decoder now resolves the body by its `type` discriminator (`STRING` / `JSON` / `BINARY`)
-  instead of by key-presence order; MCP request/response direction is determined from `result`/`error`
-  vs `method` per message rather than the absence of `method`; and a transient action error (e.g. a
-  failed clear) is no longer wiped by the next routine WebSocket data frame.
 
 ### Added
 
-- **Dashboard now surfaces four more server capabilities.** Following a deep UI review, the dashboard
-  exposes control-plane features that previously had no UI: **Import GraphQL schema** and **Mock SCIM
-  provider** join the AppBar "Import / export" menu (alongside OpenAPI / WSDL / OIDC / SAML); the
-  **Library → WASM modules** tab gained a per-module **Test** action that dry-runs a module against a
-  sample request via `POST /mockserver/wasm/test`; and the **Chaos** view gained a **Preemption
-  (graceful shutdown)** section driving `PUT/GET/DELETE /mockserver/preemption` (reject503 / goaway /
-  drain).
 - **All client libraries now expose the full load-scenario surface.** The Java, Node, Python, Ruby, Go,
   .NET, PHP, and Rust clients gained the new scenario fields (`thresholds`, `abortOnFail`, `abortGraceMillis`,
   `pacing`, `feeder`, `stepSelection`, per-step `captures`/`weight`, profile `shape`), the new run-status

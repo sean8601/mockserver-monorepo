@@ -55,7 +55,7 @@ docs: add official MockServer module for Go
 MockServer now ships an officially maintained Testcontainers module for Go:
 [`github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go`](https://pkg.go.dev/github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go).
 
-The module is maintained by the MockServer project, wraps `testcontainers-go` v0.42+,
+The module is maintained by the MockServer project, wraps `testcontainers-go` v0.36+,
 and tracks each MockServer release.
 
 ## Install
@@ -95,7 +95,7 @@ resp, _ := http.Get(url + "/hello")
 ## Links
 
 - pkg.go.dev: https://pkg.go.dev/github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go
-- Source: https://github.com/mock-server/mockserver-monorepo/tree/master/mockserver-testcontainers/go
+- Source: https://github.com/mock-server/mockserver/tree/master/mockserver-testcontainers/go
 - MockServer docs: https://www.mock-server.com
 ```
 
@@ -104,7 +104,7 @@ resp, _ := http.Get(url + "/hello")
 ## Notes for the Submitter
 
 - Module path: `github.com/mock-server/mockserver-monorepo/mockserver-testcontainers/go`
-- Go 1.25+; testcontainers-go v0.42+.
+- Go 1.22+; testcontainers-go v0.36+.
 - Entry point: `mockserver.Run(ctx, image, opts...)` returns `*MockServerContainer`;
   `ctr.URL(ctx)` returns the HTTP base URL.
 - Published via a git tag `mockserver-testcontainers/go/vX.Y.Z` on the monorepo — the

@@ -19,7 +19,7 @@ The MockServer documentation website at `https://www.mock-server.com` is a Jekyl
 | Sass output | `:compressed` |
 | `mockserver_version` | `7.2.0` |
 | `mockserver_api_version` | `7.2.x` |
-| `mockserver_snapshot_version` | `7.2.1-SNAPSHOT` |
+| `mockserver_snapshot_version` | `6.1.1-SNAPSHOT` |
 | Google Analytics | GA4 measurement ID `G-20BB7EJG4E` (in `_config.yml` as `ga4_measurement_id`) |
 | Custom plugin | `jekyll-code-example-tag` |
 
@@ -51,7 +51,7 @@ Proxy documentation"]
 Distribution channels"]
 
     MOCK --> MOCK_INC["_includes/
-38 sub-include files"]
+23 sub-include files"]
 ```
 
 ## Content Sections
@@ -82,7 +82,7 @@ Distribution channels"]
 
 ### Sub-includes (`mock_server/_includes/`)
 
-38 reusable content fragments for code examples and configuration blocks (the table below lists the key ones):
+23 reusable content fragments for code examples and configuration blocks:
 
 | Include | Content |
 |---------|---------|

@@ -15,14 +15,14 @@ const DEFAULT_IMAGE = "mockserver/mockserver";
  * Default image tag — pinned to the repo's current release version.
  * The tag format used by the official image is `mockserver-<version>`.
  */
-const DEFAULT_TAG = "mockserver-7.2.0";
+const DEFAULT_TAG = "mockserver-7.0.0";
 
 /**
  * Options for configuring the MockServerContainer.
  */
 export interface MockServerContainerOptions {
   /**
-   * Full Docker image name with tag (e.g. "mockserver/mockserver:mockserver-7.2.0").
+   * Full Docker image name with tag (e.g. "mockserver/mockserver:mockserver-7.0.0").
    * Overrides the default pinned image.
    */
   image?: string;

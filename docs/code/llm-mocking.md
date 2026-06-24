@@ -636,7 +636,7 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `telemetry/GenAiSpanExporter.java` + `GenAiSpans.java` + `OtelEndpoints.java` | Optional explicit GenAI span export per served completion (off by default) |
 | `llm/analysis/LlmOptimisationReport.java` | Structured JSON bundle — nested `Session`, `Totals`, `Call`, `ToolCall`, `Signal`, `Redaction` POJOs; schema version 1 |
 | `llm/analysis/LlmOptimisationReportBuilder.java` | Builds the report from `FORWARDED_REQUEST` log entries via `ProviderCodecRegistry` + `LlmProviderSniffer` + `LlmPricing` + `FixtureRedactor` |
-| `llm/analysis/OptimisationSignals.java` | Nine deterministic signal detectors (see below); pure — no network, no LLM |
+| `llm/analysis/OptimisationSignals.java` | Six deterministic signal detectors (see below); pure — no network, no LLM |
 | `llm/analysis/LlmOptimisationBriefRenderer.java` | Renders an `LlmOptimisationReport` to a pre-framed Markdown brief |
 | `llm/analysis/LlmOptimisationReportService.java` | Façade: `build(pairs, filter)` + `renderBrief(result)` — used by both the REST handler and the MCP tool |
 

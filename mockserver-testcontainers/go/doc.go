@@ -16,7 +16,7 @@
 //
 //	func main() {
 //	    ctx := context.Background()
-//	    ctr, err := mockserver.Run(ctx, "mockserver/mockserver:mockserver-7.2.0")
+//	    ctr, err := mockserver.Run(ctx, "mockserver/mockserver:mockserver-7.0.0")
 //	    if err != nil {
 //	        log.Fatal(err)
 //	    }

@@ -45,16 +45,18 @@ rate(1 minute)"]
 
     subgraph "Website Account"
         direction TB
-        S3V["11 Versioned S3 Buckets
-5-10 through 7-2"]
-        S3B["S3 Bucket
-downloads.mock-server.com binaries"]
+        S3["S3 Bucket
+Current Website"]
+        S3V["17 Versioned S3 Buckets
+4-0 through 5-14"]
+        S3P["S3 Bucket
+jamesdbloom.com"]
         CDN["CloudFront Distribution
-Main Site (points to latest version)"]
-        CDNV["11 Versioned CloudFront
+Main Site"]
+        CDNV["17 Versioned CloudFront
 Distributions"]
-        CDNB["CloudFront Distribution
-downloads.mock-server.com"]
+        CDNP["CloudFront Distribution
+jamesdbloom.com"]
         R53["Route53
 mock-server.com + 4 other zones"]
         ACM["ACM Certificates
@@ -87,9 +89,9 @@ mock-server.com + wildcard"]
 
     R53 -->|A record alias| CDN
     R53 -->|versioned subdomains| CDNV
-    CDN -->|origin: latest version bucket| S3V
+    CDN -->|origin| S3
     CDNV -->|origins| S3V
-    CDNB -->|origin| S3B
+    CDNP -->|origin| S3P
     CDN -->|TLS| ACM
     CDNV -->|TLS| ACM
 ```
@@ -253,19 +255,15 @@ Policies are scoped per queue — each agent role receives only the secrets and 
 | Scaler Lambda Role | ASG scaling + CloudWatch Logs | Lambda |
 | AZ Rebalance Suspender Role | ASG process management | Lambda |
 | Instance Profile | Attached to EC2 instances | all queues |
-| IAM Policy (`buildkite-read-buildkite-api-token`) | Allows agents to read the Buildkite API token (write scope) from Secrets Manager | trigger, perf |
-| IAM Policy (`buildkite-read-buildkite-api-token-readonly`) | Allows agents to read the read-only Buildkite API token from Secrets Manager | default, trigger, perf |
-| IAM Policy (`buildkite-read-dockerhub-secret`) | Allows agents to read Docker Hub snapshot-push credentials from Secrets Manager | default |
-| IAM Policy (`buildkite-read-dockerhub-release-secret`) | Allows agents to read Docker Hub release credentials from Secrets Manager | release |
+| IAM Policy (`buildkite-read-buildkite-api-token`) | Allows agents to read the Buildkite API token from Secrets Manager | trigger, perf |
+| IAM Policy (`buildkite-read-dockerhub-secret`) | Allows agents to read Docker Hub credentials from Secrets Manager | default, release |
 | IAM Policy (`buildkite-read-build-secrets-default`) | Allows default-queue agents to read buildkite-api-token + sonatype from Secrets Manager | default |
 | IAM Policy (`buildkite-read-build-secrets-release`) | Allows release-queue agents to read buildkite-api-token + sonatype + pypi + rubygems from Secrets Manager | release |
 | IAM Policy (`buildkite-read-release-secrets`) | Allows release agents to read GPG, GitHub, npm, SwaggerHub, website-role secrets + cross-account sts:AssumeRole | release |
 | IAM Policy (`buildkite-ecr-public-push`) | Allows agents to push Docker images to ECR Public | default, release |
-| IAM Policy (`buildkite-dependency-cache`) | Allows agents to read/write the CI dependency cache S3 bucket | default, release |
+| IAM Policy (`buildkite-dependency-cache`) | Allows agents to read/write the CI dependency cache S3 bucket — DETACHED (runtime wiring reverted; re-attach when cache integrity is implemented) | none |
 | IAM Policy (`buildkite-perf-results`) | Allows perf-queue agents to Get/Put/List objects in `mockserver-ci-perf-results` | perf |
 | IAM Policy (`buildkite-release-website-tfstate`) | Allows release agents to read/write website Terraform state and lock file | release |
-| IAM Policy (`buildkite-binaries-publish`) | Allows agents to publish binary bundles to the `aws-binaries-mockserver` S3 bucket | default |
-| IAM Policy (`buildkite-imds-hardening`) | Allows agents to fetch the IMDS bootstrap script and lower the IMDS hop limit | all queues |
 | Service-linked roles | AutoScaling, EC2Spot, Organizations, SSO, Support, TrustedAdvisor, ResourceExplorer | account |
 
 #### Security
@@ -370,7 +368,7 @@ terraform/
 
 | Property | Value |
 |----------|-------|
-| Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` ~> 0.9.0 |
+| Terraform module | `buildkite/elastic-ci-stack-for-aws/buildkite` ~0.7.x |
 | Region | `eu-west-2` |
 | Instance types | Diversified (c5, c5a, m5 families) |
 | Capacity | 60% on-demand / 40% Spot, base capacity 1 on-demand |
@@ -467,11 +465,11 @@ The website account runs its own AWS Organization with a separate IAM Identity C
 
 ### S3 Buckets
 
-11 versioned S3 buckets (5-10 through 7-2) plus 1 CloudFront-logs bucket and 1 binaries bucket (`downloads.mock-server.com`), all managed by Terraform. There is no separate "current website" bucket — the main CloudFront distribution (`aws_cloudfront_distribution.main`) points its origin at whichever versioned bucket matches `latest_version` in `terraform.tfvars` (currently `7-2`). See `~/mockserver-aws-ids.md` for bucket names. **Managed by `terraform/website/sites.tf`** (`aws_s3_bucket.site`, `aws_s3_bucket_public_access_block.site`, `aws_s3_bucket_policy.site` — one of each per `sites` map entry). S3 static-website hosting (`aws_s3_bucket_website_configuration`) is not configured — CloudFront uses the OAC REST origin with `default_root_object` rather than the S3 website endpoint. Bucket *contents* are uploaded by the release pipeline (`scripts/release/components/website.sh`, `…/javadoc.sh`, `…/helm.sh`), not by Terraform.
+19 S3 buckets — 1 for the current website, plus versioned archives for each MockServer major/minor release and a personal site. See `~/mockserver-aws-ids.md` for bucket names. **Managed by `terraform/website/sites.tf`** (`aws_s3_bucket.site`, `aws_s3_bucket_public_access_block.site`, `aws_s3_bucket_policy.site` — one of each per `sites` map entry). S3 static-website hosting (`aws_s3_bucket_website_configuration`) is not configured — CloudFront uses the OAC REST origin with `default_root_object` rather than the S3 website endpoint. Bucket *contents* are uploaded by the release pipeline (`scripts/release/components/website.sh`, `…/javadoc.sh`, `…/helm.sh`), not by Terraform.
 
 ### CloudFront Distributions
 
-13 distributions total: 11 versioned (`aws_cloudfront_distribution.site`, one per `sites` map entry), 1 main (`aws_cloudfront_distribution.main`) for the apex, and 1 for `downloads.mock-server.com` (`aws_cloudfront_distribution.binaries`). The main distribution serves `mock-server.com` and the `www` alias (`main_aliases = [domain, "www.${domain}"]`), pointing its origin at the bucket for `latest_version` (currently `7-2`). Versioned distributions serve subdomains (`5-10` through `7-2`). **Managed by `terraform/website/sites.tf`** (`aws_cloudfront_distribution.site` per version + `aws_cloudfront_distribution.main` for the apex).
+19 distributions — one per S3 bucket, each mapped to a domain alias. The main site serves `mock-server.com`, with versioned subdomains (`4-0` through `5-14`) for archived documentation. **Managed by `terraform/website/sites.tf`** (`aws_cloudfront_distribution.site` per version + `aws_cloudfront_distribution.main` for the apex).
 
 A separate distribution serves `downloads.mock-server.com` from the private `aws-binaries-mockserver` bucket (OAC, reusing the shared WAF web ACL, response-headers policy, and access-logs bucket). **Managed by `terraform/website/binaries.tf`.** It hosts the JVM-less client binary bundles that the Go/.NET/Rust/Ruby/Python/Node launchers download for **`-SNAPSHOT`** versions; released versions are downloaded from GitHub Release assets instead (see [ci-cd.md](ci-cd.md)).
 
@@ -504,7 +502,7 @@ The trust policy optionally requires `sts:ExternalId` when `var.role_external_id
 | `bluesquashtechnology.com` | 6 | Other domain |
 | `subdomain.bluesquashtechnology.com` | 4 | Subdomain delegation |
 
-`mock-server.com` DNS records: apex → CloudFront (main), `www` → alias to apex, `org` → alias to apex, plus 11 versioned subdomain A records (`5-10` through `7-2`) each pointing to their respective CloudFront distribution. ACM validation CNAME records for certificate renewal. CAA records (`0 issue "amazon.com"` and `0 issuewild "amazon.com"`) restrict certificate issuance to Amazon CA — managed by `terraform/website/sites.tf` (`aws_route53_record.caa`).
+`mock-server.com` DNS records: apex → CloudFront (main), `www` → alias to apex, `org` → alias to apex, plus 15 versioned subdomain A records (`4-0` through `5-14`) each pointing to their respective CloudFront distribution. ACM validation CNAME records for certificate renewal. CAA records (`0 issue "amazon.com"` and `0 issuewild "amazon.com"`) restrict certificate issuance to Amazon CA — managed by `terraform/website/sites.tf` (`aws_route53_record.caa`).
 
 The hosted zone itself is **manual (one-time)** — it predates Terraform. **All A-alias records** inside it (`aws_route53_record.site` per version, `aws_route53_record.main` for apex, `aws_route53_record.www`) **are managed by `terraform/website/sites.tf`**. ACM validation CNAMEs are managed by AWS as part of the cert lifecycle.
 
@@ -540,8 +538,8 @@ Certificates are **not** managed by Terraform — issuance was a one-time manual
 | Control | Status |
 |---------|--------|
 | Account-level S3 public access block | Enabled (all 4 flags) |
-| Bucket-level S3 public access blocks | Enabled on all 13 buckets |
-| CloudFront OAC | All 13 distributions use Origin Access Control — S3 not directly accessible |
+| Bucket-level S3 public access blocks | Enabled on all 19 buckets |
+| CloudFront OAC | All 19 distributions use Origin Access Control — S3 not directly accessible |
 | CloudFront security headers | HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all distributions |
 | CAA records | `mock-server.com` CAA pinned to `amazon.com` — prevents rogue CA issuance |
 | CloudTrail | `mockserver-website-trail` — multi-region, log file validation, 90-day retention |

@@ -78,7 +78,6 @@ import HumanErrorAlert from './HumanErrorAlert';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
 import MetricsLineChart from './MetricsLineChart';
 import LoadScenarioReview from './LoadScenarioReview';
-import ConfirmDialog from './ConfirmDialog';
 
 interface LoadScenarioPanelProps {
   connectionParams: ConnectionParams;
@@ -1015,7 +1014,6 @@ function deriveTrackSeries(aligned: (Sample | null)[], def: SeriesDef): (number 
 
 export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPanelProps) {
   const setView = useDashboardStore((s) => s.setView);
-  const setNotification = useDashboardStore((s) => s.setNotification);
 
   // Sub-tab: 'run' focuses on running scenarios + live metrics; 'author' on creating/editing a
   // scenario (form + generated code). Defaults to 'run' so monitoring is what you land on.
@@ -1027,9 +1025,6 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   const [actionError, setActionError] = useState<HumanError | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
-  // Generic confirmation for destructive / chart-resetting actions (clear all,
-  // re-running while a run is live). Null when no confirmation is pending.
-  const [confirm, setConfirm] = useState<{ title: string; message: string; confirmLabel: string; onConfirm: () => void } | null>(null);
 
   // Registry (Wave C): all scenarios registered on the server + the user's selection.
   const [registry, setRegistry] = useState<RegisteredScenario[]>([]);
@@ -1162,13 +1157,12 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   const running = status?.state === 'running';
   const showSummary = status != null && (status.state === 'completed' || status.state === 'stopped');
 
-  const runAction = useCallback(async (action: () => Promise<void>, successMessage?: string) => {
+  const runAction = useCallback(async (action: () => Promise<void>) => {
     setBusy(true);
     setActionError(null);
     try {
       await action();
       refresh();
-      if (successMessage) setNotification({ message: successMessage, severity: 'success' });
     } catch (e) {
       if (e instanceof LoadScenarioError && e.status === 403) {
         setDisabled(true);
@@ -1178,12 +1172,12 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     } finally {
       setBusy(false);
     }
-  }, [refresh, setNotification]);
+  }, [refresh]);
 
   const handleStop = useCallback(() => {
     void runAction(async () => {
       await stopLoadScenario(connectionParams);
-    }, 'Scenario stopped');
+    });
   }, [connectionParams, runAction]);
 
   // Fallback for "Edit running" when the server does not echo a definition (older servers):
@@ -1223,16 +1217,11 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
   }, [connectionParams, form, runAction]);
 
   const handleLoad = useCallback(() => {
-    void (async () => {
-      const scenario = await registerForm();
-      if (scenario) setNotification({ message: 'Scenario registered', severity: 'success' });
-    })();
-  }, [registerForm, setNotification]);
+    void registerForm();
+  }, [registerForm]);
 
   // "Load & Run" — register, then start it by name (requires loadGenerationEnabled).
-  // Starting resets the legacy single-run live chart (setSamples([])), so when a
-  // run is already live we confirm first rather than silently wiping the chart.
-  const doLoadAndRun = useCallback(() => {
+  const handleLoadAndRun = useCallback(() => {
     void (async () => {
       const scenario = await registerForm();
       if (!scenario) return;
@@ -1241,22 +1230,9 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
         await startScenariosByName(connectionParams, [scenario.name]);
         setSamples([]);
         sampleRunId.current = null;
-      }, 'Scenario started');
+      });
     })();
   }, [connectionParams, registerForm, runAction]);
-
-  const handleLoadAndRun = useCallback(() => {
-    if (status?.state === 'running') {
-      setConfirm({
-        title: 'A scenario is already running',
-        message: 'Starting this scenario resets the live metrics chart. The current run will continue, but its chart history will be cleared. Continue?',
-        confirmLabel: 'Start scenario',
-        onConfirm: doLoadAndRun,
-      });
-      return;
-    }
-    doLoadAndRun();
-  }, [status?.state, doLoadAndRun]);
 
   // --- registry (Wave C) handlers ---
   const toggleSelected = useCallback((name: string) => {
@@ -1274,40 +1250,31 @@ export default function LoadScenarioPanel({ connectionParams }: LoadScenarioPane
     setPanelView('run'); // starting runs → jump to the Run & Monitor sub-tab
     void runAction(async () => {
       await startScenariosByName(connectionParams, names);
-    }, names.length === 1 ? 'Scenario started' : `${names.length} scenarios started`);
+    });
   }, [connectionParams, runAction, selected]);
 
   const startSelectedOne = useCallback((name: string) => {
     setPanelView('run'); // starting a run → jump to the Run & Monitor sub-tab
     void runAction(async () => {
       await startScenariosByName(connectionParams, [name]);
-    }, 'Scenario started');
+    });
   }, [connectionParams, runAction]);
 
   const stopOne = useCallback((name: string) => {
     void runAction(async () => {
       await stopScenariosByName(connectionParams, [name]);
-    }, 'Scenario stopped');
+    });
   }, [connectionParams, runAction]);
 
   const deleteOne = useCallback((name: string) => {
     void runAction(async () => {
       await deleteLoadScenario(connectionParams, name);
-    }, 'Scenario deleted');
+    });
   }, [connectionParams, runAction]);
 
-  // "Clear all scenarios" deregisters every scenario (and stops any running) —
-  // irreversible, so confirm before firing.
   const clearAll = useCallback(() => {
-    setConfirm({
-      title: 'Clear all scenarios?',
-      message: 'This deregisters every load scenario and stops any that are running. This cannot be undone.',
-      confirmLabel: 'Clear all',
-      onConfirm: () => {
-        void runAction(async () => {
-          await clearLoadScenarios(connectionParams);
-        }, 'All scenarios cleared');
-      },
+    void runAction(async () => {
+      await clearLoadScenarios(connectionParams);
     });
   }, [connectionParams, runAction]);
 
@@ -2374,15 +2341,6 @@ MOCKSERVER_LOAD_GENERATION_ENABLED=true`}
           onGenerated={onGenerated}
         />
       )}
-
-      <ConfirmDialog
-        open={confirm !== null}
-        title={confirm?.title ?? ''}
-        message={confirm?.message ?? ''}
-        confirmLabel={confirm?.confirmLabel ?? 'Confirm'}
-        onConfirm={() => confirm?.onConfirm()}
-        onClose={() => setConfirm(null)}
-      />
     </Box>
   );
 }
@@ -2454,8 +2412,8 @@ function GenerateDialog({
   const canSubmit = name.trim() !== '' && (source === 'recording' || spec.trim() !== '');
 
   return (
-    <Dialog open onClose={onClose} maxWidth="sm" fullWidth data-testid="load-generate-dialog" aria-labelledby="load-generate-dialog-title">
-      <DialogTitle id="load-generate-dialog-title">{title}</DialogTitle>
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth data-testid="load-generate-dialog">
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         {error && <HumanErrorAlert error={error} onClose={() => setError(null)} sx={{ mb: 1.5 }} />}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 0.5 }}>

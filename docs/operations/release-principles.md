@@ -24,7 +24,7 @@ Every release script — and the orchestrator that runs them all — works on a 
 
 A developer must be able to:
 
-- Run `./scripts/release/release.sh --dry-run` and exercise the entire pipeline without touching any external system.
+- Run `./bin/release --dry-run --version X.Y.Z` and exercise the entire pipeline without touching any external system.
 - Run a single component script (`./scripts/release/components/npm.sh --dry-run`) to test that one piece.
 - Reproduce a CI failure locally by setting the same env vars and running the same script.
 

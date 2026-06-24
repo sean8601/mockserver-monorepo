@@ -538,7 +538,8 @@ MockServerClient client = new MockServerClient("localhost", 1080)
 <pre class="prettyprint lang-xml code"><code class="code">&lt;dependency&gt;
     &lt;groupId&gt;org.bouncycastle&lt;/groupId&gt;
     &lt;artifactId&gt;bc-fips&lt;/artifactId&gt;
-    &lt;version&gt;1.0.2.5&lt;/version&gt;
+    &lt;!-- use the latest FIPS-certified bc-fips release --&gt;
+    &lt;version&gt;...&lt;/version&gt;
 &lt;/dependency&gt;</code></pre>
 
 <p>MockServer will use whichever provider it finds on the classpath. If both are present, the standard (non-FIPS) provider is used. If neither is available, MockServer falls back to the JVM's default cryptographic provider.</p>

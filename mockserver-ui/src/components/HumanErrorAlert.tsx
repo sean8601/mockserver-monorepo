@@ -5,7 +5,6 @@ import Collapse from '@mui/material/Collapse';
 import Link from '@mui/material/Link';
 import type { SxProps, Theme } from '@mui/material/styles';
 import type { HumanError } from '../lib/errorMessage';
-import { monospaceFontFamily } from '../theme';
 
 interface HumanErrorAlertProps {
   /**
@@ -78,7 +77,7 @@ export default function HumanErrorAlert({
                 mt: 0.5,
                 mb: 0,
                 p: 1,
-                fontFamily: monospaceFontFamily,
+                fontFamily: 'monospace',
                 fontSize: '0.72rem',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',

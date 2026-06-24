@@ -2,9 +2,8 @@
 
 ## TL;DR
 
-Five new `mockserver-release/*` secrets do not exist yet, causing their release
-channels to soft-skip. One further secret (`mockserver-build/postman-api-key`)
-already exists. This runbook explains how to obtain each credential, store it
+Five new release channels soft-skip because their AWS Secrets Manager secrets
+do not exist yet. This runbook explains how to obtain each credential, store it
 under the expected secret name and JSON key, and verify the channel went live
 after the next release.
 

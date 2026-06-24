@@ -3,7 +3,7 @@
 The controls AI is judged by — tests, build/CI gates, the review constitution,
 model/temperature/effort routing, guardrails, and the risk/authority policy — **must not
 be weakened, disabled, or gamed** to make a gate pass. Conforms to the AI-in-SDLC
-spec (`docs/operations/ai-sdlc-integration-spec.md` §12 V7, §14.5, §19.5).
+spec (`docs/operations/ai-sdlc-integration-spec.md` §12 V7, §19.5).
 
 ## No gaming the gates
 
@@ -16,7 +16,7 @@ includes:
 - narrowing a test's scope, adding `@Ignore` / `assumeTrue(false)`, or shrinking coverage to dodge a gate;
 - suppressing a lint / static-analysis or policy/security rule to silence a finding;
 - relaxing the review constitution, lowering a confidence threshold, or routing to a weaker model/temperature/effort to get an easier PASS;
-- leaving a **CRITICAL or MAJOR** finding unfixed by "accepting" or "dispositioning" it: under the must-fix model (spec §14.5) there is **no disposition path** for critical/major findings — they **MUST be fixed**; only **MINOR** findings may be deferred, and only with rationale recorded in the decision log (see [[review-constitution]] Iteration Protocol).
+- dispositioning a MAJOR finding as "accepted" without the required approval (see [[review-constitution]] Iteration Protocol).
 
 A gate satisfied by **reducing its strength is a failure, not a pass.**
 

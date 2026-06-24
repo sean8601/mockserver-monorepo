@@ -44,7 +44,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 
 ## Property categories
 
-`mockserver.example.properties` groups the core properties into blocks. `ConfigurationProperties.java` defines the full set — there are currently **~243 properties** (one `private static final String MOCKSERVER_*` key constant per property). The categories below cover both the blocks in the example file and the additional groups defined only in `ConfigurationProperties.java`:
+`mockserver.example.properties` groups the core properties into blocks. `ConfigurationProperties.java` defines the full set — there are currently **~170 properties** (one `private static final String MOCKSERVER_*` key constant per property). The categories below cover both the blocks in the example file and the additional groups defined only in `ConfigurationProperties.java`:
 
 | Category | Representative properties |
 |----------|--------------------------|
@@ -92,7 +92,7 @@ The first three feed into the **static** `ConfigurationProperties`. The fourth u
 | Event log / dashboard | `redactSecretsInLog` |
 | Lifecycle | `stopDrainMillis` |
 
-The example file documents a subset of the most commonly tuned properties (283 lines). For the complete list including newer subsystems, read `ConfigurationProperties.java` or the consumer reference page.
+The example file documents the most commonly tuned properties (≈220 lines). For the complete list including newer subsystems, read `ConfigurationProperties.java` or the consumer reference page.
 
 ### `redactSecretsInRecordedExpectations`
 

@@ -11,11 +11,9 @@ import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import type { ConnectionParams } from '../hooks/useConnectionParams';
 import { registerExpectation } from '../lib/generateStub';
 import { humanizeError, type HumanError } from '../lib/errorMessage';
-import { useDashboardStore } from '../store';
 import HumanErrorAlert from './HumanErrorAlert';
 import JsonViewer from './JsonViewer';
 
@@ -36,8 +34,6 @@ export default function GenerateStubDialog({
 }: GenerateStubDialogProps) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const setNotification = useDashboardStore((s) => s.setNotification);
-  const editExpectation = useDashboardStore((s) => s.editExpectation);
   const [registering, setRegistering] = useState(false);
   const [registered, setRegistered] = useState<Set<number>>(new Set());
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -50,13 +46,12 @@ export default function GenerateStubDialog({
     try {
       await registerExpectation(connectionParams, suggestions[selectedIndex]!);
       setRegistered((prev) => new Set(prev).add(selectedIndex));
-      setNotification({ message: 'Expectation registered', severity: 'success' });
     } catch (e) {
       setError(humanizeError(e));
     } finally {
       setRegistering(false);
     }
-  }, [connectionParams, suggestions, selectedIndex, setNotification]);
+  }, [connectionParams, suggestions, selectedIndex]);
 
   const handleClose = useCallback(() => {
     setRegistered(new Set());
@@ -64,18 +59,6 @@ export default function GenerateStubDialog({
     setError(null);
     onClose();
   }, [onClose]);
-
-  // After registering, let the user keep refining the generated expectation in
-  // the Composer instead of dead-ending on the "Registered" state. editExpectation
-  // switches the view to the Composer, so close this dialog as it hands off.
-  const handleOpenInComposer = useCallback(() => {
-    const suggestion = suggestions[selectedIndex];
-    if (!suggestion) return;
-    editExpectation(suggestion);
-    handleClose();
-  }, [suggestions, selectedIndex, editExpectation, handleClose]);
-
-  const currentRegistered = registered.has(selectedIndex);
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth fullScreen={fullScreen} aria-labelledby="generate-stub-dialog-title">
@@ -98,15 +81,9 @@ export default function GenerateStubDialog({
           </Alert>
         )}
         {suggestions.length === 0 ? (
-          <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-              No suggestions to generate an expectation from.
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              This usually means no unmatched traffic has been captured yet. Send a request
-              that does not match any expectation, then try again from its log entry.
-            </Typography>
-          </Box>
+          <Typography variant="body2" color="text.secondary">
+            No suggestions returned by the server.
+          </Typography>
         ) : (
           <Box>
             {suggestions.length > 1 && (
@@ -129,25 +106,15 @@ export default function GenerateStubDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>{currentRegistered ? 'Done' : 'Cancel'}</Button>
-        {currentRegistered ? (
-          <Button
-            variant="contained"
-            startIcon={<EditOutlinedIcon />}
-            onClick={handleOpenInComposer}
-          >
-            Open in Composer
-          </Button>
-        ) : (
-          <Button
-            variant="contained"
-            disabled={registering || suggestions.length === 0}
-            onClick={() => void handleRegister()}
-            startIcon={registering ? <CircularProgress size={16} /> : undefined}
-          >
-            Register Now
-          </Button>
-        )}
+        <Button onClick={handleClose}>Cancel</Button>
+        <Button
+          variant="contained"
+          disabled={registering || registered.has(selectedIndex) || suggestions.length === 0}
+          onClick={() => void handleRegister()}
+          startIcon={registering ? <CircularProgress size={16} /> : undefined}
+        >
+          {registered.has(selectedIndex) ? 'Registered' : 'Register Now'}
+        </Button>
       </DialogActions>
     </Dialog>
   );
