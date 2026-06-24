@@ -336,6 +336,70 @@ public class LoadScenarioSerializerTest {
         assertThat(parsed.getPacing(), is(nullValue()));
     }
 
+    @Test
+    public void roundTripsInlineRowsFeeder() {
+        java.util.Map<String, String> r1 = new java.util.LinkedHashMap<>();
+        r1.put("user", "alice");
+        r1.put("id", "1");
+        java.util.Map<String, String> r2 = new java.util.LinkedHashMap<>();
+        r2.put("user", "bob");
+        r2.put("id", "2");
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-rows")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/u/{{iteration.data.user}}")))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withRows(java.util.Arrays.asList(r1, r2))
+                .withStrategy(org.mockserver.load.LoadFeeder.Strategy.SEQUENTIAL));
+
+        LoadScenario parsed = serializer.deserialize(serializer.serialize(scenario));
+
+        assertThat(parsed.getFeeder(), is(notNullValue()));
+        assertThat(parsed.getFeeder().getStrategy(), is(org.mockserver.load.LoadFeeder.Strategy.SEQUENTIAL));
+        assertThat(parsed.getFeeder().getRows(), hasSize(2));
+        assertThat(parsed.getFeeder().getRows().get(0).get("user"), is("alice"));
+        assertThat(parsed.getFeeder().getRows().get(1).get("id"), is("2"));
+    }
+
+    @Test
+    public void roundTripsDataFormatFeederVerbatimWithoutExpandingToRows() {
+        // The raw data/format is the source of truth: it serialises back verbatim and the derived rows
+        // are NOT emitted (no double-parse), mirroring how a shape avoids emitting expanded stages.
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-csv")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/u/{{iteration.data.user}}")))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withFormat(org.mockserver.load.LoadFeeder.Format.CSV)
+                .withData("user,id\nalice,1\nbob,2"));
+
+        String json = serializer.serialize(scenario);
+        assertThat(json, containsString("\"data\""));
+        assertThat(json, containsString("\"format\""));
+        // the derived rows are not emitted as a redundant array
+        assertThat(json, not(containsString("\"rows\"")));
+
+        LoadScenario parsed = serializer.deserialize(json);
+        assertThat(parsed.getFeeder().getFormat(), is(org.mockserver.load.LoadFeeder.Format.CSV));
+        assertThat(parsed.getFeeder().getData(), is("user,id\nalice,1\nbob,2"));
+        assertThat(parsed.getFeeder().getRows(), is(nullValue()));
+        // and it still resolves to the parsed rows on demand
+        assertThat(parsed.getFeeder().resolvedRows(), hasSize(2));
+        assertThat(parsed.getFeeder().resolvedRows().get(1).get("user"), is("bob"));
+    }
+
+    @Test
+    public void omitsFeederWhenAbsent() {
+        LoadScenario scenario = new LoadScenario()
+            .withName("no-feeder")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        String json = serializer.serialize(scenario);
+        assertThat(json, not(containsString("\"feeder\"")));
+        assertThat(serializer.deserialize(json).getFeeder(), is(nullValue()));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsBlankBody() {
         serializer.deserialize("  ");

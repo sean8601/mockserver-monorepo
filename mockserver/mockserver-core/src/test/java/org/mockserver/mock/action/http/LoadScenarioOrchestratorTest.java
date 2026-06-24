@@ -1519,4 +1519,212 @@ public class LoadScenarioOrchestratorTest {
         }
         return sender.sent.size() >= n;
     }
+
+    // --- data feeders ---
+
+    private static java.util.Map<String, String> feederRow(String key, String value) {
+        java.util.Map<String, String> row = new java.util.LinkedHashMap<>();
+        row.put(key, value);
+        return row;
+    }
+
+    @Test
+    public void feederCircularCyclesRowsAcrossIterations() throws Exception {
+        // 2 rows, CIRCULAR: iteration k uses rows[k % 2], so the rendered paths alternate user=a / user=b
+        // and the selected value appears in the rendered request. One VU, several iterations.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-circular")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(6)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withRows(java.util.Arrays.asList(feederRow("user", "a"), feederRow("user", "b")))
+                .withStrategy(org.mockserver.load.LoadFeeder.Strategy.CIRCULAR))
+            .withSteps(new LoadStep().withRequest(
+                request().withPath("/u/{{iteration.data.user}}").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 6, 5_000L), is(true));
+
+        java.util.List<String> paths = sender.sent.stream()
+            .map(r -> r.getPath().getValue())
+            .filter(p -> p.startsWith("/u/"))
+            .limit(6)
+            .collect(java.util.stream.Collectors.toList());
+        // Single VU runs iterations strictly in order, so the cycle is a, b, a, b, ...
+        assertThat(paths.get(0), is("/u/a"));
+        assertThat(paths.get(1), is("/u/b"));
+        assertThat(paths.get(2), is("/u/a"));
+        assertThat(paths.get(3), is("/u/b"));
+    }
+
+    @Test
+    public void feederRandomSelectsWithinTheDataset() throws Exception {
+        // RANDOM: every rendered value must be one of the dataset rows (no out-of-range selection).
+        // Drive enough iterations that the assertion is meaningful without being order-dependent.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-random")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(30)
+            .withProfile(LoadProfile.constant(2, 60_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withRows(java.util.Arrays.asList(
+                    feederRow("user", "a"), feederRow("user", "b"), feederRow("user", "c")))
+                .withStrategy(org.mockserver.load.LoadFeeder.Strategy.RANDOM))
+            .withSteps(new LoadStep().withRequest(
+                request().withPath("/u/{{iteration.data.user}}").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 30, 5_000L), is(true));
+
+        Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList("/u/a", "/u/b", "/u/c"));
+        for (HttpRequest sent : sender.sent) {
+            String path = sent.getPath().getValue();
+            if (path.startsWith("/u/")) {
+                assertThat("random selection must stay within the dataset", allowed.contains(path), is(true));
+            }
+        }
+    }
+
+    @Test
+    public void feederSequentialUsesEachRowOnceThenCompletes() throws Exception {
+        // SEQUENTIAL with 4 rows: exactly 4 iterations run (4 requests), each row once in order, then
+        // the run COMPLETES (dataset exhausted) even though the profile duration is far from elapsed.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-sequential")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withProfile(LoadProfile.constant(1, 600_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withRows(java.util.Arrays.asList(
+                    feederRow("user", "a"), feederRow("user", "b"),
+                    feederRow("user", "c"), feederRow("user", "d")))
+                .withStrategy(org.mockserver.load.LoadFeeder.Strategy.SEQUENTIAL))
+            .withSteps(new LoadStep().withRequest(
+                request().withPath("/u/{{iteration.data.user}}").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (orchestrator.getStatus() != null
+            && org.mockserver.load.LoadScenarioState.RUNNING == orchestrator.getStatus().state
+            && System.currentTimeMillis() < deadline) {
+            orchestrator.tickNow();
+            Thread.sleep(5);
+        }
+
+        assertThat("run completes once the dataset is exhausted",
+            orchestrator.getStatus().state, is(org.mockserver.load.LoadScenarioState.COMPLETED));
+        java.util.List<String> paths = sender.sent.stream()
+            .map(r -> r.getPath().getValue())
+            .filter(p -> p.startsWith("/u/"))
+            .collect(java.util.stream.Collectors.toList());
+        // Each of the 4 rows used exactly once, in order — no row replayed, none skipped.
+        assertThat(paths, is(java.util.Arrays.asList("/u/a", "/u/b", "/u/c", "/u/d")));
+    }
+
+    @Test
+    public void feederDataAsJsonResolvesIntoRows() throws Exception {
+        // data + format=JSON parses into rows server-side; CIRCULAR cycles them as for inline rows.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-json")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(4)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withFormat(org.mockserver.load.LoadFeeder.Format.JSON)
+                .withData("[{\"user\":\"alice\"},{\"user\":\"bob\"}]"))
+            .withSteps(new LoadStep().withRequest(
+                request().withPath("/u/{{iteration.data.user}}").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 4, 5_000L), is(true));
+        Set<String> paths = sender.sent.stream()
+            .map(r -> r.getPath().getValue())
+            .filter(p -> p.startsWith("/u/"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertThat(paths, hasItems("/u/alice", "/u/bob"));
+    }
+
+    @Test
+    public void feederDataAsCsvResolvesIntoRows() throws Exception {
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-csv-run")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(4)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withFormat(org.mockserver.load.LoadFeeder.Format.CSV)
+                .withData("user\nalice\nbob"))
+            .withSteps(new LoadStep().withRequest(
+                request().withPath("/u/{{iteration.data.user}}").withHeader("Host", "target")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 4, 5_000L), is(true));
+        Set<String> paths = sender.sent.stream()
+            .map(r -> r.getPath().getValue())
+            .filter(p -> p.startsWith("/u/"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertThat(paths, hasItems("/u/alice", "/u/bob"));
+    }
+
+    @Test
+    public void feederDataResolvesInPathBodyAndHeader() throws Exception {
+        // The selected row is available to path, body AND header templates within the iteration.
+        RecordingSender sender = new RecordingSender();
+        LoadScenario scenario = new LoadScenario()
+            .withName("feeder-pbh")
+            .withTemplateType(HttpTemplate.TemplateType.MUSTACHE)
+            .withMaxRequests(1)
+            .withProfile(LoadProfile.constant(1, 60_000L))
+            .withFeeder(org.mockserver.load.LoadFeeder.loadFeeder(
+                java.util.Collections.singletonList(feederRow("user", "zoe"))))
+            .withSteps(new LoadStep().withRequest(
+                request().withMethod("POST")
+                    .withPath("/u/{{iteration.data.user}}")
+                    .withHeader("Host", "target")
+                    .withBody("{\"u\":\"{{iteration.data.user}}\"}")
+                    .withHeader("X-User", "{{iteration.data.user}}")));
+
+        assertThat(orchestrator.start(scenario, sender), is(nullValue()));
+        assertThat(awaitAtLeast(sender, 1, 5_000L), is(true));
+        HttpRequest sent = sender.sent.stream()
+            .filter(r -> r.getPath().getValue().startsWith("/u/"))
+            .findFirst().orElse(null);
+        assertThat(sent, is(notNullValue()));
+        assertThat(sent.getPath().getValue(), is("/u/zoe"));
+        assertThat(sent.getBodyAsString(), containsString("zoe"));
+        assertThat(sent.getFirstHeader("X-User"), is("zoe"));
+    }
+
+    @Test
+    public void validateRejectsFeederWithNoRows() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("empty-feeder")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withRows(java.util.Collections.emptyList()))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario), containsString("'feeder' must resolve to at least one row"));
+    }
+
+    @Test
+    public void validateRejectsMalformedFeederData() {
+        orchestrator.setConfiguration(org.mockserver.configuration.Configuration.configuration());
+        LoadScenario scenario = new LoadScenario()
+            .withName("bad-feeder")
+            .withProfile(LoadProfile.constant(1, 1_000L))
+            .withFeeder(new org.mockserver.load.LoadFeeder()
+                .withFormat(org.mockserver.load.LoadFeeder.Format.JSON)
+                .withData("{not an array"))
+            .withSteps(new LoadStep().withRequest(request().withPath("/api")));
+
+        assertThat(orchestrator.validate(scenario), containsString("not a valid JSON array"));
+    }
 }

@@ -4965,6 +4965,30 @@ components:
         value:
           type: number
           description: "for CONSTANT_PACING the target cycle in milliseconds; for CONSTANT_THROUGHPUT the target iterations/second per VU. Must be > 0 when mode is not NONE; ignored when mode is NONE."
+    LoadFeeder:
+      description: "parameterized test data (a data feeder) for a load scenario: an inline dataset from which one row is selected per iteration and exposed to that iteration's templated request path, body and headers as $iteration.data.<column> (Velocity) / {{iteration.data.<column>}} (Mustache). The dataset is always inline (no external URL or file source). Supply EITHER rows (inline list of objects, the primary form) OR data + format (raw CSV/JSON parsed server-side); when both are given rows wins."
+      type: object
+      additionalProperties: false
+      properties:
+        rows:
+          type: array
+          description: "inline dataset: a list of column-name to value maps, one per row (the primary mechanism; round-trips with no parsing). Must be non-empty when used."
+          items:
+            type: object
+            additionalProperties:
+              type: string
+        data:
+          type: string
+          description: "optional raw inline dataset parsed server-side into rows per format. CSV: first line is the header row (RFC 4180-ish — embedded commas, doubled quotes and newlines are handled). JSON: an array of flat objects. The raw text is preserved verbatim on round-trip (the derived rows are not re-serialized). Ignored when rows is set."
+        format:
+          type: string
+          enum: [CSV, JSON]
+          description: "the format of data (required when data is set)"
+        strategy:
+          type: string
+          enum: [CIRCULAR, RANDOM, SEQUENTIAL]
+          default: CIRCULAR
+          description: "how a row is chosen each iteration: CIRCULAR (default) cycles rows[globalIteration % size] and never exhausts; RANDOM picks a uniformly random row each iteration; SEQUENTIAL uses rows[globalIteration] once each in order and COMPLETES the run once the dataset is exhausted (data-driven replay-once)."
     LoadScenario:
       description: "an API-driven load scenario: ordered templated steps driven at a target concurrency. The name is the unique registry key — PUT loads (registers) it; PUT /loadScenario/start triggers it to run."
       type: object
@@ -5011,6 +5035,8 @@ components:
           description: "suppress abortOnFail for the first N milliseconds of the run so noisy startup samples cannot trigger a premature abort (thresholds are still evaluated and a verdict still reported during the grace window — only the abort action is deferred)"
         pacing:
           $ref: "#/components/schemas/LoadPacing"
+        feeder:
+          $ref: "#/components/schemas/LoadFeeder"
         profile:
           $ref: "#/components/schemas/LoadProfile"
         steps:

@@ -3,6 +3,7 @@ package org.mockserver.mock.action.http;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.load.IterationContext;
 import org.mockserver.load.LoadCapture;
+import org.mockserver.load.LoadFeeder;
 import org.mockserver.load.LoadPacing;
 import org.mockserver.load.LoadProfile;
 import org.mockserver.load.LoadScenario;
@@ -41,6 +42,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -599,6 +601,34 @@ public class LoadScenarioOrchestrator {
         if (looping && vuIteration > 0 && tryRetireSurplus(run)) {
             return;
         }
+        // Data-feeder row selection: allocate a global per-iteration index (incremented once per
+        // iteration, distinct from the per-step iterationIndex used for $iteration.index) and pick the
+        // row this iteration will expose as $iteration.data. For SEQUENTIAL the index also gates the run:
+        // once it reaches the dataset size the dataset is exhausted, so no further iteration runs and the
+        // run completes (each row used exactly once). Done BEFORE any work so a SEQUENTIAL run never
+        // dispatches past its dataset; composes with the VU/RATE models via the existing complete path.
+        Map<String, String> data = Collections.emptyMap();
+        List<Map<String, String>> feederRows = run.feederRows;
+        if (feederRows != null && !feederRows.isEmpty()) {
+            LoadFeeder.Strategy strategy = run.feederStrategy;
+            if (strategy == LoadFeeder.Strategy.SEQUENTIAL) {
+                long seqIndex = run.feederIterationIndex.getAndIncrement();
+                if (seqIndex >= feederRows.size()) {
+                    // Dataset exhausted: this VU's loop ends here (release its slot once) and the run
+                    // completes. completeInternal is idempotent across concurrent VUs (atomic de-register).
+                    endVu(run);
+                    completeInternal(run);
+                    return;
+                }
+                data = feederRows.get((int) seqIndex);
+            } else if (strategy == LoadFeeder.Strategy.RANDOM) {
+                data = feederRows.get(ThreadLocalRandom.current().nextInt(feederRows.size()));
+            } else {
+                // CIRCULAR (default): cycle the dataset by the global per-iteration index, never exhausts.
+                long circularIndex = run.feederIterationIndex.getAndIncrement();
+                data = feederRows.get((int) Math.floorMod(circularIndex, feederRows.size()));
+            }
+        }
         // Adaptive-pacing anchor: record the wall-clock nanos at which this iteration's work begins, so
         // the closed-model reschedule point can wait out the remainder of the target iteration cycle.
         // Threaded (like {@code captured}) through the chained fireStep calls; ignored when pacing is off
@@ -610,7 +640,7 @@ public class LoadScenarioOrchestrator {
         // chained fireStep calls below and never shared across VUs or across a VU's successive iterations,
         // so cross-step correlation is race-free and captures never leak between users or iterations.
         Map<String, String> captured = new ConcurrentHashMap<>();
-        fireStep(run, vuId, vuIteration, 0, looping, captured, iterationStartNanos);
+        fireStep(run, vuId, vuIteration, 0, looping, captured, data, iterationStartNanos);
     }
 
     /**
@@ -639,7 +669,7 @@ public class LoadScenarioOrchestrator {
         run.activeVUs.decrementAndGet();
     }
 
-    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured, long iterationStartNanos) {
+    private void fireStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, boolean looping, Map<String, String> captured, Map<String, String> data, long iterationStartNanos) {
         // Coordinated-omission correction: capture the scheduled-due timestamp at the very start of the
         // dispatch path — BEFORE the in-flight permit and RPS-token acquire below — so the latency we
         // record measures from the moment dispatch was requested, INCLUDING any queueing wait the
@@ -685,7 +715,7 @@ public class LoadScenarioOrchestrator {
         long globalIndex = run.iterationIndex.getAndIncrement();
         long count = run.requestsSent.get();
         long elapsed = clock.getAsLong() - run.startedAt;
-        IterationContext iteration = new IterationContext(globalIndex, vuId, vuIteration, elapsed, count, captured);
+        IterationContext iteration = new IterationContext(globalIndex, vuId, vuIteration, elapsed, count, captured, data);
         final String stepLabel = run.stepLabel(step, stepIndex);
         final Map<String, String> stepCustomLabels = run.customLabelsFor(step);
 
@@ -698,7 +728,7 @@ public class LoadScenarioOrchestrator {
             run.failed.incrementAndGet();
             run.requestsSent.incrementAndGet();
             Metrics.incrementLoadError(run.scenario.getName(), run.runId, "render");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
             return;
         }
 
@@ -720,14 +750,14 @@ public class LoadScenarioOrchestrator {
         if (!run.inFlight.tryAcquire()) {
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "inflight_cap");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
             return;
         }
         if (!run.tryAcquireRpsToken(clock.getAsLong())) {
             run.inFlight.release();
             run.droppedIterations.incrementAndGet();
             Metrics.incrementLoadThrottled(run.scenario.getName(), run.runId, "rate_limit");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
             return;
         }
 
@@ -745,14 +775,14 @@ public class LoadScenarioOrchestrator {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "connection");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
             return;
         }
         if (future == null) {
             run.inFlight.release();
             run.inFlightCount.decrementAndGet();
             recordResult(run, host, stepLabel, route, method, requestBytes, traceId, stepCustomLabels, null, scheduledNanos, true, "null_response");
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
             return;
         }
         future.whenComplete((response, throwable) -> {
@@ -767,7 +797,7 @@ public class LoadScenarioOrchestrator {
             // and never throws out of the dispatch path: a missing value or extraction error falls back
             // to the capture's defaultValue (when set) or leaves the variable unset.
             applyCaptures(run, step, response, captured);
-            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, iterationStartNanos);
+            scheduleNextStep(run, vuId, vuIteration, stepIndex, step, looping, captured, data, iterationStartNanos);
         });
     }
 
@@ -901,7 +931,7 @@ public class LoadScenarioOrchestrator {
         return null;
     }
 
-    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured, long iterationStartNanos) {
+    private void scheduleNextStep(RunningScenario run, int vuId, long vuIteration, int stepIndex, LoadStep step, boolean looping, Map<String, String> captured, Map<String, String> data, long iterationStartNanos) {
         if (run.stopped.get() || !isCurrent(run)) {
             // The VU loop ends here (the scenario stopped or was replaced mid-iteration). This is a
             // genuine loop-exit point, so release the slot exactly once.
@@ -909,7 +939,7 @@ public class LoadScenarioOrchestrator {
             return;
         }
         long thinkMillis = step.getThinkTime() != null ? Math.max(0, step.getThinkTime().sampleValueMillis()) : 0;
-        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured, iterationStartNanos), thinkMillis, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> fireStep(run, vuId, vuIteration, stepIndex + 1, looping, captured, data, iterationStartNanos), thinkMillis, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -1168,6 +1198,20 @@ public class LoadScenarioOrchestrator {
             && pacing.getValue() <= 0) {
             return "'pacing.value' must be > 0 when 'pacing.mode' is " + pacing.getMode();
         }
+        LoadFeeder feeder = scenario.getFeeder();
+        if (feeder != null) {
+            List<Map<String, String>> feederRows;
+            try {
+                // Resolves inline rows, or parses data/format — a malformed CSV/JSON dataset (or data
+                // without a format) surfaces as a clear IllegalArgumentException message here.
+                feederRows = feeder.resolvedRows();
+            } catch (IllegalArgumentException e) {
+                return e.getMessage();
+            }
+            if (feederRows == null || feederRows.isEmpty()) {
+                return "'feeder' must resolve to at least one row (set 'feeder.rows' or 'feeder.data'+'feeder.format')";
+            }
+        }
         return null;
     }
 
@@ -1204,6 +1248,20 @@ public class LoadScenarioOrchestrator {
         /** Current target arrival rate (iterations/sec), stored as raw long bits; 0 for non-RATE stages. */
         final AtomicLong targetRate = new AtomicLong(0);
         final AtomicLong iterationIndex = new AtomicLong(0);
+        /**
+         * Global per-ITERATION index (incremented once per launched iteration, distinct from the
+         * per-step {@link #iterationIndex}) used to index the data feeder across all VUs/iterations:
+         * CIRCULAR uses {@code index % size}, SEQUENTIAL uses {@code index} and stops the run once it
+         * reaches the dataset size. Untouched when there is no feeder or the strategy is RANDOM.
+         */
+        final AtomicLong feederIterationIndex = new AtomicLong(0);
+        /**
+         * The resolved feeder dataset (inline rows, or rows parsed from data/format), resolved once at
+         * run start so parsing never happens per-iteration. Null/empty when the scenario has no feeder.
+         */
+        final List<Map<String, String>> feederRows;
+        /** The feeder selection strategy (null when there is no feeder). */
+        final LoadFeeder.Strategy feederStrategy;
         final AtomicLong requestsSent = new AtomicLong(0);
         final AtomicLong succeeded = new AtomicLong(0);
         final AtomicLong failed = new AtomicLong(0);
@@ -1270,6 +1328,20 @@ public class LoadScenarioOrchestrator {
             this.maxRps = Math.max(1, configuration.loadGenerationMaxRequestsPerSecond());
             this.rpsWindowStart = triggeredAt;
             this.latencyHistogram.setAutoResize(true);
+            // Resolve the feeder dataset once at run start (parse data/format if used) so row selection
+            // per iteration is a pure index/lookup with no parsing. validate() already proved the rows
+            // are non-empty and the data parses, so resolvedRows() cannot throw here.
+            LoadFeeder feeder = scenario.getFeeder();
+            if (feeder != null) {
+                List<Map<String, String>> resolved = feeder.resolvedRows();
+                this.feederRows = resolved != null && !resolved.isEmpty()
+                    ? Collections.unmodifiableList(new ArrayList<>(resolved))
+                    : null;
+                this.feederStrategy = feeder.getStrategy() != null ? feeder.getStrategy() : LoadFeeder.Strategy.CIRCULAR;
+            } else {
+                this.feederRows = null;
+                this.feederStrategy = null;
+            }
         }
 
         /**

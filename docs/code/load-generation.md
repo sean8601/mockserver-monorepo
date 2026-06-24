@@ -84,8 +84,9 @@ triggered by name. Preloading is fail-soft: an invalid definition logs a WARN an
 
 | Type | Purpose |
 |------|---------|
-| `LoadScenario` | `name`, ordered `steps`, `profile`, `templateType` (default `VELOCITY`), optional `maxRequests`, optional `labels` (`Map<String,String>` — scenario-level custom metric labels), optional `pacing` (`LoadPacing` — adaptive iteration pacing; see [Adaptive pacing (think-time)](#adaptive-pacing-think-time)). |
+| `LoadScenario` | `name`, ordered `steps`, `profile`, `templateType` (default `VELOCITY`), optional `maxRequests`, optional `labels` (`Map<String,String>` — scenario-level custom metric labels), optional `pacing` (`LoadPacing` — adaptive iteration pacing; see [Adaptive pacing (think-time)](#adaptive-pacing-think-time)), optional `feeder` (`LoadFeeder` — parameterized test data; see [Data feeders](#data-feeders)). |
 | `LoadPacing` | a `mode` ∈ `{NONE, CONSTANT_PACING, CONSTANT_THROUGHPUT}` (default `NONE`) and a `value` — the target per-VU iteration **cycle** (closed model only). |
+| `LoadFeeder` | an inline dataset (`rows`, or raw `data` + `format`) and a selection `strategy` ∈ `{CIRCULAR, RANDOM, SEQUENTIAL}` (default `CIRCULAR`); one row per iteration is exposed as `iteration.data`. |
 | `LoadStep` | a `request` (reuses `HttpRequest`; template strings live in its fields), an optional `thinkTime` (`Delay`) — inter-step pacing only, an optional `name` (used as the `route` metric label when set; otherwise the path is auto-templatized), and optional `labels` (`Map<String,String>` — step-level custom metric labels that override scenario labels for this step). |
 | `LoadProfile` | a `List<LoadStage> stages` run in sequence. |
 | `LoadStage` | one slice of the run: a `type` ∈ `{VU, RATE, PAUSE}`, a required `durationMillis` (> 0), an optional `curve` ∈ `{LINEAR, EXPONENTIAL, QUADRATIC}` (ramps only; default `LINEAR`), and the setpoint fields for its type (see below). |
@@ -106,6 +107,7 @@ and `iteration.getIndex()` (JavaScript) all resolve.
 | `elapsedMillis` | millis since the scenario started |
 | `count` | total requests dispatched so far |
 | `captured` | per-iteration cross-step captured variables (a `Map<String,String>`); see [Cross-step capture / correlation](#cross-step-capture--correlation) |
+| `data` | the data-feeder row selected for this iteration (a `Map<String,String>`, empty when there is no feeder); see [Data feeders](#data-feeders) |
 
 The request `path`, `body` **and header values** are rendered (the most commonly templated fields). The
 render path is an internal overload (`TemplateEngine.renderTemplate(template, request, iteration)`); the
@@ -186,6 +188,93 @@ by key, so the syntax is uniform across them.
 Step 1 logs in and captures the response body's `$.token` into `token`; step 2 — same iteration — sends
 it as `Authorization: Bearer <token>`. With 5 VUs, each VU's iterations each capture and replay their own
 token independently.
+
+## Data feeders
+
+A scenario can drive its templates from a **parameterized dataset** ("data feeder"): per iteration the
+orchestrator selects one row and exposes it as `iteration.data`, so each iteration sends different data
+(distinct users, ids, payloads). This is the load-test analogue of Gatling feeders / k6 `SharedArray` /
+JMeter CSV Data Set.
+
+### Dataset — inline rows, or raw data
+
+The dataset is always **inline in the scenario body** (there is no external URL or file source in this
+version — that avoids adding an SSRF / arbitrary-file-read surface to a self-load feature; an external
+source is a possible future enhancement). Supply **one** of two equivalent forms:
+
+| Form | Shape | Notes |
+|------|-------|-------|
+| `rows` | a list of column-to-value objects | the **primary** mechanism — JSON-native, round-trips with no parsing |
+| `data` + `format` | a raw string parsed server-side into rows | `format` ∈ `{CSV, JSON}` |
+
+`data`/`format` parsing happens once at scenario load:
+
+- **CSV** — the first line is the header row; subsequent lines are rows. The parser is RFC 4180-ish
+  (reuses the project `CsvTemplateHelper`), so **embedded commas, doubled quotes and newlines inside
+  quoted fields are handled**. A row with fewer fields than the header leaves the missing columns unset.
+- **JSON** — an array of flat objects, e.g. `[{"user":"a"},{"user":"b"}]`; scalar values are stringified.
+
+The raw `data` string is the **source of truth**: it serialises back verbatim (the derived rows are not
+re-emitted), so a `data`/`format` feeder round-trips without double-parsing. When both `rows` and `data`
+are present, `rows` wins.
+
+### Selection strategy
+
+| `strategy` | Row chosen per iteration | Exhaustion |
+|------------|--------------------------|------------|
+| `CIRCULAR` (default) | `rows[globalIteration % size]` | never exhausts — sustained load cycles the dataset |
+| `RANDOM` | a uniformly random row (`ThreadLocalRandom`) | never exhausts |
+| `SEQUENTIAL` | `rows[globalIteration]`, once each in order | the **run COMPLETES** once the dataset is exhausted |
+
+`CIRCULAR` and `SEQUENTIAL` index by a **global per-iteration counter**, so rows are distributed across
+all VUs and iterations. `SEQUENTIAL` is the data-driven "replay this dataset exactly once" mode — the
+exhaustion check is applied at iteration launch (no iteration runs past the dataset) and completes the
+run through the normal complete path, composing with the VU/RATE models (no `maxRequests` needed).
+
+### Referencing feeder data
+
+The selected row is exposed on the `iteration` object under `data`, referenced by column in the **path,
+body and header** templates — the same mechanism as `captured`:
+
+- Velocity: `$iteration.data.user`
+- Mustache: `{{iteration.data.user}}`
+
+An absent/empty feeder leaves `iteration.data` an empty map (behaviour unchanged).
+
+### Example — SEQUENTIAL replay of an inline dataset
+
+```json
+{
+  "name": "replay-users",
+  "templateType": "MUSTACHE",
+  "profile": { "stages": [ { "type": "VU", "targetVus": 3, "durationMillis": 600000 } ] },
+  "feeder": {
+    "strategy": "SEQUENTIAL",
+    "rows": [
+      { "user": "alice", "id": "1" },
+      { "user": "bob",   "id": "2" },
+      { "user": "carol", "id": "3" }
+    ]
+  },
+  "steps": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/users/{{iteration.data.id}}",
+        "headers": { "Host": [ "api" ], "X-User": [ "{{iteration.data.user}}" ] }
+      }
+    }
+  ]
+}
+```
+
+Three iterations run (one per row, in order) across the 3 VUs, then the run completes — even though the
+stage duration is far from elapsed. Swap `strategy` to `CIRCULAR` (or omit it) to cycle the same dataset
+under sustained load instead. The `rows` array could equally be supplied as raw CSV:
+
+```json
+"feeder": { "format": "CSV", "data": "user,id\nalice,1\nbob,2\ncarol,3" }
+```
 
 ## Stages, arrival-rate and curves
 

@@ -1,5 +1,6 @@
 package org.mockserver.serialization.model;
 
+import org.mockserver.load.LoadFeeder;
 import org.mockserver.load.LoadScenario;
 import org.mockserver.load.LoadStep;
 import org.mockserver.load.LoadThreshold;
@@ -27,6 +28,7 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
     private Boolean abortOnFail;
     private Long abortGraceMillis;
     private LoadPacingDTO pacing;
+    private LoadFeeder feeder;
 
     public LoadScenarioDTO(LoadScenario scenario) {
         if (scenario != null) {
@@ -63,6 +65,10 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
                 && scenario.getPacing().getMode() != org.mockserver.load.LoadPacing.Mode.NONE) {
                 pacing = new LoadPacingDTO(scenario.getPacing());
             }
+            // The feeder is a simple POJO (rows / data+format / strategy) with no DTO indirection,
+            // mirroring how LoadCapture is embedded directly. Echoing the model object preserves the
+            // raw data/format source of truth, so a data-driven feeder round-trips without re-parsing.
+            feeder = scenario.getFeeder();
         }
     }
 
@@ -85,7 +91,8 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
             .withStartDelayMillis(startDelayMillis != null ? startDelayMillis : 0L)
             .withAbortOnFail(abortOnFail != null && abortOnFail)
             .withAbortGraceMillis(abortGraceMillis != null ? abortGraceMillis : 0L)
-            .withPacing(pacing != null ? pacing.buildObject() : null);
+            .withPacing(pacing != null ? pacing.buildObject() : null)
+            .withFeeder(feeder);
         if (labels != null && !labels.isEmpty()) {
             scenario.withLabels(labels);
         }
@@ -195,6 +202,15 @@ public class LoadScenarioDTO extends ObjectWithReflectiveEqualsHashCodeToString 
 
     public LoadScenarioDTO setPacing(LoadPacingDTO pacing) {
         this.pacing = pacing;
+        return this;
+    }
+
+    public LoadFeeder getFeeder() {
+        return feeder;
+    }
+
+    public LoadScenarioDTO setFeeder(LoadFeeder feeder) {
+        this.feeder = feeder;
         return this;
     }
 }

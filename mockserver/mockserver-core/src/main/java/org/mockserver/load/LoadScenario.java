@@ -75,6 +75,15 @@ public class LoadScenario extends ObjectWithJsonToString {
      * closed-model VU loop; open-model RATE iterations ignore it. See {@link LoadPacing}.
      */
     private LoadPacing pacing;
+    /**
+     * Parameterized test data ("data feeder"): an inline dataset from which the orchestrator selects
+     * one row per iteration and exposes it to that iteration's templated request fields (path, body and
+     * headers) as {@code $iteration.data.<column>} / {@code {{iteration.data.<column>}}}. Nullable
+     * (default) means no feeder — {@code $iteration.data} resolves to an empty map and behaviour is
+     * unchanged. With {@link LoadFeeder.Strategy#SEQUENTIAL SEQUENTIAL} selection the run completes once
+     * the dataset is exhausted (each row used exactly once). See {@link LoadFeeder}.
+     */
+    private LoadFeeder feeder;
 
     public static LoadScenario loadScenario() {
         return new LoadScenario();
@@ -220,6 +229,18 @@ public class LoadScenario extends ObjectWithJsonToString {
 
     public LoadScenario withPacing(LoadPacing pacing) {
         this.pacing = pacing;
+        return this;
+    }
+
+    /**
+     * The data feeder (may be null = no feeder). See {@link #feeder}.
+     */
+    public LoadFeeder getFeeder() {
+        return feeder;
+    }
+
+    public LoadScenario withFeeder(LoadFeeder feeder) {
+        this.feeder = feeder;
         return this;
     }
 }
