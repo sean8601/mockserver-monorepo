@@ -35,7 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "inject faults" into "verify resilience held."
 - **SLO-breach auto-halt for chaos experiments.** An experiment carrying `sloCriteria` is halted immediately
   (status `halted_by_slo_breach`, verdict `FAIL`) when an SLO objective is breached mid-run. No behaviour
-  change when `sloCriteria` is absent.
+  change when `sloCriteria` is absent. The dashboard's chaos panel now shows the terminal `experimentVerdict`
+  (PASS / FAIL / INCONCLUSIVE) with per-objective observed-vs-threshold detail.
 - **Closest-match hint on unmatched requests** (`closestMatchHintEnabled`, default **on**). When a request
   matches no expectation, the `404` response now carries a compact, length-bounded
   `x-mockserver-closest-match-hint` header naming the closest expectation and the first field that differed —
