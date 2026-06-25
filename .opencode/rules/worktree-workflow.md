@@ -64,6 +64,23 @@ repository **should** also enable GitHub branch protection's
 that would introduce a merge commit). See `[[git-safety]]` for the
 destructive-command guardrails that interact with this.
 
+## Beyond the Filesystem — Shared State (§8.5)
+
+Worktree isolation covers the **filesystem only**. Where parallel work touches
+shared mutable resources *outside* the tree — databases, cloud infrastructure
+(AWS), CI (Buildkite), container registries (Docker Hub), Secrets Manager,
+ticket systems, message queues — those have **no worktree to isolate them**, so
+concurrent mutation can still corrupt shared state. Apply the same
+anti-concurrent-mutation discipline: **partition** the resource per session,
+**lock**/serialise mutations (as the rebase lock does for `master`, and as
+Terraform's DynamoDB state lock does), or target **dedicated non-production**
+instances. Identify such resources during decomposition ([[operating-model]]
+Decompose); their contention risk **feeds the dynamic concurrency limit**
+([[operating-model]] Parallelism Limits, §8.2); and their side effects must be
+**replay-safe** (idempotent or guarded — [[decision-log]] reproducibility). The
+serialisation this forces is recorded as a `serialisation.*` cause in telemetry
+([[metrics]] §18.7).
+
 ## When To Use This
 
 | Situation | Use worktree? |
