@@ -192,6 +192,7 @@ public class Configuration {
     // template restrictions
     private String javascriptDisallowedClasses;
     private String javascriptDisallowedText;
+    private Long javascriptTemplateExecutionTimeout;
     private Boolean velocityDisallowClassLoading;
     private String velocityDisallowedText;
     private String mustacheDisallowedText;
@@ -2697,6 +2698,26 @@ public class Configuration {
      */
     public Configuration javascriptDisallowedText(String javascriptDisallowedText) {
         this.javascriptDisallowedText = javascriptDisallowedText;
+        return this;
+    }
+
+    public Long javascriptTemplateExecutionTimeout() {
+        if (javascriptTemplateExecutionTimeout == null) {
+            return ConfigurationProperties.javascriptTemplateExecutionTimeout();
+        }
+        return javascriptTemplateExecutionTimeout;
+    }
+
+    /**
+     * Maximum time in milliseconds a JavaScript response template is allowed to run before it is
+     * cancelled. Prevents a runaway or malicious template (for example an infinite loop) from
+     * pinning a data-plane worker thread indefinitely. Default is 5000 (5 seconds). Set to 0 (or a
+     * negative value) to disable the timeout and restore the previous unbounded behaviour.
+     *
+     * @param javascriptTemplateExecutionTimeout template execution timeout in milliseconds, 0 or negative to disable
+     */
+    public Configuration javascriptTemplateExecutionTimeout(Long javascriptTemplateExecutionTimeout) {
+        this.javascriptTemplateExecutionTimeout = javascriptTemplateExecutionTimeout;
         return this;
     }
 

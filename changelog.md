@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JavaScript response templates now have a configurable execution timeout.** A runaway or malicious
+  JavaScript template (for example one containing an infinite loop) could previously pin the data-plane
+  worker thread handling that request indefinitely. A new `javascriptTemplateExecutionTimeout` property
+  (milliseconds) caps how long a template may run; on expiry a watchdog cancels the evaluation and the
+  request fails fast with a clear, logged timeout error. The default is `5000` (5 seconds), far longer
+  than any legitimate template needs. Set it to `0` (or a negative value) to disable the timeout and
+  restore the previous unbounded behaviour. NOTE: this introduces a bounded behaviour change — templates
+  that genuinely run longer than 5 seconds (previously allowed) will now be cancelled unless the timeout
+  is raised or disabled.
 - **Anonymous, cookieless dashboard usage analytics via self-hosted PostHog.** The dashboard can report coarse, enumerated usage events (`app_open`, `view_change`, `feature_used`, `error_shown`) to a self-hosted PostHog instance. No request URLs, hostnames, headers, bodies, or expectation data are ever sent. Inactive by default until an operator supplies `dashboardAnalyticsEndpoint` and `dashboardAnalyticsKey`; disable globally with `dashboardAnalyticsEnabled=false`. Respects Do Not Track, Global Privacy Control, and a per-browser opt-out banner.
 - **All client libraries now expose the full load-scenario surface.** The Java, Node, Python, Ruby, Go,
   .NET, PHP, and Rust clients gained the new scenario fields (`thresholds`, `abortOnFail`, `abortGraceMillis`,

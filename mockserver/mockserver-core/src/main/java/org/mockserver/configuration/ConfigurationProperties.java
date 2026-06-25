@@ -239,6 +239,7 @@ public class ConfigurationProperties {
     // template restrictions
     private static final String MOCKSERVER_JAVASCRIPT_DISALLOWED_CLASSES = "mockserver.javascriptDisallowedClasses";
     private static final String MOCKSERVER_JAVASCRIPT_DISALLOWED_TEXT = "mockserver.javascriptDisallowedText";
+    private static final String MOCKSERVER_JAVASCRIPT_TEMPLATE_EXECUTION_TIMEOUT = "mockserver.javascriptTemplateExecutionTimeout";
     private static final String MOCKSERVER_VELOCITY_DISALLOW_CLASS_LOADING = "mockserver.velocityDisallowClassLoading";
     private static final String MOCKSERVER_VELOCITY_DISALLOWED_TEXT = "mockserver.velocityDisallowedText";
     private static final String MOCKSERVER_MUSTACHE_DISALLOWED_TEXT = "mockserver.mustacheDisallowedText";
@@ -3175,6 +3176,24 @@ public class ConfigurationProperties {
      */
     public static void javascriptDisallowedText(String javascriptDisallowedText) {
         setProperty(MOCKSERVER_JAVASCRIPT_DISALLOWED_TEXT, javascriptDisallowedText);
+    }
+
+    public static long javascriptTemplateExecutionTimeout() {
+        return readLongProperty(MOCKSERVER_JAVASCRIPT_TEMPLATE_EXECUTION_TIMEOUT, "MOCKSERVER_JAVASCRIPT_TEMPLATE_EXECUTION_TIMEOUT", 5_000L);
+    }
+
+    /**
+     * Maximum time in milliseconds a JavaScript response template is allowed to run before it is
+     * cancelled. A runaway or malicious template (for example one containing an infinite loop) would
+     * otherwise pin the data-plane worker thread indefinitely; this cap aborts the evaluation with a
+     * timeout error instead. Default is 5000 (5 seconds), which is far longer than any legitimate
+     * template needs. Set to 0 (or a negative value) to disable the timeout and restore the previous
+     * unbounded behaviour.
+     *
+     * @param millis template execution timeout in milliseconds, 0 or negative to disable
+     */
+    public static void javascriptTemplateExecutionTimeout(long millis) {
+        setProperty(MOCKSERVER_JAVASCRIPT_TEMPLATE_EXECUTION_TIMEOUT, "" + millis);
     }
 
 

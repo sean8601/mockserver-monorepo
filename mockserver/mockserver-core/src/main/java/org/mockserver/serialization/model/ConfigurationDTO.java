@@ -75,6 +75,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     private String javascriptDisallowedClasses;
     private String javascriptDisallowedText;
+    private Long javascriptTemplateExecutionTimeout;
     private Boolean velocityDisallowClassLoading;
     private String velocityDisallowedText;
     private String mustacheDisallowedText;
@@ -341,6 +342,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
             this.javascriptDisallowedClasses = configuration.javascriptDisallowedClasses();
             this.javascriptDisallowedText = configuration.javascriptDisallowedText();
+            this.javascriptTemplateExecutionTimeout = configuration.javascriptTemplateExecutionTimeout();
             this.velocityDisallowClassLoading = configuration.velocityDisallowClassLoading();
             this.velocityDisallowedText = configuration.velocityDisallowedText();
             this.mustacheDisallowedText = configuration.mustacheDisallowedText();
@@ -657,6 +659,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
         configuration.javascriptDisallowedClasses(javascriptDisallowedClasses);
         configuration.javascriptDisallowedText(javascriptDisallowedText);
+        configuration.javascriptTemplateExecutionTimeout(javascriptTemplateExecutionTimeout);
         configuration.velocityDisallowClassLoading(velocityDisallowClassLoading);
         configuration.velocityDisallowedText(velocityDisallowedText);
         configuration.mustacheDisallowedText(mustacheDisallowedText);
@@ -1031,6 +1034,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (javascriptDisallowedText != null) {
             target.javascriptDisallowedText(javascriptDisallowedText);
+        }
+        if (javascriptTemplateExecutionTimeout != null) {
+            target.javascriptTemplateExecutionTimeout(javascriptTemplateExecutionTimeout);
         }
         if (velocityDisallowClassLoading != null) {
             target.velocityDisallowClassLoading(velocityDisallowClassLoading);
@@ -2059,6 +2065,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setJavascriptDisallowedText(String javascriptDisallowedText) {
         this.javascriptDisallowedText = javascriptDisallowedText;
+        return this;
+    }
+
+    public Long getJavascriptTemplateExecutionTimeout() {
+        return javascriptTemplateExecutionTimeout;
+    }
+
+    public ConfigurationDTO setJavascriptTemplateExecutionTimeout(Long javascriptTemplateExecutionTimeout) {
+        this.javascriptTemplateExecutionTimeout = javascriptTemplateExecutionTimeout;
         return this;
     }
 
