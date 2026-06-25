@@ -95,6 +95,28 @@ SCALE_PER_INSTANCE_RPS="${SCALE_PER_INSTANCE_RPS:-}"
 SCALE_HOLD_S="${SCALE_HOLD_S:-90}"
 SCALE_SETTLE_S="${SCALE_SETTLE_S:-45}"       # sample 45s into the 90s hold
 
+# Per-core sweep. For each core count C the SAME single injector (injector-1) is
+# pinned to exactly C cores and runs the SIMPLE-GET ceiling stair; we record the
+# highest CLEAN ceiling, the injector CPU% there, and rps_per_core = ceiling/C —
+# producing the real efficiency curve (a single injector plateaus well before 8
+# cores saturate, so rps/core falls as C grows: the diminishing-returns story).
+# Override the C list for a short smoke: PERCORE_CORES="1 2".
+read -r -a PERCORE_CORES <<<"${PERCORE_CORES:-1 2 4 8}"
+# The injector starts at core PERCORE_INJ_CPU0 and takes C consecutive cores;
+# Envoy gets a generous DISJOINT set (PERCORE_ENVOY_CPUS) so the sink never binds.
+# Defaults suit a >=16-vCPU box: injector on cores 2..(2+Cmax-1) for the largest C
+# (2..9 for C=8), Envoy on 10-15 (6 cores), cores 0-1 for Prometheus/OS. Per-C the
+# injector takes only its first C of that block, leaving the rest idle. Override
+# any of these (set empty to disable pinning, e.g. a small laptop).
+PERCORE_INJ_CPU0="${PERCORE_INJ_CPU0:-2}"            # first injector core
+PERCORE_ENVOY_CPUS="${PERCORE_ENVOY_CPUS-10-15}"    # disjoint generous Envoy set
+PERCORE_ENVOY_CONCURRENCY="${PERCORE_ENVOY_CONCURRENCY:-6}"
+# Per-C ceiling stair geometry (reuses run_rate_stair). The stair top must reach
+# the largest-C plateau (~20k for C=8); smaller C plateau lower (that is the point).
+read -r -a PERCORE_OFFERED <<<"${PERCORE_OFFERED:-2000 4000 6000 8000 10000 12000 14000 16000 18000 20000}"
+PERCORE_HOLD_S="${PERCORE_HOLD_S:-20}"
+PERCORE_SETTLE_S="${PERCORE_SETTLE_S:-14}"   # sample 14s into each 20s hold
+
 log()  { printf '%s\n' "--- $*" >&2; }
 warn() { printf '%s\n' "!!! WARNING: $*" >&2; }
 die()  { printf '%s\n' "ERROR: $*" >&2; exit 1; }
@@ -138,6 +160,29 @@ is_truthy() {
     true|1|yes|on) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# --- self-diagnosing stale-image guard ----------------------------------------
+# The keep-warm forward pool (env MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE)
+# is what lets a trivial high-rate request REUSE connections instead of churning.
+# It is a no-op unless the mockserver-snapshot image was built AT/AFTER the
+# keep-warm core commit 142cbc778. A STALE image silently ignores the flag, the
+# simple GET churns, and the reuse assertion (correctly) excludes every mid-ladder
+# point — leaving ZERO clean points. Without this guard a paid ~60-min CI run
+# produces no usable signal and no hint at the cause, so make the likely cause
+# LOUD when the reuse assertion is active and nothing passed it. Args: <label>
+# <clean_count>.
+stale_image_guard() {
+  local label="$1" clean_count="$2"
+  if is_truthy "${MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE:-}" || gt "$REUSE_MIN" 0; then
+    if [ "${clean_count:-0}" -eq 0 ]; then
+      warn "$label: ZERO clean points — EVERY stage was excluded by the reuse/throttle/error gates."
+      warn "  Likely cause: the '$MOCKSERVER_IMAGE' image PREDATES the keep-warm forward-pool feature (core commit 142cbc778),"
+      warn "  so MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE=true is silently ignored and the injector churns connections."
+      warn "  Pull/rebuild a fresh mockserver-snapshot built at/after 142cbc778, then re-run. (Or set REUSE_MIN=0 to disable the"
+      warn "  reuse gate if you intend to measure a churning injector deliberately.)"
+    fi
+  fi
 }
 
 # --- container CPU% (docker stats, single snapshot) ---------------------------
@@ -421,25 +466,7 @@ cmd_ceiling() {
 
   stop_all_injectors injector-1
 
-  # --- self-diagnosing stale-image guard ---------------------------------------
-  # The keep-warm forward pool (env MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE)
-  # is what lets a trivial high-rate request REUSE connections instead of churning.
-  # It is a no-op unless the mockserver-snapshot image was built AT/AFTER the
-  # keep-warm core commit 142cbc778. A STALE image silently ignores the flag, the
-  # simple GET churns, and the reuse assertion (correctly) excludes every mid-ladder
-  # point — leaving ZERO clean points and a near-floor ceiling. Without this guard a
-  # paid ~60-min CI run produces no usable signal and no hint at the cause, so make
-  # the likely cause LOUD in the log when the reuse assertion is active and nothing
-  # passed it.
-  if is_truthy "${MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE:-}" || gt "$REUSE_MIN" 0; then
-    if [ "${clean_count:-0}" -eq 0 ]; then
-      warn "ceiling '$scenario_name': ZERO clean points — EVERY stage was excluded by the reuse/throttle/error gates."
-      warn "  Likely cause: the '$MOCKSERVER_IMAGE' image PREDATES the keep-warm forward-pool feature (core commit 142cbc778),"
-      warn "  so MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE=true is silently ignored and the injector churns connections."
-      warn "  Pull/rebuild a fresh mockserver-snapshot built at/after 142cbc778, then re-run. (Or set REUSE_MIN=0 to disable the"
-      warn "  reuse gate if you intend to measure a churning injector deliberately.)"
-    fi
-  fi
+  stale_image_guard "ceiling '$scenario_name'" "$clean_count"
 
   jq -n \
     --arg scenario "$scenario_name" \
@@ -451,6 +478,95 @@ cmd_ceiling() {
       points:$points,
       ceiling_rps:$ceiling_rps,
       ceiling_evidence:$evidence}' > "$out"
+
+  log "wrote $out"
+  cat "$out"
+}
+
+# ==============================================================================
+# percore: pin ONE injector to exactly C cores for each C in PERCORE_CORES, run
+# the SIMPLE-GET ceiling stair, and record the highest CLEAN ceiling, the injector
+# CPU% there, the connection reuse, and rps_per_core = ceiling/C. This MEASURES the
+# per-core efficiency curve: a single injector's dispatch path plateaus well before
+# 8 cores saturate, so rps/core FALLS as C grows (diminishing returns). Emits
+# inject-percore.json. Reuses run_rate_stair (same clean-gate + reuse assertion)
+# and the stale-image guard.
+# ==============================================================================
+
+# Build a contiguous cpuset string of N cores starting at the given first core,
+# e.g. cpuset_range 2 1 -> "2"; cpuset_range 2 8 -> "2-9". Empty first core -> "".
+cpuset_range() {
+  local first="$1" n="$2"
+  [ -z "$first" ] && { printf ''; return; }
+  if [ "$n" -le 1 ]; then printf '%s' "$first";
+  else printf '%s-%s' "$first" "$((first + n - 1))"; fi
+}
+
+cmd_percore() {
+  local out="$SCRIPT_DIR/inject-percore.json"
+  local points="[]"
+  local c
+  for c in "${PERCORE_CORES[@]}"; do
+    case "$c" in ''|*[!0-9]*) die "PERCORE_CORES entry '$c' is not a positive integer";; esac
+    [ "$c" -ge 1 ] || die "PERCORE_CORES entry '$c' must be >= 1"
+
+    local inj_cpus envoy_cpus
+    inj_cpus="$(cpuset_range "$PERCORE_INJ_CPU0" "$c")"
+    envoy_cpus="$PERCORE_ENVOY_CPUS"
+    log "percore C=$c: injector pinned to $c core(s) (I1_CPUS='${inj_cpus}'), Envoy '${envoy_cpus}' (conc $PERCORE_ENVOY_CONCURRENCY)"
+
+    # fresh stack per C so run_ids/counters/cpusets don't carry over. The cpuset
+    # exports are intentionally scoped to this subshell so they apply ONLY to this
+    # C's compose_up and never leak to the next iteration (SC2030/SC2031 are the
+    # desired semantics here, not a bug).
+    compose_down
+    # shellcheck disable=SC2030
+    ( export I1_CPUS="$inj_cpus" ENVOY_CPUS="$envoy_cpus" ENVOY_CONCURRENCY="$PERCORE_ENVOY_CONCURRENCY"; compose_up n1 )
+    wait_stack_ready 1
+    local inj1; inj1="$(svc_container injector-1)"
+    [ -n "$inj1" ] || die "percore C=$c: injector-1 container not found"
+    wait_injectors_scraped 1
+
+    register_and_trigger injector-1 "$CEILING_FILE" "$SCENARIO_CEILING"
+    run_rate_stair "$SCENARIO_CEILING" "$inj1" "$PERCORE_HOLD_S" "$PERCORE_SETTLE_S" "${PERCORE_OFFERED[@]}"
+    stop_all_injectors injector-1
+
+    stale_image_guard "percore C=$c" "$STAIR_CLEAN_COUNT"
+
+    # Pull the ceiling + its evidence (CPU%, reqs/conn) for this C and compute
+    # rps_per_core. When no clean point was found, ceiling is 0 (guard already warned).
+    local ceiling_rps cpu rpc rps_per_core envoy_cpu
+    ceiling_rps="$STAIR_CEILING_RPS"
+    cpu="$(jq -r '.injector_cpu_pct // 0' <<<"$STAIR_EVIDENCE")"
+    envoy_cpu="$(jq -r '.envoy_cpu_pct // 0' <<<"$STAIR_EVIDENCE")"
+    rpc="$(jq -r '.reqs_per_connection // 0' <<<"$STAIR_EVIDENCE")"
+    rps_per_core="$(awk -v r="$ceiling_rps" -v c="$c" 'BEGIN{ printf "%d", (c>0? (r/c)+0.5 : 0) }')"
+
+    # Envoy headroom cross-check: warn if the sink was anywhere near its budget.
+    if gt "$envoy_cpu" "$((PERCORE_ENVOY_CONCURRENCY * 80))"; then
+      warn "percore C=$c: envoy_cpu_pct=$envoy_cpu is high vs its ${PERCORE_ENVOY_CONCURRENCY}-core budget — the sink may be limiting; give Envoy more cores"
+    fi
+
+    local pt; pt="$(jq -n \
+      --argjson cores "$c" \
+      --argjson ceiling_rps "$(rnd "$ceiling_rps")" \
+      --argjson injector_cpu_pct "$(rnd "$cpu")" \
+      --argjson envoy_cpu_pct "$(rnd "$envoy_cpu")" \
+      --argjson reqs_per_connection "$(rnd "$rpc")" \
+      --argjson rps_per_core "$rps_per_core" \
+      '{cores:$cores, ceiling_rps:$ceiling_rps, injector_cpu_pct:$injector_cpu_pct,
+        envoy_cpu_pct:$envoy_cpu_pct, reqs_per_connection:$reqs_per_connection,
+        rps_per_core:$rps_per_core}')"
+    points="$(jq -c --argjson p "$pt" '. + [$p]' <<<"$points")"
+    log "  -> C=$c: ceiling=$(rnd "$ceiling_rps") rps  cpu=$(rnd "$cpu")%  reqs/conn=$(rnd "$rpc")  rps/core=$rps_per_core"
+  done
+
+  compose_down
+
+  jq -n \
+    --argjson points "$points" \
+    '{proto:"http", target:"envoy-direct-response", request:"simple-GET",
+      points:$points}' > "$out"
 
   log "wrote $out"
   cat "$out"
@@ -470,6 +586,7 @@ probe_lean_ceiling() {
   # caller is pinning at all (I1_CPUS non-empty), pin the probe to the lean
   # 2-core default; if pinning is disabled (I1_CPUS empty/unset), don't pin.
   local lean_cpus
+  # shellcheck disable=SC2031  # intentional: read the CALLER's I1_CPUS (subshell writes elsewhere don't affect this read)
   if [ -n "${PROBE_I1_CPUS+x}" ]; then
     lean_cpus="$PROBE_I1_CPUS"
   elif [ -n "${I1_CPUS:-}" ]; then
@@ -480,6 +597,7 @@ probe_lean_ceiling() {
   log "lean ceiling probe: single 2-core injector (I1_CPUS='${lean_cpus}'), short stair ${PROBE_OFFERED[*]}"
 
   compose_down
+  # shellcheck disable=SC2030,SC2031  # intentional: cpuset export scoped to this subshell only
   ( export I1_CPUS="$lean_cpus"; compose_up n1 )
   wait_stack_ready 1
   local inj1; inj1="$(svc_container injector-1)"
@@ -623,11 +741,15 @@ cmd_scale() {
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <ceiling | ceiling-complex | scale [N ...]>
+Usage: $0 <ceiling | ceiling-complex | percore | scale [N ...]>
   ceiling          1 fat injector, fine RATE stair, SIMPLE GET -> inject-ceiling.json
   ceiling-complex  1 fat injector, same stair, COMPLEX templated POST (feeder + ~1KB
                    Velocity body) -> inject-ceiling-complex.json. Comparable rps/core
                    data point: complex < simple because each request costs more CPU.
+  percore          for each C in PERCORE_CORES (default "1 2 4 8"), pin ONE injector to
+                   C cores, run the SIMPLE-GET stair, record ceiling + CPU% + rps_per_core
+                   -> inject-percore.json. Shows the per-core efficiency curve (rps/core
+                   falls as C grows — a single injector's dispatch path plateaus early).
   scale [N ...]    for each N in {1,2,4,6} (default "1 2"), measure aggregate rps
                    and emit inject-scale.json
 
@@ -642,6 +764,7 @@ main() {
   case "$cmd" in
     ceiling)         cmd_ceiling ;;
     ceiling-complex) cmd_ceiling "$CEILING_COMPLEX_FILE" "$SCENARIO_CEILING_COMPLEX" "$SCRIPT_DIR/inject-ceiling-complex.json" ;;
+    percore)         cmd_percore ;;
     scale)           cmd_scale "$@" ;;
     *)               usage ;;
   esac

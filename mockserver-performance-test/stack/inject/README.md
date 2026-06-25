@@ -1,7 +1,7 @@
 # Load-Injection Measurement Harness
 
 Drive **N MockServer instances as HTTP load _generators_** at a single **Envoy
-`direct_response` sink** and measure three things:
+`direct_response` sink** and measure four things:
 
 1. **Ceiling (simple)** — how much load *one* MockServer instance can inject
    before it saturates (offered-vs-achieved rps as the offered rate climbs a
@@ -17,14 +17,23 @@ Drive **N MockServer instances as HTTP load _generators_** at a single **Envoy
    **empirical rps/core data point**: `simple = R/core`, `complex = R'/core`, and
    the per-request cost factor ≈ `R/R'` (complex is lower — each request is
    pricier).
+1c. **Per-core sweep** — pin **one** injector to exactly C cores for each C ∈
+   {1, 2, 4, 8}, run the SIMPLE-GET stair, and record the highest clean ceiling,
+   the injector CPU% there, and `rps_per_core = ceiling_rps / C`. This **measures**
+   the efficiency curve directly instead of inferring it from a single core count:
+   a single injector's dispatch path plateaus well before 8 cores saturate, so
+   **`rps_per_core` falls as C grows** (the diminishing-returns story). `injector_cpu_pct`
+   (docker-stats percent-of-ONE-core, so 195% ≈ 1.95 cores) shows whether each C
+   actually CPU-saturates: ≈ C×100% at small C, well under at large C.
 2. **Scaling** — how aggregate injected throughput grows as instances are added
    (1 → 2 → 4 → 6), and the per-instance breakdown. This runs on **lean
    injectors** (2 cores each), each driven at **~80% of the measured lean 2-core
    ceiling** — a rate **derived at runtime** by a quick lean probe, not
    hardcoded — so each instance is comfortably CPU-bound but never collapsing.
 
-The two phases run **sequentially** (never concurrently), so the fat-ceiling
-injector and the lean-scaling injectors reuse the same cores without contention.
+The phases run **sequentially** (never concurrently), so the fat-ceiling /
+per-core injector and the lean-scaling injectors reuse the same cores without
+contention.
 
 The Envoy sink answers every request with `200 OK` from its own event loop — it
 has **no upstream**, so it absorbs far more than the injectors can produce. That
@@ -119,7 +128,13 @@ MOCKSERVER_IMAGE=mockserver/mockserver:mockserver-snapshot \
 # ...or just let run-inject.sh manage compose up/down for you:
 ./run-inject.sh ceiling          # 1 injector, simple GET stair  -> inject-ceiling.json
 ./run-inject.sh ceiling-complex  # 1 injector, templated POST    -> inject-ceiling-complex.json
+./run-inject.sh percore          # 1 injector at C=1,2,4,8 cores -> inject-percore.json
 ./run-inject.sh scale 1 2        # aggregate rps at N=1 and N=2   -> inject-scale.json
+
+# short laptop smoke of the per-core sweep (fewer cores, short stair):
+PERCORE_CORES="1 2" PERCORE_INJ_CPU0=2 PERCORE_ENVOY_CPUS=8-13 \
+  PERCORE_OFFERED="2000 4000 6000 8000" PERCORE_HOLD_S=14 PERCORE_SETTLE_S=10 \
+  RATE_WINDOW=8s ./run-inject.sh percore
 
 # Tear everything down
 docker compose -f docker-compose.inject.yml \
@@ -194,6 +209,20 @@ the heavier templated-POST scenario. To get the per-request cost factor, compare
 complex scenario's rps/core is lower; `factor ≈ rps_per_core_simple /
 rps_per_core_complex` is roughly how much more CPU each templated request costs.
 
+`inject-percore.json` (per-core sweep, simple GET) — one `points[]` entry per core
+count C:
+
+- `cores` — how many cores the single injector was pinned to for this point.
+- `ceiling_rps` — the highest CLEAN sustained ceiling at C cores (same clean-gate:
+  achieved ≥ 0.9 × offered, throttle ≈ 0, errors ≈ 0, reuse ≥ `REUSE_MIN`).
+- `injector_cpu_pct` — docker-stats **percent-of-ONE-core** at that point (195% ≈
+  1.95 cores). At small C it should be ≈ C×100% (CPU-saturated); at large C it
+  won't reach C×100% — the dispatch path, not CPU, is the limit (the whole point).
+- `reqs_per_connection` — connection reuse at the ceiling (high = healthy).
+- `rps_per_core` — `ceiling_rps / cores`. **Falls as C grows** because a single
+  injector plateaus before more cores help — publish this as the efficiency curve
+  instead of inferring rps/core from a single 2-core-vs-8-core comparison.
+
 `inject-scale.json` (sweep over N):
 
 - `per_instance_offered_rps` — the rate each lean injector was driven at. This is
@@ -257,19 +286,27 @@ measured external sum, not a single coordinated run.
 
 `.buildkite/scripts/steps/perf-test-inject.sh` runs this on the pinned perf box
 and uploads `inject-ceiling.json` + `inject-ceiling-complex.json` +
-`inject-scale.json` as Buildkite artifacts. The phases run **sequentially** and
-pin **differently**:
+`inject-percore.json` + `inject-scale.json` as Buildkite artifacts. The phases run
+**sequentially** and pin **differently**:
 
 - **Ceiling (simple)** — **wide Envoy on `2-7`** (6 cores, `--concurrency 6`) + a
   **fat** injector on `8-15` (8 cores), fine stair, simple GET — the per-instance
   CPU-bound ceiling on a clean plateau. The wide Envoy + the reuse assertion keep
   the ceiling injector-bound and free of connection-churn artifacts.
 - **Ceiling (complex)** — same wide-Envoy + fat-injector split + stair, templated
-  POST — the comparable rps/core data point. Adds ~5 min; simple ceiling + scale ≈
-  18–22 min, so the trio stays well inside the 60-min step timeout.
+  POST — the comparable rps/core data point.
+- **Per-core** (`C ∈ {1,2,4,8}`) — one injector pinned to **C cores** (its first C
+  of cores `2-9`) with **Envoy on a disjoint `10-15`** (6 cores), simple GET — the
+  measured rps/core efficiency curve.
 - **Scale** (`N ∈ {1,2,4,6}`) — Envoy on `0-1`, **lean** injectors 2 cores each
   (`2-3 … 12-13`), each driven at the runtime-derived ~80%-of-lean-ceiling rate
   (left unchanged — the scaling phase is already clean).
+
+**Timeout headroom:** the per-core sweep adds ~4 short stairs (~10–12 min). The
+full step — two ceilings (~10 min) + per-core (~10–12 min) + scale (~8–12 min) —
+totals ~30–35 min, comfortably inside the **60-min** step timeout. Bump the
+pipeline step timeout only if a slower agent pushes a run past ~50 min. The C-list
+is overridable via `PERF_INJECT_PERCORE` (e.g. `"1 2 4"`) to trim time.
 
 It is **opt-in** — dispatched by `perf-test-guard.sh` only when `PERF_INJECT=true`
 (build env) or the build message contains `[perf-inject]` — so it stays off the
