@@ -16,6 +16,8 @@ sitemap:
 
 <p>This makes MockServer useful for <strong>resilience verification</strong>: inject a chaos fault (see <a href="/mock_server/chaos_testing.html">Chaos Testing</a>), apply load, then assert that your SLOs held — all from a single control plane, with no external load tool required.</p>
 
+<p>One instance injects tens of thousands of requests per second; to drive much more, run instances in parallel — see <a href="/mock_server/load_injection_performance.html">Load Injection Performance</a> for how injection scales across many instances.</p>
+
 <p><strong>Registry model: load, then trigger.</strong> Scenarios are organised as a <strong>registry of named scenarios</strong>. You first <strong>load</strong> (register) a scenario by name with <code class="inline code">PUT /mockserver/loadScenario</code> — this does <em>not</em> run it — then <strong>trigger</strong> one or many by name with <code class="inline code">PUT /mockserver/loadScenario/start</code> to run them <strong>concurrently</strong>, each with its own optional <strong>start delay</strong>. Loading is always allowed; <strong>triggering a run is off by default</strong>: <code class="inline code">start</code> returns <code class="inline code">403 Forbidden</code> until <code class="inline code">loadGenerationEnabled=true</code>. Hard caps on concurrent scenarios, virtual users, in-flight requests, RPS, duration, and step count prevent the feature from self-DoS-ing the server. Scenarios can be <strong>preloaded at startup</strong> from a JSON file via <code class="inline code">mockserver.loadScenarioInitializationJsonPath</code>.</p>
 
 <a id="on_this_page" class="anchor" href="#on_this_page">&nbsp;</a>
@@ -1551,6 +1553,7 @@ rate(mock_server_load_throttled_total[1m])</code></pre>
 <h2>Related Pages</h2>
 
 <ul>
+    <li><a href="/mock_server/load_injection_performance.html">Load Injection Performance</a> &mdash; how injected throughput scales across many parallel instances, with measured figures</li>
     <li><a href="/mock_server/mockserver_ui.html#ui_performance_section">Dashboard — Performance view</a> &mdash; build, run, and monitor load scenarios from the UI (see <a href="#dashboard_ui">Dashboard UI</a> above)</li>
     <li><a href="/mock_server/chaos_testing.html">Chaos Testing &amp; Fault Injection</a> &mdash; inject faults alongside load to verify resilience under stress</li>
     <li><a href="/mock_server/chaos_testing.html#slo_resilience_verdicts">SLO Resilience Verdicts</a> &mdash; assert that latency and error-rate objectives held during the load run (post-run, via <code class="inline code">verifySLO</code>)</li>
