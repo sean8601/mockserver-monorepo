@@ -208,12 +208,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by a drift test.
 
 #### IDE extensions (VS Code & JetBrains)
-- **JetBrains plugin no longer uses internal/deprecated IntelliJ Platform APIs.** The Marketplace verifier flagged
-  the plugin (against IntelliJ IDEA 2026.2 EAP) for one internal-API usage and one deprecated-API usage. The
-  internal `PluginManagerCore.getPlugin(PluginId)` self-version lookup is replaced with the public
-  `PluginManager.getPluginByClass(...)`, and the deprecated `JBCefBrowser(...)` constructors are replaced with the
-  `JBCefBrowser.createBuilder()...build()` API. No behaviour change; keeps the plugin installable on current and
-  future IDE builds.
+- **JetBrains plugin no longer uses internal/deprecated IntelliJ Platform APIs.** A blocking IntelliJ Plugin
+  Verifier gate now runs in CI against the full recommended IDE set (IntelliJ IDEA 2024.3 through the 2026.2 EAP)
+  and rejects internal, deprecated, and scheduled-for-removal API usages — the same classes the Marketplace
+  flags. The plugin's self-version lookup is resolved from its own plugin class loader
+  (`PluginAwareClassLoader.pluginDescriptor.version`), because the id-based `PluginManager.getPluginByClass(...)` /
+  `PluginManagerCore.getPlugin(PluginId)` lookups are both marked internal on newer platforms; the tool-window
+  buttons fire their actions via the stable `AnActionEvent.createEvent(...)` + `update`/`actionPerformed`
+  primitives instead of the deprecated `ActionUtil.invokeAction(...)`; and the deprecated `JBCefBrowser(...)`
+  constructors use the `JBCefBrowser.createBuilder()...build()` API. No behaviour change; keeps the plugin
+  installable on current and future IDE builds.
 
 #### OpenAPI & contract testing
 - **OpenAPI `format: date`/`date-time` examples render as ISO strings again** ([#2370](https://github.com/mock-server/mockserver-monorepo/issues/2370)).
