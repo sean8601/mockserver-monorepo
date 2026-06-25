@@ -58,24 +58,24 @@ build status, and CI/CD health.
 ```bash
 # List recent builds
 curl -sH "Authorization: Bearer $BUILDKITE_TOKEN" \
-  "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver/builds?per_page=10" | jq '.[].{state,branch,message,created_at}'
+  "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver-java/builds?per_page=10" | jq '.[].{state,branch,message,created_at}'
 
 # Get a specific build
 curl -sH "Authorization: Bearer $BUILDKITE_TOKEN" \
-  "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver/builds/{build_number}"
+  "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver-java/builds/{build_number}"
 
 # Get build log output for a job
 curl -sH "Authorization: Bearer $BUILDKITE_TOKEN" \
-  "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver/builds/{build_number}/jobs/{job_id}/log"
+  "https://api.buildkite.com/v2/organizations/mockserver/pipelines/mockserver-java/builds/{build_number}/jobs/{job_id}/log"
 ```
 
 If the `bk` CLI is available:
 ```bash
 # List recent builds
-bk build list --org mockserver --pipeline mockserver
+bk build list --org mockserver --pipeline mockserver-java
 
 # Get build details
-bk build get --org mockserver --pipeline mockserver --number {build_number}
+bk build get --org mockserver --pipeline mockserver-java --number {build_number}
 ```
 
 ## GitHub Actions (secondary CI)
@@ -83,10 +83,10 @@ bk build get --org mockserver --pipeline mockserver --number {build_number}
 For Docker image builds and CodeQL scans, check GitHub Actions:
 ```bash
 # List recent workflow runs
-gh run list --repo mockserver/mockserver --limit 10
+gh run list --repo mock-server/mockserver-monorepo --limit 10
 
 # View a specific run
-gh run view {run_id} --repo mockserver/mockserver --log-failed
+gh run view {run_id} --repo mock-server/mockserver-monorepo --log-failed
 ```
 
 ## Pipeline Failure Patterns

@@ -142,7 +142,7 @@
     },
     "pipeline-investigator": {
       "description": "Buildkite pipeline failure investigator",
-      "model": "openai/gpt-4o",
+      "model": "openai/gpt-5",
       "temperature": 0.2,
       "agent": ".opencode/agents/pipeline-investigator.md",
       "tools": {
