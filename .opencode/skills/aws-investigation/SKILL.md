@@ -217,9 +217,9 @@ aws cloudwatch get-metric-statistics \
   --region <REGION> --profile mockserver-build
 ```
 
-Report the deviation from baseline (e.g. "last good cycle launched 4 instances in
-90s; this cycle has been `Pending` 12 min") rather than the raw current numbers
-alone. If no baseline is available, say so.
+Report the deviation from baseline (e.g. the last good cycle reached healthy
+capacity quickly whereas this cycle has stayed `Pending` far longer) rather than
+the raw current numbers alone. If no baseline is available, say so.
 
 ## Failure Patterns
 
