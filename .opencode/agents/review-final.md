@@ -29,7 +29,8 @@ When prompted by the orchestrator:
 5. Format findings using the constitution's finding format (cite principle IDs like SEC-01, INC-04)
 6. Complete the Review Completeness Check before returning verdict
 7. Return PASS or BLOCK (no hedging language)
-8. Return the result to the caller
+8. Beside the verdict, emit a single machine-readable marker line `Iteration: <n>` stating which review iteration (1-based) this invocation is, so the orchestrator can mechanically derive `review_iterations` and rework cost (§18.6 T10)
+9. Return the result to the caller
 
 ## Rules & Reference
 
