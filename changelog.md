@@ -115,6 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JetBrains plugin no longer uses internal/deprecated IntelliJ Platform APIs.** The Marketplace verifier flagged
+  the plugin (against IntelliJ IDEA 2026.2 EAP) for one internal-API usage and one deprecated-API usage. The
+  internal `PluginManagerCore.getPlugin(PluginId)` self-version lookup is replaced with the public
+  `PluginManager.getPluginByClass(...)`, and the deprecated `JBCefBrowser(...)` constructors are replaced with the
+  `JBCefBrowser.createBuilder()...build()` API. No behaviour change; keeps the plugin installable on current and
+  future IDE builds.
 - **OpenAPI `format: date`/`date-time` examples render as ISO strings again** ([#2370](https://github.com/mock-server/mockserver-monorepo/issues/2370)).
   An inline `example: '2021-01-30'` on a `type: string, format: date` property was serialised in generated
   responses as epoch-millis (`1611964800000`) instead of the ISO string, because swagger-parser deserialises
