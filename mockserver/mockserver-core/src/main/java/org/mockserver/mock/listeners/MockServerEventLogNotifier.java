@@ -55,6 +55,14 @@ public class MockServerEventLogNotifier extends ObjectWithReflectiveEqualsHashCo
         this.scheduler = scheduler;
     }
 
+    /**
+     * The {@link Scheduler} backing the asynchronous notification path. Exposed to subclasses so the
+     * eventual-verification harness can reuse the same scheduled executor for its retry deadline.
+     */
+    protected Scheduler getScheduler() {
+        return scheduler;
+    }
+
     protected void notifyListeners(final MockServerEventLog notifier, boolean synchronous) {
         if (listenerAdded && !listeners.isEmpty()) {
             if (synchronous) {
@@ -136,5 +144,14 @@ public class MockServerEventLogNotifier extends ObjectWithReflectiveEqualsHashCo
 
     public void unregisterListener(MockServerLogListener listener) {
         listeners.remove(listener);
+    }
+
+    /**
+     * Number of currently-registered listeners. Exposed for tests to assert that transient listeners
+     * (e.g. the eventual-verification retry listener) are always unregistered on completion and never leak.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    public int listenerCount() {
+        return listeners.size();
     }
 }

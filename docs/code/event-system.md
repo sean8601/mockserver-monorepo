@@ -214,6 +214,59 @@ sequenceDiagram
     end
 ```
 
+#### Server-Side Eventual Verification (`timeout`) — #1713
+
+Both `Verification` and `VerificationSequence` carry an optional `timeout` (milliseconds). When it is
+`null`, absent, or `0`, verification is **single-shot**: `MockServerEventLog.verify(...)` evaluates the
+event log once and immediately accepts (`202`) or rejects (`406`) — byte-identical to the original
+behaviour (no listener, no scheduling). When `timeout > 0`, verification becomes **eventual**: the
+server re-evaluates as the log changes until the verification passes or the deadline elapses.
+
+```mermaid
+flowchart TD
+    A["verify(timeout > 0)"] --> B["first evaluation\n(logging suppressed)"]
+    B -->|"passes"| P["final logging-on eval\nlog PASSED, complete 202"]
+    B -->|"fails"| C["register transient MockServerLogListener\narm deadline on scheduler executor"]
+    C --> D{"updated() notification\n(coalesced ~250ms)"}
+    D -->|"re-eval passes\n(suppressed)"| Q["completeOnce"]
+    D -->|"re-eval fails\n(suppressed)"| E["keep waiting"]
+    C --> F{"deadline fires"}
+    F --> Q
+    Q --> G["cleanup, then ONE final logging-on eval\nlog PASSED/FAILED, complete 202/406"]
+```
+
+The harness lives in `MockServerEventLog.eventuallyVerify(...)` / `armEventualVerification(...)` and is
+shared by request, response, and sequence verification (each supplies a `SingleVerificationEvaluation`
+lambda that calls the existing `verifyRequest` / `verifyResponse` / `verifySequenceOnce`, threading a
+`logResult` flag).
+
+- **Exactly one logged outcome.** Intermediate re-evaluations during the wait run with
+  `logResult = false`, so a failing-and-waiting verify does **not** append a `VERIFICATION_FAILED` entry
+  per retry (which would pollute the bounded ring buffer — up to ~`timeout / 250ms` entries — and could
+  evict real traffic). Only the winning completion (first pass or the deadline) runs one final
+  `logResult = true` evaluation that emits the single `VERIFICATION_PASSED`/`VERIFICATION_FAILED` entry.
+  Single-shot (`timeout` null/0) is unchanged: its one evaluation always logs.
+- **Single-completion guard.** An `AtomicBoolean` ensures the result consumer is invoked exactly once,
+  whether the first passing re-evaluation or the deadline wins the race; the winner re-derives the real
+  result (so a request arriving right at the deadline is honoured) in its final logging-on evaluation.
+- **No leak.** On completion the transient listener is always unregistered and the deadline
+  `ScheduledFuture` is always cancelled (via the same single-completion guard) — before the final
+  evaluation runs, so it cannot itself re-trigger the listener.
+- **No I/O-thread blocking.** Re-evaluation runs on the coalesced notification path (scheduler
+  executor) and the deadline runs on the scheduler — completion is delivered through the existing async
+  result consumer, never a blocking sleep on the request thread.
+- **Coalesced-notification safe.** Because async listener notifications are debounced (~250 ms), the
+  harness also re-runs the evaluation once right after registering the listener, so a passing event that
+  arrived between the first evaluation and registration is not missed.
+- **Bounded.** The accepted timeout is hard-capped at `MockServerEventLog.MAX_VERIFY_TIMEOUT_MILLIS`
+  (60 s) so a client cannot tie up server resources indefinitely. When no scheduled executor is available
+  (synchronous `Scheduler`, e.g. WAR/servlet) the eventual path cannot be armed and verification
+  degrades gracefully to single-shot.
+
+This is the **server-side** complement to the Java client's existing client-side timeout-aware
+`verify(request, times, Duration)` poll (see "Verification in Parallel Testing" below); a non-Java
+client can now get eventual semantics by setting `timeout` on the verification JSON instead of polling.
+
 `VerificationTimes` supports:
 - `never()` — must not have been received
 - `once()` — exactly 1
