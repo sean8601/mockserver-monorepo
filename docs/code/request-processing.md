@@ -507,6 +507,15 @@ flowchart TD
 
 The unmatched speculative-proxy path (`HttpActionHandler`, which calls `NettyHttpClient` directly) is intentionally **not** wrapped by these controls; they apply to matched forward expectations. Self-loopback relay and the HTTP/2/HTTP/3 forward paths are unaffected (the breaker only keys on a resolvable host, and retry only engages for idempotent methods when explicitly configured).
 
+### Forward Upstream Protocol Selection (HTTP/1.1 vs HTTP/2)
+
+`HttpForwardAction.sendRequest(...)` chooses the protocol used for the **upstream** forward connection:
+
+- **Default (`forwardProxyHttp2Enabled=false`)** — the forwarded request's protocol is nulled, so `NettyHttpClient` uses HTTP/1.1 for every forward regardless of the inbound request's protocol. This is the historical behaviour and is byte-identical to before the property existed.
+- **Opt-in (`forwardProxyHttp2Enabled=true`)** — the **inbound request's protocol is preserved** on the forwarded request. An HTTP/2 inbound request is therefore forwarded to the upstream as HTTP/2; an inbound request with no protocol marker still forwards as HTTP/1.1.
+
+HTTP/2 upstream forwarding relies on the existing HTTP/2 client stack: `NettyHttpClient` only flows HTTP/2 over **TLS with ALPN** (via `HttpClientInitializer` / `HttpOrHttp2Initializer`). A non-secure HTTP/2 forward is automatically **downgraded to HTTP/1.1** by `NettyHttpClient`, so there is no h2c (cleartext / prior-knowledge) forward path. **Limitations:** HTTP/2 forward connections are **not pooled or multiplexed** across forwards — the forward connection pool (`HttpForwardConnectionPool`) is HTTP/1.1-only, so each HTTP/2 forward opens (and closes) its own connection.
+
 ### Host Header Auto-Adjustment
 
 When forwarding requests via `FORWARD_REPLACE` or `FORWARD_TEMPLATE` actions, MockServer can automatically adjust the `Host` header to match the target server. This is controlled by the `forwardAdjustHostHeader` configuration property (default: `true`).

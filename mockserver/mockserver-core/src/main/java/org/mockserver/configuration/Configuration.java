@@ -126,6 +126,7 @@ public class Configuration {
     private Long forwardConnectionPoolIdleTimeoutMillis;
     private Integer forwardProxyRetryCount;
     private Long forwardProxyRetryBackoffMillis;
+    private Boolean forwardProxyHttp2Enabled;
     private Boolean forwardProxyCircuitBreakerEnabled;
     private Integer forwardProxyCircuitBreakerFailureThreshold;
     private Long forwardProxyCircuitBreakerWindowMillis;
@@ -1841,6 +1842,30 @@ public class Configuration {
      */
     public Configuration forwardProxyRetryBackoffMillis(Long forwardProxyRetryBackoffMillis) {
         this.forwardProxyRetryBackoffMillis = forwardProxyRetryBackoffMillis;
+        return this;
+    }
+
+    public Boolean forwardProxyHttp2Enabled() {
+        if (forwardProxyHttp2Enabled == null) {
+            return ConfigurationProperties.forwardProxyHttp2Enabled();
+        }
+        return forwardProxyHttp2Enabled;
+    }
+
+    /**
+     * If false (the default) every forwarded or proxied request is sent to its upstream over HTTP/1.1,
+     * matching the historical behaviour. If true the inbound request's protocol is preserved when
+     * forwarding, so an HTTP/2 inbound request is forwarded to the upstream as HTTP/2.
+     * <p>
+     * Limitations: HTTP/2 upstream forwarding only happens over TLS with ALPN negotiation (no h2c
+     * cleartext path — a non-secure HTTP/2 request is downgraded to HTTP/1.1). HTTP/2 forward
+     * connections are not pooled or multiplexed across forwards; the forward connection pool is
+     * HTTP/1.1-only.
+     *
+     * @param forwardProxyHttp2Enabled preserve the inbound request protocol (e.g. HTTP/2) when forwarding
+     */
+    public Configuration forwardProxyHttp2Enabled(Boolean forwardProxyHttp2Enabled) {
+        this.forwardProxyHttp2Enabled = forwardProxyHttp2Enabled;
         return this;
     }
 

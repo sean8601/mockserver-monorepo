@@ -202,6 +202,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Long forwardConnectionPoolIdleTimeoutMillis;
     private Integer forwardProxyRetryCount;
     private Long forwardProxyRetryBackoffMillis;
+    private Boolean forwardProxyHttp2Enabled;
     private Boolean forwardProxyCircuitBreakerEnabled;
     private Integer forwardProxyCircuitBreakerFailureThreshold;
     private Long forwardProxyCircuitBreakerWindowMillis;
@@ -471,6 +472,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.forwardConnectionPoolIdleTimeoutMillis = configuration.forwardConnectionPoolIdleTimeoutMillis();
             this.forwardProxyRetryCount = configuration.forwardProxyRetryCount();
             this.forwardProxyRetryBackoffMillis = configuration.forwardProxyRetryBackoffMillis();
+            this.forwardProxyHttp2Enabled = configuration.forwardProxyHttp2Enabled();
             this.forwardProxyCircuitBreakerEnabled = configuration.forwardProxyCircuitBreakerEnabled();
             this.forwardProxyCircuitBreakerFailureThreshold = configuration.forwardProxyCircuitBreakerFailureThreshold();
             this.forwardProxyCircuitBreakerWindowMillis = configuration.forwardProxyCircuitBreakerWindowMillis();
@@ -781,6 +783,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.forwardConnectionPoolIdleTimeoutMillis(forwardConnectionPoolIdleTimeoutMillis);
         configuration.forwardProxyRetryCount(forwardProxyRetryCount);
         configuration.forwardProxyRetryBackoffMillis(forwardProxyRetryBackoffMillis);
+        configuration.forwardProxyHttp2Enabled(forwardProxyHttp2Enabled);
         configuration.forwardProxyCircuitBreakerEnabled(forwardProxyCircuitBreakerEnabled);
         configuration.forwardProxyCircuitBreakerFailureThreshold(forwardProxyCircuitBreakerFailureThreshold);
         configuration.forwardProxyCircuitBreakerWindowMillis(forwardProxyCircuitBreakerWindowMillis);
@@ -1354,6 +1357,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (forwardProxyRetryBackoffMillis != null) {
             target.forwardProxyRetryBackoffMillis(forwardProxyRetryBackoffMillis);
+        }
+        if (forwardProxyHttp2Enabled != null) {
+            target.forwardProxyHttp2Enabled(forwardProxyHttp2Enabled);
         }
         if (forwardProxyCircuitBreakerEnabled != null) {
             target.forwardProxyCircuitBreakerEnabled(forwardProxyCircuitBreakerEnabled);
@@ -3062,6 +3068,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setForwardProxyRetryBackoffMillis(Long forwardProxyRetryBackoffMillis) {
         this.forwardProxyRetryBackoffMillis = forwardProxyRetryBackoffMillis;
+        return this;
+    }
+
+    public Boolean getForwardProxyHttp2Enabled() {
+        return forwardProxyHttp2Enabled;
+    }
+
+    public ConfigurationDTO setForwardProxyHttp2Enabled(Boolean forwardProxyHttp2Enabled) {
+        this.forwardProxyHttp2Enabled = forwardProxyHttp2Enabled;
         return this;
     }
 

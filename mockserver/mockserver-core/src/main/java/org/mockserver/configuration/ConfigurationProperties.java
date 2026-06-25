@@ -127,6 +127,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS = "mockserver.forwardConnectionPoolIdleTimeoutMillis";
     private static final String MOCKSERVER_FORWARD_PROXY_RETRY_COUNT = "mockserver.forwardProxyRetryCount";
     private static final String MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS = "mockserver.forwardProxyRetryBackoffMillis";
+    private static final String MOCKSERVER_FORWARD_PROXY_HTTP2_ENABLED = "mockserver.forwardProxyHttp2Enabled";
     private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_ENABLED = "mockserver.forwardProxyCircuitBreakerEnabled";
     private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_FAILURE_THRESHOLD = "mockserver.forwardProxyCircuitBreakerFailureThreshold";
     private static final String MOCKSERVER_FORWARD_PROXY_CIRCUIT_BREAKER_WINDOW_MILLIS = "mockserver.forwardProxyCircuitBreakerWindowMillis";
@@ -1992,6 +1993,27 @@ public class ConfigurationProperties {
      */
     public static void forwardProxyRetryBackoffMillis(long backoffMillis) {
         setProperty(MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS, "" + backoffMillis);
+    }
+
+    public static boolean forwardProxyHttp2Enabled() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_PROXY_HTTP2_ENABLED, "MOCKSERVER_FORWARD_PROXY_HTTP2_ENABLED", "" + false));
+    }
+
+    /**
+     * If false (the default) every forwarded or proxied request is sent to its upstream over HTTP/1.1,
+     * regardless of the protocol the inbound request used, matching the historical behaviour. If true
+     * the inbound request's protocol is preserved when forwarding, so an HTTP/2 inbound request is
+     * forwarded to the upstream as HTTP/2.
+     * <p>
+     * Limitations: HTTP/2 upstream forwarding only happens over TLS with ALPN negotiation (there is no
+     * h2c prior-knowledge / cleartext path — a non-secure HTTP/2 request is automatically downgraded to
+     * HTTP/1.1). HTTP/2 forward connections are not pooled or multiplexed across forwards; the forward
+     * connection pool remains HTTP/1.1-only.
+     *
+     * @param enable preserve the inbound request protocol (e.g. HTTP/2) when forwarding upstream
+     */
+    public static void forwardProxyHttp2Enabled(boolean enable) {
+        setProperty(MOCKSERVER_FORWARD_PROXY_HTTP2_ENABLED, "" + enable);
     }
 
     public static boolean forwardProxyCircuitBreakerEnabled() {
