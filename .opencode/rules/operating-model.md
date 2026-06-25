@@ -74,6 +74,12 @@ rationale **must be recorded**. The caps bound coordination cost and merge
 risk; they intentionally forgo unbounded throughput. (Spec:
 `docs/operations/ai-sdlc-integration-spec.md` §8.1–§8.2.)
 
+Achieved parallelism against these caps, and the **cause** of any serialisation
+below them, are measured and recorded per §18.7 (see [[metrics]] for the
+utilisation and serialisation-cause definitions). Only cap-bound time argues for
+the caps being the bottleneck; the rest argues for better **Decompose** (above)
+or contention reduction ([[worktree-workflow]]).
+
 ## Autonomy & The Commit Gate
 
 **The gate chain is the authority to ship — not a human prompt.** Once a unit

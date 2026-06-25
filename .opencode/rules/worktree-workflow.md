@@ -232,6 +232,12 @@ rm -f .tmp/active-worktree
 - If B's rebase finds conflicts with A's changes, B resolves them
   inside the worktree before pushing
 
+These are **serialisation-recording sites** for the parallelism metrics (§18.7,
+[[metrics]]): B's wait for the lock is `serialisation.merge_lock_s`, and a
+conflicting rebase is `serialisation.contention_s` — recorded in B's decision-log
+telemetry block ([[decision-log]]) so the dominant reason parallelism is lost can
+be ranked.
+
 ### Lock contention timeout
 
 - Agent C tries to rebase while Agent D's rebase has been running >5m
