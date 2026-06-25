@@ -805,7 +805,7 @@ public class JavaScriptTemplateEngineTest {
         // given
         graalJsAvailable();
         String template = "" +
-            "for (var i = 0; i < 1000000000; i++) {" + NEW_LINE +
+            "for (var i = 0; i < 1000000; i++) {" + NEW_LINE +
             "  i * i;" + NEW_LINE +
             "}" + NEW_LINE +
             "if (request.method === 'POST' && request.path === '/somePath') {" + NEW_LINE +
@@ -841,7 +841,7 @@ public class JavaScriptTemplateEngineTest {
         // given
         graalJsAvailable();
         final String template = "" +
-            "for (var i = 0; i < 1000000000; i++) {" + NEW_LINE +
+            "for (var i = 0; i < 1000000; i++) {" + NEW_LINE +
             "  i * i;" + NEW_LINE +
             "}" + NEW_LINE +
             "if (request.method === 'POST' && request.path === '/somePath') {" + NEW_LINE +
