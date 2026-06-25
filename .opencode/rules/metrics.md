@@ -122,3 +122,7 @@ Concrete numeric targets (beyond the hard ≤10 concurrency cap and zero-drift) 
 an open decision (spec §22.6). Until set, trend each metric against its baseline
 and act on adverse trends — feeding findings into autonomy promotion/demotion
 ([[risk-authority-classification]]) and the [[operating-model]] feedback loop.
+
+Cost/budget enforcement is likewise **convention-level today** (the OP5 budget /
+OP11 liveness conventions in [[operating-model]]) pending a framework token/step
+accounting API; it is tracked with these open thresholds (§22.6), not yet hard-enforced.

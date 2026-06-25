@@ -49,6 +49,14 @@
       "rm -rf /*": "deny"
     }
   },
+  // Observability & inference cost:
+  //   - Metric definitions live in `.opencode/rules/metrics.md`.
+  //   - Per-unit telemetry is recorded in the decision-log telemetry block
+  //     (`.opencode/rules/decision-log.md`) and aggregated by
+  //     `.opencode/scripts/aggregate-telemetry.sh`.
+  //   - The per-agent `model`/`temperature` settings below are the primary
+  //     inference-cost lever (spec §9, OP5) — routing a task to the right model
+  //     class is how cost and determinism are controlled.
   "agent": {
     "test-runner": {
       "description": "Runs Maven tests for changed modules and reports results",

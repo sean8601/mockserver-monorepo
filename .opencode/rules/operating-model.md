@@ -80,6 +80,25 @@ utilisation and serialisation-cause definitions). Only cap-bound time argues for
 the caps being the bottleneck; the rest argues for better **Decompose** (above)
 or contention reduction ([[worktree-workflow]]).
 
+## Budget & Liveness (OP5 / OP11)
+
+Every workflow runs against a **bounded budget** — time, steps, and inference
+cost. Two conventions bound it:
+
+- **Budget (OP5 / §20):** when a unit is about to exceed its budget, the
+  orchestrator **MUST defer or escalate rather than silently exceed it.** Routing
+  each task to the right model/temperature is the primary cost lever (spec §9);
+  the budget is the backstop.
+- **Liveness (OP11):** on non-progress or looping — repeating the same failed
+  step, oscillating reviews, no forward movement — the orchestrator **MUST
+  stop and escalate** rather than consume budget indefinitely.
+
+Hard enforcement is **framework-limited today**: opencode does not yet expose a
+token/step-accounting API the orchestrator could trip on automatically. Until it
+does, the *control* is this convention plus recording budget/liveness outcomes in
+the decision-log telemetry block ([[decision-log]], [[metrics]] §22.6 open
+thresholds) — not an automatic cut-off.
+
 ## Autonomy & The Commit Gate
 
 **The gate chain is the authority to ship — not a human prompt.** Once a unit
