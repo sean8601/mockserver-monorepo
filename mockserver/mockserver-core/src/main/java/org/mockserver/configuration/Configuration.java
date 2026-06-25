@@ -124,6 +124,12 @@ public class Configuration {
     private Boolean forwardConnectionPoolEnabled;
     private Integer forwardConnectionPoolMaxIdlePerKey;
     private Long forwardConnectionPoolIdleTimeoutMillis;
+    private Boolean forwardConnectionPoolKeepAlive;
+    private Integer forwardConnectionPoolMaxTotalPerKey;
+    private Boolean forwardSocketKeepAlive;
+    private Integer forwardSocketKeepAliveIdleSeconds;
+    private Integer forwardSocketKeepAliveIntervalSeconds;
+    private Integer forwardSocketKeepAliveCount;
     private Integer forwardProxyRetryCount;
     private Long forwardProxyRetryBackoffMillis;
     private Boolean forwardProxyHttp2Enabled;
@@ -1814,6 +1820,125 @@ public class Configuration {
      */
     public Configuration forwardConnectionPoolIdleTimeoutMillis(Long forwardConnectionPoolIdleTimeoutMillis) {
         this.forwardConnectionPoolIdleTimeoutMillis = forwardConnectionPoolIdleTimeoutMillis;
+        return this;
+    }
+
+    public Boolean forwardConnectionPoolKeepAlive() {
+        if (forwardConnectionPoolKeepAlive == null) {
+            return ConfigurationProperties.forwardConnectionPoolKeepAlive();
+        }
+        return forwardConnectionPoolKeepAlive;
+    }
+
+    /**
+     * If true, idle keep-alive upstream connections are retained (kept warm) up to
+     * {@code forwardConnectionPoolMaxTotalPerKey} per upstream instead of being closed back down to
+     * {@code forwardConnectionPoolMaxIdlePerKey}, eliminating connection churn under sustained
+     * high-rate, low-latency forwarding or load injection. Default false leaves the pool's
+     * release-time close decision byte-for-byte unchanged. Only relevant when
+     * {@code forwardConnectionPoolEnabled} is true.
+     *
+     * @param forwardConnectionPoolKeepAlive enable keep-warm retention of idle upstream connections
+     */
+    public Configuration forwardConnectionPoolKeepAlive(Boolean forwardConnectionPoolKeepAlive) {
+        this.forwardConnectionPoolKeepAlive = forwardConnectionPoolKeepAlive;
+        return this;
+    }
+
+    public Integer forwardConnectionPoolMaxTotalPerKey() {
+        if (forwardConnectionPoolMaxTotalPerKey == null) {
+            return ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey();
+        }
+        return forwardConnectionPoolMaxTotalPerKey;
+    }
+
+    /**
+     * Maximum number of warm (idle) keep-alive upstream connections retained per upstream when
+     * {@code forwardConnectionPoolKeepAlive} is true. Bounds the warm set so it cannot grow without
+     * limit. Has no effect unless keep-warm is enabled. Default 2000; the effective ceiling is never
+     * below {@code forwardConnectionPoolMaxIdlePerKey}.
+     *
+     * @param forwardConnectionPoolMaxTotalPerKey maximum warm idle connections retained per upstream
+     */
+    public Configuration forwardConnectionPoolMaxTotalPerKey(Integer forwardConnectionPoolMaxTotalPerKey) {
+        this.forwardConnectionPoolMaxTotalPerKey = forwardConnectionPoolMaxTotalPerKey;
+        return this;
+    }
+
+    public Boolean forwardSocketKeepAlive() {
+        if (forwardSocketKeepAlive == null) {
+            return ConfigurationProperties.forwardSocketKeepAlive();
+        }
+        return forwardSocketKeepAlive;
+    }
+
+    /**
+     * If true (the default) the forward/proxy HTTP client enables TCP keepalive on its upstream
+     * connections so dead/half-open connections are detected faster and NAT/firewall mappings stay
+     * warm. On epoll the keepalive timers are tuned via
+     * {@code forwardSocketKeepAliveIdleSeconds}/{@code IntervalSeconds}/{@code Count}; on NIO only
+     * SO_KEEPALIVE is set. Benign default-on hardening; set false to restore no socket keepalive.
+     *
+     * @param forwardSocketKeepAlive enable TCP keepalive on forward/proxy upstream connections
+     */
+    public Configuration forwardSocketKeepAlive(Boolean forwardSocketKeepAlive) {
+        this.forwardSocketKeepAlive = forwardSocketKeepAlive;
+        return this;
+    }
+
+    public Integer forwardSocketKeepAliveIdleSeconds() {
+        if (forwardSocketKeepAliveIdleSeconds == null) {
+            return ConfigurationProperties.forwardSocketKeepAliveIdleSeconds();
+        }
+        return forwardSocketKeepAliveIdleSeconds;
+    }
+
+    /**
+     * Seconds an upstream connection may sit idle before the first TCP keepalive probe (epoll
+     * {@code TCP_KEEPIDLE}); applied only on epoll when {@code forwardSocketKeepAlive} is true.
+     * Default 60.
+     *
+     * @param forwardSocketKeepAliveIdleSeconds idle seconds before the first keepalive probe
+     */
+    public Configuration forwardSocketKeepAliveIdleSeconds(Integer forwardSocketKeepAliveIdleSeconds) {
+        this.forwardSocketKeepAliveIdleSeconds = forwardSocketKeepAliveIdleSeconds;
+        return this;
+    }
+
+    public Integer forwardSocketKeepAliveIntervalSeconds() {
+        if (forwardSocketKeepAliveIntervalSeconds == null) {
+            return ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds();
+        }
+        return forwardSocketKeepAliveIntervalSeconds;
+    }
+
+    /**
+     * Seconds between successive TCP keepalive probes (epoll {@code TCP_KEEPINTVL}); applied only on
+     * epoll when {@code forwardSocketKeepAlive} is true. Default 15.
+     *
+     * @param forwardSocketKeepAliveIntervalSeconds interval seconds between keepalive probes
+     */
+    public Configuration forwardSocketKeepAliveIntervalSeconds(Integer forwardSocketKeepAliveIntervalSeconds) {
+        this.forwardSocketKeepAliveIntervalSeconds = forwardSocketKeepAliveIntervalSeconds;
+        return this;
+    }
+
+    public Integer forwardSocketKeepAliveCount() {
+        if (forwardSocketKeepAliveCount == null) {
+            return ConfigurationProperties.forwardSocketKeepAliveCount();
+        }
+        return forwardSocketKeepAliveCount;
+    }
+
+    /**
+     * Number of unacknowledged TCP keepalive probes before the upstream connection is dropped (epoll
+     * {@code TCP_KEEPCNT}); applied only on epoll when {@code forwardSocketKeepAlive} is true.
+     * Default 4.
+     *
+     * @param forwardSocketKeepAliveCount failed keepalive probes before the connection is dropped
+     */
+    public Configuration forwardSocketKeepAliveCount(Integer forwardSocketKeepAliveCount) {
+        this.forwardSocketKeepAliveCount = forwardSocketKeepAliveCount;
         return this;
     }
 

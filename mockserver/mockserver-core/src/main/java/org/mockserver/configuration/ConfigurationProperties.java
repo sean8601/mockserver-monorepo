@@ -125,6 +125,12 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_ENABLED = "mockserver.forwardConnectionPoolEnabled";
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_IDLE_PER_KEY = "mockserver.forwardConnectionPoolMaxIdlePerKey";
     private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS = "mockserver.forwardConnectionPoolIdleTimeoutMillis";
+    private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE = "mockserver.forwardConnectionPoolKeepAlive";
+    private static final String MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_TOTAL_PER_KEY = "mockserver.forwardConnectionPoolMaxTotalPerKey";
+    private static final String MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE = "mockserver.forwardSocketKeepAlive";
+    private static final String MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_IDLE_SECONDS = "mockserver.forwardSocketKeepAliveIdleSeconds";
+    private static final String MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_INTERVAL_SECONDS = "mockserver.forwardSocketKeepAliveIntervalSeconds";
+    private static final String MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_COUNT = "mockserver.forwardSocketKeepAliveCount";
     private static final String MOCKSERVER_FORWARD_PROXY_RETRY_COUNT = "mockserver.forwardProxyRetryCount";
     private static final String MOCKSERVER_FORWARD_PROXY_RETRY_BACKOFF_MILLIS = "mockserver.forwardProxyRetryBackoffMillis";
     private static final String MOCKSERVER_FORWARD_PROXY_HTTP2_ENABLED = "mockserver.forwardProxyHttp2Enabled";
@@ -1963,6 +1969,119 @@ public class ConfigurationProperties {
      */
     public static void forwardConnectionPoolIdleTimeoutMillis(long idleTimeoutMillis) {
         setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_IDLE_TIMEOUT_MILLIS, "" + idleTimeoutMillis);
+    }
+
+    public static boolean forwardConnectionPoolKeepAlive() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE, "MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE", "" + false));
+    }
+
+    /**
+     * If true, idle keep-alive upstream connections are RETAINED on release (kept warm) up to
+     * {@code forwardConnectionPoolMaxTotalPerKey} per upstream, instead of being closed back down to
+     * {@code forwardConnectionPoolMaxIdlePerKey}. This eliminates the connection churn that otherwise
+     * caps a single instance's throughput under sustained high-rate, low-latency forwarding or load
+     * injection: under fast turnover a burst of concurrent requests would otherwise each open a fresh
+     * connection (because releases lag the dispatch) and the surplus would be closed back to the idle
+     * cap, collapsing requests-per-connection. With keep-warm on, the warm set grows to match the
+     * offered concurrency and is then reused. Truly idle warm connections are still reaped by the
+     * {@code forwardConnectionPoolIdleTimeoutMillis} reaper, so the pool drains when load stops.
+     * <p>
+     * If false (the default) the pool's release-time close decision is byte-for-byte unchanged from
+     * the historical behaviour (surplus over {@code forwardConnectionPoolMaxIdlePerKey} is closed).
+     * Only relevant when {@code forwardConnectionPoolEnabled} is true.
+     *
+     * @param enable enable keep-warm retention of idle upstream connections under sustained load
+     */
+    public static void forwardConnectionPoolKeepAlive(boolean enable) {
+        setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE, "" + enable);
+    }
+
+    public static int forwardConnectionPoolMaxTotalPerKey() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_TOTAL_PER_KEY, "MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_TOTAL_PER_KEY", 2000));
+    }
+
+    /**
+     * Maximum number of warm (idle) keep-alive upstream connections retained per upstream (host,
+     * port, scheme) when {@code forwardConnectionPoolKeepAlive} is true. This bounds the warm set so
+     * it cannot grow without limit; connections offered beyond this ceiling are closed. Has no effect
+     * unless BOTH {@code forwardConnectionPoolEnabled} and {@code forwardConnectionPoolKeepAlive} are
+     * true (it is never consulted when keep-warm is off, so the default-off path is unaffected).
+     * <p>
+     * Default is 2000. The effective ceiling is never below {@code forwardConnectionPoolMaxIdlePerKey}
+     * (keep-warm only ever raises retention, never lowers it).
+     *
+     * @param maxTotalPerKey maximum warm idle connections retained per upstream under keep-warm
+     */
+    public static void forwardConnectionPoolMaxTotalPerKey(int maxTotalPerKey) {
+        setProperty(MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_TOTAL_PER_KEY, "" + maxTotalPerKey);
+    }
+
+    public static boolean forwardSocketKeepAlive() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE, "MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE", "" + true));
+    }
+
+    /**
+     * If true (the default) the forward/proxy HTTP client enables TCP keepalive (SO_KEEPALIVE) on its
+     * upstream connections, so the OS can detect dead or half-open upstream connections faster and keep
+     * NAT/firewall mappings warm. On the native epoll transport the keepalive timers are tuned (see
+     * {@code forwardSocketKeepAliveIdleSeconds}/{@code IntervalSeconds}/{@code Count}); on NIO only
+     * SO_KEEPALIVE is enabled (timer tuning requires epoll).
+     * <p>
+     * This is a benign default behaviour change from older versions (which set no SO_KEEPALIVE): it is
+     * the standard for production HTTP clients, costs only an occasional probe packet on otherwise-idle
+     * connections, and complements (does not replace) the connection pool's existing liveness checks.
+     * Set to false to restore the historical behaviour of no socket keepalive.
+     *
+     * @param enable enable TCP keepalive on forward/proxy upstream connections
+     */
+    public static void forwardSocketKeepAlive(boolean enable) {
+        setProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE, "" + enable);
+    }
+
+    public static int forwardSocketKeepAliveIdleSeconds() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_IDLE_SECONDS, "MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_IDLE_SECONDS", 60));
+    }
+
+    /**
+     * Seconds a forward/proxy upstream connection may sit idle before the first TCP keepalive probe is
+     * sent (epoll {@code TCP_KEEPIDLE}). Only applied on the native epoll transport when
+     * {@code forwardSocketKeepAlive} is true. Default 60.
+     *
+     * @param idleSeconds idle time in seconds before the first keepalive probe
+     */
+    public static void forwardSocketKeepAliveIdleSeconds(int idleSeconds) {
+        setProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_IDLE_SECONDS, "" + idleSeconds);
+    }
+
+    public static int forwardSocketKeepAliveIntervalSeconds() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_INTERVAL_SECONDS, "MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_INTERVAL_SECONDS", 15));
+    }
+
+    /**
+     * Seconds between successive TCP keepalive probes once probing has started (epoll
+     * {@code TCP_KEEPINTVL}). Only applied on the native epoll transport when
+     * {@code forwardSocketKeepAlive} is true. Default 15.
+     *
+     * @param intervalSeconds interval in seconds between keepalive probes
+     */
+    public static void forwardSocketKeepAliveIntervalSeconds(int intervalSeconds) {
+        setProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_INTERVAL_SECONDS, "" + intervalSeconds);
+    }
+
+    public static int forwardSocketKeepAliveCount() {
+        return Math.max(1, readIntegerProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_COUNT, "MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_COUNT", 4));
+    }
+
+    /**
+     * Number of unacknowledged TCP keepalive probes after which the upstream connection is considered
+     * dead and closed (epoll {@code TCP_KEEPCNT}). Only applied on the native epoll transport when
+     * {@code forwardSocketKeepAlive} is true. Default 4. With the defaults (idle 60s, interval 15s,
+     * count 4) a dead peer is detected roughly 60 + 4&times;15 = 120s after it goes idle.
+     *
+     * @param count number of failed keepalive probes before the connection is dropped
+     */
+    public static void forwardSocketKeepAliveCount(int count) {
+        setProperty(MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_COUNT, "" + count);
     }
 
     public static int forwardProxyRetryCount() {

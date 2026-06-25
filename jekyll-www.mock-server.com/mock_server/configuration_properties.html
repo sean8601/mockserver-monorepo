@@ -1034,6 +1034,106 @@ mockserver.enableCORSForAllResponses=true</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolIdleTimeoutMillis="60000"</code></pre>
 </div>
 
+<button id="button_configuration_forward_connection_pool_keep_alive" class="accordion title"><strong>Keep Pooled Connections Warm Under Sustained Load</strong></button>
+<div class="panel title">
+    <p>By default, when a burst of forwarded or proxied requests finishes, the pool keeps only up to <span class="inline_code">forwardConnectionPoolMaxIdlePerKey</span> idle connections per upstream and closes the rest. Under very high request rates against a fast upstream (responses returning in well under a millisecond) this can cause connection churn: requests are dispatched faster than earlier connections are returned to the pool, so each opens a fresh connection and the surplus is then closed &mdash; capping throughput on connection setup rather than on real work.</p>
+    <p>Enable this setting to keep those connections <em>warm</em> instead of closing them: idle keep-alive connections are retained on release up to <span class="inline_code">forwardConnectionPoolMaxTotalPerKey</span> per upstream, so the warm pool grows to match the offered concurrency and is then reused, eliminating the churn. Warm connections are still closed and evicted once they have been idle for <span class="inline_code">forwardConnectionPoolIdleTimeoutMillis</span>, so the pool drains back down when load stops.</p>
+    <p>The default (off) leaves the pool's behaviour exactly as before. Enable it for sustained high-throughput forwarding or load injection against a fast upstream. Only relevant when <span class="inline_code">forwardConnectionPoolEnabled</span> is true.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardConnectionPoolKeepAlive(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolKeepAlive=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardConnectionPoolKeepAlive=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolKeepAlive="true"</code></pre>
+</div>
+
+<button id="button_configuration_forward_connection_pool_max_total_per_key" class="accordion title"><strong>Maximum Warm Pooled Connections Per Upstream</strong></button>
+<div class="panel title">
+    <p>The maximum number of warm (idle) keep-alive upstream connections retained per upstream (host, port and scheme) when <span class="inline_code">forwardConnectionPoolKeepAlive</span> is enabled. This bounds the warm pool so it cannot grow without limit; connections offered beyond this ceiling are closed. The effective ceiling is never below <span class="inline_code">forwardConnectionPoolMaxIdlePerKey</span> (keeping connections warm only ever raises retention, never lowers it). Has no effect unless both <span class="inline_code">forwardConnectionPoolEnabled</span> and <span class="inline_code">forwardConnectionPoolKeepAlive</span> are true.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">2000</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey(int maxTotalPerKey)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolMaxTotalPerKey=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_TOTAL_PER_KEY=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardConnectionPoolMaxTotalPerKey=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardConnectionPoolMaxTotalPerKey="4000"</code></pre>
+</div>
+
+<button id="button_configuration_forward_socket_keep_alive" class="accordion title"><strong>Forward Upstream TCP Keepalive</strong></button>
+<div class="panel title">
+    <p>Enables TCP keepalive (<span class="inline_code">SO_KEEPALIVE</span>) on the connections the forward / proxy client opens to upstream servers. Keepalive lets the operating system detect dead or half-open upstream connections faster (most useful during long-lived or streaming requests) and keeps NAT and firewall connection mappings warm so they are not silently dropped while a pooled connection sits idle. It complements &mdash; it does not replace &mdash; the connection pool's own liveness checks and idle eviction.</p>
+    <p>On Linux with the native epoll transport the keepalive timers are tuned (see the idle / interval / count settings below) so a dead peer is detected in about a minute or two rather than the operating-system default of around two hours. On other platforms (macOS, Windows) or when native transport is disabled, only <span class="inline_code">SO_KEEPALIVE</span> is enabled and the operating-system default timers apply.</p>
+    <p>This is on by default. It is a small, benign change from older versions (which set no keepalive): it is standard for production HTTP clients, costs only an occasional probe packet on otherwise-idle connections, and improves detection of broken upstream connections. Set to false to restore the previous behaviour of no socket keepalive. If you enable keep-warm pooling against a real upstream, also keep <span class="inline_code">forwardConnectionPoolIdleTimeoutMillis</span> below the upstream/NAT idle window so idle connections are reaped before they are silently dropped; keepalive helps detect any that slip through as half-open.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">true</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardSocketKeepAlive(boolean enable)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAlive=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardSocketKeepAlive=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAlive="false"</code></pre>
+</div>
+
+<button id="button_configuration_forward_socket_keep_alive_idle_seconds" class="accordion title"><strong>Forward Upstream TCP Keepalive Idle Seconds</strong></button>
+<div class="panel title">
+    <p>How long (in seconds) an upstream connection may sit idle before the first TCP keepalive probe is sent. Only applied on the native epoll transport (Linux) when <span class="inline_code">forwardSocketKeepAlive</span> is enabled. Values below 1 are treated as 1.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">60</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardSocketKeepAliveIdleSeconds(int idleSeconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAliveIdleSeconds=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_IDLE_SECONDS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardSocketKeepAliveIdleSeconds=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAliveIdleSeconds="120"</code></pre>
+</div>
+
+<button id="button_configuration_forward_socket_keep_alive_interval_seconds" class="accordion title"><strong>Forward Upstream TCP Keepalive Interval Seconds</strong></button>
+<div class="panel title">
+    <p>How long (in seconds) between successive TCP keepalive probes once probing has started. Only applied on the native epoll transport (Linux) when <span class="inline_code">forwardSocketKeepAlive</span> is enabled. Values below 1 are treated as 1.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">15</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds(int intervalSeconds)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAliveIntervalSeconds=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_INTERVAL_SECONDS=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardSocketKeepAliveIntervalSeconds=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAliveIntervalSeconds="30"</code></pre>
+</div>
+
+<button id="button_configuration_forward_socket_keep_alive_count" class="accordion title"><strong>Forward Upstream TCP Keepalive Probe Count</strong></button>
+<div class="panel title">
+    <p>The number of unacknowledged TCP keepalive probes after which an upstream connection is considered dead and closed. Only applied on the native epoll transport (Linux) when <span class="inline_code">forwardSocketKeepAlive</span> is enabled. Values below 1 are treated as 1. With the defaults (idle 60s, interval 15s, count 4) a dead peer is detected roughly 60&nbsp;+&nbsp;4&times;15&nbsp;=&nbsp;120 seconds after it goes idle.</p>
+    <p>Type: <span class="keyword">int</span> Default: <span class="this_value">4</span></p>
+    <p>Java Code:</p>
+    <pre class="prettyprint lang-java code"><code class="code">ConfigurationProperties.forwardSocketKeepAliveCount(int count)</code></pre>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAliveCount=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_FORWARD_SOCKET_KEEP_ALIVE_COUNT=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.forwardSocketKeepAliveCount=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.forwardSocketKeepAliveCount="6"</code></pre>
+</div>
+
 <button id="button_configuration_forward_proxy_http2_enabled" class="accordion title"><strong>Forward Upstream Requests Using HTTP/2</strong></button>
 <div class="panel title">
     <p>By default every forwarded request is sent to its upstream over HTTP/1.1, regardless of the protocol the incoming request used. Enable this setting to preserve the incoming request's protocol when forwarding, so a request that arrived over HTTP/2 is forwarded to the upstream over HTTP/2 as well.</p>

@@ -804,6 +804,164 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetForwardConnectionPoolKeepAlive() {
+        boolean original = ConfigurationProperties.forwardConnectionPoolKeepAlive();
+        try {
+            // then - default value (keep-warm retention is OFF by default: the pool's release-time
+            // close decision is byte-for-byte the historical behaviour unless this is opted in)
+            assertThat(configuration.forwardConnectionPoolKeepAlive(), equalTo(false));
+
+            // when - system property setter enables it (the opt-in)
+            ConfigurationProperties.forwardConnectionPoolKeepAlive(true);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardConnectionPoolKeepAlive(), equalTo(true));
+            assertThat(System.getProperty("mockserver.forwardConnectionPoolKeepAlive"), equalTo("true"));
+            assertThat(configuration.forwardConnectionPoolKeepAlive(), equalTo(true));
+            ConfigurationProperties.forwardConnectionPoolKeepAlive(original);
+
+            // when - setter
+            configuration.forwardConnectionPoolKeepAlive(true);
+
+            // then - getter
+            assertThat(configuration.forwardConnectionPoolKeepAlive(), equalTo(true));
+        } finally {
+            ConfigurationProperties.forwardConnectionPoolKeepAlive(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardConnectionPoolMaxTotalPerKey() {
+        int original = ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey();
+        try {
+            // then - default value
+            assertThat(configuration.forwardConnectionPoolMaxTotalPerKey(), equalTo(2000));
+
+            // when - system property setter
+            ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey(4000);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey(), equalTo(4000));
+            assertThat(System.getProperty("mockserver.forwardConnectionPoolMaxTotalPerKey"), equalTo("4000"));
+            assertThat(configuration.forwardConnectionPoolMaxTotalPerKey(), equalTo(4000));
+            ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey(original);
+
+            // when - setter
+            configuration.forwardConnectionPoolMaxTotalPerKey(500);
+
+            // then - getter
+            assertThat(configuration.forwardConnectionPoolMaxTotalPerKey(), equalTo(500));
+        } finally {
+            ConfigurationProperties.forwardConnectionPoolMaxTotalPerKey(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardSocketKeepAlive() {
+        boolean original = ConfigurationProperties.forwardSocketKeepAlive();
+        try {
+            // then - default value (keepalive hardening is ON by default: standard for production HTTP
+            // clients, negligible cost, improves half-open detection)
+            assertThat(configuration.forwardSocketKeepAlive(), equalTo(true));
+
+            // when - system property setter disables it (restores the historical no-SO_KEEPALIVE behaviour)
+            ConfigurationProperties.forwardSocketKeepAlive(false);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardSocketKeepAlive(), equalTo(false));
+            assertThat(System.getProperty("mockserver.forwardSocketKeepAlive"), equalTo("false"));
+            assertThat(configuration.forwardSocketKeepAlive(), equalTo(false));
+            ConfigurationProperties.forwardSocketKeepAlive(original);
+
+            // when - setter
+            configuration.forwardSocketKeepAlive(false);
+
+            // then - getter
+            assertThat(configuration.forwardSocketKeepAlive(), equalTo(false));
+        } finally {
+            ConfigurationProperties.forwardSocketKeepAlive(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardSocketKeepAliveIdleSeconds() {
+        int original = ConfigurationProperties.forwardSocketKeepAliveIdleSeconds();
+        try {
+            // then - default value
+            assertThat(configuration.forwardSocketKeepAliveIdleSeconds(), equalTo(60));
+
+            // when - system property setter
+            ConfigurationProperties.forwardSocketKeepAliveIdleSeconds(120);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardSocketKeepAliveIdleSeconds(), equalTo(120));
+            assertThat(System.getProperty("mockserver.forwardSocketKeepAliveIdleSeconds"), equalTo("120"));
+            assertThat(configuration.forwardSocketKeepAliveIdleSeconds(), equalTo(120));
+            ConfigurationProperties.forwardSocketKeepAliveIdleSeconds(original);
+
+            // when - setter
+            configuration.forwardSocketKeepAliveIdleSeconds(30);
+
+            // then - getter
+            assertThat(configuration.forwardSocketKeepAliveIdleSeconds(), equalTo(30));
+        } finally {
+            ConfigurationProperties.forwardSocketKeepAliveIdleSeconds(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardSocketKeepAliveIntervalSeconds() {
+        int original = ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds();
+        try {
+            // then - default value
+            assertThat(configuration.forwardSocketKeepAliveIntervalSeconds(), equalTo(15));
+
+            // when - system property setter
+            ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds(30);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds(), equalTo(30));
+            assertThat(System.getProperty("mockserver.forwardSocketKeepAliveIntervalSeconds"), equalTo("30"));
+            assertThat(configuration.forwardSocketKeepAliveIntervalSeconds(), equalTo(30));
+            ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds(original);
+
+            // when - setter
+            configuration.forwardSocketKeepAliveIntervalSeconds(5);
+
+            // then - getter
+            assertThat(configuration.forwardSocketKeepAliveIntervalSeconds(), equalTo(5));
+        } finally {
+            ConfigurationProperties.forwardSocketKeepAliveIntervalSeconds(original);
+        }
+    }
+
+    @Test
+    public void shouldSetAndGetForwardSocketKeepAliveCount() {
+        int original = ConfigurationProperties.forwardSocketKeepAliveCount();
+        try {
+            // then - default value
+            assertThat(configuration.forwardSocketKeepAliveCount(), equalTo(4));
+
+            // when - system property setter
+            ConfigurationProperties.forwardSocketKeepAliveCount(8);
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.forwardSocketKeepAliveCount(), equalTo(8));
+            assertThat(System.getProperty("mockserver.forwardSocketKeepAliveCount"), equalTo("8"));
+            assertThat(configuration.forwardSocketKeepAliveCount(), equalTo(8));
+            ConfigurationProperties.forwardSocketKeepAliveCount(original);
+
+            // when - setter
+            configuration.forwardSocketKeepAliveCount(2);
+
+            // then - getter
+            assertThat(configuration.forwardSocketKeepAliveCount(), equalTo(2));
+        } finally {
+            ConfigurationProperties.forwardSocketKeepAliveCount(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetForwardProxyRetryCount() {
         int original = ConfigurationProperties.forwardProxyRetryCount();
         try {
