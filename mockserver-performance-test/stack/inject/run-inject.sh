@@ -53,6 +53,15 @@ SCALE_FILE="${SCALE_FILE:-$SCRIPT_DIR/scenario-scale.json}"
 THROTTLE_EPS="${THROTTLE_EPS:-5}"       # rps of throttle we treat as "~0"
 ERROR_EPS="${ERROR_EPS:-0.005}"         # 0.5% error rate we treat as "~0"
 RATE_WINDOW="${RATE_WINDOW:-15s}"       # rate() lookback; must be < hold duration
+# Minimum requests-per-connection (Envoy rq-rate / cx-rate) below which the injector
+# is judged to be CHURNING connections rather than reusing a keep-alive pool. The
+# forward client's idle-only pool reuses a connection for tens-to-hundreds of
+# requests when healthy; a value near 1 means a fresh socket per request, which
+# spikes injector CPU on connection setup and makes the measured ceiling reflect
+# connection-setup cost, not steady request dispatch. A point below this floor is
+# flagged NOT trustworthy (same status as throttle/error). See README "Connection
+# reuse". Set REUSE_MIN=0 to disable the assertion (e.g. a sink without cx stats).
+REUSE_MIN="${REUSE_MIN:-4}"
 
 # Per-stage hold geometry for the ceiling stair. Keep in sync with
 # scenario-ceiling.json (offered ladder + 25s holds). We sample at SETTLE secs
@@ -123,6 +132,13 @@ rnd() { awk -v x="${1:-0}" 'BEGIN{printf "%d", (x<0?x-0.5:x+0.5)}'; }
 # round a float to N decimals
 rndf() { awk -v x="${1:-0}" -v n="${2:-4}" 'BEGIN{printf "%.*f", n, x}'; }
 gt()  { awk -v a="${1:-0}" -v b="${2:-0}" 'BEGIN{exit !(a>b)}'; }
+# truthy test for an env flag: true/1/yes/on (case-insensitive) => success (0)
+is_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 # --- container CPU% (docker stats, single snapshot) ---------------------------
 container_cpu_pct() {
@@ -203,6 +219,17 @@ sample_point() {
     recv_rps="$(prom_query "sum(rate(envoy_http_downstream_rq_xx{envoy_response_code_class=\"2\",envoy_http_conn_manager_prefix=\"ingress_http\"}[$RATE_WINDOW]))")"
   fi
 
+  # Connection REUSE: requests-per-connection at Envoy = rq-rate / cx-rate over the
+  # window. A healthy keep-alive pool reuses each connection for many requests (high
+  # ratio); a value near 1 means the injector is opening a fresh socket per request
+  # (connection CHURN), which spikes injector CPU on connection setup and, under the
+  # open arrival model, tips into an overshoot/error collapse. This is the dominant
+  # artifact for trivial high-rate requests (the forward client's idle-only pool
+  # can't reuse a connection that is never idle — see README "Connection reuse").
+  local cx_rps reqs_per_conn
+  cx_rps="$(prom_query "sum(rate(envoy_http_downstream_cx_total{envoy_http_conn_manager_prefix=\"ingress_http\"}[$RATE_WINDOW]))")"
+  reqs_per_conn="$(awk -v r="$recv_rps" -v c="$cx_rps" 'BEGIN{ printf "%.1f", (c>0.0001? r/c : r) }')"
+
   # error_rate = errors / (achieved + errors)
   err_rate="$(awk -v e="$errors" -v a="$achieved" 'BEGIN{ d=a+e; printf "%.5f", (d>0? e/d : 0) }')"
 
@@ -220,6 +247,10 @@ sample_point() {
   if gt "$err_rate" "$ERROR_EPS"; then
     warn "scenario '$scenario' offered=$offered: error_rate=$err_rate (> $ERROR_EPS) — errors present, point suspect"
   fi
+  # Connection-churn assertion: only when REUSE_MIN>0 and we actually saw connections.
+  if gt "$REUSE_MIN" 0 && gt "$cx_rps" 0 && ! gt "$reqs_per_conn" "$REUSE_MIN"; then
+    warn "scenario '$scenario' offered=$offered: reqs_per_connection=$reqs_per_conn (< $REUSE_MIN) — injector is CHURNING connections (not reusing the keep-alive pool); CPU reflects connection setup, point NOT trustworthy"
+  fi
 
   jq -n \
     --argjson offered "$offered" \
@@ -230,10 +261,14 @@ sample_point() {
     --argjson envoy_cpu_pct "$(rnd "$cpu_envoy")" \
     --argjson max_inflight "$(rnd "$inflight")" \
     --argjson target_received_rps "$(rnd "$recv_rps")" \
+    --argjson reqs_per_connection "$(rndf "$reqs_per_conn" 1)" \
+    --argjson target_cx_rps "$(rndf "$cx_rps" 2)" \
     '{offered_rps:$offered, achieved_rps:$achieved, throttled_rps:$throttled,
       error_rate:$error_rate, injector_cpu_pct:$injector_cpu_pct,
       envoy_cpu_pct:$envoy_cpu_pct, max_inflight:$max_inflight,
-      target_received_rps:$target_received_rps}'
+      target_received_rps:$target_received_rps,
+      reqs_per_connection:$reqs_per_connection,
+      target_cx_rps:$target_cx_rps}'
 }
 
 # container-name helpers (compose default project naming may add -1 suffix; ask compose)
@@ -295,6 +330,7 @@ run_rate_stair() {
   local points="[]"
   local ceiling_rps=0
   local evidence='{}'
+  local clean_count=0
   local i offered
   for i in "${!offered_ladder[@]}"; do
     offered="${offered_ladder[$i]}"
@@ -304,28 +340,42 @@ run_rate_stair() {
     points="$(jq -c --argjson p "$pt" '. + [$p]' <<<"$points")"
 
     # Track the highest offered rate the injector actually achieved cleanly
-    # (achieved ~ offered, no throttle, no errors) as the ceiling estimate.
-    local ach thr er inf
+    # (achieved ~ offered, no throttle, no errors, reusing connections) as the
+    # ceiling estimate.
+    local ach thr er inf rpc cxr
     ach="$(jq -r '.achieved_rps' <<<"$pt")"
     thr="$(jq -r '.throttled_rps' <<<"$pt")"
     er="$(jq -r '.error_rate' <<<"$pt")"
     inf="$(jq -r '.max_inflight' <<<"$pt")"
-    # "clean" = achieved within 10% of offered, throttle ~0, errors ~0
+    rpc="$(jq -r '.reqs_per_connection' <<<"$pt")"
+    cxr="$(jq -r '.target_cx_rps' <<<"$pt")"
+    # "clean" = achieved within 10% of offered, throttle ~0, errors ~0, AND the
+    # injector is reusing connections (reqs_per_connection >= REUSE_MIN) so the
+    # measured CPU reflects request dispatch, not connection churn/setup. The reuse
+    # clause is applied ONLY when it can be assessed — i.e. REUSE_MIN>0 AND Envoy
+    # actually observed connections (cx_rps>0). When REUSE_MIN<=0 (assertion off) or
+    # cx_rps==0 (no connection counter — e.g. a sink without cx stats, or a stage so
+    # quiet none rotated) the reuse clause is skipped and the point is judged on
+    # achieved/throttle/errors alone. This mirrors the warn-gate's cx_rps>0 guard.
     if awk -v a="$ach" -v o="$offered" -v t="$thr" -v te="$THROTTLE_EPS" -v e="$er" -v ee="$ERROR_EPS" \
-         'BEGIN{exit !(a >= 0.90*o && t <= te && e <= ee)}'; then
+         -v rp="$rpc" -v rm="$REUSE_MIN" -v cx="$cxr" \
+         'BEGIN{exit !(a >= 0.90*o && t <= te && e <= ee && (rm <= 0 || cx <= 0 || rp >= rm))}'; then
       ceiling_rps="$ach"
       evidence="$(jq -n \
         --argjson injector_cpu_pct "$(jq '.injector_cpu_pct' <<<"$pt")" \
         --argjson envoy_cpu_pct "$(jq '.envoy_cpu_pct' <<<"$pt")" \
         --argjson throttled_rps "$(jq '.throttled_rps' <<<"$pt")" \
         --argjson error_rate "$(jq '.error_rate' <<<"$pt")" \
+        --argjson reqs_per_connection "$(jq '.reqs_per_connection' <<<"$pt")" \
         --argjson inflight_below_cap "$( [ "$inf" -lt 20000 ] && echo true || echo false )" \
         '{injector_cpu_pct:$injector_cpu_pct, envoy_cpu_pct:$envoy_cpu_pct,
           throttled_rps:$throttled_rps, error_rate:$error_rate,
+          reqs_per_connection:$reqs_per_connection,
           inflight_below_cap:$inflight_below_cap}')"
-      log "    -> clean: achieved=$ach (offered=$offered) — ceiling candidate"
+      clean_count=$((clean_count + 1))
+      log "    -> clean: achieved=$ach (offered=$offered, reqs/conn=$rpc) — ceiling candidate"
     else
-      log "    -> NOT clean (achieved=$ach offered=$offered throttle=$thr err=$er) — ladder top reached"
+      log "    -> NOT clean (achieved=$ach offered=$offered throttle=$thr err=$er reqs/conn=$rpc) — ladder top reached"
     fi
     # remaining tail of this hold before the next stage's offered changes
     local tail=$((hold_s - settle_s))
@@ -335,6 +385,7 @@ run_rate_stair() {
   STAIR_POINTS="$points"
   STAIR_CEILING_RPS="$(rnd "$ceiling_rps")"
   STAIR_EVIDENCE="$evidence"
+  STAIR_CLEAN_COUNT="$clean_count"
 }
 
 # ==============================================================================
@@ -366,8 +417,29 @@ cmd_ceiling() {
   local points="$STAIR_POINTS"
   local ceiling_rps="$STAIR_CEILING_RPS"
   local last_clean_evidence="$STAIR_EVIDENCE"
+  local clean_count="$STAIR_CLEAN_COUNT"
 
   stop_all_injectors injector-1
+
+  # --- self-diagnosing stale-image guard ---------------------------------------
+  # The keep-warm forward pool (env MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE)
+  # is what lets a trivial high-rate request REUSE connections instead of churning.
+  # It is a no-op unless the mockserver-snapshot image was built AT/AFTER the
+  # keep-warm core commit 142cbc778. A STALE image silently ignores the flag, the
+  # simple GET churns, and the reuse assertion (correctly) excludes every mid-ladder
+  # point — leaving ZERO clean points and a near-floor ceiling. Without this guard a
+  # paid ~60-min CI run produces no usable signal and no hint at the cause, so make
+  # the likely cause LOUD in the log when the reuse assertion is active and nothing
+  # passed it.
+  if is_truthy "${MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE:-}" || gt "$REUSE_MIN" 0; then
+    if [ "${clean_count:-0}" -eq 0 ]; then
+      warn "ceiling '$scenario_name': ZERO clean points — EVERY stage was excluded by the reuse/throttle/error gates."
+      warn "  Likely cause: the '$MOCKSERVER_IMAGE' image PREDATES the keep-warm forward-pool feature (core commit 142cbc778),"
+      warn "  so MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE=true is silently ignored and the injector churns connections."
+      warn "  Pull/rebuild a fresh mockserver-snapshot built at/after 142cbc778, then re-run. (Or set REUSE_MIN=0 to disable the"
+      warn "  reuse gate if you intend to measure a churning injector deliberately.)"
+    fi
+  fi
 
   jq -n \
     --arg scenario "$scenario_name" \

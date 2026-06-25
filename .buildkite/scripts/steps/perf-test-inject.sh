@@ -38,52 +38,59 @@ trap cleanup EXIT
 # --- core pinning --------------------------------------------------------------
 # The two phases run SEQUENTIALLY (never concurrently), so they pin DIFFERENTLY:
 #
-#   CEILING phase — ONE FAT injector pinned to ~8 cores (2-9) so it finds the
-#   real CPU-bound per-instance ceiling (~15k expected) with a clean plateau,
-#   instead of a 2-core injector overshooting and collapsing. Envoy on 0-1.
+#   CEILING phase — ONE FAT injector pinned to 8 cores (8-15) AND Envoy given
+#   HEADROOM on 6 cores (2-7, --concurrency 6), so the measured ceiling reflects
+#   the INJECTOR, not Envoy. (CI #71 showed the complex ceiling was Envoy-bound:
+#   envoy_cpu 113% on a 2-core Envoy while the injector still had ~6 cores of
+#   headroom — so Envoy, not the injector, was the bottleneck. Fat injector +
+#   wide Envoy fixes that.) Cores 0-1 left for Prometheus/OS/sampler.
 #
 #   SCALE phase — N LEAN injectors pinned to 2 cores each (i1=2-3 … i6=12-13),
 #   each driven at ~80% of the measured LEAN 2-core ceiling (derived by
-#   run-inject.sh's lean probe) so each is comfortably CPU-bound but NOT
-#   collapsing. Envoy on 0-1, leaving 14-15 for kernel/docker/sampler.
+#   run-inject.sh's lean probe). Envoy on 0-1 (the scale phase is clean as-is and
+#   is intentionally LEFT UNCHANGED). Cores 14-15 for kernel/docker/sampler.
 #
 # Each cpuset is overridable via the matching *_CPUS env.
 CORES="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)"
 SCALE_SET="1 2 4 6"
-CEILING_I1_CPUS="2-9"   # fat injector for the ceiling phase
+# Ceiling-phase pins (Envoy with headroom + fat injector). These apply ONLY to the
+# two ceiling invocations; the scale sweep uses the lean ENVOY_CPUS/I*_CPUS below.
+CEILING_ENVOY_CPUS="2-7"          # 6 cores for the sink so it is never the bottleneck
+CEILING_ENVOY_CONCURRENCY="6"     # match Envoy worker threads to its core budget
+CEILING_I1_CPUS="8-15"            # fat 8-core injector for the ceiling phase
 if [ "$CORES" -ge 16 ]; then
   export ENVOY_CPUS="${ENVOY_CPUS:-0-1}"
-  # lean 2-core pins used by the SCALE sweep
+  # lean 2-core pins used by the SCALE sweep (unchanged)
   export I1_CPUS="${I1_CPUS:-2-3}"  I2_CPUS="${I2_CPUS:-4-5}"
   export I3_CPUS="${I3_CPUS:-6-7}"  I4_CPUS="${I4_CPUS:-8-9}"
   export I5_CPUS="${I5_CPUS:-10-11}" I6_CPUS="${I6_CPUS:-12-13}"
-  echo "--- core-pinning enabled (${CORES} vCPU): envoy=$ENVOY_CPUS  ceiling-injector=$CEILING_I1_CPUS (fat)  scale-injectors=2..13 (2 cores each, lean)"
+  echo "--- core-pinning enabled (${CORES} vCPU): ceiling=[envoy=$CEILING_ENVOY_CPUS (6c) + fat injector=$CEILING_I1_CPUS (8c)]  scale=[envoy=$ENVOY_CPUS + lean injectors 2..13 (2c each)]"
 else
-  # Not enough cores to pin a fat injector + 6 disjoint lean ones — disable
-  # pinning and cap the scale sweep so we don't oversubscribe a small agent.
+  # Not enough cores to pin a fat injector + wide Envoy + 6 lean injectors —
+  # disable pinning and cap the scale sweep so we don't oversubscribe a small agent.
   echo "--- WARNING: ${CORES} vCPU (<16) — core-pinning skipped; numbers will be noisier"
   export ENVOY_CPUS="" I1_CPUS="" I2_CPUS="" I3_CPUS="" I4_CPUS="" I5_CPUS="" I6_CPUS=""
-  CEILING_I1_CPUS=""
+  CEILING_ENVOY_CPUS="" CEILING_ENVOY_CONCURRENCY="" CEILING_I1_CPUS=""
   SCALE_SET="1 2"
 fi
 
 # Allow CI to override the scale sweep explicitly (e.g. PERF_INJECT_SCALE="1 2 4").
 SCALE_SET="${PERF_INJECT_SCALE:-$SCALE_SET}"
 
-# --- ceiling (N=1, FAT injector, SIMPLE GET) -----------------------------------
+# --- ceiling (N=1, FAT injector + WIDE Envoy, SIMPLE GET) ----------------------
 # run-inject.sh manages compose up/down itself; it leaves inject-ceiling.json in
-# the inject dir. The fat cpuset is applied only to this phase.
-echo "--- inject ceiling (N=1 fine RATE stair, SIMPLE GET, fat injector I1_CPUS=$CEILING_I1_CPUS)"
-I1_CPUS="$CEILING_I1_CPUS" "$RUN_INJECT" ceiling
+# the inject dir. The fat injector + wide-Envoy cpusets are applied only here.
+echo "--- inject ceiling (N=1 fine RATE stair, SIMPLE GET, fat injector I1_CPUS=$CEILING_I1_CPUS, envoy=$CEILING_ENVOY_CPUS)"
+ENVOY_CPUS="$CEILING_ENVOY_CPUS" ENVOY_CONCURRENCY="$CEILING_ENVOY_CONCURRENCY" I1_CPUS="$CEILING_I1_CPUS" "$RUN_INJECT" ceiling
 
-# --- ceiling (N=1, FAT injector, COMPLEX templated POST) -----------------------
-# Same fat injector + same stair as the simple ceiling, but a heavier request
-# (feeder + ~1KB Velocity-templated JSON body) so each request costs real CPU.
-# Comparable rps/core data point: with ceiling_rps + injector_cpu_pct from both
-# JSONs, rps/core_complex < rps/core_simple, and the factor ~ R'/R is derivable.
+# --- ceiling (N=1, FAT injector + WIDE Envoy, COMPLEX templated POST) ----------
+# Same fat injector + wide Envoy + same stair as the simple ceiling, but a heavier
+# request (feeder + ~1KB Velocity-templated JSON body) so each request costs real
+# CPU. Comparable rps/core data point: with ceiling_rps + injector_cpu_pct from
+# both JSONs, rps/core_complex < rps/core_simple, and the factor ~ R'/R is derivable.
 # Adds ~5 min; the simple ceiling + scale ~18-22 min, so well inside the 60-min step.
-echo "--- inject ceiling (N=1 fine RATE stair, COMPLEX templated POST, fat injector I1_CPUS=$CEILING_I1_CPUS)"
-I1_CPUS="$CEILING_I1_CPUS" "$RUN_INJECT" ceiling-complex
+echo "--- inject ceiling (N=1 fine RATE stair, COMPLEX templated POST, fat injector I1_CPUS=$CEILING_I1_CPUS, envoy=$CEILING_ENVOY_CPUS)"
+ENVOY_CPUS="$CEILING_ENVOY_CPUS" ENVOY_CONCURRENCY="$CEILING_ENVOY_CONCURRENCY" I1_CPUS="$CEILING_I1_CPUS" "$RUN_INJECT" ceiling-complex
 
 # --- scale sweep (lean injectors, rate derived from the lean 2-core ceiling) ---
 # run-inject.sh runs a lean 2-core probe first, sets per-instance rate to ~80% of

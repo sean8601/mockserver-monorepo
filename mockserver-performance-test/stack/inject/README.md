@@ -39,6 +39,57 @@ complex (POST-with-body) ceiling collapse to a meaningless near-zero. Draining
 the body keeps the connection alive; bodyless requests (the simple GET ceiling)
 skip the buffering, so the sink stays cheap for them.
 
+### Connection reuse — why the ceiling phases give Envoy headroom and assert reuse
+
+The measured ceiling is only meaningful if it reflects **request dispatch**, not
+**connection setup**. MockServer's forward HTTP client pools only *idle*
+keep-alive connections, so it can only reuse a connection that is momentarily idle
+between responses. For **trivial high-rate requests** (a bodyless GET to this
+sink completes in tens of microseconds) the dispatch concurrency needed by
+Little's Law climbs until connections are essentially never idle — so `acquire`
+finds the pool empty and the client opens a **fresh socket per request**
+(connection *churn*). That churn spikes injector CPU on connection setup and, under
+the open arrival model, tips into an overshoot/error collapse. A heavier request
+(the ~1 KB templated POST) paces dispatch enough that connections stay reusable,
+so it does **not** churn. (Root cause was the forward client's idle-only pool;
+MockServer core now ships an opt-in **keep-warm** forward pool that retains a
+standing warm set sized to demand — see the image requirement below.)
+
+Three mitigations keep the ceiling honest:
+
+1. **Keep-warm forward pool on the injectors.** The injectors set
+   `MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE=true` (bounded by
+   `MOCKSERVER_FORWARD_CONNECTION_POOL_MAX_TOTAL_PER_KEY`), so the forward client
+   keeps a warm set of connections instead of only pooling momentarily-idle ones —
+   the trivial high-rate GET reuses connections instead of churning.
+2. **Envoy headroom in the ceiling phases.** Both ceiling phases give Envoy **6
+   cores** (`ENVOY_CPUS=2-7`, `--concurrency 6`) and the fat injector **8 cores**
+   (`I1_CPUS=8-15`), so Envoy returns responses fast (shorter in-flight time → less
+   pressure on the pool) and is never itself the bottleneck. (CI #71 measured the
+   complex ceiling Envoy-bound at `envoy_cpu 113%` on a 2-core Envoy — this split
+   fixes that.) The **scaling** phase is unchanged (Envoy on `0-1`).
+3. **A connection-reuse assertion.** Each ceiling point records
+   `reqs_per_connection` = Envoy `downstream_rq_total` rate ÷ `downstream_cx_total`
+   rate. A healthy pool reuses each connection for tens-to-hundreds of requests; a
+   value below `REUSE_MIN` (default 4) means the injector is churning, so the point
+   is flagged with a loud WARNING and **excluded from `ceiling_rps`** — exactly like
+   the throttle/error assertions. The reported ceiling is therefore the highest rate
+   the injector sustained while *reusing* connections, never a churn-corrupted
+   number.
+
+> **Image requirement — keep-warm needs a fresh snapshot.** The keep-warm flag
+> (`MOCKSERVER_FORWARD_CONNECTION_POOL_KEEP_ALIVE`) only works on a
+> `mockserver/mockserver:mockserver-snapshot` image **built at or after core commit
+> `142cbc778`** ("opt-in keep-warm forward connection pool"). An **older snapshot
+> silently ignores** the flag: the simple-GET injector churns connections, the
+> reuse assertion (correctly) excludes every mid-ladder point, and `ceiling_rps`
+> collapses to a near-floor value — wasting a paid ~60-min CI run. **Before a CI
+> run, pull a fresh snapshot** (`docker pull mockserver/mockserver:mockserver-snapshot`)
+> or rebuild it from a master checkout that includes `142cbc778`. `run-inject.sh`
+> self-diagnoses this: if the reuse assertion is active and **zero** ceiling points
+> pass it, the ceiling phase prints a loud WARNING naming a stale image as the
+> likely cause.
+
 ```mermaid
 flowchart LR
   subgraph injectors["MockServer injectors (load generators)"]
@@ -122,10 +173,15 @@ ENVOY_CPUS=0-1 I1_CPUS=2-3 I2_CPUS=4-5 \
   headroom.
 - `target_received_rps` — Envoy's `envoy_http_downstream_rq_completed` rate;
   should track `achieved_rps` (proof the injected requests really landed).
+- `reqs_per_connection` — Envoy `downstream_rq_total` rate ÷ `downstream_cx_total`
+  rate. High (tens–hundreds) means the injector is **reusing** its keep-alive pool;
+  near 1 means **connection churn** (a fresh socket per request — see "Connection
+  reuse"). Below `REUSE_MIN` (default 4) the point is flagged and excluded from
+  `ceiling_rps`.
 - `ceiling_rps` — the highest offered rate the injector achieved **cleanly**
-  (achieved within 10% of offered, no throttle, no errors). With the fine stair
-  this lands on a clean plateau just below where CPU saturates, rather than the
-  last point before an overshoot collapse.
+  (achieved within 10% of offered, no throttle, no errors, **and reusing
+  connections**). With the fine stair this lands on a clean plateau just below where
+  CPU saturates, rather than the last point before an overshoot/churn collapse.
 - `scenario` — which scenario produced this file (`inject-ceiling` for the simple
   GET, `inject-ceiling-complex` for the templated POST).
 
@@ -204,13 +260,16 @@ and uploads `inject-ceiling.json` + `inject-ceiling-complex.json` +
 `inject-scale.json` as Buildkite artifacts. The phases run **sequentially** and
 pin **differently**:
 
-- **Ceiling (simple)** — Envoy on `0-1`, one **fat** injector on `2-9` (8 cores),
-  fine stair, simple GET — the per-instance CPU-bound ceiling on a clean plateau.
-- **Ceiling (complex)** — same fat injector + stair, templated POST — the
-  comparable rps/core data point. Adds ~5 min; simple ceiling + scale ≈ 18–22 min,
-  so the trio stays well inside the 60-min step timeout.
+- **Ceiling (simple)** — **wide Envoy on `2-7`** (6 cores, `--concurrency 6`) + a
+  **fat** injector on `8-15` (8 cores), fine stair, simple GET — the per-instance
+  CPU-bound ceiling on a clean plateau. The wide Envoy + the reuse assertion keep
+  the ceiling injector-bound and free of connection-churn artifacts.
+- **Ceiling (complex)** — same wide-Envoy + fat-injector split + stair, templated
+  POST — the comparable rps/core data point. Adds ~5 min; simple ceiling + scale ≈
+  18–22 min, so the trio stays well inside the 60-min step timeout.
 - **Scale** (`N ∈ {1,2,4,6}`) — Envoy on `0-1`, **lean** injectors 2 cores each
-  (`2-3 … 12-13`), each driven at the runtime-derived ~80%-of-lean-ceiling rate.
+  (`2-3 … 12-13`), each driven at the runtime-derived ~80%-of-lean-ceiling rate
+  (left unchanged — the scaling phase is already clean).
 
 It is **opt-in** — dispatched by `perf-test-guard.sh` only when `PERF_INJECT=true`
 (build env) or the build message contains `[perf-inject]` — so it stays off the
