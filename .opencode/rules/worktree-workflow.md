@@ -197,6 +197,15 @@ timeout exceeded, fail with a clear error: *"Rebase lock held for >5m
 by another session — retry in a few minutes or check `lsof
 .git/agent-rebase.lock` for the holder."*
 
+**Re-verify the integrated result (spec §8.4).** If the rebase pulled in
+other units' commits (master advanced since this branch was cut), re-run the
+test gate (Gate 1) against the integrated tip **before** cleanup — defects can
+emerge from the *combination* even when each unit passed in isolation. A clean
+fast-forward (no intervening commits) needs no re-run. Record the lock wait as
+`serialisation.merge_lock_s` (and a conflicting rebase as
+`serialisation.contention_s`) in the unit's decision-log telemetry block
+([[decision-log]], §18.7).
+
 `flock` is POSIX, present by default on macOS and Linux. On older macOS
 without `flock`, fall back to `mkdir`-based mutex (atomic on POSIX):
 
