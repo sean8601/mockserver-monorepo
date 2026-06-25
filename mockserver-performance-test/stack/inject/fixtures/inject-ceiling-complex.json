@@ -1,0 +1,81 @@
+{
+  "proto": "http",
+  "target": "envoy-direct-response",
+  "scenario": "inject-ceiling-complex",
+  "_note": "laptop-scale validation (6-core injector on a 14-core contended Mac, short holds) — proves the COMPLEX templated-POST scenario renders per request with ZERO connection/throttle errors at every point (the Envoy Lua body-drain fix; without it a POST-with-body collapsed at ~57% kind=connection errors). Same contract as inject-ceiling.json. Per-point injector_cpu_pct is a single docker-stats snapshot and is NOISY on a contended laptop, so do NOT derive rps/core from a single point here. A CONTROLLED fixed-2000-rps averaged-CPU measurement on this same machine gave simple=26% vs complex=39% CPU -> the complex request costs ~1.5x the CPU per request (complex rps/core < simple rps/core), the expected direction. CI's idle fat 8-core injector produces the real plateau + a clean rps/core factor.",
+  "caps": {
+    "max_requests_per_second": 200000,
+    "max_in_flight_requests": 20000,
+    "client_nio_threads": 8
+  },
+  "points": [
+    {
+      "offered_rps": 2000,
+      "achieved_rps": 1997,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 45,
+      "envoy_cpu_pct": 16,
+      "max_inflight": 0,
+      "target_received_rps": 2002
+    },
+    {
+      "offered_rps": 4000,
+      "achieved_rps": 2232,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 50,
+      "envoy_cpu_pct": 20,
+      "max_inflight": 0,
+      "target_received_rps": 2202
+    },
+    {
+      "offered_rps": 6000,
+      "achieved_rps": 4005,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 50,
+      "envoy_cpu_pct": 20,
+      "max_inflight": 0,
+      "target_received_rps": 4001
+    },
+    {
+      "offered_rps": 8000,
+      "achieved_rps": 6001,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 66,
+      "envoy_cpu_pct": 26,
+      "max_inflight": 0,
+      "target_received_rps": 5998
+    },
+    {
+      "offered_rps": 10000,
+      "achieved_rps": 7497,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 73,
+      "envoy_cpu_pct": 29,
+      "max_inflight": 0,
+      "target_received_rps": 7460
+    },
+    {
+      "offered_rps": 12000,
+      "achieved_rps": 8001,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 80,
+      "envoy_cpu_pct": 39,
+      "max_inflight": 0,
+      "target_received_rps": 7988
+    }
+  ],
+  "ceiling_rps": 1997,
+  "ceiling_evidence": {
+    "injector_cpu_pct": 45,
+    "envoy_cpu_pct": 16,
+    "throttled_rps": 0,
+    "error_rate": 0.00000,
+    "inflight_below_cap": true
+  }
+}

@@ -1,6 +1,7 @@
 {
   "proto": "http",
   "target": "envoy-direct-response",
+  "_note": "laptop-scale validation (6-core injector on a 14-core contended Mac, short 14s holds, 8s rate window) — proves the fine-stair + clean/collapse-detection LOGIC, NOT absolute ceiling numbers. On the 16-vCPU CI box the fat 8-core injector produces a clean ~15k plateau.",
   "caps": {
     "max_requests_per_second": 200000,
     "max_in_flight_requests": 20000,
@@ -9,39 +10,89 @@
   "points": [
     {
       "offered_rps": 2000,
-      "achieved_rps": 1999,
+      "achieved_rps": 2001,
       "throttled_rps": 0,
       "error_rate": 0.00000,
       "injector_cpu_pct": 24,
-      "envoy_cpu_pct": 11,
+      "envoy_cpu_pct": 15,
       "max_inflight": 0,
-      "target_received_rps": 1999
+      "target_received_rps": 2018
     },
     {
       "offered_rps": 4000,
-      "achieved_rps": 3998,
+      "achieved_rps": 2238,
       "throttled_rps": 0,
       "error_rate": 0.00000,
-      "injector_cpu_pct": 35,
-      "envoy_cpu_pct": 23,
+      "injector_cpu_pct": 53,
+      "envoy_cpu_pct": 20,
       "max_inflight": 0,
+      "target_received_rps": 2649
+    },
+    {
+      "offered_rps": 6000,
+      "achieved_rps": 3933,
+      "throttled_rps": 0,
+      "error_rate": 0.00000,
+      "injector_cpu_pct": 207,
+      "envoy_cpu_pct": 10,
+      "max_inflight": 410,
       "target_received_rps": 4002
     },
     {
       "offered_rps": 8000,
-      "achieved_rps": 2488,
-      "throttled_rps": 3996,
-      "error_rate": 0.26552,
-      "injector_cpu_pct": 9,
+      "achieved_rps": 2671,
+      "throttled_rps": 3329,
+      "error_rate": 0.47480,
+      "injector_cpu_pct": 600,
+      "envoy_cpu_pct": 1,
+      "max_inflight": 3934,
+      "target_received_rps": 259
+    },
+    {
+      "offered_rps": 10000,
+      "achieved_rps": 2621,
+      "throttled_rps": 4875,
+      "error_rate": 0.47982,
+      "injector_cpu_pct": 599,
       "envoy_cpu_pct": 0,
-      "max_inflight": 0,
-      "target_received_rps": 1421
+      "max_inflight": 3929,
+      "target_received_rps": 217
+    },
+    {
+      "offered_rps": 12000,
+      "achieved_rps": 3568,
+      "throttled_rps": 3890,
+      "error_rate": 0.38560,
+      "injector_cpu_pct": 599,
+      "envoy_cpu_pct": 2,
+      "max_inflight": 3931,
+      "target_received_rps": 2297
+    },
+    {
+      "offered_rps": 14000,
+      "achieved_rps": 3823,
+      "throttled_rps": 6137,
+      "error_rate": 0.31132,
+      "injector_cpu_pct": 599,
+      "envoy_cpu_pct": 2,
+      "max_inflight": 3935,
+      "target_received_rps": 990
+    },
+    {
+      "offered_rps": 16000,
+      "achieved_rps": 2899,
+      "throttled_rps": 9094,
+      "error_rate": 0.45031,
+      "injector_cpu_pct": 600,
+      "envoy_cpu_pct": 1,
+      "max_inflight": 3933,
+      "target_received_rps": 474
     }
   ],
-  "ceiling_rps": 3998,
+  "ceiling_rps": 2001,
   "ceiling_evidence": {
-    "injector_cpu_pct": 35,
-    "envoy_cpu_pct": 23,
+    "injector_cpu_pct": 24,
+    "envoy_cpu_pct": 15,
     "throttled_rps": 0,
     "error_rate": 0.00000,
     "inflight_below_cap": true

@@ -40,11 +40,13 @@ MOCKSERVER_IMAGE="${MOCKSERVER_IMAGE:-mockserver/mockserver:mockserver-snapshot}
 export MOCKSERVER_IMAGE
 
 SCENARIO_CEILING="${SCENARIO_CEILING:-inject-ceiling}"
+SCENARIO_CEILING_COMPLEX="${SCENARIO_CEILING_COMPLEX:-inject-ceiling-complex}"
 SCENARIO_SCALE="${SCENARIO_SCALE:-inject-scale}"
 
 # Scenario JSON file paths (overridable so a short smoke run can point at
 # reduced-duration fixtures without editing the committed ones).
 CEILING_FILE="${CEILING_FILE:-$SCRIPT_DIR/scenario-ceiling.json}"
+CEILING_COMPLEX_FILE="${CEILING_COMPLEX_FILE:-$SCRIPT_DIR/scenario-ceiling-complex.json}"
 SCALE_FILE="${SCALE_FILE:-$SCRIPT_DIR/scenario-scale.json}"
 
 # Tolerances for the "is the number trustworthy" assertions.
@@ -53,16 +55,34 @@ ERROR_EPS="${ERROR_EPS:-0.005}"         # 0.5% error rate we treat as "~0"
 RATE_WINDOW="${RATE_WINDOW:-15s}"       # rate() lookback; must be < hold duration
 
 # Per-stage hold geometry for the ceiling stair. Keep in sync with
-# scenario-ceiling.json (offered ladder + 30s holds). We sample at SETTLE secs
-# into each hold so the RATE_WINDOW sits inside the steady portion.
-# Space-separated so a smoke run can shorten the ladder: CEILING_OFFERED="2000 4000 8000"
+# scenario-ceiling.json (offered ladder + 25s holds). We sample at SETTLE secs
+# into each hold so the RATE_WINDOW sits inside the steady portion. The ladder is
+# FINER (2k steps) and approaches the ceiling gently so the open arrival model
+# settles into a clean plateau instead of overshooting and collapsing.
+# Space-separated so a smoke run can shorten the ladder: CEILING_OFFERED="2000 4000 6000"
 # (must match the stage rates in the ceiling scenario file, in order).
-read -r -a CEILING_OFFERED <<<"${CEILING_OFFERED:-2000 4000 8000 16000 32000 64000}"
-CEILING_HOLD_S="${CEILING_HOLD_S:-30}"
-CEILING_SETTLE_S="${CEILING_SETTLE_S:-22}"   # sample 22s into each 30s hold
+read -r -a CEILING_OFFERED <<<"${CEILING_OFFERED:-2000 4000 6000 8000 10000 12000 14000 16000 18000 20000}"
+CEILING_HOLD_S="${CEILING_HOLD_S:-25}"
+CEILING_SETTLE_S="${CEILING_SETTLE_S:-18}"   # sample 18s into each 25s hold
 
-# Scale hold geometry. Keep in sync with scenario-scale.json (90s hold).
-SCALE_PER_INSTANCE_RPS="${SCALE_PER_INSTANCE_RPS:-30000}"
+# Lean 2-core ceiling probe (used by the scale phase to DERIVE the per-instance
+# offered rate). A short, lean stair on a single 2-core injector finds the lean
+# ceiling C; the scale phase then drives each lean injector at floor(0.8*C) so
+# every instance is comfortably CPU-bound but NOT collapsing (the #66 failure was
+# a hardcoded 30k against a ~4k lean ceiling → 43% errors). Override the cpuset
+# via PROBE_I1_CPUS; the stair/holds via PROBE_*.
+read -r -a PROBE_OFFERED <<<"${PROBE_OFFERED:-2000 3000 4000 5000 6000}"
+PROBE_HOLD_S="${PROBE_HOLD_S:-20}"
+PROBE_SETTLE_S="${PROBE_SETTLE_S:-14}"       # sample 14s into each 20s hold
+PROBE_I1_CPUS_DEFAULT="2-3"                  # lean 2-core pin for the probe
+SCALE_RATE_FACTOR="${SCALE_RATE_FACTOR:-0.8}"    # per-instance rate = factor * lean ceiling
+SCALE_RATE_MIN="${SCALE_RATE_MIN:-2000}"         # clamp floor so a tiny laptop probe still drives load
+
+# Scale hold geometry. Keep in sync with scenario-scale.json (90s hold). The
+# per-instance offered rate is DERIVED at runtime from the lean ceiling probe
+# (see above) — it is NOT a hardcoded constant. SCALE_PER_INSTANCE_RPS may be set
+# to force a fixed rate and skip the probe (mainly for fast smoke runs).
+SCALE_PER_INSTANCE_RPS="${SCALE_PER_INSTANCE_RPS:-}"
 SCALE_HOLD_S="${SCALE_HOLD_S:-90}"
 SCALE_SETTLE_S="${SCALE_SETTLE_S:-45}"       # sample 45s into the 90s hold
 
@@ -257,29 +277,33 @@ compose_down() {
 }
 
 # ==============================================================================
-# ceiling: bring up n1, run the RATE stair on injector-1, sample each held stage
+# run_rate_stair: walk an offered-rate ladder on ONE already-triggered injector,
+# sample each held stage, and report the points + the highest CLEAN point as the
+# ceiling. Shared by cmd_ceiling (fat injector, fine stair) and the lean 2-core
+# probe inside cmd_scale (short lean stair to derive the per-instance rate).
+#
+# Args: <scenario_name> <injector_container> <hold_s> <settle_s> <offered...>
+# Results are returned via globals (bash can't return multiple values):
+#   STAIR_POINTS       — JSON array of measured points
+#   STAIR_CEILING_RPS  — highest cleanly-achieved rps (rounded int)
+#   STAIR_EVIDENCE     — evidence object for the last clean point
 # ==============================================================================
-cmd_ceiling() {
-  compose_up n1
-  wait_stack_ready 1
-  local inj1; inj1="$(svc_container injector-1)"
-  [ -n "$inj1" ] || die "injector-1 container not found"
-  wait_injectors_scraped 1
-
-  register_and_trigger injector-1 "$CEILING_FILE" "$SCENARIO_CEILING"
+run_rate_stair() {
+  local scenario="$1" inj="$2" hold_s="$3" settle_s="$4"; shift 4
+  local offered_ladder=("$@")
 
   local points="[]"
   local ceiling_rps=0
-  local last_clean_evidence='{}'
+  local evidence='{}'
   local i offered
-  for i in "${!CEILING_OFFERED[@]}"; do
-    offered="${CEILING_OFFERED[$i]}"
-    log "ceiling stage $((i+1))/${#CEILING_OFFERED[@]}: offered=$offered rps — settling ${CEILING_SETTLE_S}s into the ${CEILING_HOLD_S}s hold"
-    sleep "$CEILING_SETTLE_S"
-    local pt; pt="$(sample_point "$SCENARIO_CEILING" "$offered" "$inj1")"
+  for i in "${!offered_ladder[@]}"; do
+    offered="${offered_ladder[$i]}"
+    log "  stage $((i+1))/${#offered_ladder[@]}: offered=$offered rps — settling ${settle_s}s into the ${hold_s}s hold"
+    sleep "$settle_s"
+    local pt; pt="$(sample_point "$scenario" "$offered" "$inj")"
     points="$(jq -c --argjson p "$pt" '. + [$p]' <<<"$points")"
 
-    # Track the highest offered rate that the injector actually achieved cleanly
+    # Track the highest offered rate the injector actually achieved cleanly
     # (achieved ~ offered, no throttle, no errors) as the ceiling estimate.
     local ach thr er inf
     ach="$(jq -r '.achieved_rps' <<<"$pt")"
@@ -290,7 +314,7 @@ cmd_ceiling() {
     if awk -v a="$ach" -v o="$offered" -v t="$thr" -v te="$THROTTLE_EPS" -v e="$er" -v ee="$ERROR_EPS" \
          'BEGIN{exit !(a >= 0.90*o && t <= te && e <= ee)}'; then
       ceiling_rps="$ach"
-      last_clean_evidence="$(jq -n \
+      evidence="$(jq -n \
         --argjson injector_cpu_pct "$(jq '.injector_cpu_pct' <<<"$pt")" \
         --argjson envoy_cpu_pct "$(jq '.envoy_cpu_pct' <<<"$pt")" \
         --argjson throttled_rps "$(jq '.throttled_rps' <<<"$pt")" \
@@ -299,23 +323,58 @@ cmd_ceiling() {
         '{injector_cpu_pct:$injector_cpu_pct, envoy_cpu_pct:$envoy_cpu_pct,
           throttled_rps:$throttled_rps, error_rate:$error_rate,
           inflight_below_cap:$inflight_below_cap}')"
-      log "  -> clean: achieved=$ach (offered=$offered) — ceiling candidate"
+      log "    -> clean: achieved=$ach (offered=$offered) — ceiling candidate"
     else
-      log "  -> NOT clean (achieved=$ach offered=$offered throttle=$thr err=$er) — ladder top reached"
+      log "    -> NOT clean (achieved=$ach offered=$offered throttle=$thr err=$er) — ladder top reached"
     fi
     # remaining tail of this hold before the next stage's offered changes
-    local tail=$((CEILING_HOLD_S - CEILING_SETTLE_S))
+    local tail=$((hold_s - settle_s))
     [ "$tail" -gt 0 ] && sleep "$tail"
   done
 
+  STAIR_POINTS="$points"
+  STAIR_CEILING_RPS="$(rnd "$ceiling_rps")"
+  STAIR_EVIDENCE="$evidence"
+}
+
+# ==============================================================================
+# ceiling: bring up n1 (FAT injector — ~8 cores, set by the CI wrapper via
+# I1_CPUS), run the FINE RATE stair on injector-1, sample each held stage.
+# ==============================================================================
+# Args (all optional; defaults run the SIMPLE ceiling unchanged):
+#   $1 scenario file   (default $CEILING_FILE)
+#   $2 scenario name   (default $SCENARIO_CEILING)
+#   $3 output file     (default $SCRIPT_DIR/inject-ceiling.json)
+# The COMPLEX ceiling reuses this verbatim — same fat injector, same fine stair,
+# same clean/collapse assertions and Envoy cross-check — only the registered
+# scenario (heavier templated request) and output path differ.
+cmd_ceiling() {
+  local scenario_file="${1:-$CEILING_FILE}"
+  local scenario_name="${2:-$SCENARIO_CEILING}"
+  local out="${3:-$SCRIPT_DIR/inject-ceiling.json}"
+
+  compose_up n1
+  wait_stack_ready 1
+  local inj1; inj1="$(svc_container injector-1)"
+  [ -n "$inj1" ] || die "injector-1 container not found"
+  wait_injectors_scraped 1
+
+  register_and_trigger injector-1 "$scenario_file" "$scenario_name"
+
+  log "ceiling '$scenario_name': fine RATE stair on the fat injector (${#CEILING_OFFERED[@]} stages)"
+  run_rate_stair "$scenario_name" "$inj1" "$CEILING_HOLD_S" "$CEILING_SETTLE_S" "${CEILING_OFFERED[@]}"
+  local points="$STAIR_POINTS"
+  local ceiling_rps="$STAIR_CEILING_RPS"
+  local last_clean_evidence="$STAIR_EVIDENCE"
+
   stop_all_injectors injector-1
 
-  local out="$SCRIPT_DIR/inject-ceiling.json"
   jq -n \
+    --arg scenario "$scenario_name" \
     --argjson points "$points" \
     --argjson ceiling_rps "$(rnd "$ceiling_rps")" \
     --argjson evidence "$last_clean_evidence" \
-    '{proto:"http", target:"envoy-direct-response",
+    '{proto:"http", target:"envoy-direct-response", scenario:$scenario,
       caps:{max_requests_per_second:200000, max_in_flight_requests:20000, client_nio_threads:8},
       points:$points,
       ceiling_rps:$ceiling_rps,
@@ -329,9 +388,68 @@ cmd_ceiling() {
 # scale: for each N, bring up nN, trigger scenario-scale on each injector
 # together, sample the aggregate + per-instance during the hold.
 # ==============================================================================
+
+# Lean 2-core ceiling probe: bring up a SINGLE 2-core injector, run a short lean
+# stair, and echo the lean ceiling C (highest cleanly-achieved rps). The scale
+# phase derives the per-instance offered rate from this so each lean injector is
+# comfortably CPU-bound but NOT collapsing. Tears its own stack down on exit.
+probe_lean_ceiling() {
+  # Decide the lean cpuset: an explicit PROBE_I1_CPUS wins; otherwise, if the
+  # caller is pinning at all (I1_CPUS non-empty), pin the probe to the lean
+  # 2-core default; if pinning is disabled (I1_CPUS empty/unset), don't pin.
+  local lean_cpus
+  if [ -n "${PROBE_I1_CPUS+x}" ]; then
+    lean_cpus="$PROBE_I1_CPUS"
+  elif [ -n "${I1_CPUS:-}" ]; then
+    lean_cpus="$PROBE_I1_CPUS_DEFAULT"
+  else
+    lean_cpus=""
+  fi
+  log "lean ceiling probe: single 2-core injector (I1_CPUS='${lean_cpus}'), short stair ${PROBE_OFFERED[*]}"
+
+  compose_down
+  ( export I1_CPUS="$lean_cpus"; compose_up n1 )
+  wait_stack_ready 1
+  local inj1; inj1="$(svc_container injector-1)"
+  [ -n "$inj1" ] || die "lean probe: injector-1 container not found"
+  wait_injectors_scraped 1
+
+  register_and_trigger injector-1 "$CEILING_FILE" "$SCENARIO_CEILING"
+  run_rate_stair "$SCENARIO_CEILING" "$inj1" "$PROBE_HOLD_S" "$PROBE_SETTLE_S" "${PROBE_OFFERED[@]}"
+  stop_all_injectors injector-1
+  compose_down
+
+  PROBE_CEILING_RPS="$STAIR_CEILING_RPS"
+  log "lean ceiling probe: C=${PROBE_CEILING_RPS} rps"
+}
+
+# Write a copy of the scale scenario with the RATE-stage rate overridden to the
+# derived per-instance offered rate. Echoes the path of the generated file.
+gen_scale_scenario() {
+  local rate="$1" out="$SCRIPT_DIR/.scenario-scale.generated.json"
+  jq --argjson r "$rate" '.profile.stages |= map(.rate = $r)' "$SCALE_FILE" > "$out" \
+    || die "failed to generate scale scenario with rate=$rate"
+  printf '%s' "$out"
+}
+
 cmd_scale() {
   local sizes=("$@")
   [ "${#sizes[@]}" -gt 0 ] || sizes=(1 2)
+
+  # Derive the per-instance offered rate from the LEAN 2-core ceiling (unless a
+  # fixed SCALE_PER_INSTANCE_RPS was forced, e.g. for a fast smoke run).
+  if [ -z "${SCALE_PER_INSTANCE_RPS:-}" ]; then
+    probe_lean_ceiling
+    # per-instance rate = floor(factor * lean ceiling), clamped to a sane min.
+    SCALE_PER_INSTANCE_RPS="$(awk -v c="$PROBE_CEILING_RPS" -v f="$SCALE_RATE_FACTOR" -v m="$SCALE_RATE_MIN" \
+      'BEGIN{ r=int(c*f); if (r<m) r=m; printf "%d", r }')"
+    log "derived per-instance offered rate = floor(${SCALE_RATE_FACTOR} * ${PROBE_CEILING_RPS}) = ${SCALE_PER_INSTANCE_RPS} rps (min ${SCALE_RATE_MIN})"
+  else
+    log "using forced per-instance offered rate = ${SCALE_PER_INSTANCE_RPS} rps (lean probe skipped)"
+  fi
+
+  # Generate the scale scenario with the derived rate (overrides the placeholder).
+  local scale_scenario_file; scale_scenario_file="$(gen_scale_scenario "$SCALE_PER_INSTANCE_RPS")"
 
   local series="[]"
   local max_instances=0 actual_at_max=0
@@ -354,7 +472,7 @@ cmd_scale() {
 
     # register on each, then trigger each (they start ~together; small skew ok)
     for s in "${svcs[@]}"; do
-      register_and_trigger "$s" "$SCALE_FILE" "$SCENARIO_SCALE"
+      register_and_trigger "$s" "$scale_scenario_file" "$SCENARIO_SCALE"
     done
 
     log "scale N=$n: settling ${SCALE_SETTLE_S}s into the ${SCALE_HOLD_S}s hold"
@@ -426,14 +544,18 @@ cmd_scale() {
       series:$series,
       scaling_efficiency:{ideal_at_max:$ideal_at_max, actual_at_max:$actual_at_max, efficiency_pct:$efficiency_pct}}' > "$out"
 
+  rm -f "$scale_scenario_file"
   log "wrote $out"
   cat "$out"
 }
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 <ceiling | scale [N ...]>
-  ceiling          bring up 1 injector, run the RATE stair, emit inject-ceiling.json
+Usage: $0 <ceiling | ceiling-complex | scale [N ...]>
+  ceiling          1 fat injector, fine RATE stair, SIMPLE GET -> inject-ceiling.json
+  ceiling-complex  1 fat injector, same stair, COMPLEX templated POST (feeder + ~1KB
+                   Velocity body) -> inject-ceiling-complex.json. Comparable rps/core
+                   data point: complex < simple because each request costs more CPU.
   scale [N ...]    for each N in {1,2,4,6} (default "1 2"), measure aggregate rps
                    and emit inject-scale.json
 
@@ -446,9 +568,10 @@ EOF
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
-    ceiling) cmd_ceiling ;;
-    scale)   cmd_scale "$@" ;;
-    *)       usage ;;
+    ceiling)         cmd_ceiling ;;
+    ceiling-complex) cmd_ceiling "$CEILING_COMPLEX_FILE" "$SCENARIO_CEILING_COMPLEX" "$SCRIPT_DIR/inject-ceiling-complex.json" ;;
+    scale)           cmd_scale "$@" ;;
+    *)               usage ;;
   esac
 }
 
