@@ -24,8 +24,9 @@ build status, and CI/CD health.
 
 - Get the build details and failed job logs
 - Extract error output from the failing step
-- Classify the failure: test failure, compilation error, Docker issue, agent timeout, infrastructure issue
+- Classify the failure: test failure, compilation error, Docker issue, agent timeout, infrastructure issue, or `FLAKY` (intermittent — timing/ordering/port/resource related)
 - Check if the failure is new or recurring (compare with recent builds)
+- If the failure looks timing/ordering/port/resource-related, re-run the single failing test (or check recent builds of the same commit) to confirm intermittency BEFORE classifying it real-vs-flaky (`FLAKY`)
 
 ### 3. Cross-Reference
 
@@ -33,7 +34,11 @@ build status, and CI/CD health.
 - Look for related failures across GitHub Actions workflows
 - Identify if a fix has already been pushed but not yet built
 
-### 4. Classify Impact
+### 4. Enumerate Competing Hypotheses
+
+- Before concluding a root cause, enumerate the competing hypotheses and the evidence that rules each out (correlation is not causation — a commit landing just before a failure is not proof it caused it)
+
+### 5. Classify Impact
 
 - Build failures → blocks validation and releases
 - Docker image build failures (GitHub Actions) → blocks container releases
@@ -88,6 +93,7 @@ gh run view {run_id} --repo mockserver/mockserver --log-failed
 | `SNAPSHOT` dependency errors | Maven dep issue | Check artifact repository availability |
 | Build stuck in `scheduled` | Agent not running | Check AWS ASG via `/aws-investigation` |
 | Agent did not connect | Agent infrastructure | Check AWS ASG via `/aws-investigation` |
+| Passes on re-run / intermittent across builds of same commit | `FLAKY` | Re-run to confirm; classify flaky-vs-real before reporting |
 
 ## Agent Infrastructure
 
