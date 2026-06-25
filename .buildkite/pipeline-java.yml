@@ -14,13 +14,24 @@ steps:
     command: "docker pull mockserver/mockserver:maven"
 
   - label: ":maven: build"
-    command: ".buildkite/scripts/steps/java-build.sh"
+    # Wrapper runs the build, then collects failing-test artefacts + prints an
+    # end-of-log pass/fail summary. The wrapper preserves and re-raises the
+    # build's own exit code so a red build stays red, and the collector itself
+    # never fails the build. Kept in a script (not inline YAML) so the shell -
+    # not Buildkite's pipeline-upload interpolation - owns the `$?`/`$rc`.
+    command: ".buildkite/scripts/steps/java-build-and-collect.sh"
     artifact_paths:
       - "**/*.log"
+      # The machine-readable JUnit XMLs are uploaded for every test class - they
+      # feed the junit-annotate plugin (per-test failure annotations) and
+      # java-summarize.sh (the sticky roll-up annotation). Keep these.
       - "**/target/surefire-reports/TEST-*.xml"
-      - "**/target/surefire-reports/*-output.txt"
       - "**/target/failsafe-reports/TEST-*.xml"
-      - "**/target/failsafe-reports/*-output.txt"
+      # The bulky per-class *-output.txt console logs are NO LONGER uploaded for
+      # every (passing) test class. java-collect-failures.sh copies only the
+      # FAILING classes' XML + matching -output.txt into target/failed-tests/,
+      # so the developer gets just the logs that matter.
+      - "mockserver/target/failed-tests/**/*"
       # Upload only the machine-readable jacoco XML data files - per-class HTML
       # reports under jacoco/**/* produce hundreds of artifacts per module and
       # blow past Buildkite's 5000-artifact-per-job limit. The XML is what
