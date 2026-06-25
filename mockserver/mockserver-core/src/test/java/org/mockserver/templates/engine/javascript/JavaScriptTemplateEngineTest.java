@@ -60,7 +60,15 @@ import static org.slf4j.event.Level.INFO;
 public class JavaScriptTemplateEngineTest {
 
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.createObjectMapper();
-    private static final Configuration configuration = configuration();
+    // Disable the JavaScript template execution timeout (0 = no watchdog, see PolyglotRunner) for the
+    // shared-Configuration tests. These tests exercise invalid-JS handling and normal template execution,
+    // NOT the timeout feature, so they must not depend on wall-clock time: under parallel CI load GraalJS
+    // runs interpreter-only (no JIT) and a first parse/execute can exceed the 5000ms production default,
+    // making them flaky. The production default is unchanged. The three timeout-specific tests
+    // (shouldAbortLongRunningJavaScriptTemplateWhenExecutionTimeoutExceeded,
+    // shouldEvaluateNormalJavaScriptTemplateWithinExecutionTimeout,
+    // shouldNotAbortSlowTemplateWhenExecutionTimeoutDisabled) build their own Configuration and are unaffected.
+    private static final Configuration configuration = configuration().javascriptTemplateExecutionTimeout(0L);
 
     @ClassRule
     public static final FixedTime fixedTime = new FixedTime();
