@@ -209,6 +209,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean forwardConnectionPoolEnabled;
     private Integer forwardConnectionPoolMaxIdlePerKey;
     private Long forwardConnectionPoolIdleTimeoutMillis;
+    private Boolean forwardConnectionPoolKeepAlive;
+    private Integer forwardConnectionPoolMaxTotalPerKey;
+    private Boolean forwardSocketKeepAlive;
+    private Integer forwardSocketKeepAliveIdleSeconds;
+    private Integer forwardSocketKeepAliveIntervalSeconds;
+    private Integer forwardSocketKeepAliveCount;
     private Integer forwardProxyRetryCount;
     private Long forwardProxyRetryBackoffMillis;
     private Boolean forwardProxyHttp2Enabled;
@@ -487,6 +493,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.forwardConnectionPoolEnabled = configuration.forwardConnectionPoolEnabled();
             this.forwardConnectionPoolMaxIdlePerKey = configuration.forwardConnectionPoolMaxIdlePerKey();
             this.forwardConnectionPoolIdleTimeoutMillis = configuration.forwardConnectionPoolIdleTimeoutMillis();
+            this.forwardConnectionPoolKeepAlive = configuration.forwardConnectionPoolKeepAlive();
+            this.forwardConnectionPoolMaxTotalPerKey = configuration.forwardConnectionPoolMaxTotalPerKey();
+            this.forwardSocketKeepAlive = configuration.forwardSocketKeepAlive();
+            this.forwardSocketKeepAliveIdleSeconds = configuration.forwardSocketKeepAliveIdleSeconds();
+            this.forwardSocketKeepAliveIntervalSeconds = configuration.forwardSocketKeepAliveIntervalSeconds();
+            this.forwardSocketKeepAliveCount = configuration.forwardSocketKeepAliveCount();
             this.forwardProxyRetryCount = configuration.forwardProxyRetryCount();
             this.forwardProxyRetryBackoffMillis = configuration.forwardProxyRetryBackoffMillis();
             this.forwardProxyHttp2Enabled = configuration.forwardProxyHttp2Enabled();
@@ -806,6 +818,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.forwardConnectionPoolEnabled(forwardConnectionPoolEnabled);
         configuration.forwardConnectionPoolMaxIdlePerKey(forwardConnectionPoolMaxIdlePerKey);
         configuration.forwardConnectionPoolIdleTimeoutMillis(forwardConnectionPoolIdleTimeoutMillis);
+        configuration.forwardConnectionPoolKeepAlive(forwardConnectionPoolKeepAlive);
+        configuration.forwardConnectionPoolMaxTotalPerKey(forwardConnectionPoolMaxTotalPerKey);
+        configuration.forwardSocketKeepAlive(forwardSocketKeepAlive);
+        configuration.forwardSocketKeepAliveIdleSeconds(forwardSocketKeepAliveIdleSeconds);
+        configuration.forwardSocketKeepAliveIntervalSeconds(forwardSocketKeepAliveIntervalSeconds);
+        configuration.forwardSocketKeepAliveCount(forwardSocketKeepAliveCount);
         configuration.forwardProxyRetryCount(forwardProxyRetryCount);
         configuration.forwardProxyRetryBackoffMillis(forwardProxyRetryBackoffMillis);
         configuration.forwardProxyHttp2Enabled(forwardProxyHttp2Enabled);
@@ -1400,6 +1418,24 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (forwardConnectionPoolIdleTimeoutMillis != null) {
             target.forwardConnectionPoolIdleTimeoutMillis(forwardConnectionPoolIdleTimeoutMillis);
+        }
+        if (forwardConnectionPoolKeepAlive != null) {
+            target.forwardConnectionPoolKeepAlive(forwardConnectionPoolKeepAlive);
+        }
+        if (forwardConnectionPoolMaxTotalPerKey != null) {
+            target.forwardConnectionPoolMaxTotalPerKey(forwardConnectionPoolMaxTotalPerKey);
+        }
+        if (forwardSocketKeepAlive != null) {
+            target.forwardSocketKeepAlive(forwardSocketKeepAlive);
+        }
+        if (forwardSocketKeepAliveIdleSeconds != null) {
+            target.forwardSocketKeepAliveIdleSeconds(forwardSocketKeepAliveIdleSeconds);
+        }
+        if (forwardSocketKeepAliveIntervalSeconds != null) {
+            target.forwardSocketKeepAliveIntervalSeconds(forwardSocketKeepAliveIntervalSeconds);
+        }
+        if (forwardSocketKeepAliveCount != null) {
+            target.forwardSocketKeepAliveCount(forwardSocketKeepAliveCount);
         }
         if (forwardProxyRetryCount != null) {
             target.forwardProxyRetryCount(forwardProxyRetryCount);
@@ -3177,6 +3213,60 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setForwardConnectionPoolIdleTimeoutMillis(Long forwardConnectionPoolIdleTimeoutMillis) {
         this.forwardConnectionPoolIdleTimeoutMillis = forwardConnectionPoolIdleTimeoutMillis;
+        return this;
+    }
+
+    public Boolean getForwardConnectionPoolKeepAlive() {
+        return forwardConnectionPoolKeepAlive;
+    }
+
+    public ConfigurationDTO setForwardConnectionPoolKeepAlive(Boolean forwardConnectionPoolKeepAlive) {
+        this.forwardConnectionPoolKeepAlive = forwardConnectionPoolKeepAlive;
+        return this;
+    }
+
+    public Integer getForwardConnectionPoolMaxTotalPerKey() {
+        return forwardConnectionPoolMaxTotalPerKey;
+    }
+
+    public ConfigurationDTO setForwardConnectionPoolMaxTotalPerKey(Integer forwardConnectionPoolMaxTotalPerKey) {
+        this.forwardConnectionPoolMaxTotalPerKey = forwardConnectionPoolMaxTotalPerKey;
+        return this;
+    }
+
+    public Boolean getForwardSocketKeepAlive() {
+        return forwardSocketKeepAlive;
+    }
+
+    public ConfigurationDTO setForwardSocketKeepAlive(Boolean forwardSocketKeepAlive) {
+        this.forwardSocketKeepAlive = forwardSocketKeepAlive;
+        return this;
+    }
+
+    public Integer getForwardSocketKeepAliveIdleSeconds() {
+        return forwardSocketKeepAliveIdleSeconds;
+    }
+
+    public ConfigurationDTO setForwardSocketKeepAliveIdleSeconds(Integer forwardSocketKeepAliveIdleSeconds) {
+        this.forwardSocketKeepAliveIdleSeconds = forwardSocketKeepAliveIdleSeconds;
+        return this;
+    }
+
+    public Integer getForwardSocketKeepAliveIntervalSeconds() {
+        return forwardSocketKeepAliveIntervalSeconds;
+    }
+
+    public ConfigurationDTO setForwardSocketKeepAliveIntervalSeconds(Integer forwardSocketKeepAliveIntervalSeconds) {
+        this.forwardSocketKeepAliveIntervalSeconds = forwardSocketKeepAliveIntervalSeconds;
+        return this;
+    }
+
+    public Integer getForwardSocketKeepAliveCount() {
+        return forwardSocketKeepAliveCount;
+    }
+
+    public ConfigurationDTO setForwardSocketKeepAliveCount(Integer forwardSocketKeepAliveCount) {
+        this.forwardSocketKeepAliveCount = forwardSocketKeepAliveCount;
         return this;
     }
 
