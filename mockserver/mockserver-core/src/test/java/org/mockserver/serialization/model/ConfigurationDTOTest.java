@@ -61,6 +61,55 @@ public class ConfigurationDTOTest {
     }
 
     @Test
+    public void shouldRoundTripDataPlaneAuthenticationFields() {
+        Configuration original = configuration()
+            .dataPlaneAuthenticationRequired(true)
+            .dataPlaneBasicAuthenticationUsername("user")
+            .dataPlaneBasicAuthenticationPassword("secret")
+            .dataPlaneBasicAuthenticationRealm("my-realm")
+            .dataPlaneBearerAuthenticationToken("tok-123")
+            .dataPlaneApiKeyAuthenticationHeader("X-API-Key")
+            .dataPlaneApiKeyAuthenticationValue("key-abc");
+
+        ConfigurationDTO dto = new ConfigurationDTO(original);
+
+        assertThat(dto.getDataPlaneAuthenticationRequired(), is(true));
+        assertThat(dto.getDataPlaneBasicAuthenticationUsername(), is("user"));
+        assertThat(dto.getDataPlaneBasicAuthenticationPassword(), is("secret"));
+        assertThat(dto.getDataPlaneBasicAuthenticationRealm(), is("my-realm"));
+        assertThat(dto.getDataPlaneBearerAuthenticationToken(), is("tok-123"));
+        assertThat(dto.getDataPlaneApiKeyAuthenticationHeader(), is("X-API-Key"));
+        assertThat(dto.getDataPlaneApiKeyAuthenticationValue(), is("key-abc"));
+
+        Configuration rebuilt = dto.buildObject();
+
+        assertThat(rebuilt.dataPlaneAuthenticationRequired(), is(true));
+        assertThat(rebuilt.dataPlaneBasicAuthenticationUsername(), is("user"));
+        assertThat(rebuilt.dataPlaneBasicAuthenticationPassword(), is("secret"));
+        assertThat(rebuilt.dataPlaneBasicAuthenticationRealm(), is("my-realm"));
+        assertThat(rebuilt.dataPlaneBearerAuthenticationToken(), is("tok-123"));
+        assertThat(rebuilt.dataPlaneApiKeyAuthenticationHeader(), is("X-API-Key"));
+        assertThat(rebuilt.dataPlaneApiKeyAuthenticationValue(), is("key-abc"));
+    }
+
+    @Test
+    public void shouldApplyOnlyNonNullDataPlaneFieldsToTarget() {
+        Configuration target = configuration()
+            .dataPlaneAuthenticationRequired(true)
+            .dataPlaneBearerAuthenticationToken("original-token");
+
+        // a fresh DTO with only the realm set must not overwrite the existing token (null fields skipped)
+        ConfigurationDTO dto = new ConfigurationDTO();
+        dto.setDataPlaneBasicAuthenticationRealm("changed-realm");
+
+        dto.applyTo(target);
+
+        assertThat(target.dataPlaneAuthenticationRequired(), is(true));
+        assertThat(target.dataPlaneBearerAuthenticationToken(), is("original-token"));
+        assertThat(target.dataPlaneBasicAuthenticationRealm(), is("changed-realm"));
+    }
+
+    @Test
     public void shouldCreateDTOFromConfiguration() {
         Configuration config = configuration()
             .logLevel(Level.ERROR)

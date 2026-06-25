@@ -300,6 +300,14 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_PROXY_SERVER_REALM = "mockserver.proxyAuthenticationRealm";
     private static final String MOCKSERVER_PROXY_AUTHENTICATION_USERNAME = "mockserver.proxyAuthenticationUsername";
     private static final String MOCKSERVER_PROXY_AUTHENTICATION_PASSWORD = "mockserver.proxyAuthenticationPassword";
+    // data plane (mocked endpoint) authentication — opt-in, default off
+    private static final String MOCKSERVER_DATA_PLANE_AUTHENTICATION_REQUIRED = "mockserver.dataPlaneAuthenticationRequired";
+    private static final String MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_USERNAME = "mockserver.dataPlaneBasicAuthenticationUsername";
+    private static final String MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_PASSWORD = "mockserver.dataPlaneBasicAuthenticationPassword";
+    private static final String MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_REALM = "mockserver.dataPlaneBasicAuthenticationRealm";
+    private static final String MOCKSERVER_DATA_PLANE_BEARER_AUTHENTICATION_TOKEN = "mockserver.dataPlaneBearerAuthenticationToken";
+    private static final String MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_HEADER = "mockserver.dataPlaneApiKeyAuthenticationHeader";
+    private static final String MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_VALUE = "mockserver.dataPlaneApiKeyAuthenticationValue";
     private static final String MOCKSERVER_NO_PROXY_HOSTS = "mockserver.noProxyHosts";
     private static final String MOCKSERVER_PROXY_REMOTE_HOST = "mockserver.proxyRemoteHost";
     private static final String MOCKSERVER_PROXY_REMOTE_PORT = "mockserver.proxyRemotePort";
@@ -3886,6 +3894,115 @@ public class ConfigurationProperties {
 
     public static String proxyAuthenticationPassword() {
         return readPropertyHierarchically(PROPERTIES, MOCKSERVER_PROXY_AUTHENTICATION_PASSWORD, "MOCKSERVER_PROXY_AUTHENTICATION_PASSWORD", "");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Data-plane (mocked endpoint) authentication — opt-in, default off. Mirrors the proxy /
+    // control-plane authentication naming so all auth properties read consistently.
+    // -----------------------------------------------------------------------------------------
+
+    public static boolean dataPlaneAuthenticationRequired() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_AUTHENTICATION_REQUIRED, "MOCKSERVER_DATA_PLANE_AUTHENTICATION_REQUIRED", "false"));
+    }
+
+    /**
+     * <p>Enable authentication of data-plane (mocked endpoint) requests. When {@code true}, every
+     * request to a mocked endpoint must present credentials matching one of the configured
+     * data-plane schemes (Basic, Bearer and/or API-key); requests that do not are rejected with
+     * {@code 401 Unauthorized}. Control-plane ({@code /mockserver/*}) requests, health/status/ready
+     * probes and {@code CONNECT} proxy requests are NOT affected by this setting.</p>
+     * <p>If enabled but no scheme is configured the server fails closed (rejects every data-plane
+     * request) rather than allowing all traffic.</p>
+     * <p>The default is {@code false} (no data-plane authentication).</p>
+     *
+     * @param enable whether data-plane authentication is required
+     */
+    public static void dataPlaneAuthenticationRequired(boolean enable) {
+        setProperty(MOCKSERVER_DATA_PLANE_AUTHENTICATION_REQUIRED, "" + enable);
+    }
+
+    public static String dataPlaneBasicAuthenticationUsername() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_USERNAME, "MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_USERNAME", "");
+    }
+
+    /**
+     * The username required for data-plane HTTP Basic authentication. Basic is only active when both
+     * username and password are set. The default is "".
+     *
+     * @param dataPlaneBasicAuthenticationUsername the Basic username
+     */
+    public static void dataPlaneBasicAuthenticationUsername(String dataPlaneBasicAuthenticationUsername) {
+        setProperty(MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_USERNAME, dataPlaneBasicAuthenticationUsername);
+    }
+
+    public static String dataPlaneBasicAuthenticationPassword() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_PASSWORD, "MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_PASSWORD", "");
+    }
+
+    /**
+     * The password required for data-plane HTTP Basic authentication. Basic is only active when both
+     * username and password are set. The default is "".
+     *
+     * @param dataPlaneBasicAuthenticationPassword the Basic password
+     */
+    public static void dataPlaneBasicAuthenticationPassword(String dataPlaneBasicAuthenticationPassword) {
+        setProperty(MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_PASSWORD, dataPlaneBasicAuthenticationPassword);
+    }
+
+    public static String dataPlaneBasicAuthenticationRealm() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_REALM, "MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_REALM", "MockServer");
+    }
+
+    /**
+     * The realm advertised in the {@code WWW-Authenticate: Basic realm="..."} challenge on a 401.
+     * The default is "MockServer".
+     *
+     * @param dataPlaneBasicAuthenticationRealm the Basic realm
+     */
+    public static void dataPlaneBasicAuthenticationRealm(String dataPlaneBasicAuthenticationRealm) {
+        setProperty(MOCKSERVER_DATA_PLANE_BASIC_AUTHENTICATION_REALM, dataPlaneBasicAuthenticationRealm);
+    }
+
+    public static String dataPlaneBearerAuthenticationToken() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_BEARER_AUTHENTICATION_TOKEN, "MOCKSERVER_DATA_PLANE_BEARER_AUTHENTICATION_TOKEN", "");
+    }
+
+    /**
+     * The token required for data-plane Bearer authentication ({@code Authorization: Bearer <token>}).
+     * Bearer is active when this value is set. The default is "".
+     *
+     * @param dataPlaneBearerAuthenticationToken the expected Bearer token
+     */
+    public static void dataPlaneBearerAuthenticationToken(String dataPlaneBearerAuthenticationToken) {
+        setProperty(MOCKSERVER_DATA_PLANE_BEARER_AUTHENTICATION_TOKEN, dataPlaneBearerAuthenticationToken);
+    }
+
+    public static String dataPlaneApiKeyAuthenticationHeader() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_HEADER, "MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_HEADER", "");
+    }
+
+    /**
+     * The name of the header carrying the data-plane API key (e.g. {@code X-API-Key}). API-key auth
+     * is only active when both the header name and the value are set. The default is "".
+     *
+     * @param dataPlaneApiKeyAuthenticationHeader the API-key header name
+     */
+    public static void dataPlaneApiKeyAuthenticationHeader(String dataPlaneApiKeyAuthenticationHeader) {
+        setProperty(MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_HEADER, dataPlaneApiKeyAuthenticationHeader);
+    }
+
+    public static String dataPlaneApiKeyAuthenticationValue() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_VALUE, "MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_VALUE", "");
+    }
+
+    /**
+     * The expected value of the data-plane API-key header. API-key auth is only active when both the
+     * header name and the value are set. The default is "".
+     *
+     * @param dataPlaneApiKeyAuthenticationValue the expected API-key value
+     */
+    public static void dataPlaneApiKeyAuthenticationValue(String dataPlaneApiKeyAuthenticationValue) {
+        setProperty(MOCKSERVER_DATA_PLANE_API_KEY_AUTHENTICATION_VALUE, dataPlaneApiKeyAuthenticationValue);
     }
 
     /**

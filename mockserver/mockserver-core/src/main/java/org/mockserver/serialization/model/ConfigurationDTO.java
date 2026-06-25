@@ -109,6 +109,14 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String proxyAuthenticationRealm;
     private String proxyAuthenticationUsername;
     private String proxyAuthenticationPassword;
+    // data plane (mocked endpoint) authentication — opt-in, default off
+    private Boolean dataPlaneAuthenticationRequired;
+    private String dataPlaneBasicAuthenticationUsername;
+    private String dataPlaneBasicAuthenticationPassword;
+    private String dataPlaneBasicAuthenticationRealm;
+    private String dataPlaneBearerAuthenticationToken;
+    private String dataPlaneApiKeyAuthenticationHeader;
+    private String dataPlaneApiKeyAuthenticationValue;
     private String noProxyHosts;
     private String proxyRemoteHost;
     private Integer proxyRemotePort;
@@ -376,6 +384,13 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.proxyAuthenticationRealm = configuration.proxyAuthenticationRealm();
             this.proxyAuthenticationUsername = configuration.proxyAuthenticationUsername();
             this.proxyAuthenticationPassword = configuration.proxyAuthenticationPassword();
+            this.dataPlaneAuthenticationRequired = configuration.dataPlaneAuthenticationRequired();
+            this.dataPlaneBasicAuthenticationUsername = configuration.dataPlaneBasicAuthenticationUsername();
+            this.dataPlaneBasicAuthenticationPassword = configuration.dataPlaneBasicAuthenticationPassword();
+            this.dataPlaneBasicAuthenticationRealm = configuration.dataPlaneBasicAuthenticationRealm();
+            this.dataPlaneBearerAuthenticationToken = configuration.dataPlaneBearerAuthenticationToken();
+            this.dataPlaneApiKeyAuthenticationHeader = configuration.dataPlaneApiKeyAuthenticationHeader();
+            this.dataPlaneApiKeyAuthenticationValue = configuration.dataPlaneApiKeyAuthenticationValue();
             this.noProxyHosts = configuration.noProxyHosts();
             this.proxyRemoteHost = configuration.proxyRemoteHost();
             this.proxyRemotePort = configuration.proxyRemotePort();
@@ -682,6 +697,13 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.proxyAuthenticationRealm(proxyAuthenticationRealm);
         configuration.proxyAuthenticationUsername(proxyAuthenticationUsername);
         configuration.proxyAuthenticationPassword(proxyAuthenticationPassword);
+        configuration.dataPlaneAuthenticationRequired(dataPlaneAuthenticationRequired);
+        configuration.dataPlaneBasicAuthenticationUsername(dataPlaneBasicAuthenticationUsername);
+        configuration.dataPlaneBasicAuthenticationPassword(dataPlaneBasicAuthenticationPassword);
+        configuration.dataPlaneBasicAuthenticationRealm(dataPlaneBasicAuthenticationRealm);
+        configuration.dataPlaneBearerAuthenticationToken(dataPlaneBearerAuthenticationToken);
+        configuration.dataPlaneApiKeyAuthenticationHeader(dataPlaneApiKeyAuthenticationHeader);
+        configuration.dataPlaneApiKeyAuthenticationValue(dataPlaneApiKeyAuthenticationValue);
         configuration.noProxyHosts(noProxyHosts);
         configuration.proxyRemoteHost(proxyRemoteHost);
         configuration.proxyRemotePort(proxyRemotePort);
@@ -1096,6 +1118,27 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (proxyAuthenticationPassword != null) {
             target.proxyAuthenticationPassword(proxyAuthenticationPassword);
+        }
+        if (dataPlaneAuthenticationRequired != null) {
+            target.dataPlaneAuthenticationRequired(dataPlaneAuthenticationRequired);
+        }
+        if (dataPlaneBasicAuthenticationUsername != null) {
+            target.dataPlaneBasicAuthenticationUsername(dataPlaneBasicAuthenticationUsername);
+        }
+        if (dataPlaneBasicAuthenticationPassword != null) {
+            target.dataPlaneBasicAuthenticationPassword(dataPlaneBasicAuthenticationPassword);
+        }
+        if (dataPlaneBasicAuthenticationRealm != null) {
+            target.dataPlaneBasicAuthenticationRealm(dataPlaneBasicAuthenticationRealm);
+        }
+        if (dataPlaneBearerAuthenticationToken != null) {
+            target.dataPlaneBearerAuthenticationToken(dataPlaneBearerAuthenticationToken);
+        }
+        if (dataPlaneApiKeyAuthenticationHeader != null) {
+            target.dataPlaneApiKeyAuthenticationHeader(dataPlaneApiKeyAuthenticationHeader);
+        }
+        if (dataPlaneApiKeyAuthenticationValue != null) {
+            target.dataPlaneApiKeyAuthenticationValue(dataPlaneApiKeyAuthenticationValue);
         }
         if (noProxyHosts != null) {
             target.noProxyHosts(noProxyHosts);
@@ -2281,6 +2324,75 @@ public class ConfigurationDTO implements DTO<Configuration> {
     @JsonProperty
     public ConfigurationDTO setProxyAuthenticationPassword(String proxyAuthenticationPassword) {
         this.proxyAuthenticationPassword = proxyAuthenticationPassword;
+        return this;
+    }
+
+    public Boolean getDataPlaneAuthenticationRequired() {
+        return dataPlaneAuthenticationRequired;
+    }
+
+    public ConfigurationDTO setDataPlaneAuthenticationRequired(Boolean dataPlaneAuthenticationRequired) {
+        this.dataPlaneAuthenticationRequired = dataPlaneAuthenticationRequired;
+        return this;
+    }
+
+    public String getDataPlaneBasicAuthenticationUsername() {
+        return dataPlaneBasicAuthenticationUsername;
+    }
+
+    public ConfigurationDTO setDataPlaneBasicAuthenticationUsername(String dataPlaneBasicAuthenticationUsername) {
+        this.dataPlaneBasicAuthenticationUsername = dataPlaneBasicAuthenticationUsername;
+        return this;
+    }
+
+    @JsonIgnore
+    public String getDataPlaneBasicAuthenticationPassword() {
+        return dataPlaneBasicAuthenticationPassword;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setDataPlaneBasicAuthenticationPassword(String dataPlaneBasicAuthenticationPassword) {
+        this.dataPlaneBasicAuthenticationPassword = dataPlaneBasicAuthenticationPassword;
+        return this;
+    }
+
+    public String getDataPlaneBasicAuthenticationRealm() {
+        return dataPlaneBasicAuthenticationRealm;
+    }
+
+    public ConfigurationDTO setDataPlaneBasicAuthenticationRealm(String dataPlaneBasicAuthenticationRealm) {
+        this.dataPlaneBasicAuthenticationRealm = dataPlaneBasicAuthenticationRealm;
+        return this;
+    }
+
+    @JsonIgnore
+    public String getDataPlaneBearerAuthenticationToken() {
+        return dataPlaneBearerAuthenticationToken;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setDataPlaneBearerAuthenticationToken(String dataPlaneBearerAuthenticationToken) {
+        this.dataPlaneBearerAuthenticationToken = dataPlaneBearerAuthenticationToken;
+        return this;
+    }
+
+    public String getDataPlaneApiKeyAuthenticationHeader() {
+        return dataPlaneApiKeyAuthenticationHeader;
+    }
+
+    public ConfigurationDTO setDataPlaneApiKeyAuthenticationHeader(String dataPlaneApiKeyAuthenticationHeader) {
+        this.dataPlaneApiKeyAuthenticationHeader = dataPlaneApiKeyAuthenticationHeader;
+        return this;
+    }
+
+    @JsonIgnore
+    public String getDataPlaneApiKeyAuthenticationValue() {
+        return dataPlaneApiKeyAuthenticationValue;
+    }
+
+    @JsonProperty
+    public ConfigurationDTO setDataPlaneApiKeyAuthenticationValue(String dataPlaneApiKeyAuthenticationValue) {
+        this.dataPlaneApiKeyAuthenticationValue = dataPlaneApiKeyAuthenticationValue;
         return this;
     }
 

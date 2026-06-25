@@ -256,6 +256,16 @@ public class Configuration {
     private String proxyAuthenticationRealm;
     private String proxyAuthenticationUsername;
     private String proxyAuthenticationPassword;
+
+    // data plane (mocked endpoint) authentication — opt-in, default off
+    private Boolean dataPlaneAuthenticationRequired;
+    private String dataPlaneBasicAuthenticationUsername;
+    private String dataPlaneBasicAuthenticationPassword;
+    private String dataPlaneBasicAuthenticationRealm;
+    private String dataPlaneBearerAuthenticationToken;
+    private String dataPlaneApiKeyAuthenticationHeader;
+    private String dataPlaneApiKeyAuthenticationValue;
+
     private String noProxyHosts;
     // volatile: proxyRemoteHost/proxyRemotePort can be set at runtime via the
     // retrieve ?forwardUnmatchedTo= record-and-forward convenience (control-plane
@@ -3592,6 +3602,142 @@ public class Configuration {
      */
     public Configuration proxyAuthenticationPassword(String proxyAuthenticationPassword) {
         this.proxyAuthenticationPassword = proxyAuthenticationPassword;
+        return this;
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Data-plane (mocked endpoint) authentication — opt-in, default off.
+    // -----------------------------------------------------------------------------------------
+
+    public boolean dataPlaneAuthenticationRequired() {
+        if (dataPlaneAuthenticationRequired == null) {
+            return ConfigurationProperties.dataPlaneAuthenticationRequired();
+        }
+        return dataPlaneAuthenticationRequired;
+    }
+
+    /**
+     * <p>Enable authentication of data-plane (mocked endpoint) requests. When {@code true}, every
+     * request to a mocked endpoint must present credentials matching one of the configured
+     * data-plane schemes (Basic, Bearer and/or API-key); requests that do not are rejected with
+     * {@code 401 Unauthorized}. Control-plane ({@code /mockserver/*}) requests, health/status/ready
+     * probes and {@code CONNECT} proxy requests are NOT affected by this setting.</p>
+     * <p>If enabled but no scheme is configured the server fails closed (rejects every data-plane
+     * request) rather than allowing all traffic.</p>
+     * <p>The default is {@code false} (no data-plane authentication).</p>
+     *
+     * @param dataPlaneAuthenticationRequired whether data-plane authentication is required
+     */
+    public Configuration dataPlaneAuthenticationRequired(Boolean dataPlaneAuthenticationRequired) {
+        this.dataPlaneAuthenticationRequired = dataPlaneAuthenticationRequired;
+        return this;
+    }
+
+    public String dataPlaneBasicAuthenticationUsername() {
+        if (dataPlaneBasicAuthenticationUsername == null) {
+            return ConfigurationProperties.dataPlaneBasicAuthenticationUsername();
+        }
+        return dataPlaneBasicAuthenticationUsername;
+    }
+
+    /**
+     * The username required for data-plane HTTP Basic authentication. Basic is only active when both
+     * username and password are set. The default is "".
+     *
+     * @param dataPlaneBasicAuthenticationUsername the Basic username
+     */
+    public Configuration dataPlaneBasicAuthenticationUsername(String dataPlaneBasicAuthenticationUsername) {
+        this.dataPlaneBasicAuthenticationUsername = dataPlaneBasicAuthenticationUsername;
+        return this;
+    }
+
+    public String dataPlaneBasicAuthenticationPassword() {
+        if (dataPlaneBasicAuthenticationPassword == null) {
+            return ConfigurationProperties.dataPlaneBasicAuthenticationPassword();
+        }
+        return dataPlaneBasicAuthenticationPassword;
+    }
+
+    /**
+     * The password required for data-plane HTTP Basic authentication. Basic is only active when both
+     * username and password are set. The default is "".
+     *
+     * @param dataPlaneBasicAuthenticationPassword the Basic password
+     */
+    public Configuration dataPlaneBasicAuthenticationPassword(String dataPlaneBasicAuthenticationPassword) {
+        this.dataPlaneBasicAuthenticationPassword = dataPlaneBasicAuthenticationPassword;
+        return this;
+    }
+
+    public String dataPlaneBasicAuthenticationRealm() {
+        if (dataPlaneBasicAuthenticationRealm == null) {
+            return ConfigurationProperties.dataPlaneBasicAuthenticationRealm();
+        }
+        return dataPlaneBasicAuthenticationRealm;
+    }
+
+    /**
+     * The realm advertised in the {@code WWW-Authenticate: Basic realm="..."} challenge on a 401.
+     * The default is "MockServer".
+     *
+     * @param dataPlaneBasicAuthenticationRealm the Basic realm
+     */
+    public Configuration dataPlaneBasicAuthenticationRealm(String dataPlaneBasicAuthenticationRealm) {
+        this.dataPlaneBasicAuthenticationRealm = dataPlaneBasicAuthenticationRealm;
+        return this;
+    }
+
+    public String dataPlaneBearerAuthenticationToken() {
+        if (dataPlaneBearerAuthenticationToken == null) {
+            return ConfigurationProperties.dataPlaneBearerAuthenticationToken();
+        }
+        return dataPlaneBearerAuthenticationToken;
+    }
+
+    /**
+     * The token required for data-plane Bearer authentication ({@code Authorization: Bearer <token>}).
+     * Bearer is active when this value is set. The default is "".
+     *
+     * @param dataPlaneBearerAuthenticationToken the expected Bearer token
+     */
+    public Configuration dataPlaneBearerAuthenticationToken(String dataPlaneBearerAuthenticationToken) {
+        this.dataPlaneBearerAuthenticationToken = dataPlaneBearerAuthenticationToken;
+        return this;
+    }
+
+    public String dataPlaneApiKeyAuthenticationHeader() {
+        if (dataPlaneApiKeyAuthenticationHeader == null) {
+            return ConfigurationProperties.dataPlaneApiKeyAuthenticationHeader();
+        }
+        return dataPlaneApiKeyAuthenticationHeader;
+    }
+
+    /**
+     * The name of the header carrying the data-plane API key (e.g. {@code X-API-Key}). API-key auth
+     * is only active when both the header name and the value are set. The default is "".
+     *
+     * @param dataPlaneApiKeyAuthenticationHeader the API-key header name
+     */
+    public Configuration dataPlaneApiKeyAuthenticationHeader(String dataPlaneApiKeyAuthenticationHeader) {
+        this.dataPlaneApiKeyAuthenticationHeader = dataPlaneApiKeyAuthenticationHeader;
+        return this;
+    }
+
+    public String dataPlaneApiKeyAuthenticationValue() {
+        if (dataPlaneApiKeyAuthenticationValue == null) {
+            return ConfigurationProperties.dataPlaneApiKeyAuthenticationValue();
+        }
+        return dataPlaneApiKeyAuthenticationValue;
+    }
+
+    /**
+     * The expected value of the data-plane API-key header. API-key auth is only active when both the
+     * header name and the value are set. The default is "".
+     *
+     * @param dataPlaneApiKeyAuthenticationValue the expected API-key value
+     */
+    public Configuration dataPlaneApiKeyAuthenticationValue(String dataPlaneApiKeyAuthenticationValue) {
+        this.dataPlaneApiKeyAuthenticationValue = dataPlaneApiKeyAuthenticationValue;
         return this;
     }
 
