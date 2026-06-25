@@ -44,6 +44,7 @@ public class Configuration {
     private Boolean dashboardAnalyticsEnabled;
     private String dashboardAnalyticsEndpoint;
     private String dashboardAnalyticsKey;
+    private String dashboardAnalyticsDistribution;
     private Long slowRequestThresholdMillis;
     private Boolean metricsRequestDurationRouteLabels;
     private Boolean chaosAutoHaltEnabled;
@@ -539,6 +540,23 @@ public class Configuration {
      */
     public Configuration dashboardAnalyticsKey(String dashboardAnalyticsKey) {
         this.dashboardAnalyticsKey = dashboardAnalyticsKey;
+        return this;
+    }
+
+    public String dashboardAnalyticsDistribution() {
+        if (dashboardAnalyticsDistribution == null) {
+            return ConfigurationProperties.dashboardAnalyticsDistribution();
+        }
+        return dashboardAnalyticsDistribution;
+    }
+
+    /**
+     * Label identifying which MockServer distribution/artefact a dashboard analytics event came from, default is empty.
+     *
+     * @param dashboardAnalyticsDistribution analytics distribution label
+     */
+    public Configuration dashboardAnalyticsDistribution(String dashboardAnalyticsDistribution) {
+        this.dashboardAnalyticsDistribution = dashboardAnalyticsDistribution;
         return this;
     }
 

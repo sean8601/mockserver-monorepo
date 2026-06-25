@@ -333,6 +333,32 @@ public class ConfigurationTest {
     }
 
     @Test
+    public void shouldSetAndGetDashboardAnalyticsDistribution() {
+        String original = ConfigurationProperties.dashboardAnalyticsDistribution();
+        try {
+            // then - default value
+            assertThat(configuration.dashboardAnalyticsDistribution(), equalTo(""));
+
+            // when - system property setter
+            ConfigurationProperties.dashboardAnalyticsDistribution("docker");
+
+            // then - system property getter
+            assertThat(ConfigurationProperties.dashboardAnalyticsDistribution(), equalTo("docker"));
+            assertThat(System.getProperty("mockserver.dashboardAnalyticsDistribution"), equalTo("docker"));
+            assertThat(configuration.dashboardAnalyticsDistribution(), equalTo("docker"));
+            ConfigurationProperties.dashboardAnalyticsDistribution(original);
+
+            // when - setter
+            configuration.dashboardAnalyticsDistribution("helm");
+
+            // then - getter
+            assertThat(configuration.dashboardAnalyticsDistribution(), equalTo("helm"));
+        } finally {
+            ConfigurationProperties.dashboardAnalyticsDistribution(original);
+        }
+    }
+
+    @Test
     public void shouldSetAndGetChaosAutoHaltEnabled() {
         boolean original = ConfigurationProperties.chaosAutoHaltEnabled();
         try {

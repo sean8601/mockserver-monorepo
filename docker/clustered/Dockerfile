@@ -98,6 +98,10 @@ ARG DASHBOARD_ANALYTICS_ENDPOINT=
 ARG DASHBOARD_ANALYTICS_KEY=
 ENV MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT=${DASHBOARD_ANALYTICS_ENDPOINT}
 ENV MOCKSERVER_DASHBOARD_ANALYTICS_KEY=${DASHBOARD_ANALYTICS_KEY}
+# Labels analytics events by the artefact they came from. A plain, non-secret constant — safe to
+# commit directly: it is only ever sent when analytics is already active (which still requires the
+# injected endpoint+key above), so forks building this Dockerfile directly stay inert.
+ENV MOCKSERVER_DASHBOARD_ANALYTICS_DISTRIBUTION=docker-clustered
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=120s --retries=3 \
   CMD ["java", "-cp", "/mockserver-netty-jar-with-dependencies.jar:/libs/*", "org.mockserver.cli.HealthCheck"]

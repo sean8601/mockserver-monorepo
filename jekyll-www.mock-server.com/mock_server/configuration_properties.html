@@ -2274,6 +2274,27 @@ mockserver.llmRequestTimeoutMillis=30000</code></pre>
     <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsKey="phc_xxxxxxxxxxxxxxxxxxxx"</code></pre>
 </div>
 
+<button id="button_configuration_dashboard_analytics_distribution" class="accordion title"><strong>Dashboard Analytics Distribution</strong></button>
+<div class="panel title">
+    <p>A label that identifies which MockServer artefact produced an analytics event. It is sent as the <span class="inline_code">distribution</span> property on every <span class="inline_code">app_open</span> event and is chosen from a closed allow-list; any value not on the list is normalised to <span class="inline_code">unknown</span> before sending.</p>
+    <p>The official MockServer artefacts set this automatically — you do not need to configure it yourself:</p>
+    <ul>
+        <li>Standard Docker image: <span class="inline_code">docker-standard</span></li>
+        <li>GraalJS Docker image: <span class="inline_code">docker-graaljs</span></li>
+        <li>Clustered Docker image: <span class="inline_code">docker-clustered</span></li>
+        <li>Helm chart deployment: <span class="inline_code">helm</span></li>
+        <li>Official binary launcher bundles: <span class="inline_code">binary</span></li>
+    </ul>
+    <p>The plain downloadable JAR and embedded / library use leave this property empty and send no analytics at all. Most users will never need to set this property.</p>
+    <p>Type: <span class="keyword">string</span> Default: <span class="this_value">"" (unset)</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsDistribution=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_DASHBOARD_ANALYTICS_DISTRIBUTION=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.dashboardAnalyticsDistribution="binary"</code></pre>
+</div>
+
 <button id="button_configuration_otel" class="accordion title"><strong>OpenTelemetry (Metrics, GenAI Spans &amp; Trace Context)</strong></button>
 <div class="panel title">
     <p>MockServer can export to an OpenTelemetry (OTLP) collector, in two independent parts that are each <strong>off by default</strong> and <strong>fail-soft</strong> (a startup error logs one line and never stops the server or affects a response). Both use the OTLP HTTP/protobuf exporter with the JDK HTTP client (no gRPC/OkHttp) and share the same endpoint.</p>

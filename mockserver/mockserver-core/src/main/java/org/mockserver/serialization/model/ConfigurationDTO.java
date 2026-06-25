@@ -23,6 +23,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private Boolean dashboardAnalyticsEnabled;
     private String dashboardAnalyticsEndpoint;
     private String dashboardAnalyticsKey;
+    private String dashboardAnalyticsDistribution;
     private Boolean chaosAutoHaltEnabled;
     private Long chaosAutoHaltErrorThreshold;
     private Long chaosAutoHaltWindowMillis;
@@ -294,6 +295,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.dashboardAnalyticsEnabled = configuration.dashboardAnalyticsEnabled();
             this.dashboardAnalyticsEndpoint = configuration.dashboardAnalyticsEndpoint();
             this.dashboardAnalyticsKey = configuration.dashboardAnalyticsKey();
+            this.dashboardAnalyticsDistribution = configuration.dashboardAnalyticsDistribution();
             this.chaosAutoHaltEnabled = configuration.chaosAutoHaltEnabled();
             this.chaosAutoHaltErrorThreshold = configuration.chaosAutoHaltErrorThreshold();
             this.chaosAutoHaltWindowMillis = configuration.chaosAutoHaltWindowMillis();
@@ -617,6 +619,7 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.dashboardAnalyticsEnabled(dashboardAnalyticsEnabled);
         configuration.dashboardAnalyticsEndpoint(dashboardAnalyticsEndpoint);
         configuration.dashboardAnalyticsKey(dashboardAnalyticsKey);
+        configuration.dashboardAnalyticsDistribution(dashboardAnalyticsDistribution);
         configuration.chaosAutoHaltEnabled(chaosAutoHaltEnabled);
         configuration.chaosAutoHaltErrorThreshold(chaosAutoHaltErrorThreshold);
         configuration.chaosAutoHaltWindowMillis(chaosAutoHaltWindowMillis);
@@ -923,6 +926,9 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (dashboardAnalyticsKey != null) {
             target.dashboardAnalyticsKey(dashboardAnalyticsKey);
+        }
+        if (dashboardAnalyticsDistribution != null) {
+            target.dashboardAnalyticsDistribution(dashboardAnalyticsDistribution);
         }
         if (chaosAutoHaltEnabled != null) {
             target.chaosAutoHaltEnabled(chaosAutoHaltEnabled);
@@ -1714,6 +1720,15 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setDashboardAnalyticsKey(String dashboardAnalyticsKey) {
         this.dashboardAnalyticsKey = dashboardAnalyticsKey;
+        return this;
+    }
+
+    public String getDashboardAnalyticsDistribution() {
+        return dashboardAnalyticsDistribution;
+    }
+
+    public ConfigurationDTO setDashboardAnalyticsDistribution(String dashboardAnalyticsDistribution) {
+        this.dashboardAnalyticsDistribution = dashboardAnalyticsDistribution;
         return this;
     }
 

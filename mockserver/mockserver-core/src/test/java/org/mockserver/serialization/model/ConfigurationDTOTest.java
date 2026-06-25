@@ -149,18 +149,21 @@ public class ConfigurationDTOTest {
         Configuration original = configuration()
             .dashboardAnalyticsEnabled(false)
             .dashboardAnalyticsEndpoint("https://analytics.example.com")
-            .dashboardAnalyticsKey("phc_test_key");
+            .dashboardAnalyticsKey("phc_test_key")
+            .dashboardAnalyticsDistribution("docker");
 
         ConfigurationDTO dto = new ConfigurationDTO(original);
         assertThat(dto.getDashboardAnalyticsEnabled(), is(false));
         assertThat(dto.getDashboardAnalyticsEndpoint(), is("https://analytics.example.com"));
         assertThat(dto.getDashboardAnalyticsKey(), is("phc_test_key"));
+        assertThat(dto.getDashboardAnalyticsDistribution(), is("docker"));
 
         String json = new org.mockserver.serialization.ConfigurationSerializer(new org.mockserver.logging.MockServerLogger())
             .serialize(original);
         assertThat(json, containsString("dashboardAnalyticsEnabled"));
         assertThat(json, containsString("dashboardAnalyticsEndpoint"));
         assertThat(json, containsString("dashboardAnalyticsKey"));
+        assertThat(json, containsString("dashboardAnalyticsDistribution"));
 
         Configuration rebuilt = new org.mockserver.serialization.ConfigurationSerializer(new org.mockserver.logging.MockServerLogger())
             .deserialize(json);
@@ -168,6 +171,7 @@ public class ConfigurationDTOTest {
         assertThat(rebuilt.dashboardAnalyticsEnabled(), is(false));
         assertThat(rebuilt.dashboardAnalyticsEndpoint(), is("https://analytics.example.com"));
         assertThat(rebuilt.dashboardAnalyticsKey(), is("phc_test_key"));
+        assertThat(rebuilt.dashboardAnalyticsDistribution(), is("docker"));
     }
 
     @Test

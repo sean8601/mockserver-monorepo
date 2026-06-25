@@ -61,6 +61,7 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DASHBOARD_ANALYTICS_ENABLED = "mockserver.dashboardAnalyticsEnabled";
     private static final String MOCKSERVER_DASHBOARD_ANALYTICS_ENDPOINT = "mockserver.dashboardAnalyticsEndpoint";
     private static final String MOCKSERVER_DASHBOARD_ANALYTICS_KEY = "mockserver.dashboardAnalyticsKey";
+    private static final String MOCKSERVER_DASHBOARD_ANALYTICS_DISTRIBUTION = "mockserver.dashboardAnalyticsDistribution";
     private static final String MOCKSERVER_SLOW_REQUEST_THRESHOLD_MILLIS = "mockserver.slowRequestThresholdMillis";
     private static final String MOCKSERVER_METRICS_REQUEST_DURATION_ROUTE_LABELS = "mockserver.metricsRequestDurationRouteLabels";
     private static final String MOCKSERVER_CHAOS_AUTO_HALT_ENABLED = "mockserver.chaosAutoHaltEnabled";
@@ -710,6 +711,20 @@ public class ConfigurationProperties {
      */
     public static void dashboardAnalyticsKey(String key) {
         setProperty(MOCKSERVER_DASHBOARD_ANALYTICS_KEY, key);
+    }
+
+    public static String dashboardAnalyticsDistribution() {
+        return readPropertyHierarchically(PROPERTIES, MOCKSERVER_DASHBOARD_ANALYTICS_DISTRIBUTION, "MOCKSERVER_DASHBOARD_ANALYTICS_DISTRIBUTION", "");
+    }
+
+    /**
+     * Label identifying which MockServer distribution/artefact a dashboard analytics event came from.
+     * Default is empty.
+     *
+     * @param distribution analytics distribution label
+     */
+    public static void dashboardAnalyticsDistribution(String distribution) {
+        setProperty(MOCKSERVER_DASHBOARD_ANALYTICS_DISTRIBUTION, distribution);
     }
 
     public static long slowRequestThresholdMillis() {
