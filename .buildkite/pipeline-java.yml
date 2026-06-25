@@ -22,15 +22,15 @@ steps:
     command: ".buildkite/scripts/steps/java-build-and-collect.sh"
     artifact_paths:
       - "**/*.log"
-      # The machine-readable JUnit XMLs are uploaded for every test class - they
-      # feed the junit-annotate plugin (per-test failure annotations) and
-      # java-summarize.sh (the sticky roll-up annotation). Keep these.
-      - "**/target/surefire-reports/TEST-*.xml"
-      - "**/target/failsafe-reports/TEST-*.xml"
-      # The bulky per-class *-output.txt console logs are NO LONGER uploaded for
-      # every (passing) test class. java-collect-failures.sh copies only the
-      # FAILING classes' XML + matching -output.txt into target/failed-tests/,
-      # so the developer gets just the logs that matter.
+      # ONLY failing tests are uploaded as JUnit XML - the artefact tab stays a
+      # clean, short list of just what broke. java-collect-failures.sh scans every
+      # **/target/{surefire,failsafe}-reports/TEST-*.xml and copies ONLY the
+      # FAILING classes' XML + matching -output.txt into target/failed-tests/.
+      # We deliberately do NOT upload the broad per-class
+      # **/target/surefire-reports/TEST-*.xml / failsafe globs (~648 files / ~37MB
+      # of mostly-passing classes). The end-of-log pass/fail summary printed by
+      # java-build-and-collect.sh still reports the full counts and does not depend
+      # on any uploaded artefact.
       - "mockserver/target/failed-tests/**/*"
       # Upload only the machine-readable jacoco XML data files - per-class HTML
       # reports under jacoco/**/* produce hundreds of artifacts per module and
@@ -57,13 +57,13 @@ steps:
   - wait: ~
     continue_on_failure: true
 
-  - label: ":junit: annotate test results"
-    plugins:
-      - junit-annotate#8a549e5220869601737287b4d6a9293703dc5a6f:  # v2.7.0
-          artifacts: "**/target/*-reports/TEST-*.xml"
-          always-annotate: true
+  # NOTE: the junit-annotate plugin step was intentionally removed - per-class
+  # TEST-*.xml are no longer uploaded (only failing-test artefacts under
+  # mockserver/target/failed-tests/** are), so the plugin would have nothing to
+  # consume. The end-of-log pass/fail summary (java-build-and-collect.sh) plus the
+  # failing-test artefacts cover what the annotation used to surface.
 
-  - label: ":chart_with_upwards_trend: test + coverage summary"
+  - label: ":chart_with_upwards_trend: coverage summary"
     command: ".buildkite/scripts/steps/java-summarize.sh"
     timeout_in_minutes: 5
     soft_fail: true
