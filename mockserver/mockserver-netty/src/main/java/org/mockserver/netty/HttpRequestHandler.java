@@ -486,8 +486,8 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
             if (format == null || format.isEmpty()) {
                 format = "json";
             }
-            if (!"json".equalsIgnoreCase(format) && !"markdown".equalsIgnoreCase(format)) {
-                responseWriter.writeResponse(request, BAD_REQUEST, "format must be one of: json, markdown", MediaType.create("text", "plain").toString());
+            if (!"json".equalsIgnoreCase(format) && !"markdown".equalsIgnoreCase(format) && !"csv".equalsIgnoreCase(format)) {
+                responseWriter.writeResponse(request, BAD_REQUEST, "format must be one of: json, markdown, csv", MediaType.create("text", "plain").toString());
                 return;
             }
 
@@ -504,6 +504,8 @@ public class HttpRequestHandler extends SimpleChannelInboundHandler<HttpRequest>
 
             if ("markdown".equalsIgnoreCase(format)) {
                 responseWriter.writeResponse(request, OK, service.renderBrief(result), "text/markdown; charset=utf-8");
+            } else if ("csv".equalsIgnoreCase(format)) {
+                responseWriter.writeResponse(request, OK, service.renderCsv(result), "text/csv; charset=utf-8");
             } else {
                 String json = ObjectMapperFactory.createObjectMapper()
                     .writerWithDefaultPrettyPrinter().writeValueAsString(result.getReport());

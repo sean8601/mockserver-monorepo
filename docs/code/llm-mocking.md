@@ -667,7 +667,8 @@ Key source files under `mockserver/mockserver-core/src/main/java/org/mockserver/
 | `llm/analysis/LlmOptimisationReportBuilder.java` | Builds the report from `FORWARDED_REQUEST` log entries via `ProviderCodecRegistry` + `LlmProviderSniffer` + `LlmPricing` + `FixtureRedactor` |
 | `llm/analysis/OptimisationSignals.java` | Six deterministic signal detectors (see below); pure — no network, no LLM |
 | `llm/analysis/LlmOptimisationBriefRenderer.java` | Renders an `LlmOptimisationReport` to a pre-framed Markdown brief |
-| `llm/analysis/LlmOptimisationReportService.java` | Façade: `build(pairs, filter)` + `renderBrief(result)` — used by both the REST handler and the MCP tool |
+| `llm/analysis/LlmOptimisationCsvRenderer.java` | Renders an `LlmOptimisationReport` to CSV (per-call rows + totals/verdict summary, RFC-4180 escaped) |
+| `llm/analysis/LlmOptimisationReportService.java` | Façade: `build(pairs, filter)` + `renderBrief(result)` + `renderCsv(result)` — used by both the REST handler and the MCP tool; also pushes the verdict snapshot to `Metrics` for the optimisation gauges |
 
 ## LLM Optimisation Export
 
@@ -705,14 +706,29 @@ The per-call `latencyMs` is the measured upstream round-trip time. It is carried
 
 | Query parameter | Values | Default |
 |-----------------|--------|---------|
-| `format` | `json` \| `markdown` | `json` |
+| `format` | `json` \| `markdown` \| `csv` | `json` |
 | `session` | grouping key | all captured LLM traffic |
 | `host` | upstream hostname | all hosts |
 | `provider` | `OPENAI` \| `ANTHROPIC` \| `GEMINI` \| `BEDROCK` \| `AZURE_OPENAI` \| `OLLAMA` | all providers |
 
+An unrecognised `format` returns `400` with `format must be one of: json, markdown, csv`. The `csv` format is served as `text/csv; charset=utf-8`.
+
 CORS is enabled on this endpoint so the dashboard UI can call it even when the dashboard and control plane are on different origins.
 
-**MCP tool** — `export_optimisation_report` (registered in `McpToolRegistry.registerExportOptimisationReport`), same parameters as the REST endpoint. Returns the brief text or JSON bundle as a tool result.
+**MCP tool** — `export_optimisation_report` (registered in `McpToolRegistry.registerExportOptimisationReport`), same parameters as the REST endpoint (`format` accepts `markdown` (default), `json`, or `csv`). Returns the brief text (`brief`), JSON bundle (`report`), or CSV text (`csv`) as a tool result.
+
+### CSV format
+
+`format=csv` is served by `LlmOptimisationCsvRenderer` (mirroring the structure of `LlmOptimisationBriefRenderer`). It is intended for spreadsheets and data pipelines: deterministic ordering, RFC-4180 escaping (a field containing a comma, double quote, CR, or LF is wrapped in double quotes with embedded quotes doubled). The output has two sections separated by a blank line:
+
+1. **Per-call rows** — header `index,provider,model,input_tokens,output_tokens,cached_input_tokens,reasoning_tokens,estimated_cost_usd,cost_is_estimated,latency_ms,tool_calls,finish_reason`, one row per captured `Call`.
+2. **Totals/verdict summary** — header `section,metric,value`, carrying the aggregate `Totals` (`call_count`, token totals, `estimated_cost_usd`, `total_latency_ms`, `tool_call_count`, `cache_hit_ratio`, `one_shot_rate`, `retry_call_count`) and the headline `Verdict` (`grade`, `total_estimated_saving_usd`, `total_wasted_input_tokens`, `saving_fraction_of_spend`, severity counts).
+
+An empty report renders the per-call header row with no data rows, followed by the totals section with zeros — always a valid, header-bearing CSV. The CSV is additive to (not a substitute for) the JSON bundle, so unlike the JSON shape it is not a frozen wire contract.
+
+### Optimisation verdict Prometheus gauges
+
+Three single global Prometheus gauges expose the latest report's headline verdict/totals — `mock_server_llm_estimated_waste_usd` (from `verdict.totalEstimatedSavingUsd`), `mock_server_llm_cache_hit_ratio` (from `totals.cacheHitRatio`), and `mock_server_llm_one_shot_rate` (from `totals.oneShotRate`). They read a cached snapshot that `LlmOptimisationReportService.build(...)` pushes on every build, so they reflect the most-recently-built report (0 until one is built, and after a reset). See [metrics.md → LLM Optimisation Verdict Gauges](metrics.md#llm-optimisation-verdict-gauges) for the source-of-truth rationale and OTLP mirroring.
 
 **Dashboard** — the LLM Optimise screen (`OptimiseView.tsx`, the **LLM Optimise** nav tab, positioned immediately after **Chaos**) fetches `format=json` for display and `format=markdown` for the "Copy optimisation brief" and "Download bundle" buttons.
 
