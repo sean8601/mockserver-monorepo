@@ -1,0 +1,20 @@
+{
+  "name": "inject-scale",
+  "templateType": "VELOCITY",
+  "profile": {
+    "stages": [
+      { "type": "RATE", "rate": 30000, "durationMillis": 90000, "maxVus": 4000 }
+    ]
+  },
+  "steps": [
+    {
+      "name": "sink",
+      "request": {
+        "method": "GET",
+        "path": "/sink/$iteration.index",
+        "headers": { "Host": ["envoy:8000"] },
+        "socketAddress": { "host": "envoy", "port": 8000, "scheme": "HTTP" }
+      }
+    }
+  ]
+}

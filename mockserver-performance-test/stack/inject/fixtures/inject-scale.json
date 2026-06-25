@@ -1,0 +1,31 @@
+{
+  "proto": "http",
+  "target": "envoy-direct-response",
+  "per_instance_offered_rps": 3000,
+  "series": [
+    {
+      "instances": 1,
+      "aggregate_rps": 2998,
+      "per_instance_rps": [
+        2998
+      ],
+      "error_rate": 0.00000,
+      "target_received_rps": 3000
+    },
+    {
+      "instances": 2,
+      "aggregate_rps": 6015,
+      "per_instance_rps": [
+        3004,
+        3011
+      ],
+      "error_rate": 0.00000,
+      "target_received_rps": 6000
+    }
+  ],
+  "scaling_efficiency": {
+    "ideal_at_max": 6000,
+    "actual_at_max": 6015,
+    "efficiency_pct": 100
+  }
+}

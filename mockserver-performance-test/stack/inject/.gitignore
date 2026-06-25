@@ -1,0 +1,3 @@
+# run-inject.sh writes its results to this dir root; canonical samples live in fixtures/
+/inject-ceiling.json
+/inject-scale.json
