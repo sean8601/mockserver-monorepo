@@ -374,13 +374,59 @@ func (b *A2aMockBuilder) buildPushNotificationDelivery() Expectation {
 }
 
 func (b *A2aMockBuilder) buildCustomTaskHandler(handler a2aTaskHandler) Expectation {
-	escapedPattern := strings.ReplaceAll(handler.messagePattern, "/", `\/`)
-	escapedPattern = strings.ReplaceAll(escapedPattern, "\n", `\n`)
-	escapedPattern = strings.ReplaceAll(escapedPattern, "\r", `\r`)
-	escapedPattern = strings.ReplaceAll(escapedPattern, "\x00", "")
+	escapedPattern := escapeMessagePattern(handler.messagePattern)
 	jsonPath := "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /" + escapedPattern + "/)]"
 	resultJson := b.taskResultJson(handler.responseText, handler.isError, true)
 	return velocityTemplateExpectation(jsonPathRequest(b.path, jsonPath), resultJson)
+}
+
+// escapeMessagePattern neutralises the characters that could let a
+// user-supplied messagePattern (a regular expression) break out of the
+// /.../ regex literal embedded in the JSONPath matcher, while preserving the
+// pattern's own regex escape sequences (e.g. \d, \/, \\).
+//
+// The scan is single-pass and left-to-right over BYTES — every special
+// character handled here is ASCII, and any other byte (including the
+// continuation bytes of multi-byte UTF-8 runes) is emitted verbatim, so valid
+// UTF-8 input is preserved unchanged.
+//
+//   - On a backslash: if another byte follows, the backslash and that byte are
+//     both emitted verbatim so an existing escape sequence (\d, \/, \\, ...) is
+//     left intact; a TRAILING backslash with nothing to escape is doubled to
+//     \\ so it cannot escape the closing "/" delimiter and break out.
+//   - A bare "/" is escaped to \/ so it cannot close the regex literal early.
+//   - Newline / carriage-return are converted to \n / \r.
+//   - A NUL byte is stripped.
+//   - Any other byte is emitted verbatim.
+//
+// For every input that contains none of these breakout cases the output is
+// byte-identical to the previous inline escaping.
+func escapeMessagePattern(pattern string) string {
+	var b strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		c := pattern[i]
+		switch {
+		case c == '\\':
+			if i+1 < len(pattern) {
+				b.WriteByte('\\')
+				b.WriteByte(pattern[i+1])
+				i++
+			} else {
+				b.WriteString(`\\`)
+			}
+		case c == '/':
+			b.WriteString(`\/`)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == 0x00:
+			// strip NUL
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // taskResultJson builds the A2A task result object. When velocity is true the

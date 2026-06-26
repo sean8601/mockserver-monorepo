@@ -394,11 +394,63 @@ public sealed class A2aMockBuilder
 
     private Expectation BuildCustomTaskHandler(A2aTaskHandler handler)
     {
-        var escapedPattern = handler.MessagePattern.Replace("/", "\\/");
-        escapedPattern = escapedPattern.Replace("\n", "\\n").Replace("\r", "\\r").Replace("\0", "");
+        var escapedPattern = EscapeMessagePattern(handler.MessagePattern);
         var jsonPathBody = "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /" + escapedPattern + "/)]";
         var resultJson = BuildTaskResultJson(handler.ResponseText, handler.IsError);
         return VelocityResponse(JsonPathRequest(jsonPathBody), resultJson);
+    }
+
+    /// <summary>
+    /// Escape a user-supplied regular expression so it can be inlined between the <c>/</c>
+    /// delimiters of a JsonPath regex literal without breaking out of it. Performs a single
+    /// left-to-right pass that PRESERVES existing regex escape sequences (so <c>\d</c> stays
+    /// <c>\d</c> and <c>\/</c> stays <c>\/</c>) and only neutralises delimiter breakout:
+    /// a bare <c>/</c> becomes <c>\/</c>, a trailing lone backslash is doubled so it cannot
+    /// escape the closing delimiter, newline/CR are turned into <c>\n</c>/<c>\r</c>, and NUL
+    /// is stripped. For every normal pattern the output is byte-identical to the previous
+    /// inline escaping — only breakout cases change.
+    /// </summary>
+    internal static string EscapeMessagePattern(string pattern)
+    {
+        var sb = new System.Text.StringBuilder(pattern.Length);
+        for (int i = 0; i < pattern.Length; i++)
+        {
+            char c = pattern[i];
+            if (c == '\\')
+            {
+                // Preserve an existing escape sequence verbatim (e.g. \d, \/, \\), but if the
+                // backslash is the LAST character double it so it cannot escape the closing '/'.
+                if (i + 1 < pattern.Length)
+                {
+                    sb.Append('\\').Append(pattern[++i]);
+                }
+                else
+                {
+                    sb.Append("\\\\");
+                }
+            }
+            else if (c == '/')
+            {
+                sb.Append("\\/");
+            }
+            else if (c == '\n')
+            {
+                sb.Append("\\n");
+            }
+            else if (c == '\r')
+            {
+                sb.Append("\\r");
+            }
+            else if (c == '\0')
+            {
+                // strip NUL
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 
     // --- result JSON helpers -----------------------------------------------

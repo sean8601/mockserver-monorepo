@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A2A client builders: the custom-handler regex `messagePattern` is now escaped completely.** Every client
+  library (Java, Node, Python, Ruby, Go, Rust, PHP, .NET) inlines `messagePattern` into a JSONPath `=~ /…/` regex
+  literal but previously escaped only the `/` delimiter, so a pattern ending in a lone backslash (or containing
+  `\/`) could escape the closing delimiter and break out of the regex literal into the surrounding JSONPath/JSON
+  (CodeQL `rb/incomplete-sanitization`). The escaping now preserves valid regex escape sequences (e.g. `\d`) while
+  neutralising the delimiter-breakout; normal patterns are unaffected.
+- **Dashboard load-scenario report download now validates the URL scheme.** The "download report" action passed a
+  URL assembled from the user-configured connection to `window.open` without checking its scheme; it now opens the
+  report only when the URL resolves to `http`/`https`, ruling out `javascript:`/`data:` redirection (CodeQL
+  `js/client-side-unvalidated-url-redirection`).
 - **`/bind` and `/stop` now honour control-plane authentication/authorization.** These mutating lifecycle
   endpoints were serviced before the auth gate; they now require the same control-plane auth as
   `/mockserver/configuration`. Default deployments with no control-plane auth configured are unaffected, and

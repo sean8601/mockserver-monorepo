@@ -302,13 +302,46 @@ module MockServer
       end
 
       def build_custom_task_handler(handler)
-        escaped_pattern = handler.message_pattern.gsub('/', '\\/')
-        escaped_pattern = escaped_pattern.gsub("\n", '\\n').gsub("\r", '\\r').delete("\0")
+        escaped_pattern = escape_message_pattern(handler.message_pattern)
         json_path = "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /" + escaped_pattern + '/)]'
         velocity_template_response_expectation(
           json_path_request(json_path),
           task_result_json(handler.response_text, handler.is_error)
         )
+      end
+
+      # Neutralize only the regex-delimiter breakout while preserving every
+      # existing regex escape sequence. The user-supplied message_pattern is
+      # documented as a regular expression and is embedded between `/.../`
+      # delimiters inside a JSONPath. A single-pass scanner is required (rather
+      # than independent gsubs) so that a backslash and the character it escapes
+      # are consumed together — otherwise a trailing lone backslash, or an input
+      # containing `\/`, could escape the closing `/` delimiter and break out of
+      # the regex literal into the surrounding JSONPath/JSON.
+      # (CodeQL rb/incomplete-sanitization, alert #65.)
+      def escape_message_pattern(pattern)
+        chars = pattern.to_s.chars
+        out = +''
+        i = 0
+        while i < chars.length
+          c = chars[i]
+          case c
+          when '\\'
+            if i + 1 < chars.length
+              out << '\\' << chars[i + 1] # preserve escape sequence (\d, \/, \\)
+              i += 1                       # extra advance past the escaped char
+            else
+              out << '\\\\'                # trailing lone backslash -> literal backslash
+            end
+          when '/'  then out << '\\/'
+          when "\n" then out << '\\n'
+          when "\r" then out << '\\r'
+          when "\0" then nil               # strip NUL
+          else out << c
+          end
+          i += 1
+        end
+        out
       end
 
       def build_streaming_expectation

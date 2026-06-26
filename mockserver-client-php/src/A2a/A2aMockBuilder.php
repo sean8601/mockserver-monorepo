@@ -423,8 +423,7 @@ class A2aMockBuilder
 
     private function buildCustomTaskHandler(A2aTaskHandlerBuilder $handler): Expectation
     {
-        $escapedPattern = str_replace('/', '\\/', $handler->messagePattern);
-        $escapedPattern = str_replace(["\n", "\r", "\0"], ['\\n', '\\r', ''], $escapedPattern);
+        $escapedPattern = $this->escapeMessagePattern($handler->messagePattern);
         $jsonPathBody = "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /"
             . $escapedPattern . "/)]";
         $resultJson = $this->buildTaskResultJson($handler->responseText, $handler->isError);
@@ -437,6 +436,52 @@ class A2aMockBuilder
             ],
             $resultJson
         );
+    }
+
+    /**
+     * Escape a user-supplied regular expression so it can be embedded between the
+     * '/' delimiters of the JsonPath {@code =~ /<PATTERN>/} matcher without the
+     * pattern being able to break OUT of the regex literal.
+     *
+     * Single-pass, left-to-right, byte-oriented (all special chars are ASCII;
+     * other bytes are emitted verbatim to preserve UTF-8):
+     *  - On '\\': preserve an existing escape sequence by emitting the backslash
+     *    plus the following char verbatim (so '\d' stays '\d', '\/' stays '\/');
+     *    a TRAILING lone backslash is doubled to a literal backslash so it cannot
+     *    escape the closing delimiter.
+     *  - On bare '/': emit '\/' so it cannot terminate the regex literal.
+     *  - On newline / CR: emit the two-char escapes '\n' / '\r'.
+     *  - On NUL: strip it.
+     *  - Otherwise: emit the byte verbatim.
+     */
+    private function escapeMessagePattern(string $pattern): string
+    {
+        $out = '';
+        $len = strlen($pattern);
+        for ($i = 0; $i < $len; $i++) {
+            $c = $pattern[$i];
+            if ($c === '\\') {
+                if ($i + 1 < $len) {
+                    $out .= '\\' . $pattern[$i + 1];
+                    $i++;
+                } else {
+                    // trailing lone backslash -> literal backslash
+                    $out .= '\\\\';
+                }
+            } elseif ($c === '/') {
+                $out .= '\\/';
+            } elseif ($c === "\n") {
+                $out .= '\\n';
+            } elseif ($c === "\r") {
+                $out .= '\\r';
+            } elseif ($c === "\0") {
+                // strip NUL
+                continue;
+            } else {
+                $out .= $c;
+            }
+        }
+        return $out;
     }
 
     /**

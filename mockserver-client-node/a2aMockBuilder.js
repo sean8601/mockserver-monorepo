@@ -280,9 +280,42 @@
             return velocityTemplateResponseExpectation(jsonRpcRequest(state.path, "tasks/cancel"), resultJson);
         };
 
+        // Escapes a user-supplied regular expression so it can be embedded
+        // between the "/.../" delimiters of the JSON_PATH regex literal without
+        // breaking out of it. Single left-to-right pass that PRESERVES existing
+        // regex escape sequences (e.g. "\d", "\/") and only neutralizes the
+        // delimiter ("/" -> "\/"), control characters (newline/CR), and a
+        // trailing lone backslash (which would otherwise escape the closing
+        // "/" delimiter). NUL is stripped.
+        var escapeMessagePattern = function (pattern) {
+            var out = "", i = 0, n = pattern.length;
+            while (i < n) {
+                var c = pattern.charAt(i);
+                if (c === "\\") {
+                    if (i + 1 < n) {
+                        out += "\\" + pattern.charAt(i + 1);
+                        i += 2;
+                        continue;
+                    }
+                    out += "\\\\"; // trailing lone backslash -> literal backslash
+                } else if (c === "/") {
+                    out += "\\/";
+                } else if (c === "\n") {
+                    out += "\\n";
+                } else if (c === "\r") {
+                    out += "\\r";
+                } else if (c === "\0") {
+                    // strip NUL
+                } else {
+                    out += c;
+                }
+                i++;
+            }
+            return out;
+        };
+
         var buildCustomTaskHandler = function (handler) {
-            var escapedPattern = handler.messagePattern.split("/").join("\\/");
-            escapedPattern = escapedPattern.split("\n").join("\\n").split("\r").join("\\r").split("\0").join("");
+            var escapedPattern = escapeMessagePattern(handler.messagePattern);
             var jsonPath = "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /" + escapedPattern + "/)]";
             var resultJson = buildTaskResultJson(handler.responseText, handler.isError);
             return velocityTemplateResponseExpectation(jsonPathRequest(state.path, jsonPath), resultJson);

@@ -124,6 +124,49 @@ class A2aBuilderTest extends TestCase
         $this->assertStringContainsString('a\\/b', $handler['httpRequest']['body']['jsonPath']);
     }
 
+    public function testCustomTaskHandlerPreservesRegexEscapeSequences(): void
+    {
+        // '\d+' must stay '\d+' (single backslash), NOT be doubled to '\\d+'.
+        $handler = A2aMockBuilder::a2aMock()
+            ->onTaskSend()->matchingMessage('\\d+')->respondingWith('ok')->and()
+            ->build()[1]
+            ->toArray();
+
+        $jsonPath = $handler['httpRequest']['body']['jsonPath'];
+        $this->assertStringContainsString('=~ /\\d+/)]', $jsonPath);
+        $this->assertStringNotContainsString('\\\\d', $jsonPath);
+    }
+
+    public function testCustomTaskHandlerDoesNotDoubleEscapedSlash(): void
+    {
+        // An already-escaped slash 'a\/b' must stay 'a\/b', NOT become 'a\\/b'.
+        $handler = A2aMockBuilder::a2aMock()
+            ->onTaskSend()->matchingMessage('a\\/b')->respondingWith('ok')->and()
+            ->build()[1]
+            ->toArray();
+
+        $jsonPath = $handler['httpRequest']['body']['jsonPath'];
+        $this->assertStringContainsString('a\\/b', $jsonPath);
+        $this->assertStringNotContainsString('a\\\\/b', $jsonPath);
+    }
+
+    public function testCustomTaskHandlerTrailingBackslashCannotBreakOutOfRegex(): void
+    {
+        // A pattern ending in a lone backslash must not escape the closing '/'
+        // delimiter of the regex literal — it is doubled to a literal backslash
+        // and the jsonPath still ends with the UNESCAPED closing '/)]'.
+        $handler = A2aMockBuilder::a2aMock()
+            ->onTaskSend()->matchingMessage('weather\\')->respondingWith('ok')->and()
+            ->build()[1]
+            ->toArray();
+
+        $jsonPath = $handler['httpRequest']['body']['jsonPath'];
+        $this->assertStringContainsString('weather\\\\', $jsonPath);
+        // Security assertion: the regex literal is still correctly terminated.
+        $this->assertStringEndsWith('/)]', $jsonPath);
+        $this->assertStringContainsString("=~ /weather\\\\/)]", $jsonPath);
+    }
+
     public function testTaskHandlerErrorFlag(): void
     {
         $handler = A2aMockBuilder::a2aMock()

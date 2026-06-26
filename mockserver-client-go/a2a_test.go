@@ -197,6 +197,75 @@ func TestA2aMock_CustomTaskHandlers(t *testing.T) {
 	}
 }
 
+// jsonPathForPattern builds the custom-handler JSONPath produced for a given
+// user-supplied messagePattern by driving the real builder, so the assertions
+// below exercise the exact escaping used in production.
+func jsonPathForPattern(t *testing.T, pattern string) string {
+	t.Helper()
+	exps := A2aMock("/a2a").OnTaskSend(pattern, "ok", false).Build()
+	for i := range exps {
+		if jp, ok := exps[i].HttpRequest.Body.(jsonPathBody); ok && strings.Contains(jp.JSONPath, "tasks/send") {
+			return jp.JSONPath
+		}
+	}
+	t.Fatalf("no custom JSON_PATH handler produced for pattern %q", pattern)
+	return ""
+}
+
+// TestEscapeMessagePattern_PreservesRegexEscapes proves the breakout fix does
+// not corrupt ordinary regex patterns: existing escape sequences survive
+// unchanged and are NOT doubled.
+func TestEscapeMessagePattern_PreservesRegexEscapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		want    string
+	}{
+		// (1) \d+ stays \d+ (single backslash, NOT doubled).
+		{"backslash-d", `\d+`, `\d+`},
+		// (2) a\/b stays a\/b (already-escaped slash NOT re-escaped to a\\/b).
+		{"escaped-slash", `a\/b`, `a\/b`},
+		// (4) a normal slash-containing pattern still escapes exactly as before.
+		{"bare-slash", `a/b`, `a\/b`},
+		// Plain pattern is byte-identical (regression of the existing happy path).
+		{"plain", `(?i).*london.*`, `(?i).*london.*`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := escapeMessagePattern(tc.pattern); got != tc.want {
+				t.Errorf("escapeMessagePattern(%q) = %q, want %q", tc.pattern, got, tc.want)
+			}
+			// The escaped pattern must sit inside the regex literal intact.
+			want := "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /" + tc.want + "/)]"
+			if got := jsonPathForPattern(t, tc.pattern); got != want {
+				t.Errorf("jsonPath for %q = %q, want %q", tc.pattern, got, want)
+			}
+		})
+	}
+}
+
+// TestEscapeMessagePattern_TrailingBackslashNoBreakout is the security
+// assertion: a pattern ending in a single backslash must be doubled so it
+// cannot escape the closing "/" delimiter, and the produced JSONPath must still
+// end with the UNESCAPED closing "/)]".
+func TestEscapeMessagePattern_TrailingBackslashNoBreakout(t *testing.T) {
+	// (3) Pattern ending in a single backslash -> two backslashes.
+	if got, want := escapeMessagePattern(`foo\`), `foo\\`; got != want {
+		t.Errorf("escapeMessagePattern(`foo\\`) = %q, want %q", got, want)
+	}
+
+	jsonPath := jsonPathForPattern(t, `foo\`)
+	want := `$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /foo\\/)]`
+	if jsonPath != want {
+		t.Errorf("jsonPath = %q, want %q", jsonPath, want)
+	}
+	// The closing delimiter sequence "/)]" must remain present and unescaped:
+	// a breakout would have consumed the leading "/" of "/)]".
+	if !strings.HasSuffix(jsonPath, `\\/)]`) {
+		t.Errorf("trailing backslash broke out of regex literal: %q", jsonPath)
+	}
+}
+
 func TestA2aMock_Streaming(t *testing.T) {
 	exps := A2aMock("/a2a").
 		WithStreaming().

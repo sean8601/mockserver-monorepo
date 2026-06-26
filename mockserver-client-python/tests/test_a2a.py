@@ -201,6 +201,41 @@ def test_newline_and_carriage_return_escaped_and_null_stripped():
     assert "\n" not in json_path
 
 
+def _pattern_json_path(pattern):
+    expectations = _dicts(
+        a2a_mock()
+        .on_task_send()
+        .matching_message(pattern)
+        .responding_with("found")
+        .and_()
+    )
+    return expectations[1]["httpRequest"]["body"]["jsonPath"]
+
+
+def test_existing_regex_escape_sequence_preserved():
+    # "\d+" must stay "\d+" — a single backslash, NOT doubled.
+    json_path = _pattern_json_path("\\d+")
+    assert "/\\d+/" in json_path
+    # exactly one backslash before the d (no over-escaping)
+    assert "\\\\d" not in json_path
+
+
+def test_already_escaped_slash_preserved():
+    # "a\/b" must stay "a\/b" — the existing escape is preserved, not doubled to "a\\/b".
+    json_path = _pattern_json_path("a\\/b")
+    assert "/a\\/b/" in json_path
+    assert "a\\\\/b" not in json_path
+
+
+def test_trailing_lone_backslash_cannot_break_out_of_regex_literal():
+    # One real trailing backslash ("trail\") must become two ("trail\\") so it
+    # escapes itself rather than the closing "/" delimiter.
+    json_path = _pattern_json_path("trail\\")
+    # SECURITY: the regex literal still closes with an UNESCAPED "/)]" — no breakout.
+    assert json_path.endswith("/trail\\\\/)]")
+    assert "trail\\\\/)]" in json_path
+
+
 def test_special_json_characters_escaped_in_response():
     expectations = _dicts(a2a_mock().with_default_task_response("line1\nline2\ttab"))
     template = expectations[1]["httpResponseTemplate"]["template"]

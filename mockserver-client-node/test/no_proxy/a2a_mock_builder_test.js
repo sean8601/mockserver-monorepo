@@ -267,6 +267,54 @@ describe('a2aMock escaping', function () {
         assert.ok(jsonPath.indexOf('line1\\nline2\\rmidend\\d+') !== -1);
         assert.ok(jsonPath.indexOf('\0') === -1);
     });
+
+    it('preserves an existing regex escape sequence (\\d+ stays \\d+, not doubled)', function () {
+        // '\\d+' in a JS string literal is a single backslash followed by 'd+'.
+        var handler = findByJsonPath(a2aMock()
+            .onTaskSend().matchingMessage('\\d+').respondingWith('found').and()
+            .build())[0];
+        var jsonPath = handler.httpRequest.body.jsonPath;
+        // The single-backslash escape must survive verbatim, NOT become '\\\\d+'.
+        assert.ok(jsonPath.indexOf('=~ /\\d+/)]') !== -1, jsonPath);
+    });
+
+    it('preserves an already-escaped forward slash (\\/ stays \\/, not double-escaped)', function () {
+        // 'a\\/b' is a, backslash, forward-slash, b.
+        var handler = findByJsonPath(a2aMock()
+            .onTaskSend().matchingMessage('a\\/b').respondingWith('found').and()
+            .build())[0];
+        var jsonPath = handler.httpRequest.body.jsonPath;
+        // Must stay 'a\/b' and NOT be turned into 'a\\/b' (which would escape
+        // the backslash and re-expose the bare '/' delimiter).
+        assert.ok(jsonPath.indexOf('=~ /a\\/b/)]') !== -1, jsonPath);
+    });
+
+    it('neutralizes a trailing lone backslash so it cannot escape the closing delimiter (security)', function () {
+        // 'trail\\' is the 5 chars t,r,a,i,l followed by ONE real backslash.
+        var handler = findByJsonPath(a2aMock()
+            .onTaskSend().matchingMessage('trail\\').respondingWith('found').and()
+            .build())[0];
+        var jsonPath = handler.httpRequest.body.jsonPath;
+        // The lone trailing backslash must be doubled to a literal backslash:
+        // 'trail\' -> 'trail\\' (two real backslashes in the output).
+        assert.ok(jsonPath.indexOf('=~ /trail\\\\/)]') !== -1, jsonPath);
+        // Security assertion: the jsonPath still terminates with the closing
+        // '/)]' delimiter+suffix — the backslash did NOT break out and consume
+        // the delimiter. The full literal is '...=~ /trail\\/)]' where the two
+        // backslashes are an escaped-backslash, leaving the final '/' as the
+        // delimiter.
+        assert.ok(/\/\)]$/.test(jsonPath), 'must end with /)]: ' + jsonPath);
+        // And the breakout signature ('trail\/)]' with a SINGLE backslash, i.e.
+        // backslash directly escaping the delimiter) must NOT be present.
+        assert.ok(jsonPath.indexOf('trail\\/)]') === -1, 'lone backslash escaped the delimiter: ' + jsonPath);
+    });
+
+    it('still escapes a plain forward slash in a normal pattern', function () {
+        var handler = findByJsonPath(a2aMock()
+            .onTaskSend().matchingMessage('path/to/resource').respondingWith('found').and()
+            .build())[0];
+        assert.ok(handler.httpRequest.body.jsonPath.indexOf('path\\/to\\/resource') !== -1);
+    });
 });
 
 // =========================================================================

@@ -77,6 +77,45 @@ def _escape_velocity(value: str | None) -> str | None:
     return value.replace("$", "${esc.d}").replace("#", "${esc.h}")
 
 
+def _escape_message_pattern(pattern: str) -> str:
+    """Escape a user-supplied regular expression for safe interpolation between the
+    ``/`` delimiters of a JSONPath ``=~ /.../`` regex literal.
+
+    A single left-to-right scan that *preserves* existing regex escape sequences
+    (``\\d``, ``\\/``, ``\\\\`` ...) and only neutralises the cases that could break
+    out of the ``/`` delimiter:
+
+    - ``\\`` followed by any char: emit both verbatim (keep the escape sequence);
+      a *trailing lone* ``\\`` becomes ``\\\\`` so it cannot escape the closing ``/``.
+    - bare ``/``: emit ``\\/`` so it cannot close the literal early.
+    - newline -> ``\\n``, carriage return -> ``\\r``, NUL -> stripped.
+    - any other char: emit verbatim.
+    """
+    out: list[str] = []
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "\\":
+            if i + 1 < n:
+                out.append("\\")
+                out.append(pattern[i + 1])
+                i += 2
+                continue
+            out.append("\\\\")  # trailing lone backslash -> literal backslash
+        elif c == "/":
+            out.append("\\/")
+        elif c == "\n":
+            out.append("\\n")
+        elif c == "\r":
+            out.append("\\r")
+        elif c == "\0":
+            pass  # strip NUL
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def _velocity_json_rpc_response(result_json: str) -> str:
     return (
         '{"statusCode": 200, '
@@ -395,10 +434,7 @@ class A2aMockBuilder:
         )
 
     def _build_custom_task_handler(self, handler: _A2aTaskHandler) -> Expectation:
-        escaped_pattern = handler.message_pattern.replace("/", "\\/")
-        escaped_pattern = (
-            escaped_pattern.replace("\n", "\\n").replace("\r", "\\r").replace("\0", "")
-        )
+        escaped_pattern = _escape_message_pattern(handler.message_pattern)
         json_path = (
             "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /"
             + escaped_pattern

@@ -177,6 +177,57 @@ public class A2aBuilderTests
         template.Should().Contain("\"state\": \"completed\"");
     }
 
+    // --- security: message-pattern escaping (CodeQL incomplete-sanitization) ---------
+
+    [Fact]
+    public void EscapeMessagePattern_PreservesSingleBackslashRegexEscapes()
+    {
+        // A regex escape such as \d+ must survive verbatim — the backslash must NOT be doubled,
+        // otherwise the intended regex meaning is corrupted.
+        A2aMockBuilder.EscapeMessagePattern(@"\d+").Should().Be(@"\d+");
+    }
+
+    [Fact]
+    public void EscapeMessagePattern_PreservesAlreadyEscapedSlash()
+    {
+        // An author-supplied escaped slash a\/b must stay a\/b, not become a\\/b (which would
+        // turn the slash literal into an escaped backslash followed by an unescaped delimiter).
+        A2aMockBuilder.EscapeMessagePattern(@"a\/b").Should().Be(@"a\/b");
+    }
+
+    [Fact]
+    public void EscapeMessagePattern_TrailingLoneBackslash_CannotEscapeClosingDelimiter()
+    {
+        // A pattern ENDING in a single backslash is the breakout vector: a lone trailing '\'
+        // would escape the closing '/' delimiter. It must be doubled to a literal "\\".
+        var pattern = "abc\\"; // three chars then a single trailing backslash
+        A2aMockBuilder.EscapeMessagePattern(pattern).Should().Be("abc\\\\");
+
+        // And the full jsonPath produced through the builder must still terminate with the
+        // UNESCAPED closing "/)]" — proving the regex literal was not broken out of.
+        var expectations = A2aMockBuilder.A2aMock()
+            .OnTaskSend()
+                .MatchingMessage(pattern)
+                .RespondingWith("ok")
+            .And()
+            .Build();
+
+        var jsonPath = FindByJsonPathContaining(expectations, "=~")
+            .GetProperty("httpRequest").GetProperty("body").GetProperty("jsonPath").GetString()!;
+        jsonPath.Should().Be("$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /abc\\\\/)]");
+        jsonPath.Should().EndWith("/)]");
+    }
+
+    [Fact]
+    public void EscapeMessagePattern_BareSlashAndControlChars_StillNeutralised()
+    {
+        // Existing behaviour is preserved: bare '/' is escaped, newline/CR converted, NUL stripped.
+        A2aMockBuilder.EscapeMessagePattern("a/b").Should().Be("a\\/b");
+        A2aMockBuilder.EscapeMessagePattern("a\nb").Should().Be("a\\nb");
+        A2aMockBuilder.EscapeMessagePattern("a\rb").Should().Be("a\\rb");
+        A2aMockBuilder.EscapeMessagePattern("a\0b").Should().Be("ab");
+    }
+
     [Fact]
     public void A2a_TaskHandlerError_SetsFailedState()
     {

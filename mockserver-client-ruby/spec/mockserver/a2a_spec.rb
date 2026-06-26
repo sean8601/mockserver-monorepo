@@ -149,6 +149,53 @@ RSpec.describe MockServer::A2A do
       expect(handler['httpRequest']['body']['jsonPath']).to include('a\\/b')
     end
 
+    it 'preserves a regex escape sequence without doubling the backslash' do
+      # "\\d+" in a Ruby single-element double-quoted string is the 3 chars: \ d +
+      expectations = described_class.a2a_mock
+                                    .on_task_send.matching_message("\\d+").responding_with('ok')
+                                    .and_then
+                                    .build
+
+      handler = find_json_path(expectations, 'tasks/send')
+      json_path = handler['httpRequest']['body']['jsonPath']
+      # "\\d+" => the 3 chars \ d + ; must be emitted verbatim, NOT doubled to \\d+
+      expect(json_path).to include('\\d+')
+      expect(json_path).not_to include('\\\\d')
+    end
+
+    it 'does not double an already-escaped slash in the pattern' do
+      # "a\\/b" is the 4 chars: a \ / b (an already-escaped slash)
+      expectations = described_class.a2a_mock
+                                    .on_task_send.matching_message("a\\/b").responding_with('ok')
+                                    .and_then
+                                    .build
+
+      handler = find_json_path(expectations, 'tasks/send')
+      json_path = handler['httpRequest']['body']['jsonPath']
+      # the escaped slash must stay a\/b — NOT become a\\/b (which would be a double backslash)
+      expect(json_path).to include('a\\/b')
+      expect(json_path).not_to include('a\\\\/b')
+    end
+
+    it 'neutralizes a trailing lone backslash so the regex literal cannot break out' do
+      # "trail\\" is the 6 chars: t r a i l \ (one real, trailing backslash)
+      expectations = described_class.a2a_mock
+                                    .on_task_send.matching_message("trail\\").responding_with('ok')
+                                    .and_then
+                                    .build
+
+      handler = find_json_path(expectations, 'tasks/send')
+      json_path = handler['httpRequest']['body']['jsonPath']
+      # the lone trailing backslash is doubled to a literal backslash: trail\\
+      expect(json_path).to include('trail\\\\')
+      # SECURITY: the regex literal stays balanced — the closing delimiter and
+      # JSONPath tail are emitted UNESCAPED, so the input cannot break out.
+      expect(json_path).to end_with('/)]')
+      expect(json_path).to eq(
+        "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /trail\\\\/)]"
+      )
+    end
+
     it 'emits an SSE streaming expectation when streaming is enabled' do
       expectations = described_class.a2a_mock.with_streaming.build
 

@@ -576,18 +576,53 @@ impl A2aMockBuilder {
     }
 
     fn build_custom_task_handler(&self, handler: &TaskHandler) -> Value {
-        let escaped_pattern = handler
-            .message_pattern
-            .replace('/', "\\/")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\0', "");
+        let escaped_pattern = escape_message_pattern(&handler.message_pattern);
         let json_path = format!(
             "$[?(@.method == 'tasks/send' && @.params.message.parts[0].text =~ /{escaped_pattern}/)]"
         );
         let result_json = build_task_result_json(&handler.response_text, handler.is_error);
         velocity_template_expectation(json_path_request(&self.path, &json_path), &result_json)
     }
+}
+
+/// Escape a user-supplied message regular expression so it can be embedded as a
+/// `/.../`-delimited regex literal inside the JsonPath filter without allowing a
+/// breakout of the trailing `/` delimiter.
+///
+/// The pattern is documented as a regular expression, so existing escape
+/// sequences (e.g. `\d`, `\/`, `\\`) are preserved verbatim. Only delimiter
+/// breakout and control characters are neutralised:
+/// - `\` followed by another char: emitted as-is (`\` + next char), preserving
+///   the author's escape; a lone trailing `\` is doubled to `\\` so it cannot
+///   escape the closing delimiter.
+/// - bare `/`: escaped to `\/`.
+/// - newline / carriage return: escaped to `\n` / `\r`.
+/// - NUL: stripped.
+/// - any other char: emitted verbatim (UTF-8 preserved).
+fn escape_message_pattern(pattern: &str) -> String {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut out = String::with_capacity(pattern.len());
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => {
+                if i + 1 < chars.len() {
+                    out.push('\\');
+                    out.push(chars[i + 1]);
+                    i += 1;
+                } else {
+                    out.push_str("\\\\");
+                }
+            }
+            '/' => out.push_str("\\/"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\0' => {} // strip NUL
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -891,6 +926,62 @@ mod tests {
             .unwrap();
         assert!(json_path.contains("beforeafter"), "{json_path}");
         assert!(!json_path.contains('\0'));
+    }
+
+    fn handler_json_path(message_pattern: &str) -> String {
+        let expectations = a2a_mock_default()
+            .on_task_send()
+            .matching_message(message_pattern)
+            .responding_with("found", false)
+            .and()
+            .build();
+        expectations[1]["httpRequest"]["body"]["jsonPath"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn regex_escape_sequence_is_preserved_not_doubled() {
+        // `\d+` must stay `\d+` (single backslash) — preserving the author's
+        // regex escape rather than doubling it to `\\d+`.
+        assert_eq!(escape_message_pattern(r"\d+"), r"\d+");
+        let json_path = handler_json_path(r"\d+");
+        assert!(json_path.contains(r"\d+"), "{json_path}");
+        assert!(!json_path.contains(r"\\d+"), "{json_path}");
+    }
+
+    #[test]
+    fn already_escaped_slash_is_not_double_escaped() {
+        // `a\/b` (an already-escaped slash) must stay `a\/b`, NOT become `a\\/b`.
+        assert_eq!(escape_message_pattern(r"a\/b"), r"a\/b");
+        let json_path = handler_json_path(r"a\/b");
+        assert!(json_path.contains(r"a\/b"), "{json_path}");
+        assert!(!json_path.contains(r"a\\/b"), "{json_path}");
+    }
+
+    #[test]
+    fn trailing_backslash_cannot_break_out_of_regex_delimiter() {
+        // A lone trailing backslash must be doubled so it escapes itself, NOT
+        // the closing `/` delimiter. The produced jsonPath must still terminate
+        // with an UNESCAPED `/)]`.
+        assert_eq!(escape_message_pattern(r"abc\"), r"abc\\");
+        let json_path = handler_json_path(r"abc\");
+        assert!(json_path.contains(r"abc\\/)]"), "{json_path}");
+        // Security assertion: the regex literal is properly closed — the
+        // backslash is doubled and the delimiter `/)]` remains intact.
+        assert!(json_path.ends_with(r"abc\\/)]"), "{json_path}");
+    }
+
+    #[test]
+    fn normal_slash_pattern_still_escaped_as_before() {
+        // Regression: a plain slash pattern keeps the existing behaviour.
+        assert_eq!(
+            escape_message_pattern("path/to/resource"),
+            "path\\/to\\/resource"
+        );
+        let json_path = handler_json_path("path/to/resource");
+        assert!(json_path.contains("path\\/to\\/resource"), "{json_path}");
     }
 
     #[test]
