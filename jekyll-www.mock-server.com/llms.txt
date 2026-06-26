@@ -97,7 +97,7 @@
 
 ## LLM & AI Mocking
 - [LLM Response Mocking](https://www.mock-server.com/mock_server/llm_response_mocking.html): Mock LLM API responses from OpenAI, Anthropic, Gemini, Bedrock, Azure OpenAI, and Ollama with provider-correct formatting, streaming, conversations, and cost budgets
-- [Agent Framework Recipes](https://www.mock-server.com/mock_server/ai_agent_frameworks.html): Minimal recipes for pointing LlamaIndex and the OpenAI Agents SDK at MockServer to mock LLM provider calls during testing
+- [AI Traffic Inspection — Configure Your AI Tool, SDK, or Framework](https://www.mock-server.com/mock_server/ai_traffic_inspection.html#configure-tools): Two connection methods for routing AI traffic through MockServer: transparent HTTPS proxy (any tool, no code change) and base-URL override (LlamaIndex, OpenAI Agents SDK, and other SDKs with a configurable base URL)
 - [LLM Cost Optimisation](https://www.mock-server.com/mock_server/ai_optimisation.html): Proxy your AI agent's LLM calls through MockServer, then export a one-click optimisation brief or JSON bundle to cut inference cost — tighter prompts, prompt caching, fewer tool round-trips, and direct HTTP/MCP endpoints
 
 ## Testing & Quality

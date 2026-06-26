@@ -21,7 +21,7 @@ sitemap:
 <ol>
     <li><a href="#start-mockserver">Start MockServer as a proxy</a> on a local port</li>
     <li><a href="#trust-ca">Trust the MockServer CA certificate</a> so TLS connections succeed</li>
-    <li><a href="#configure-tools">Configure your AI tool</a> to send traffic through the proxy</li>
+    <li><a href="#configure-tools">Configure your AI tool, SDK, or framework</a> to send traffic through the proxy</li>
     <li><a href="#view-traffic">View the captured traffic</a> in the dashboard or via the retrieve API</li>
 </ol>
 
@@ -76,9 +76,13 @@ curl http://localhost:1080/mockserver/proxyConfiguration</code></pre>
 
 <a id="configure-tools" class="anchor" href="#configure-tools">&nbsp;</a>
 
-<h2>3. Configure Your AI Tool</h2>
+<h2>3. Configure Your AI Tool, SDK, or Framework</h2>
 
-<p>After starting MockServer (via the standalone JAR, Docker, or CLI), copy the proxy setup block printed in the startup log — or fetch it on demand from any running instance:</p>
+<p>There are two ways to route AI traffic through MockServer. The <strong>transparent HTTPS proxy</strong> (Method A) observes and forwards real traffic to the actual provider — and can also intercept requests with mock expectations when needed. A <strong>base-URL override</strong> (Method B) redirects all SDK calls directly to MockServer instead of the real provider, which is typically used to mock LLM responses in tests rather than observe live traffic.</p>
+
+<h3>Method A — Transparent HTTPS Proxy</h3>
+
+<p>Works for any tool with no code change: route outbound traffic through MockServer using <code class="code inline">HTTPS_PROXY</code> and trust the CA certificate from §2. After starting MockServer, copy the proxy setup block from the startup log — or fetch it on demand from any running instance:</p>
 
 <pre class="prettyprint code"><code class="code">curl http://localhost:1080/mockserver/proxyConfiguration -H "Accept: text/plain"</code></pre>
 
@@ -143,6 +147,67 @@ client = openai.OpenAI(
 )</code></pre>
     <p>LangChain and LangGraph applications use whatever HTTP client the underlying SDK uses, so setting <code class="code inline">HTTPS_PROXY</code> and <code class="code inline">SSL_CERT_FILE</code> at the process level is normally sufficient. The same applies to any other Python AI framework or SDK.</p>
 </div>
+
+<h3>Method B — Base-URL Override</h3>
+
+<p>When an SDK or framework exposes a base URL setting, point it directly at <code class="code inline">http://localhost:1080</code> — plain HTTP to localhost, so no CA trust setup is required. This redirects all calls to MockServer instead of the real provider; it is typically used to mock LLM responses in tests using the <a href="/mock_server/llm_response_mocking.html">LLM mock builder</a>.</p>
+
+<button id="button_llamaindex_proxy" class="accordion">LlamaIndex</button>
+<div class="panel">
+    <p>LlamaIndex uses a global <code class="code inline">Settings</code> object. Override its <code class="code inline">llm</code> attribute with a model client whose base URL points at MockServer:</p>
+    <pre class="prettyprint lang-python code"><code class="code">from llama_index.core import Settings
+from llama_index.llms.openai import OpenAI
+
+# Route every LLM call through MockServer instead of calling the provider directly.
+Settings.llm = OpenAI(
+    model="gpt-4o",
+    api_base="http://localhost:1080/v1",
+    api_key="sk-placeholder",  # MockServer does not validate the key
+)
+
+# Any LlamaIndex query or agent call now goes through MockServer.
+# Set up your expectations before running the query:
+#
+#   from your_test import mockserver_client
+#   mockserver_client.llm_mock("/v1/chat/completions") \
+#       .with_provider("OPENAI") \
+#       .responding_with(completion().with_text("The answer is 42.")) \
+#       .apply()
+#
+#   response = index.query("What is the answer?")
+</code></pre>
+    <p>Alternatively, set the <code class="code inline">OPENAI_BASE_URL</code> environment variable before your process starts; LlamaIndex's OpenAI integration picks it up automatically:</p>
+    <pre class="prettyprint code"><code class="code">OPENAI_BASE_URL=http://localhost:1080/v1 pytest tests/</code></pre>
+    <p>For Anthropic models (<code class="code inline">llama_index.llms.anthropic</code>), set <code class="code inline">api_base="http://localhost:1080"</code> and use <code class="code inline">Provider.ANTHROPIC</code> in your LLM mock builder expectation.</p>
+</div>
+
+<button id="button_openai_agents_proxy" class="accordion">OpenAI Agents SDK</button>
+<div class="panel">
+    <p>The <a href="https://github.com/openai/openai-agents-python" target="_blank" rel="noopener noreferrer">OpenAI Agents SDK</a> (<code class="code inline">openai-agents</code> package) exposes <code class="code inline">set_default_openai_client</code> to replace the underlying <code class="code inline">AsyncOpenAI</code> instance used by all agents. Point that client at MockServer:</p>
+    <pre class="prettyprint lang-python code"><code class="code">import asyncio
+from openai import AsyncOpenAI
+from agents import set_default_openai_client, Agent, Runner
+
+# Replace the default OpenAI client with one that calls MockServer.
+openai_client = AsyncOpenAI(
+    base_url="http://localhost:1080/v1",
+    api_key="sk-placeholder",
+)
+set_default_openai_client(openai_client)
+
+# Every model call made by agents now goes through MockServer.
+agent = Agent(name="support-bot", instructions="Answer concisely.", model="gpt-4o")
+
+async def main():
+    result = await Runner.run(agent, "What is 2 + 2?")
+    print(result.final_output)
+
+asyncio.run(main())</code></pre>
+    <p>To use the environment variable approach instead, set <code class="code inline">OPENAI_BASE_URL</code> before the process starts; the SDK reads it through the underlying <code class="code inline">openai</code> library:</p>
+    <pre class="prettyprint code"><code class="code">OPENAI_BASE_URL=http://localhost:1080/v1 pytest tests/</code></pre>
+</div>
+
+<p>If your framework or SDK does not expose a base URL parameter, use Method A (the transparent HTTPS proxy) instead — it works for any tool without code changes and is described in full above.</p>
 
 <a id="view-traffic" class="anchor" href="#view-traffic">&nbsp;</a>
 
