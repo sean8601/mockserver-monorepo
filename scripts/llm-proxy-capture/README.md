@@ -24,6 +24,25 @@ CI-safe equivalent is the fixture-driven `CodingCliLlmCaptureTest` (mockserver-c
 `llmTraffic.test.ts` (mockserver-ui), which exercise the same detection with no network or
 credentials.
 
+## Interactive UX testing — `npm run capture`
+
+The script above is an **automated assertion** (proxy → run → assert → exit). To instead
+**watch traffic appear live in the dashboard while you use a tool by hand**, use the
+companion launcher:
+
+```bash
+cd mockserver-ui
+npm run capture -- opencode      # or: claude | tabnine   (omit a tool to just start the servers)
+```
+
+It starts MockServer (proxy) **and** the UI dev server, opens the dashboard, sets the proxy
+env, and drops you straight into the chosen CLI — interactively — so every call it makes
+streams into the Traffic / LLM Traces / LLM Optimise tabs in real time. The dashboard is
+served from the dev server, so the latest UI (e.g. provider detection) is live without
+rebuilding the jar. Exit the tool (or Ctrl+C) to tear the servers down. It is the
+LLM-capture sibling of `npm run demo` (which loads synthetic data instead). See
+`mockserver-ui/scripts/launch-with-llm-capture.sh --help`.
+
 ## What it checks, per tool
 
 | Step | Meaning |

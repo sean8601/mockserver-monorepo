@@ -131,11 +131,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Clustering & observability
 - **Standard OTLP endpoint fallback.** When `mockserver.otelEndpoint` / `MOCKSERVER_OTEL_ENDPOINT` is unset,
   MockServer now falls back to the OpenTelemetry-standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
-- **Coding-assistant LLM-capture smoke harness.** `scripts/llm-proxy-capture/` adds a local-only smoke test
-  (plus README) that proxies the real Claude Code, opencode, and Tabnine CLIs through MockServer and asserts
-  each tool's LLM calls are both recorded and classified (visible in Traffic, LLM Traces, and LLM Optimise).
-  It auto-detects which CLIs are installed/authenticated and skips the rest, holds no secrets, and is skipped
-  on CI; the CI-safe equivalent is the fixture-driven `CodingCliLlmCaptureTest` and `llmTraffic.test.ts`.
+- **Coding-assistant LLM-capture smoke harness + interactive launcher.** `scripts/llm-proxy-capture/` adds a
+  local-only smoke test (plus README) that proxies the real Claude Code, opencode, and Tabnine CLIs through
+  MockServer and asserts each tool's LLM calls are both recorded and classified (visible in Traffic, LLM Traces,
+  and LLM Optimise). It auto-detects which CLIs are installed/authenticated and skips the rest, holds no secrets,
+  and is skipped on CI; the CI-safe equivalent is the fixture-driven `CodingCliLlmCaptureTest` and
+  `llmTraffic.test.ts`. For hands-on UX testing, `npm run capture -- <claude|opencode|tabnine>`
+  (`mockserver-ui/scripts/launch-with-llm-capture.sh`) starts MockServer + the UI dev server and drops you into
+  the chosen CLI interactively so its traffic streams into the dashboard live — the LLM-capture sibling of
+  `npm run demo`.
 
 #### Proxy & TLS setup
 - **Copy-paste proxy setup at startup.** The new `mockserver.proxySetupLogging` property

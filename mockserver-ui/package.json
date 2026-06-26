@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "demo": "bash scripts/launch-with-demo-data.sh",
     "demo:data": "node scripts/populate-demo-data.mjs",
+    "capture": "bash scripts/launch-with-llm-capture.sh",
     "screenshots": "node scripts/capture-dashboard-screenshots.mjs",
     "screenshots:all": "bash scripts/capture-docs-screenshots.sh"
   },
