@@ -139,7 +139,10 @@ interface NavTab {
 // per entry; clicking it opens a dropdown Menu of that group's views. Grouping
 // the views into a handful of intuitive categories makes the full nav
 // discoverable at a glance instead of hiding most views behind a flat "More"
-// overflow. Every ViewMode appears in exactly one group (asserted by a test).
+// overflow. Every ViewMode appears in at least one group (asserted by a test);
+// a view may deliberately appear in more than one — the Trace view (`sessions`)
+// is listed under both Observe and AI — in which case every owning group's
+// button highlights when it is active.
 interface NavGroup {
   /** Stable id used for keys, aria, and active-group lookup. */
   id: string;
@@ -209,6 +212,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <SavingsIcon sx={tabIconSx} />,
     tabs: [
       { value: 'optimise', label: 'LLM Optimise', ariaLabel: 'LLM Optimise view', description: 'Analyse captured LLM traffic to optimise prompts, inference cost, safety, and speed.', icon: <SavingsIcon sx={tabIconSx} /> },
+      { value: 'sessions', label: 'Trace', ariaLabel: 'Trace inspector view', description: 'Trace related requests grouped together — including LLM agent runs — to debug multi-step flows end to end.', icon: <AccountTreeIcon sx={tabIconSx} /> },
     ],
   },
   {
@@ -230,11 +234,15 @@ const NAV_GROUPS: NavGroup[] = [
 const NAV_TABS: NavTab[] = NAV_GROUPS.flatMap((g) => g.tabs);
 
 // Compile-time exhaustiveness guard. This `Record<ViewMode, string>` must name
-// every ViewMode exactly once — TypeScript errors if a value is added to the
+// every ViewMode at least once — TypeScript errors if a value is added to the
 // ViewMode union without an entry here. The build of NAV_TABS above guarantees
 // each of these values is grouped, so the missing-key error effectively means
 // "a new view was added without being placed in a NAV_GROUPS group". (A runtime
-// assertion below also proves every listed view is actually rendered.)
+// assertion below also proves every listed view is actually rendered.) The map
+// is used only for this existence check; for a view that appears in more than
+// one group the reduce keeps the last group id, so do NOT use it to decide
+// "the owning group" — use `groupsForView` (membership), which returns all of
+// them.
 const NAV_VIEW_GROUP_ID: Record<ViewMode, string> = NAV_GROUPS.reduce<Record<string, string>>(
   (acc, group) => {
     for (const tab of group.tabs) acc[tab.value] = group.id;
@@ -258,9 +266,11 @@ const NAV_VIEW_GROUP_ID: Record<ViewMode, string> = NAV_GROUPS.reduce<Record<str
   }
 }
 
-// The group that owns a given view, for active-group highlighting.
-function groupForView(view: ViewMode): NavGroup | undefined {
-  return NAV_GROUPS.find((g) => g.tabs.some((t) => t.value === view));
+// The groups a given view belongs to, for active-group highlighting. A view may
+// live in more than one group (e.g. Trace under both Observe and AI), so every
+// owning group is returned and each highlights when the view is active.
+function groupsForView(view: ViewMode): NavGroup[] {
+  return NAV_GROUPS.filter((g) => g.tabs.some((t) => t.value === view));
 }
 
 // Lookup of the active view's one-line description, for the bar under the nav.
@@ -297,8 +307,9 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [groupMenuAnchorEl, setGroupMenuAnchorEl] = useState<null | HTMLElement>(null);
 
-  // The group that owns the active view — its group button is highlighted.
-  const activeGroup = groupForView(view);
+  // The groups that own the active view — each of their group buttons is
+  // highlighted (a view may belong to more than one group, e.g. Trace).
+  const activeGroupIds = new Set(groupsForView(view).map((g) => g.id));
 
   const connectionParams = useConnectionParams();
   const [mode, setModeState] = useState<MockServerMode | null>(null);
@@ -486,7 +497,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
                 </ListSubheader>,
                 ...group.tabs.map((tab) => (
                   <MenuItem
-                    key={tab.value}
+                    key={`${group.id}-${tab.value}`}
                     selected={view === tab.value}
                     aria-label={tab.ariaLabel}
                     onClick={() => handleSelectView(tab.value)}
@@ -506,7 +517,7 @@ export default function AppBar({ onClearServer, onClearLogs, onClearExpectations
                 views. The active view's group button is highlighted so the
                 current location is always indicated. */}
             {NAV_GROUPS.map((group) => {
-              const isActiveGroup = activeGroup?.id === group.id;
+              const isActiveGroup = activeGroupIds.has(group.id);
               const isOpen = openGroupId === group.id;
               return (
                 <Button
