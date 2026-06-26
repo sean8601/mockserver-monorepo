@@ -183,6 +183,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard navigation reorganised into grouped menus.** The dashboard's views are now organised into six
   groups (Mock / Observe / Verify / Resilience / AI / Inspect) with submenus, replacing the flat overflow tab
   bar, so features are easier to discover.
+- **The Trace view is now reachable from the AI menu as well as Observe.** Trace groups related requests —
+  including LLM agent runs — so it is now listed under AI alongside LLM Optimise, while remaining under Observe,
+  making it easier to find when debugging multi-step AI flows.
 - **Expectation matching scales to large expectation sets.** A candidate index buckets literal
   `(method, exact-path)` expectations so a request evaluates only plausible candidates instead of scanning
   every expectation; non-literal matchers (regex/notted/optional/schema/path-param) are always checked, so
