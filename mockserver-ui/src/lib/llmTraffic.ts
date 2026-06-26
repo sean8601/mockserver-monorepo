@@ -470,7 +470,10 @@ function isOpenAiPath(path: string | null): boolean {
 }
 
 function isOpenAiResponsesPath(path: string | null): boolean {
-  return path !== null && /\/v1\/responses/.test(path);
+  // The standard hosted path (/v1/responses) and the OpenAI Codex backend used by
+  // coding CLIs such as opencode, which serves the same Responses wire format at
+  // chatgpt.com/backend-api/codex/responses.
+  return path !== null && /\/v1\/responses|\/codex\/responses/.test(path);
 }
 
 function isGeminiPath(path: string | null): boolean {
@@ -495,6 +498,69 @@ function isOllamaPath(path: string | null): boolean {
   // `/api/chatbot`, `/api/chats`, or any generic chat endpoint.
   if (path === null) return false;
   return /(^|\/)api\/chat(?:\/?$|\?)/.test(path);
+}
+
+/**
+ * Resilient fallback: infer the provider from the request/response BODY SHAPE
+ * alone — no host or path required. The wire format is the provider's API
+ * contract and changes far more slowly than the host/path a given CLI uses, so
+ * recognising LLM traffic by its body keeps the Traffic / LLM Traces / LLM
+ * Optimise views working when a tool moves to a new endpoint or a new tool
+ * appears. Mirrors `LlmProviderSniffer.sniffByBodyShape` on the server. Stays
+ * conservative (returns null rather than guess) so non-LLM traffic is not
+ * mis-classified.
+ */
+function toBodyString(content: unknown): string | null {
+  if (content === null || content === undefined) return null;
+  if (typeof content === 'string') return content.length > 0 ? content : null;
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return null;
+  }
+}
+
+function detectByBodyShape(
+  reqContent: unknown,
+  resContent: unknown,
+  requestHeaders: unknown,
+): 'anthropic' | 'openai' | 'openai_responses' | 'gemini' | null {
+  // Response markers are the most distinctive — check them first.
+  const res = toBodyString(resContent);
+  if (res) {
+    // Require the JSON value's opening quote so a stray substring can't match.
+    if (res.includes('"chat.completion')) return 'openai';
+    if (
+      res.includes('response.output_text') ||
+      res.includes('response.created') ||
+      res.includes('response.completed') ||
+      res.includes('"object":"response"') ||
+      res.includes('"object": "response"')
+    ) {
+      return 'openai_responses';
+    }
+    if (
+      res.includes('content_block') ||
+      res.includes('message_start') ||
+      (res.includes('"type":"message"') && res.includes('stop_reason'))
+    ) {
+      return 'anthropic';
+    }
+    if (res.includes('"candidates"') && res.includes('usageMetadata')) return 'gemini';
+  }
+  // Anthropic sends the anthropic-version header on every request.
+  if (getHeaderValue(requestHeaders, 'anthropic-version')) return 'anthropic';
+  // Request markers — used when the response is absent or unrecognised.
+  const req = toBodyString(reqContent);
+  if (req) {
+    const hasModel = req.includes('"model"');
+    // OpenAI Responses hallmark: top-level "input" array (Chat Completions and
+    // Anthropic both use "messages").
+    if (hasModel && req.includes('"input"') && !req.includes('"messages"')) return 'openai_responses';
+    if (req.includes('"contents"') && (req.includes('"parts"') || req.includes('generationConfig'))) return 'gemini';
+    if (hasModel && req.includes('"messages"')) return 'openai';
+  }
+  return null;
 }
 
 function isMcpJsonRpc(body: unknown): boolean {
@@ -994,6 +1060,21 @@ export function parseTraffic(value: Record<string, unknown>): ParsedTraffic {
     const parsedResBody = safeParseJson(resBodyContent);
     if (parsedResBody && isMcpJsonRpc(parsedResBody)) {
       return parseMcpRequest(reqBodyContent, resBodyContent);
+    }
+
+    // Resilient fallback: recognise LLM traffic by its body shape when the host/
+    // path was not a known LLM endpoint (e.g. a coding CLI on a private gateway
+    // or a renamed endpoint). The body is the slowest-moving signal.
+    const requestHeaders = httpRequest ? httpRequest['headers'] : null;
+    switch (detectByBodyShape(reqBodyContent, resBodyContent, requestHeaders)) {
+      case 'anthropic':
+        return parseAnthropicRequest(reqBodyContent, resBodyContent, responseHeaders);
+      case 'openai':
+        return parseOpenAiRequest(reqBodyContent, resBodyContent, responseHeaders);
+      case 'openai_responses':
+        return parseOpenAiResponsesRequest(reqBodyContent, resBodyContent, responseHeaders);
+      case 'gemini':
+        return parseGeminiRequest(reqBodyContent, resBodyContent, responseHeaders);
     }
 
     const statusCode = httpResponse ? getNumber(httpResponse, 'statusCode') : null;

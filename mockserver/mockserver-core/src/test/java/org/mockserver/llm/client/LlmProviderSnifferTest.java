@@ -54,6 +54,22 @@ public class LlmProviderSnifferTest {
     }
 
     @Test
+    public void detectsOpenAiCodexBackendResponsesByHostAndPath() {
+        // opencode CLI hits the OpenAI Codex backend: chatgpt.com/backend-api/codex/responses,
+        // which serves the standard Responses wire format → OPENAI_RESPONSES.
+        assertThat(LlmProviderSniffer.sniffByHostAndPath("chatgpt.com", "/backend-api/codex/responses"),
+            is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
+    public void doesNotClassifyNonLlmChatgptComPath() {
+        // chatgpt.com is path-gated: non-LLM traffic (oauth, account, etc.) must NOT be
+        // classified as LLM traffic.
+        assertThat(LlmProviderSniffer.sniffByHostAndPath("chatgpt.com", "/oauth/token"),
+            is(Optional.empty()));
+    }
+
+    @Test
     public void detectsAzureOpenAiByWildcardHost() {
         assertThat(LlmProviderSniffer.sniffByHost("my-deployment.openai.azure.com"), is(Optional.of(Provider.AZURE_OPENAI)));
     }
@@ -303,6 +319,20 @@ public class LlmProviderSnifferTest {
     }
 
     @Test
+    public void sniffByPathDetectsOpenAiCodexResponsesBackend() {
+        // opencode's Codex backend path (/backend-api/codex/responses) matches the
+        // OpenAI Responses path shape → OPENAI_RESPONSES, even without a known host.
+        assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/backend-api/codex/responses")),
+            is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
+    public void detectForAnalysisRecognisesCodexBackendByHostAndPath() {
+        HttpRequest req = request().withHeader("Host", "chatgpt.com").withPath("/backend-api/codex/responses");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req), is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
     public void sniffByPathDetectsAzureBeforeGenericOpenAi() {
         assertThat(LlmProviderSniffer.sniffByPath(request().withPath("/openai/deployments/gpt4o/chat/completions")),
             is(Optional.of(Provider.AZURE_OPENAI)));
@@ -344,5 +374,90 @@ public class LlmProviderSnifferTest {
     public void detectForAnalysisPrefersHostWhenKnown() {
         HttpRequest req = request().withHeader("Host", "api.openai.com").withPath("/v1/chat/completions");
         assertThat(LlmProviderSniffer.detectForAnalysis(req), is(Optional.of(Provider.OPENAI)));
+    }
+
+    // --- Body-shape detection (sniffByBodyShape / detectForAnalysis 2-arg) ---
+    // Resilience guarantee: when the host AND path are unknown/non-LLM-looking, the
+    // request/response wire format alone must still identify the provider, so capture
+    // survives an LLM API or coding-CLI harness changing its host/path.
+
+    @Test
+    public void detectForAnalysisRecognisesOpenAiResponsesByBodyOnUnknownHostAndPath() {
+        // Unknown private gateway, non-LLM-looking path: only the body identifies it.
+        HttpRequest req = request()
+            .withHeader("Host", "gateway.internal.example")
+            .withPath("/v2/agent/run")
+            .withBody("{\"model\":\"gpt-x\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hi\"}]}]}");
+        org.mockserver.model.HttpResponse res = org.mockserver.model.HttpResponse.response()
+            .withBody("event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, res), is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
+    public void detectForAnalysisRecognisesOpenAiChatByResponseBodyOnUnknownHostAndPath() {
+        // Streaming Chat Completions chunk on an unknown host/path → OPENAI.
+        HttpRequest req = request()
+            .withHeader("Host", "gateway.internal.example")
+            .withPath("/v2/agent/run")
+            .withBody("{\"model\":\"gpt-x\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}");
+        org.mockserver.model.HttpResponse res = org.mockserver.model.HttpResponse.response()
+            .withBody("data: {\"object\":\"chat.completion.chunk\",\"choices\":[]}\n\n");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, res), is(Optional.of(Provider.OPENAI)));
+    }
+
+    @Test
+    public void detectForAnalysisRecognisesAnthropicByVersionHeaderOnUnknownHostAndPath() {
+        // The required anthropic-version header identifies Anthropic regardless of host/path.
+        HttpRequest req = request()
+            .withHeader("Host", "gateway.internal.example")
+            .withPath("/v2/agent/run")
+            .withHeader("anthropic-version", "2023-06-01")
+            .withBody("{\"model\":\"claude-x\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, null), is(Optional.of(Provider.ANTHROPIC)));
+    }
+
+    @Test
+    public void detectForAnalysisRecognisesAnthropicByResponseBodyOnUnknownHostAndPath() {
+        // Non-streamed Anthropic message envelope (type + stop_reason) → ANTHROPIC.
+        HttpRequest req = request()
+            .withHeader("Host", "gateway.internal.example")
+            .withPath("/v2/agent/run")
+            .withBody("{\"model\":\"claude-x\"}");
+        org.mockserver.model.HttpResponse res = org.mockserver.model.HttpResponse.response()
+            .withBody("{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"stop_reason\":\"end_turn\"}");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, res), is(Optional.of(Provider.ANTHROPIC)));
+    }
+
+    @Test
+    public void detectForAnalysisRecognisesGeminiByRequestBodyOnUnknownHostAndPath() {
+        // Gemini's top-level "contents" + "parts" identifies it without host/path.
+        HttpRequest req = request()
+            .withHeader("Host", "gateway.internal.example")
+            .withPath("/v2/agent/run")
+            .withBody("{\"contents\":[{\"parts\":[{\"text\":\"hi\"}]}]}");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, null), is(Optional.of(Provider.GEMINI)));
+    }
+
+    @Test
+    public void sniffByBodyShapeReturnsEmptyForNonLlmTraffic() {
+        // NEGATIVE: plain non-LLM JSON must not be mis-classified (no false positives).
+        HttpRequest req = request()
+            .withHeader("Host", "gateway.internal.example")
+            .withPath("/v2/agent/run")
+            .withBody("{\"user\":\"bob\",\"action\":\"login\"}");
+        org.mockserver.model.HttpResponse res = org.mockserver.model.HttpResponse.response()
+            .withBody("{\"status\":\"ok\"}");
+        assertThat(LlmProviderSniffer.sniffByBodyShape(req, res), is(Optional.empty()));
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, res), is(Optional.empty()));
+    }
+
+    @Test
+    public void detectForAnalysisPrefersHostOverBodyWhenHostKnown() {
+        // Regression: a known host wins — body shape is not even needed.
+        HttpRequest req = request()
+            .withHeader("Host", "api.anthropic.com")
+            .withPath("/v1/messages")
+            .withBody("{\"model\":\"claude-x\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}");
+        assertThat(LlmProviderSniffer.detectForAnalysis(req, null), is(Optional.of(Provider.ANTHROPIC)));
     }
 }

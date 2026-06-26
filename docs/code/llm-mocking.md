@@ -317,6 +317,16 @@ Agent-run analysis works identically for **proxied/forwarded** traffic. Every in
 
 **Dashboard Sessions view.** The Sessions view groups proxied LLM traffic by upstream host (from the `Host` header) when no conversation-isolation expectations are configured, so proxy traffic to different providers appears in separate session lanes. The call graph (via `AgentRunGraph`) is shown for all sessions including these host-grouped proxy sessions.
 
+**Capturing coding-assistant CLIs.** A common use is to point a coding assistant at MockServer as an HTTPS proxy and watch its model calls in the Traffic / LLM Traces / LLM Optimise views. Detection is path-based so it works regardless of the (possibly private) gateway host a tool is configured for:
+
+| CLI | LLM endpoint | Detected as |
+|-----|--------------|-------------|
+| Claude Code (`claude`) | `api.anthropic.com/v1/messages` | `ANTHROPIC` |
+| opencode (Codex backend) | `chatgpt.com/backend-api/codex/responses` | `OPENAI_RESPONSES` |
+| Tabnine CLI (Gemini-CLI fork) | `<gateway>/…/chat/completions` | `OPENAI` |
+
+opencode's OpenAI **Codex** backend serves the Responses API at the non-standard path `/backend-api/codex/responses`; `LlmProviderSniffer`, `ProviderDetector`, and `llmTraffic.ts` recognise the `/codex/responses` path (and the `chatgpt.com` host on it) the same as the hosted `/v1/responses`. A local-only smoke harness that drives the real CLIs end-to-end lives in `scripts/llm-proxy-capture/`; the CI-safe equivalent is `CodingCliLlmCaptureTest` (mockserver-core) and the `llmTraffic.test.ts` codex cases (mockserver-ui).
+
 ## Dashboard Rendering
 
 The expectation panel renders an "LLM Response" badge (with provider, model, and text preview) when `httpLlmResponse` is present on an expectation.

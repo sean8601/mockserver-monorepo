@@ -14,7 +14,9 @@ import java.util.Optional;
  * <p>
  * Detection order:
  * <ol>
- *   <li>Well-known provider hosts (exact or wildcard match)</li>
+ *   <li>Well-known provider hosts (exact or wildcard match), including the OpenAI
+ *       Codex backend ({@code chatgpt.com}) used by coding CLIs such as opencode,
+ *       which serves the Responses API at {@code /backend-api/codex/responses}</li>
  *   <li>Configured {@code mockserver.llmBaseUrl} Ollama host match</li>
  *   <li>Fallback to configured {@code mockserver.llmProvider} — only when the
  *       request path looks like an LLM endpoint (contains any of
@@ -54,6 +56,12 @@ public final class LlmProviderSniffer {
             + "|/v1/models/gemini-[^/]+:(generateContent|streamGenerateContent)");
     private static final java.util.regex.Pattern OLLAMA_CHAT_PATTERN = java.util.regex.Pattern.compile(
         "(^|/)api/chat(/?$|\\?)");
+    // OpenAI Responses API path: the standard hosted path (/v1/responses) and the
+    // OpenAI Codex backend used by coding CLIs such as opencode, which serves the
+    // same Responses wire format at chatgpt.com/backend-api/codex/responses.
+    // Matched case-insensitively (callers lower-case the path before matching).
+    private static final java.util.regex.Pattern OPENAI_RESPONSES_PATH_PATTERN = java.util.regex.Pattern.compile(
+        "/v1/responses|/codex/responses");
 
     /**
      * Sniff the LLM provider from a forwarded request's target host.
@@ -84,8 +92,115 @@ public final class LlmProviderSniffer {
      * mis-classified.
      */
     public static Optional<Provider> detectForAnalysis(HttpRequest request) {
+        return detectForAnalysis(request, null);
+    }
+
+    /**
+     * Detect the LLM provider for OFFLINE analysis, using the response body as an
+     * additional, more resilient signal. Detection order, cheapest/most-specific
+     * first:
+     * <ol>
+     *   <li>well-known host ({@link #sniff})</li>
+     *   <li>recognised URL path shape ({@link #sniffByPath})</li>
+     *   <li><b>request/response body shape</b> ({@link #sniffByBodyShape}) — the
+     *       resilient fallback that recognises LLM traffic from the wire format
+     *       itself, so a coding CLI that routes through an unknown host or a
+     *       non-standard path (e.g. a future endpoint rename, a private gateway,
+     *       a new tool) is still classified without a code change.</li>
+     * </ol>
+     * The body shape is the slowest-moving signal — it is the provider's API
+     * contract — so keying on it (rather than only on host/path, the dimension
+     * that varies most between tools and versions) is what keeps capture working
+     * as the LLM APIs and CLI harnesses evolve.
+     */
+    public static Optional<Provider> detectForAnalysis(HttpRequest request, org.mockserver.model.HttpResponse response) {
         Optional<Provider> byHost = sniff(request);
-        return byHost.isPresent() ? byHost : sniffByPath(request);
+        if (byHost.isPresent()) {
+            return byHost;
+        }
+        Optional<Provider> byPath = sniffByPath(request);
+        if (byPath.isPresent()) {
+            return byPath;
+        }
+        return sniffByBodyShape(request, response);
+    }
+
+    /**
+     * Provider detection from the request/response <em>body shape</em> alone — no
+     * host or path required. This is the resilient fallback for {@link
+     * #detectForAnalysis}: the wire format is the provider's API contract and moves
+     * far more slowly than the host/path a given CLI happens to use, so recognising
+     * LLM traffic by its body keeps the Traffic / LLM Traces / LLM Optimise views
+     * working when a tool changes endpoints or a new tool appears.
+     *
+     * <p>Keys on the most stable, provider-distinctive markers and stays
+     * conservative (returns empty rather than guess) so non-LLM traffic is not
+     * mis-classified. Read-only analysis use only — never the live forward path.
+     */
+    public static Optional<Provider> sniffByBodyShape(HttpRequest request, org.mockserver.model.HttpResponse response) {
+        // Response markers are the most distinctive — check them first.
+        String resBody = response != null ? safeBody(response.getBodyAsString()) : null;
+        if (resBody != null) {
+            // OpenAI Chat Completions: object "chat.completion" / "chat.completion.chunk".
+            // Require the JSON value's opening quote so a stray substring can't match.
+            if (resBody.contains("\"chat.completion")) {
+                return Optional.of(Provider.OPENAI);
+            }
+            // OpenAI Responses API: response.* streaming events or object "response".
+            if (resBody.contains("response.output_text")
+                || resBody.contains("response.created")
+                || resBody.contains("response.completed")
+                || resBody.contains("\"object\":\"response\"")
+                || resBody.contains("\"object\": \"response\"")) {
+                return Optional.of(Provider.OPENAI_RESPONSES);
+            }
+            // Anthropic Messages: streaming content_block / message_start, or a
+            // non-streamed message envelope with a stop_reason.
+            if (resBody.contains("content_block")
+                || resBody.contains("message_start")
+                || (resBody.contains("\"type\":\"message\"") && resBody.contains("stop_reason"))) {
+                return Optional.of(Provider.ANTHROPIC);
+            }
+            // Gemini: candidates[] plus usage metadata.
+            if (resBody.contains("\"candidates\"") && resBody.contains("usageMetadata")) {
+                return Optional.of(Provider.GEMINI);
+            }
+        }
+
+        // Request markers — used when the response is absent or unrecognised.
+        if (request == null) {
+            return Optional.empty();
+        }
+        // Anthropic requires the anthropic-version header on every request.
+        String anthropicVersion = request.getFirstHeader("anthropic-version");
+        if (anthropicVersion != null && !anthropicVersion.isEmpty()) {
+            return Optional.of(Provider.ANTHROPIC);
+        }
+        String reqBody = safeBody(request.getBodyAsString());
+        if (reqBody == null) {
+            return Optional.empty();
+        }
+        boolean hasModel = reqBody.contains("\"model\"");
+        // OpenAI Responses: the hallmark top-level "input" array (Chat Completions
+        // and Anthropic both use "messages" instead).
+        if (hasModel && reqBody.contains("\"input\"") && !reqBody.contains("\"messages\"")) {
+            return Optional.of(Provider.OPENAI_RESPONSES);
+        }
+        // Gemini: top-level "contents" array (+ a Gemini-specific companion field).
+        if (reqBody.contains("\"contents\"")
+            && (reqBody.contains("\"parts\"") || reqBody.contains("generationConfig"))) {
+            return Optional.of(Provider.GEMINI);
+        }
+        // OpenAI Chat Completions: model + messages. (Anthropic is already caught by
+        // its required header and by the response-shape check above.)
+        if (hasModel && reqBody.contains("\"messages\"")) {
+            return Optional.of(Provider.OPENAI);
+        }
+        return Optional.empty();
+    }
+
+    private static String safeBody(String body) {
+        return body == null || body.isEmpty() ? null : body;
     }
 
     /**
@@ -109,7 +224,7 @@ public final class LlmProviderSniffer {
         if (lower.contains("/model/anthropic.") && lower.contains("/invoke")) {
             return Optional.of(Provider.BEDROCK);
         }
-        if (lower.contains("/v1/responses")) {
+        if (OPENAI_RESPONSES_PATH_PATTERN.matcher(lower).find()) {
             return Optional.of(Provider.OPENAI_RESPONSES);
         }
         if (lower.contains("/chat/completions")) {
@@ -162,6 +277,14 @@ public final class LlmProviderSniffer {
         }
         if (lowerHost.equals("api.anthropic.com")) {
             return Optional.of(Provider.ANTHROPIC);
+        }
+        // OpenAI Codex backend used by coding CLIs (e.g. opencode): chatgpt.com serves
+        // the Responses API at /backend-api/codex/responses. Path-gated so non-LLM
+        // chatgpt.com traffic (oauth, account, etc.) is never misclassified.
+        if (lowerHost.equals("chatgpt.com") || lowerHost.endsWith(".chatgpt.com")) {
+            if (path != null && OPENAI_RESPONSES_PATH_PATTERN.matcher(path.toLowerCase()).find()) {
+                return Optional.of(Provider.OPENAI_RESPONSES);
+            }
         }
         if (lowerHost.equals("generativelanguage.googleapis.com")) {
             return Optional.of(Provider.GEMINI);

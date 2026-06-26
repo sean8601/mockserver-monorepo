@@ -1369,3 +1369,269 @@ describe('parseTraffic — OpenAI Responses streaming SSE', () => {
     expect(types).toContain('function_call');
   });
 });
+
+// ---------------------------------------------------------------------------
+// OpenAI Codex backend Responses path (opencode CLI) — /backend-api/codex/responses
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — OpenAI Codex backend Responses (opencode CLI)', () => {
+  const codexSseBody = [
+    'event: response.created',
+    'data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress","model":"gpt-5.5"}}',
+    '',
+    'event: response.output_text.delta',
+    'data: {"type":"response.output_text.delta","content_index":0,"delta":"hello"}',
+    '',
+    'event: response.output_text.done',
+    'data: {"type":"response.output_text.done","content_index":0,"text":"hello"}',
+    '',
+    'event: response.completed',
+    'data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","model":"gpt-5.5","usage":{"input_tokens":825,"output_tokens":6,"total_tokens":831}}}',
+    '',
+  ].join('\n');
+
+  it('parses the /backend-api/codex/responses path as openai_responses and reassembles streamed text', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/backend-api/codex/responses',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-5.5',
+            stream: true,
+            instructions: 'You are a helpful assistant.',
+            input: [
+              { role: 'user', content: [{ type: 'input_text', text: 'Reply with exactly the single word: hello' }] },
+            ],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: codexSseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai_responses');
+    if (parsed.kind !== 'openai_responses') return;
+
+    expect(parsed.model).toBe('gpt-5.5');
+    expect(parsed.stream).toBe(true);
+    expect(parsed.sseEvents).not.toBeNull();
+    expect(parsed.usage).toEqual({ input_tokens: 825, output_tokens: 6, total_tokens: 831 });
+    expect(getTokenSummary(parsed)).toBe('825 in / 6 out');
+
+    // The streamed assistant text reassembles to a single message output item.
+    const messageItem = parsed.output.find(
+      (o) => (o as Record<string, unknown>)['type'] === 'message',
+    ) as Record<string, unknown> | undefined;
+    expect(messageItem).toBeDefined();
+    const content = messageItem!['content'] as Array<Record<string, unknown>>;
+    expect(content[0]!['text']).toBe('hello');
+  });
+
+  it('classifies a codex responses path as openai_responses but a non-LLM chatgpt path as generic', () => {
+    const codex = parseTraffic({
+      httpRequest: {
+        method: 'POST',
+        path: '/backend-api/codex/responses',
+        body: { type: 'JSON', json: '{"model":"gpt-5.5","input":[]}' },
+      },
+      httpResponse: { statusCode: 200, body: { type: 'JSON', json: '{"model":"gpt-5.5","output":[]}' } },
+    });
+    expect(codex.kind).toBe('openai_responses');
+
+    const oauth = parseTraffic({
+      httpRequest: {
+        method: 'POST',
+        path: '/oauth/token',
+        body: { type: 'JSON', json: '{"grant_type":"authorization_code"}' },
+      },
+      httpResponse: { statusCode: 200, body: { type: 'JSON', json: '{"access_token":"abc"}' } },
+    });
+    expect(oauth.kind).toBe('generic');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseTraffic — body-shape fallback (resilience)
+//
+// The PATH is deliberately unknown/private in each case (a coding CLI on a
+// renamed gateway), so ONLY the request/response body shape — or the
+// anthropic-version header — identifies the provider. This guards the resilient
+// detectByBodyShape() fallback that keeps traffic classified by wire format when
+// a tool moves to a new host/path.
+// ---------------------------------------------------------------------------
+
+describe('parseTraffic — body-shape fallback (resilience)', () => {
+  it('classifies OpenAI Responses by body when the path is unknown', () => {
+    const sseBody = [
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","delta":"hi"}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"model":"gpt-x","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v2/agent/run',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'gpt-x',
+            stream: true,
+            input: [{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai_responses');
+    if (parsed.kind !== 'openai_responses') return;
+
+    expect(parsed.model).toBe('gpt-x');
+    expect(parsed.usage).toEqual({ input_tokens: 1, output_tokens: 1, total_tokens: 2 });
+    const messageItem = parsed.output.find(
+      (o) => (o as Record<string, unknown>)['type'] === 'message',
+    ) as Record<string, unknown> | undefined;
+    expect(messageItem).toBeDefined();
+    const content = messageItem!['content'] as Array<Record<string, unknown>>;
+    expect(content[0]!['text']).toBe('hi');
+  });
+
+  it('classifies OpenAI Chat Completions by body when the path is unknown', () => {
+    const sseBody = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-x","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}',
+      '',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/internal/llm',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({ model: 'gpt-x', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        headers: [{ name: 'content-type', values: ['text/event-stream'] }],
+        body: { type: 'STRING', string: sseBody },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('openai');
+    if (parsed.kind !== 'openai') return;
+
+    expect(parsed.model).toBe('gpt-x');
+    expect(parsed.choices).toHaveLength(1);
+    expect(parsed.choices[0]!.message?.content).toBe('hi');
+    expect(parsed.choices[0]!.finish_reason).toBe('stop');
+  });
+
+  it('classifies Anthropic by the anthropic-version request header when the path is unknown', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/v2/agent/run',
+        headers: [{ name: 'anthropic-version', values: ['2023-06-01'] }],
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: 'hi' }],
+          }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            content: [{ type: 'text', text: 'Hi there!' }],
+            usage: { input_tokens: 7, output_tokens: 4 },
+            stop_reason: 'end_turn',
+          }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('anthropic');
+    if (parsed.kind !== 'anthropic') return;
+
+    expect(parsed.responseContent).toHaveLength(1);
+    expect(parsed.responseContent[0]!.text).toBe('Hi there!');
+    expect(parsed.usage).toEqual({ input_tokens: 7, output_tokens: 4 });
+    expect(parsed.stopReason).toBe('end_turn');
+  });
+
+  it('classifies Gemini by request body when the path is unknown', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/internal/llm',
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
+        },
+      },
+      httpResponse: {
+        statusCode: 200,
+        // No usageMetadata, so the response alone does not identify Gemini —
+        // the request body shape ("contents" + "parts") is what classifies it.
+        body: {
+          type: 'JSON',
+          json: JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Hi there!' }] } }] }),
+        },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('gemini');
+    if (parsed.kind !== 'gemini') return;
+
+    expect(parsed.contents).toHaveLength(1);
+    expect(parsed.candidates).toHaveLength(1);
+  });
+
+  it('leaves genuinely non-LLM traffic on an unknown path as generic', () => {
+    const value = {
+      httpRequest: {
+        method: 'POST',
+        path: '/internal/llm',
+        body: { type: 'JSON', json: JSON.stringify({ user: 'bob' }) },
+      },
+      httpResponse: {
+        statusCode: 200,
+        body: { type: 'JSON', json: JSON.stringify({ status: 'ok' }) },
+      },
+    };
+
+    const parsed = parseTraffic(value);
+    expect(parsed.kind).toBe('generic');
+    if (parsed.kind !== 'generic') return;
+    expect(parsed.path).toBe('/internal/llm');
+    expect(parsed.statusCode).toBe(200);
+  });
+});

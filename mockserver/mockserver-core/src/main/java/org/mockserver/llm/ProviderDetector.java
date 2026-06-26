@@ -27,8 +27,10 @@ public final class ProviderDetector {
     // Bedrock: /model/anthropic.*/invoke
     private static final Pattern BEDROCK_PATH = Pattern.compile("/model/anthropic\\..*/invoke");
 
-    // OpenAI Responses: /v1/responses
-    private static final Pattern OPENAI_RESPONSES_PATH = Pattern.compile("/v1/responses");
+    // OpenAI Responses: the standard /v1/responses, and the OpenAI Codex backend
+    // used by coding CLIs such as opencode (chatgpt.com/backend-api/codex/responses),
+    // which serves the same Responses wire format.
+    private static final Pattern OPENAI_RESPONSES_PATH = Pattern.compile("/v1/responses|/codex/responses");
 
     // OpenAI Chat Completions: /chat/completions (but not Azure pattern)
     private static final Pattern OPENAI_PATH = Pattern.compile("/chat/completions");

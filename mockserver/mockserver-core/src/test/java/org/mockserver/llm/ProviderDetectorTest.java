@@ -37,6 +37,13 @@ public class ProviderDetectorTest {
     }
 
     @Test
+    public void detectsOpenAiCodexResponsesBackendFromPath() {
+        // opencode CLI Codex backend path serves the Responses wire format → OPENAI_RESPONSES.
+        assertThat(ProviderDetector.detectFromPath("/backend-api/codex/responses"),
+            is(Optional.of(Provider.OPENAI_RESPONSES)));
+    }
+
+    @Test
     public void detectsAzureOpenAiFromPath() {
         assertThat(ProviderDetector.detectFromPath("/openai/deployments/gpt-4/chat/completions"),
             is(Optional.of(Provider.AZURE_OPENAI)));

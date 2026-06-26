@@ -131,6 +131,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Clustering & observability
 - **Standard OTLP endpoint fallback.** When `mockserver.otelEndpoint` / `MOCKSERVER_OTEL_ENDPOINT` is unset,
   MockServer now falls back to the OpenTelemetry-standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
+- **Coding-assistant LLM-capture smoke harness.** `scripts/llm-proxy-capture/` adds a local-only smoke test
+  (plus README) that proxies the real Claude Code, opencode, and Tabnine CLIs through MockServer and asserts
+  each tool's LLM calls are both recorded and classified (visible in Traffic, LLM Traces, and LLM Optimise).
+  It auto-detects which CLIs are installed/authenticated and skips the rest, holds no secrets, and is skipped
+  on CI; the CI-safe equivalent is the fixture-driven `CodingCliLlmCaptureTest` and `llmTraffic.test.ts`.
 
 #### Proxy & TLS setup
 - **Copy-paste proxy setup at startup.** The new `mockserver.proxySetupLogging` property
@@ -190,6 +195,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LLM streaming pacing above 1000 tokens/sec is preserved.** Sub-millisecond per-token delays were
   integer-truncated to 0 ms (flattening fast streams); pacing now accumulates with fractional carry so
   cumulative timing stays accurate.
+- **Coding-assistant LLM traffic is recognised resiliently, including opencode's OpenAI Codex backend.** The
+  `opencode` CLI calls the OpenAI Responses API through its Codex backend at
+  `chatgpt.com/backend-api/codex/responses`, a non-standard path the detectors did not match — so its calls were
+  recorded under the generic Traffic view but never appeared in the LLM Traces or LLM Optimise views. Responses-API
+  detection (`LlmProviderSniffer`, `ProviderDetector`, and the dashboard's `llmTraffic.ts`) now matches the Codex
+  path alongside the hosted `/v1/responses`, and the `chatgpt.com` host on it. Detection also gains a host/path-
+  independent **body-shape fallback** (read-only analysis only — Traffic, LLM Traces, LLM Optimise; never the live
+  forward/cost path): LLM traffic is recognised from its wire format, so a coding assistant that moves to a new
+  endpoint or a private gateway, or a new tool, stays classified without a code change. Claude Code (`/v1/messages`)
+  and Tabnine CLI (`…/chat/completions`) were already recognised.
 - **Forward DNS resolution moved off the calling thread.** Forward actions hand the connect path an unresolved
   address so DNS runs on the Netty event loop; SSRF validation still resolves and rejects private/loopback
   targets first, and a missing SSRF guard was added to the forward-validate path.
