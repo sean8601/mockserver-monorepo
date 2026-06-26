@@ -161,6 +161,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Correctness & reliability
+- **Load-scenario status no longer reports a transient `null` while a run is completing.** The orchestrator
+  removed a finishing run from its active map before publishing the run's terminal status, so a status poll
+  landing in that brief window saw neither and returned `null`. The terminal status is now published before the
+  run is de-registered, so `statusFor`/`getStatus` always observe either the live or the completed status.
 - **SSL/decoder faults in the proxy/relay handlers are now logged at WARN** instead of being silently dropped,
   so genuine TLS/decoder problems are visible without the noise of benign connection closes.
 - **LLM streaming pacing above 1000 tokens/sec is preserved.** Sub-millisecond per-token delays were

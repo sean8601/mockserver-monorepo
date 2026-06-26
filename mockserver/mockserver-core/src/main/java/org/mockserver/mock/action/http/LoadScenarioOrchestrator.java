@@ -237,7 +237,9 @@ public class LoadScenarioOrchestrator {
 
     /** Stop a specific scenario's active run by name. Idempotent; no-op if not active. */
     public void stop(String name) {
-        RunningScenario run = runs.remove(name);
+        // Peek (don't remove) — terminate() performs the gap-free CAS de-registration itself, so a
+        // status poll never sees the run absent from both the active and terminal maps.
+        RunningScenario run = runs.get(name);
         if (run != null) {
             terminate(run, LoadScenarioState.STOPPED);
         }
@@ -356,14 +358,29 @@ public class LoadScenarioOrchestrator {
     }
 
     /**
-     * Terminate a run (already removed from {@link #runs}): mark it stopped, capture its terminal
-     * status, clear gauge readers if it was the last run. The run's durable metric series are RETAINED
-     * (scrapeable) until the scenario is next triggered or removed from the registry.
+     * Transition a run to a terminal state with no observable status gap: publish its terminal status
+     * BEFORE de-registering it from {@link #runs}, so a concurrent {@link #statusFor(String)} (which
+     * reads {@code runs} first, then {@code terminalStatuses}) never sees a window where the name is
+     * absent from both maps. The de-registration is a CAS ({@code runs.remove(name, run)}): only the
+     * winner records the terminal status and clears gauges; a loser (a run already replaced by a
+     * concurrent re-trigger) retracts the status it speculatively wrote. Returns {@code true} iff this
+     * call won the CAS. The run's durable metric series are RETAINED (scrapeable) until the scenario is
+     * next triggered or removed from the registry.
      */
-    private void terminate(RunningScenario run, LoadScenarioState terminalState) {
+    private boolean terminate(RunningScenario run, LoadScenarioState terminalState) {
         run.stopped.set(true);
+        String name = run.scenario.getName();
         LoadScenarioStatus status = run.snapshot(terminalState, clock.getAsLong());
-        terminalStatuses.put(run.scenario.getName(), status);
+        // Publish first: while the run is still in `runs`, statusFor() returns its live snapshot (runs
+        // is checked before terminalStatuses), so this terminal record is shadowed until the CAS below
+        // removes the run — closing the window where the name was in neither map.
+        terminalStatuses.put(name, status);
+        if (!runs.remove(name, run)) {
+            // A concurrent re-trigger already replaced this run under the same name; retract our
+            // speculative terminal so it cannot mask the newer run's state.
+            terminalStatuses.remove(name, status);
+            return false;
+        }
         if (runs.isEmpty()) {
             Metrics.setLoadGaugeReaders(null, null);
         } else {
@@ -371,7 +388,8 @@ public class LoadScenarioOrchestrator {
         }
         stopSharedTickIfIdle();
         LOG.info("load scenario '{}' {} ({} requests sent)",
-            run.scenario.getName(), terminalState.name().toLowerCase(), run.requestsSent.get());
+            name, terminalState.name().toLowerCase(), run.requestsSent.get());
+        return true;
     }
 
     /**
@@ -485,10 +503,9 @@ public class LoadScenarioOrchestrator {
      */
     private void abortOnThresholdFail(RunningScenario run) {
         run.abortedByThreshold = true;
-        if (runs.remove(run.scenario.getName(), run)) {
+        if (terminate(run, LoadScenarioState.STOPPED)) {
             LOG.info("load scenario '{}' aborted by threshold breach ({} requests sent)",
                 run.scenario.getName(), run.requestsSent.get());
-            terminate(run, LoadScenarioState.STOPPED);
         }
     }
 
@@ -573,14 +590,12 @@ public class LoadScenarioOrchestrator {
     }
 
     private void completeInternal(RunningScenario run) {
-        // Atomically de-register this run iff it is still the current run for its name (a concurrent
-        // re-trigger may have already replaced it). Only the winner records the terminal status.
-        if (runs.remove(run.scenario.getName(), run)) {
-            // Final threshold evaluation so a normally-completed run carries PASS (all satisfied) or
-            // FAIL (any breached); a run with no thresholds keeps its null verdict.
-            run.evaluateThresholds(clock.getAsLong());
-            terminate(run, LoadScenarioState.COMPLETED);
-        }
+        // Final threshold evaluation so a normally-completed run carries PASS (all satisfied) or FAIL
+        // (any breached); a run with no thresholds keeps its null verdict. terminate() then performs
+        // the atomic, gap-free de-registration (CAS on runs.remove): a concurrent re-trigger that has
+        // already replaced this run simply loses the CAS and the terminal record is retracted.
+        run.evaluateThresholds(clock.getAsLong());
+        terminate(run, LoadScenarioState.COMPLETED);
     }
 
     /**
