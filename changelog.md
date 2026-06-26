@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Documentation
+- **AI Traffic Inspection page now covers tools, SDKs, and frameworks via two clearly-labelled connection methods.** Method A (transparent HTTPS proxy) groups the existing Claude Code, OpenCode, and LangChain/LangGraph recipes; Method B (base-URL override) adds LlamaIndex and OpenAI Agents SDK recipes migrated from the former Agent Frameworks page. The separate Agent Frameworks page has been consolidated into AI Traffic Inspection and now redirects to the `#configure-tools` section.
+
 #### Load injection, chaos & SRE
 - **Chaos experiments can assert an SLO and emit a verdict.** A chaos experiment may now carry an optional
   `sloCriteria`; on termination MockServer attaches a terminal `experimentVerdict` (`PASS` / `FAIL` /
