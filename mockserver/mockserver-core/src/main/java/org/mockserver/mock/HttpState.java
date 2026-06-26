@@ -2733,6 +2733,12 @@ public class HttpState {
                 }
                 return true;
             }
+            if (request.matches("GET", PATH_PREFIX + "/proxyConfiguration", "/proxyConfiguration")) {
+                if (controlPlaneRequestAuthenticated(request, responseWriter)) {
+                    responseWriter.writeResponse(request, withDashboardCORS(request, handleProxyConfiguration(request)), true);
+                }
+                return true;
+            }
             if (request.matches("GET", PATH_PREFIX + "/cassettes", "/cassettes")) {
                 if (controlPlaneRequestAuthenticated(request, responseWriter)) {
                     responseWriter.writeResponse(request, withDashboardCORS(request, handleCassettesGet()), true);
@@ -3180,6 +3186,70 @@ public class HttpState {
             return response()
                 .withStatusCode(BAD_REQUEST.code())
                 .withBody("{\"error\":\"failed to get clock status\"}", MediaType.JSON_UTF_8);
+        }
+    }
+
+    /**
+     * Serves the copy-paste proxy-setup information — the active Certificate Authority certificate path
+     * and PEM (public certificate only, never the private key), the HTTPS proxy URL, and OS-specific
+     * environment-variable blocks — the same information printed on startup. Returns the plain-text
+     * copy-paste block when the request Accepts text/plain, otherwise a JSON document.
+     */
+    private HttpResponse handleProxyConfiguration(HttpRequest request) {
+        try {
+            org.mockserver.socket.tls.KeyAndCertificateFactory keyAndCertificateFactory =
+                org.mockserver.socket.tls.KeyAndCertificateFactoryFactory.createKeyAndCertificateFactory(configuration, mockServerLogger);
+            String caCertificatePath = keyAndCertificateFactory.writeCertificateAuthorityToDisk();
+            List<Integer> ports = getPort() == null ? Collections.emptyList() : Collections.singletonList(getPort());
+            org.mockserver.socket.tls.ProxySetupInfo info =
+                new org.mockserver.socket.tls.ProxySetupInfo(caCertificatePath, ports, configuration, System.getProperty("os.name"));
+
+            String acceptHeader = request.getFirstHeader("Accept");
+            if (acceptHeader != null && acceptHeader.toLowerCase().contains("text/plain")) {
+                return response()
+                    .withStatusCode(OK.code())
+                    .withBody(info.copyPasteText(), MediaType.create("text", "plain").withCharset(UTF_8));
+            }
+
+            // public certificate only — the private key is never read or exposed here
+            String caCertificatePem = "";
+            try {
+                caCertificatePem = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(caCertificatePath)), UTF_8);
+            } catch (Exception ignore) {
+                // PEM contents are best-effort; the path is still returned
+            }
+
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = ObjectMapperFactory.createObjectMapper();
+            com.fasterxml.jackson.databind.node.ObjectNode resultNode = objectMapper.createObjectNode();
+            resultNode.put("caCertificatePath", info.caCertificatePath());
+            resultNode.put("caCertificatePem", caCertificatePem);
+            resultNode.put("httpsProxy", info.httpsProxyUrl());
+            com.fasterxml.jackson.databind.node.ObjectNode environmentVariables = resultNode.putObject("environmentVariables");
+            environmentVariables.put("unix", info.unixEnvBlock());
+            environmentVariables.put("powershell", info.powershellEnvBlock());
+            resultNode.put("usingDefaultCa", info.usingDefaultCa());
+            if (info.warning() != null) {
+                resultNode.put("warning", info.warning());
+            } else {
+                resultNode.putNull("warning");
+            }
+            return response()
+                .withStatusCode(OK.code())
+                .withBody(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(resultNode), MediaType.JSON_UTF_8);
+        } catch (Throwable throwable) {
+            // Throwable (not just Exception) so a third-party custom KeyAndCertificateFactory that throws
+            // AbstractMethodError/Error still yields a 400 here rather than propagating (matches the
+            // fail-soft LifeCycle.logProxySetup path).
+            mockServerLogger.logEvent(
+                new LogEntry()
+                    .setLogLevel(Level.ERROR)
+                    .setMessageFormat("exception handling request for proxy configuration:{}")
+                    .setArguments(throwable.getMessage())
+                    .setThrowable(throwable)
+            );
+            return response()
+                .withStatusCode(BAD_REQUEST.code())
+                .withBody("{\"error\":\"failed to get proxy configuration\"}", MediaType.JSON_UTF_8);
         }
     }
 

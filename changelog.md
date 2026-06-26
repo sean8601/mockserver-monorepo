@@ -132,6 +132,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standard OTLP endpoint fallback.** When `mockserver.otelEndpoint` / `MOCKSERVER_OTEL_ENDPOINT` is unset,
   MockServer now falls back to the OpenTelemetry-standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
 
+#### Proxy & TLS setup
+- **Copy-paste proxy setup at startup.** The new `mockserver.proxySetupLogging` property
+  (env `MOCKSERVER_PROXY_SETUP_LOGGING`, default `false`; auto-enabled by the standalone JAR, Docker image,
+  and `mockserver` CLI) writes the active CA certificate to `mockserver-ca.pem` in the dynamic-SSL directory
+  at startup and prints a "Proxy Setup" block with ready-to-paste environment variable exports (`HTTPS_PROXY`,
+  `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`) for both Unix and Windows PowerShell. The
+  block includes a security warning when the default public CA is in use. Embedded usage
+  (`new ClientAndServer(...)`) stays silent by default to avoid polluting test output; when `proxySetupLogging`
+  is off, the CA file is written on the first `GET /mockserver/proxyConfiguration` call instead. The endpoint
+  itself is always available regardless of this setting.
+- **`GET /mockserver/proxyConfiguration` endpoint.** Returns the CA certificate path, CA PEM, proxy address,
+  environment variable exports, and a flag indicating whether the default public CA is in use. Responds with
+  JSON by default or a plain copy-paste text block when called with `Accept: text/plain`. Never exposes the
+  private key.
+- **`--proxy-setup` flag for a unique, secure CA.** The new `--proxy-setup` CLI flag (property
+  `mockserver.proxySetup`, env `MOCKSERVER_PROXY_SETUP`, default `false`) forces generation of a unique local
+  CA on first startup, equivalent to `dynamicallyCreateCertificateAuthorityCertificate=true`. Recommended for
+  any shared, persistent, or team-facing proxy deployment. Without it, MockServer uses the built-in default CA
+  whose private key is published in the git repository (safe only for isolated local development).
+
 ### Changed
 
 - **`generateFromRecording` in `TEMPLATIZED` mode now reproduces the recorded traffic mix.** Each generated

@@ -949,6 +949,38 @@ mockserver.enableCORSForAllResponses=true</code></pre>
 
 <p><strong>Note:</strong> HTTP/2 proxying has limitations. When MockServer forwards requests to downstream services, HTTP/2 requests are downgraded to HTTP/1.1. MockServer can accept HTTP/2 connections and serve mock responses over HTTP/2, but forwarded/proxied requests are always sent as HTTP/1.1. See <a href="/mock_server/getting_started.html#http2_proxy_limitations">HTTP/2 proxy limitations</a> for details.</p>
 
+<button id="button_configuration_proxy_setup" class="accordion title"><strong>Proxy Setup — Generate Unique Secure CA</strong></button>
+<div class="panel title">
+    <p>When set to <span class="inline_code">true</span>, MockServer generates a unique Certificate Authority (CA) key pair on first startup and saves it to <span class="inline_code">directoryToSaveDynamicSSLCertificate</span> (default: the working directory). This is equivalent to enabling <span class="inline_code">dynamicallyCreateCertificateAuthorityCertificate</span> but is exposed as a single, easy-to-remember flag for proxy setups.</p>
+    <p>Use this flag for any shared, persistent, or team-facing setup. Without it, MockServer uses the built-in default CA whose private key is published in the MockServer git repository — safe only for isolated local development.</p>
+    <p>For standalone launches (JAR, Docker, CLI), the startup "Proxy Setup" log block and the <span class="inline_code">mockserver-ca.pem</span> file are written automatically. The CA certificate and proxy configuration are always available on demand from <span class="inline_code">GET /mockserver/proxyConfiguration</span>, regardless of how MockServer was started.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span></p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.proxySetup=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PROXY_SETUP=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.proxySetup=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.proxySetup="true"</code></pre>
+</div>
+
+<button id="button_configuration_proxy_setup_logging" class="accordion title"><strong>Proxy Setup Logging — Print Copy-Paste Block At Startup</strong></button>
+<div class="panel title">
+    <p>Controls whether MockServer prints a "Proxy Setup" block to the log at startup. The block contains the absolute path to the CA certificate file and the environment variable exports to set (<span class="inline_code">HTTPS_PROXY</span>, <span class="inline_code">NODE_EXTRA_CA_CERTS</span>, <span class="inline_code">SSL_CERT_FILE</span>, <span class="inline_code">REQUESTS_CA_BUNDLE</span>) in both Unix <span class="inline_code">export</span> and Windows PowerShell <span class="inline_code">$env:</span> forms, ready to paste into a terminal.</p>
+    <p>The default is <span class="this_value">false</span>, but the <strong>standalone launcher</strong> (the executable JAR, Docker image, and <span class="inline_code">mockserver</span> CLI) automatically enables this at startup, so anyone running MockServer as a proxy sees the block without any extra configuration. Embedded usage (<span class="inline_code">new ClientAndServer(...)</span> inside a test suite) stays silent by default to avoid polluting test output on every JUnit run; set this to <span class="inline_code">true</span> explicitly if the block is needed in embedded mode.</p>
+    <p>When this setting is enabled, MockServer writes the CA certificate to <span class="inline_code">mockserver-ca.pem</span> in the dynamic-SSL directory at startup and prints the "Proxy Setup" log block. When this setting is disabled (e.g. embedded usage), the CA file is instead written on the first call to <span class="inline_code">GET /mockserver/proxyConfiguration</span>. The endpoint itself is always available regardless of this setting.</p>
+    <p>Type: <span class="keyword">boolean</span> Default: <span class="this_value">false</span> (auto-enabled by the standalone launcher)</p>
+    <p>System Property:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.proxySetupLogging=...</code></pre>
+    <p>Environment Variable:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">MOCKSERVER_PROXY_SETUP_LOGGING=...</code></pre>
+    <p>Property File:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">mockserver.proxySetupLogging=...</code></pre>
+    <p>Example:</p>
+    <pre class="code" style="padding: 2px;"><code class="code">-Dmockserver.proxySetupLogging="true"</code></pre>
+</div>
+
 <button id="button_configuration_attempt_to_proxy_if_no_matching_expectation" class="accordion title"><strong>Attempt To Proxy Request If No Matching Expectation</strong></button>
 <div class="panel title">
     <p>If true (the default) when no matching expectation is found, and the host header of the request does not match MockServer's host, then MockServer attempts to proxy the request. If the upstream server is unreachable (connection refused, TLS error, timeout, etc.) a 502 Bad Gateway is returned. If no matching expectation is found and the request is not eligible for proxying, a 404 is returned.</p>

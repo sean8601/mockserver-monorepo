@@ -324,6 +324,10 @@ public class Configuration {
     private Boolean dynamicallyCreateCertificateAuthorityCertificate;
     private String directoryToSaveDynamicSSLCertificate;
 
+    // proxy setup convenience
+    private Boolean proxySetup;
+    private Boolean proxySetupLogging;
+
     // inbound - dynamic private key & x509
     private Boolean preventCertificateDynamicUpdate;
     private String sslCertificateDomainName;
@@ -4505,10 +4509,51 @@ public class Configuration {
     }
 
     public Boolean dynamicallyCreateCertificateAuthorityCertificate() {
+        // proxySetup is the convenience on-switch: when enabled it forces dynamic CA generation so a
+        // unique private CA is used instead of the public CA private key published in the repository.
+        if (Boolean.TRUE.equals(proxySetup())) {
+            return true;
+        }
         if (dynamicallyCreateCertificateAuthorityCertificate == null) {
             return ConfigurationProperties.dynamicallyCreateCertificateAuthorityCertificate();
         }
         return dynamicallyCreateCertificateAuthorityCertificate;
+    }
+
+    public Boolean proxySetup() {
+        if (proxySetup == null) {
+            return ConfigurationProperties.proxySetup();
+        }
+        return proxySetup;
+    }
+
+    /**
+     * Convenience on-switch for using MockServer as a TLS-intercepting proxy. When enabled MockServer
+     * forces dynamic creation of a unique private Certificate Authority and prints an OS-specific
+     * copy-paste proxy setup block on startup.
+     *
+     * @param proxySetup enable proxy setup convenience mode
+     */
+    public Configuration proxySetup(Boolean proxySetup) {
+        this.proxySetup = proxySetup;
+        return this;
+    }
+
+    public Boolean proxySetupLogging() {
+        if (proxySetupLogging == null) {
+            return ConfigurationProperties.proxySetupLogging();
+        }
+        return proxySetupLogging;
+    }
+
+    /**
+     * Whether to print the OS-specific copy-paste proxy setup block on startup. Enabled by default.
+     *
+     * @param proxySetupLogging enable the proxy setup startup logging block
+     */
+    public Configuration proxySetupLogging(Boolean proxySetupLogging) {
+        this.proxySetupLogging = proxySetupLogging;
+        return this;
     }
 
     /**

@@ -142,6 +142,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
     private String tlsProtocols;
     private Boolean dynamicallyCreateCertificateAuthorityCertificate;
     private String directoryToSaveDynamicSSLCertificate;
+    private Boolean proxySetup;
+    private Boolean proxySetupLogging;
     private Boolean preventCertificateDynamicUpdate;
     private String sslCertificateDomainName;
     private Set<String> sslSubjectAlternativeNameDomains;
@@ -424,6 +426,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
             this.tlsProtocols = configuration.tlsProtocols();
             this.dynamicallyCreateCertificateAuthorityCertificate = configuration.dynamicallyCreateCertificateAuthorityCertificate();
             this.directoryToSaveDynamicSSLCertificate = configuration.directoryToSaveDynamicSSLCertificate();
+            this.proxySetup = configuration.proxySetup();
+            this.proxySetupLogging = configuration.proxySetupLogging();
             this.preventCertificateDynamicUpdate = configuration.preventCertificateDynamicUpdate();
             this.sslCertificateDomainName = configuration.sslCertificateDomainName();
             this.sslSubjectAlternativeNameDomains = configuration.sslSubjectAlternativeNameDomains();
@@ -747,6 +751,8 @@ public class ConfigurationDTO implements DTO<Configuration> {
         configuration.tlsProtocols(tlsProtocols);
         configuration.dynamicallyCreateCertificateAuthorityCertificate(dynamicallyCreateCertificateAuthorityCertificate);
         configuration.directoryToSaveDynamicSSLCertificate(directoryToSaveDynamicSSLCertificate);
+        configuration.proxySetup(proxySetup);
+        configuration.proxySetupLogging(proxySetupLogging);
         configuration.preventCertificateDynamicUpdate(preventCertificateDynamicUpdate);
         configuration.sslCertificateDomainName(sslCertificateDomainName);
         if (sslSubjectAlternativeNameDomains != null) {
@@ -1226,6 +1232,12 @@ public class ConfigurationDTO implements DTO<Configuration> {
         }
         if (directoryToSaveDynamicSSLCertificate != null) {
             target.directoryToSaveDynamicSSLCertificate(directoryToSaveDynamicSSLCertificate);
+        }
+        if (proxySetup != null) {
+            target.proxySetup(proxySetup);
+        }
+        if (proxySetupLogging != null) {
+            target.proxySetupLogging(proxySetupLogging);
         }
         if (preventCertificateDynamicUpdate != null) {
             target.preventCertificateDynamicUpdate(preventCertificateDynamicUpdate);
@@ -2630,6 +2642,24 @@ public class ConfigurationDTO implements DTO<Configuration> {
 
     public ConfigurationDTO setDirectoryToSaveDynamicSSLCertificate(String directoryToSaveDynamicSSLCertificate) {
         this.directoryToSaveDynamicSSLCertificate = directoryToSaveDynamicSSLCertificate;
+        return this;
+    }
+
+    public Boolean getProxySetup() {
+        return proxySetup;
+    }
+
+    public ConfigurationDTO setProxySetup(Boolean proxySetup) {
+        this.proxySetup = proxySetup;
+        return this;
+    }
+
+    public Boolean getProxySetupLogging() {
+        return proxySetupLogging;
+    }
+
+    public ConfigurationDTO setProxySetupLogging(Boolean proxySetupLogging) {
+        this.proxySetupLogging = proxySetupLogging;
         return this;
     }
 

@@ -542,6 +542,46 @@ public abstract class LifeCycle implements Stoppable {
                     .setMessageFormat(message)
             );
         }
+        logProxySetup(ports);
+    }
+
+    /**
+     * When proxySetupLogging is enabled, materialise the active Certificate Authority certificate to a
+     * stable file and print an OS-specific copy-paste block describing how to route TLS traffic through
+     * MockServer and trust its CA. When proxySetupLogging is disabled (the default — e.g. embedded
+     * {@code ClientAndServer} usage) nothing is written or logged. When the public baked-in CA is in
+     * effect the block is logged at WARN with a security warning; with a unique/custom CA it is logged at
+     * INFO. Fail-soft: any error here never prevents the server from starting.
+     */
+    private void logProxySetup(List<Integer> ports) {
+        try {
+            if (configuration == null || !Boolean.TRUE.equals(configuration.proxySetupLogging())) {
+                return;
+            }
+            org.mockserver.socket.tls.KeyAndCertificateFactory keyAndCertificateFactory =
+                org.mockserver.socket.tls.KeyAndCertificateFactoryFactory.createKeyAndCertificateFactory(configuration, mockServerLogger);
+            String caCertificatePath = keyAndCertificateFactory.writeCertificateAuthorityToDisk();
+            org.mockserver.socket.tls.ProxySetupInfo proxySetupInfo =
+                new org.mockserver.socket.tls.ProxySetupInfo(caCertificatePath, ports, configuration, System.getProperty("os.name"));
+            if (mockServerLogger != null) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(SERVER_CONFIGURATION)
+                        .setLogLevel(proxySetupInfo.usingDefaultCa() ? WARN : INFO)
+                        .setMessageFormat(proxySetupInfo.copyPasteText())
+                );
+            }
+        } catch (Throwable throwable) {
+            if (mockServerLogger != null && mockServerLogger.isEnabledForInstance(DEBUG)) {
+                mockServerLogger.logEvent(
+                    new LogEntry()
+                        .setType(SERVER_CONFIGURATION)
+                        .setLogLevel(DEBUG)
+                        .setMessageFormat("exception while preparing proxy setup information:{}")
+                        .setThrowable(throwable)
+                );
+            }
+        }
     }
 
     public LifeCycle registerListener(ExpectationsListener expectationsListener) {

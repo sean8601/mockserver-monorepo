@@ -359,6 +359,10 @@ public class ConfigurationProperties {
     private static final String MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE = "mockserver.dynamicallyCreateCertificateAuthorityCertificate";
     private static final String MOCKSERVER_CERTIFICATE_DIRECTORY_TO_SAVE_DYNAMIC_SSL_CERTIFICATE = "mockserver.directoryToSaveDynamicSSLCertificate";
 
+    // proxy setup convenience
+    private static final String MOCKSERVER_PROXY_SETUP = "mockserver.proxySetup";
+    private static final String MOCKSERVER_PROXY_SETUP_LOGGING = "mockserver.proxySetupLogging";
+
     // inbound - dynamic private key & x509
     private static final String MOCKSERVER_PREVENT_CERTIFICATE_DYNAMIC_UPDATE = "mockserver.preventCertificateDynamicUpdate";
     private static final String MOCKSERVER_SSL_CERTIFICATE_DOMAIN_NAME = "mockserver.sslCertificateDomainName";
@@ -4756,7 +4760,60 @@ public class ConfigurationProperties {
     }
 
     public static boolean dynamicallyCreateCertificateAuthorityCertificate() {
-        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE, "MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE", "false"));
+        // proxySetup is the convenience on-switch for a unique private CA: when enabled it forces
+        // dynamic CA generation regardless of the dynamicallyCreateCertificateAuthorityCertificate value.
+        return proxySetup() || Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE, "MOCKSERVER_DYNAMICALLY_CREATE_CERTIFICATE_AUTHORITY_CERTIFICATE", "false"));
+    }
+
+    public static boolean proxySetup() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_PROXY_SETUP, "MOCKSERVER_PROXY_SETUP", "false"));
+    }
+
+    /**
+     * Convenience on-switch for using MockServer as a TLS-intercepting proxy. When enabled MockServer
+     * forces dynamic creation of a unique private Certificate Authority (so the public CA private key
+     * published in the MockServer repository is not used) and prints an OS-specific copy-paste proxy
+     * setup block on startup.
+     *
+     * @param enable enable proxy setup convenience mode
+     */
+    public static void proxySetup(boolean enable) {
+        setProperty(MOCKSERVER_PROXY_SETUP, "" + enable);
+    }
+
+    public static boolean proxySetupLogging() {
+        return Boolean.parseBoolean(readPropertyHierarchically(PROPERTIES, MOCKSERVER_PROXY_SETUP_LOGGING, "MOCKSERVER_PROXY_SETUP_LOGGING", "false"));
+    }
+
+    /**
+     * Whether to materialise the active CA to {@code mockserver-ca.pem} and print the OS-specific
+     * copy-paste proxy setup block (CA path and proxy / CA environment-variable exports) on startup.
+     * <p>
+     * Default is false so embedded {@code ClientAndServer} usage (the large unit-test user base) stays
+     * silent and never drops a {@code mockserver-ca.pem} file into the working directory. The standalone
+     * CLI launcher ({@code org.mockserver.cli.Main}) enables it so jar/Docker/CLI launches always print
+     * the block.
+     *
+     * @param enable enable the proxy setup startup logging block
+     */
+    public static void proxySetupLogging(boolean enable) {
+        setProperty(MOCKSERVER_PROXY_SETUP_LOGGING, "" + enable);
+    }
+
+    /**
+     * Whether {@code proxySetupLogging} has an explicit value from any user source — a system property
+     * (incl. a programmatic set), the {@code mockserver.properties} file, or the
+     * {@code MOCKSERVER_PROXY_SETUP_LOGGING} environment variable — as opposed to falling back to the
+     * built-in default. The standalone CLI launcher uses this to auto-enable the proxy setup block only
+     * when the user has not configured it themselves (in any source), so a properties-file opt-out is
+     * honoured just like a {@code -D} / env-var one.
+     *
+     * @return true if an explicit value exists in any user source
+     */
+    public static boolean proxySetupLoggingConfigured() {
+        return System.getProperty(MOCKSERVER_PROXY_SETUP_LOGGING) != null
+            || (PROPERTIES != null && PROPERTIES.getProperty(MOCKSERVER_PROXY_SETUP_LOGGING) != null)
+            || isNotBlank(System.getenv("MOCKSERVER_PROXY_SETUP_LOGGING"));
     }
 
     /**

@@ -70,6 +70,23 @@ MockServer maintains an in-memory CA with default DN:
 
 Custom CA certificates can be loaded from PEM files via configuration.
 
+### Proxy Setup — CA Materialisation and Copy-Paste Block
+
+The `proxySetupLogging` property (env `MOCKSERVER_PROXY_SETUP_LOGGING`, default `false`) gates both the startup CA file write and the "Proxy Setup" log block. The block contains ready-to-paste environment variable exports for both Unix and Windows PowerShell:
+
+```
+HTTPS_PROXY=http://localhost:<port>
+NODE_EXTRA_CA_CERTS=<ca path>       # Node.js
+SSL_CERT_FILE=<ca path>             # Python (httpx, standard library)
+REQUESTS_CA_BUNDLE=<ca path>        # Python requests
+```
+
+When `proxySetupLogging` is enabled, MockServer writes the active CA certificate to `<directoryToSaveDynamicSSLCertificate>/mockserver-ca.pem` at startup and prints the block. The standalone launcher (executable JAR, Docker image, `mockserver` CLI) automatically enables `proxySetupLogging`, so proxy users see both without any extra configuration. Embedded usage (`new ClientAndServer(...)`) stays silent by default; when `proxySetupLogging` is disabled, the CA file is instead written on the first call to `GET /mockserver/proxyConfiguration`.
+
+The `GET /mockserver/proxyConfiguration` endpoint is always available regardless of `proxySetupLogging`. It returns JSON by default or a plain copy-paste text block with `Accept: text/plain`. It never exposes the private key.
+
+The `--proxy-setup` CLI flag (property `mockserver.proxySetup`, env `MOCKSERVER_PROXY_SETUP`, default `false`) is a convenience switch: when set, it forces `dynamicallyCreateCertificateAuthorityCertificate=true`, generating a unique local CA whose private key never leaves the machine. Without it, MockServer uses the built-in default CA whose private key is published in the git repository — safe only for isolated local development. The startup block includes a security warning when the default public CA is in use.
+
 ### Key Classes
 
 | Class | Package | Purpose |

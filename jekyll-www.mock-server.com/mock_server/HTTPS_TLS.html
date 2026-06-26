@@ -56,6 +56,8 @@ sitemap:
 
 <p>The MockServer CA X.509 must be considered a valid trust root to ensure MockServer's dynamically generate X.509 certificates are trusted by an HTTP Client.  This means the CA X.509 needs to be added into the JVM, HTTP Client or operating system as appropriate.</p>
 
+<p><strong>Quick start:</strong> when run via the standalone JAR, Docker image, or <code class="inline_code">mockserver</code> CLI, MockServer writes the active CA certificate to <code class="inline_code">./mockserver-ca.pem</code> at startup (absolute path logged) and prints a copy-paste proxy setup block containing the environment variables to set. Embedded usage stays silent; the file and block are produced on the first <code class="inline_code">GET /mockserver/proxyConfiguration</code> call instead. The endpoint is always available (plain text or JSON), regardless of how MockServer was started. See <a href="/mock_server/ai_traffic_inspection.html#trust-ca">AI Traffic Inspection — Trust the MockServer CA Certificate</a> for a step-by-step guide.</p>
+
 <p>The MockServer CA X.509 can be found (in PEM format) in the <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/mockserver/mockserver-core/src/main/resources/org/mockserver/socket/CertificateAuthorityCertificate.pem" rel="noopener noreferrer">MockServer github repo</a> or can be loaded from the classpath location <span class="constant">/org/mockserver/socket/CertificateAuthorityCertificate.pem</span></p>
 
 <h3>Operating System</h3>

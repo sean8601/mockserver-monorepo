@@ -41,6 +41,10 @@ sitemap:
 
 <pre class="prettyprint code"><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar -serverPort 1080</code></pre>
 
+<p>For a shared or persistent setup, add <code class="code inline">--proxy-setup</code> to generate a unique, secure CA whose private key never leaves your machine:</p>
+
+<pre class="prettyprint code"><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar -serverPort 1080 --proxy-setup</code></pre>
+
 <p>Once started, MockServer listens on port 1080. Any HTTPS request sent through it will be intercepted, logged, and forwarded to the real destination.</p>
 
 <a id="trust-ca" class="anchor" href="#trust-ca">&nbsp;</a>
@@ -49,34 +53,48 @@ sitemap:
 
 <p>MockServer intercepts TLS by dynamically generating certificates for each upstream hostname, signed by its own Certificate Authority (CA). Your AI tool must trust this CA, otherwise TLS handshakes will fail.</p>
 
-<p>The MockServer CA certificate (PEM format) is available at:</p>
+<p><strong>The CA certificate is always accessible via the endpoint below.</strong> When running via the standalone JAR, Docker image, or <code class="code inline">mockserver</code> CLI, MockServer also writes it to <code class="code inline">./mockserver-ca.pem</code> at startup (absolute path logged) and prints a ready-to-paste "Proxy Setup" block. For embedded usage (<code class="code inline">new ClientAndServer(...)</code> in tests), the file is written on the first endpoint call instead.</p>
 
-<ul>
-    <li><strong>From the GitHub repository:</strong> <a target="_blank" href="https://github.com/mock-server/mockserver-monorepo/blob/master/mockserver/mockserver-core/src/main/resources/org/mockserver/socket/CertificateAuthorityCertificate.pem" rel="noopener noreferrer">CertificateAuthorityCertificate.pem</a></li>
-    <li><strong>From the classpath</strong> (if using the Java API): <code class="code inline">/org/mockserver/socket/CertificateAuthorityCertificate.pem</code></li>
-</ul>
+<p>Fetch the CA path and copy-paste exports at any time from the running server:</p>
 
-<p>Save the certificate to a local file (e.g. <code class="code inline">mockserver-ca.pem</code>) and point your tools at it as shown below.</p>
+<pre class="prettyprint code"><code class="code"># Plain copy-paste text block (CA path + env var exports):
+curl http://localhost:1080/mockserver/proxyConfiguration -H "Accept: text/plain"
+
+# Structured JSON (CA PEM, paths, env var strings, security status):
+curl http://localhost:1080/mockserver/proxyConfiguration</code></pre>
 
 <p>See <a href="/mock_server/HTTPS_TLS.html#verify_trust_chain">HTTPS &amp; TLS — Ensure MockServer Certificates Are Trusted</a> for full details on adding the CA to operating systems, JVMs, and HTTP clients.</p>
 
-<p><strong>Security note:</strong> The default CA private key is public knowledge (it is in the MockServer git repository), which means the default CA should only be used in isolated development environments. For shared or semi-permanent setups, enable <code class="code inline">dynamicallyCreateCertificateAuthorityCertificate</code> to generate a unique local CA whose private key is never published.</p>
+<div class="alert" style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; margin: 16px 0;">
+    <p><strong>Security warning: the default CA private key is published in the MockServer git repository.</strong> Anyone on the network can impersonate any HTTPS host to a client that trusts this CA. The default CA is safe only for isolated local development where no other party can reach the proxy port.</p>
+    <p>For any shared, persistent, or team-facing setup, start MockServer with <code class="code inline">--proxy-setup</code> to generate a unique, local CA whose private key never leaves the machine:</p>
+    <pre class="prettyprint code"><code class="code">java -jar mockserver-netty-no-dependencies-{{ site.mockserver_version }}.jar -serverPort 1080 --proxy-setup</code></pre>
+    <p>Or with Docker:</p>
+    <pre class="prettyprint code"><code class="code">docker run -d --rm -p 1080:1080 mockserver/mockserver --proxy-setup</code></pre>
+    <p>The startup log will tell you whether you are using the default public CA or a unique generated one.</p>
+</div>
 
 <a id="configure-tools" class="anchor" href="#configure-tools">&nbsp;</a>
 
 <h2>3. Configure Your AI Tool</h2>
 
-<p>Most AI tools and libraries route HTTPS traffic through the proxy and CA specified by standard environment variables. Set these before starting your tool:</p>
+<p>After starting MockServer (via the standalone JAR, Docker, or CLI), copy the proxy setup block printed in the startup log — or fetch it on demand from any running instance:</p>
+
+<pre class="prettyprint code"><code class="code">curl http://localhost:1080/mockserver/proxyConfiguration -H "Accept: text/plain"</code></pre>
+
+<p>The output contains ready-to-paste exports for Unix and PowerShell. The CA path in those exports points to the file MockServer already wrote to disk. Example (Unix):</p>
 
 <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
 export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem   # Node.js tools (Claude Code, OpenCode)
-export SSL_CERT_FILE=/path/to/mockserver-ca.pem          # Python tools (LangChain, httpx)</code></pre>
+export SSL_CERT_FILE=/path/to/mockserver-ca.pem          # Python tools (LangChain, httpx)
+export REQUESTS_CA_BUNDLE=/path/to/mockserver-ca.pem     # Python requests library</code></pre>
 
 <p>Select your tool for specific instructions:</p>
 
 <button id="button_claude_code_proxy" class="accordion">Claude Code</button>
 <div class="panel">
     <p>Claude Code is a Node.js process. It honours <code class="code inline">HTTPS_PROXY</code> for outbound traffic and <code class="code inline">NODE_EXTRA_CA_CERTS</code> to extend the Node.js CA trust store without replacing it.</p>
+    <p>Copy the path from the startup log (or from <code class="code inline">curl http://localhost:1080/mockserver/proxyConfiguration -H "Accept: text/plain"</code>) and substitute it below:</p>
     <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
 export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem</code></pre>
     <p>Start Claude Code in a terminal where these variables are set:</p>
@@ -90,6 +108,7 @@ export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem</code></pre>
     <p>OpenCode is also a Node.js process and uses the same standard variables:</p>
     <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
 export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem</code></pre>
+    <p>Copy the exact path from the MockServer startup log or from <code class="code inline">GET /mockserver/proxyConfiguration</code>.</p>
     <p>Start OpenCode in a terminal where these variables are set:</p>
     <pre class="prettyprint code"><code class="code">opencode</code></pre>
     <p>Alternatively, set them in your OpenCode launch configuration or shell profile to apply them globally.</p>
@@ -97,9 +116,11 @@ export NODE_EXTRA_CA_CERTS=/path/to/mockserver-ca.pem</code></pre>
 
 <button id="button_langchain_proxy" class="accordion">LangChain / LangGraph / Python AI SDKs</button>
 <div class="panel">
-    <p>Python's <code class="code inline">httpx</code> and <code class="code inline">requests</code> libraries (used by the Anthropic and OpenAI Python SDKs) honour <code class="code inline">HTTPS_PROXY</code> and <code class="code inline">SSL_CERT_FILE</code>:</p>
+    <p>Python's <code class="code inline">httpx</code> and <code class="code inline">requests</code> libraries (used by the Anthropic and OpenAI Python SDKs) honour <code class="code inline">HTTPS_PROXY</code>, <code class="code inline">SSL_CERT_FILE</code>, and <code class="code inline">REQUESTS_CA_BUNDLE</code>:</p>
     <pre class="prettyprint code"><code class="code">export HTTPS_PROXY=http://localhost:1080
-export SSL_CERT_FILE=/path/to/mockserver-ca.pem</code></pre>
+export SSL_CERT_FILE=/path/to/mockserver-ca.pem
+export REQUESTS_CA_BUNDLE=/path/to/mockserver-ca.pem</code></pre>
+    <p>Copy the exact path from the MockServer startup log or from <code class="code inline">GET /mockserver/proxyConfiguration</code>.</p>
     <p>If you instantiate an <code class="code inline">httpx</code> client directly, pass the proxy and CA bundle explicitly:</p>
     <pre class="prettyprint lang-python code"><code class="code">import anthropic
 import httpx

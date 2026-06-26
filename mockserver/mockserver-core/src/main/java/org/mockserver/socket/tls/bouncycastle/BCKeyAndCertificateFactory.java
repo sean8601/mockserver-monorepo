@@ -393,6 +393,17 @@ public class BCKeyAndCertificateFactory implements KeyAndCertificateFactory {
     }
 
     @Override
+    public String writeCertificateAuthorityToDisk() {
+        // certificateAuthorityX509Certificate() lazily generates the dynamic CA when enabled, or loads
+        // the baked-in/custom CA otherwise. Only the PUBLIC certificate is written, atomically, into the
+        // instance-scoped directory (the shared helper handles PEM encoding + atomic move).
+        return KeyAndCertificateFactory.writeCertificateAuthorityPem(
+            certificateAuthorityX509Certificate(),
+            configuration.directoryToSaveDynamicSSLCertificate()
+        );
+    }
+
+    @Override
     public List<X509Certificate> certificateChain() {
         final List<X509Certificate> result = new ArrayList<>();
         if (shouldGenerateCertificates()) {
