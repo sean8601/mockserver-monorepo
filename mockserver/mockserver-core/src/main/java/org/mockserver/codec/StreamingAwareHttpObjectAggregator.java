@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.util.AttributeKey;
 import org.mockserver.configuration.Configuration;
 import org.mockserver.httpclient.HttpClientHandler;
@@ -108,11 +109,21 @@ public class StreamingAwareHttpObjectAggregator extends HttpObjectAggregator {
      */
     private static final AttributeKey<Boolean> DISABLE_RESPONSE_STREAMING = AttributeKey.valueOf("DISABLE_RESPONSE_STREAMING");
 
+    /**
+     * Channel attribute set by {@code NettyHttpClient} when the OUTGOING request asked for a
+     * streamed response (Accept: text/event-stream, or a JSON body with {@code "stream": true}).
+     * When set, the response is relayed as a stream even if it omits
+     * {@code Content-Type: text/event-stream} — covering streaming backends that do not send it,
+     * such as the OpenAI Codex backend used by the opencode CLI.
+     */
+    private static final AttributeKey<Boolean> EXPECT_STREAMING_RESPONSE = AttributeKey.valueOf("EXPECT_STREAMING_RESPONSE");
+
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof HttpResponse && !(msg instanceof FullHttpResponse)) {
             HttpResponse response = (HttpResponse) msg;
-            if (isStreamingEnabled() && !isStreamingDisabledOnChannel(ctx) && isStreamingResponse(response)) {
+            if (isStreamingEnabled() && !isStreamingDisabledOnChannel(ctx)
+                && (isStreamingResponse(response) || isStreamingExpectedByRequest(ctx))) {
                 switchToStreamingMode(ctx, response);
                 return;
             }
@@ -128,6 +139,10 @@ public class StreamingAwareHttpObjectAggregator extends HttpObjectAggregator {
     private boolean isStreamingDisabledOnChannel(ChannelHandlerContext ctx) {
         Boolean disabled = ctx.channel().attr(DISABLE_RESPONSE_STREAMING).get();
         return Boolean.TRUE.equals(disabled);
+    }
+
+    private boolean isStreamingExpectedByRequest(ChannelHandlerContext ctx) {
+        return Boolean.TRUE.equals(ctx.channel().attr(EXPECT_STREAMING_RESPONSE).get());
     }
 
     private void switchToStreamingMode(ChannelHandlerContext ctx, HttpResponse responseHead) {
@@ -160,6 +175,15 @@ public class StreamingAwareHttpObjectAggregator extends HttpObjectAggregator {
         // Add idle state handler for stream timeout
         int idleTimeout = configuration.streamIdleTimeoutSeconds();
         if (idleTimeout > 0) {
+            // The per-request socket read timeout (maxSocketTimeout, default 20s) armed on
+            // non-pooled channels measures the gap between reads, which during streaming is the
+            // gap between chunks — a streaming LLM response can legitimately pause far longer
+            // than that between chunks (model reasoning), so it would kill a healthy stream.
+            // Replace it here with the stream-appropriate idle bound (streamIdleTimeoutSeconds,
+            // default 60s); only when that bound is enabled, so a stream is never left unbounded.
+            if (pipeline.get(ReadTimeoutHandler.class) != null) {
+                pipeline.remove(ReadTimeoutHandler.class);
+            }
             pipeline.addBefore(ctx.name(), "streamIdleStateHandler", new IdleStateHandler(0, 0, idleTimeout, TimeUnit.SECONDS));
             pipeline.addAfter("streamIdleStateHandler", "streamIdleTimeoutHandler", new StreamIdleTimeoutHandler(mockServerLogger));
         }

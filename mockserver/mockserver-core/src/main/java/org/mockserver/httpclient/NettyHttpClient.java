@@ -47,6 +47,13 @@ public class NettyHttpClient {
     static final AttributeKey<CompletableFuture<Message>> RESPONSE_FUTURE = AttributeKey.valueOf("RESPONSE_FUTURE");
     static final AttributeKey<Boolean> ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE = AttributeKey.valueOf("ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE");
     static final AttributeKey<Boolean> DISABLE_RESPONSE_STREAMING = AttributeKey.valueOf("DISABLE_RESPONSE_STREAMING");
+    // Set when the OUTGOING request asks for a streamed response, so the response is relayed
+    // incrementally even if the upstream omits Content-Type: text/event-stream. Read by
+    // StreamingAwareHttpObjectAggregator (same interned key name).
+    static final AttributeKey<Boolean> EXPECT_STREAMING_RESPONSE = AttributeKey.valueOf("EXPECT_STREAMING_RESPONSE");
+    // A JSON request body that turns on streaming, e.g. {"stream": true} (OpenAI/Anthropic/Codex).
+    private static final java.util.regex.Pattern STREAM_TRUE_IN_BODY =
+        java.util.regex.Pattern.compile("\"stream\"\\s*:\\s*true");
     static final AttributeKey<AtomicLong> FIRST_BYTE_MILLIS = TimeToFirstByteHandler.FIRST_BYTE_MILLIS;
     /**
      * When set on a channel, {@link HttpClientHandler} returns the channel to this pool (keyed by
@@ -86,6 +93,34 @@ public class NettyHttpClient {
 
     public CompletableFuture<HttpResponse> sendRequest(final HttpRequest httpRequest) throws SocketConnectionException {
         return sendRequest(httpRequest, httpRequest.socketAddressFromHostHeader());
+    }
+
+    /**
+     * Whether the OUTGOING request asks for a streamed (Server-Sent Events style) response, so
+     * the upstream response should be relayed to the proxy client incrementally even if it omits
+     * {@code Content-Type: text/event-stream}. Some streaming backends do — notably the OpenAI
+     * Codex backend used by the opencode CLI ({@code chatgpt.com/backend-api/codex/responses}),
+     * whose SSE response carries no content-type at all; without this hint MockServer would
+     * aggregate the whole 10–30s stream and the client would time out waiting for response headers.
+     * Detected from the client's own intent: an {@code Accept: text/event-stream} header, or a JSON
+     * request body containing {@code "stream": true}.
+     */
+    static boolean requestExpectsStreamingResponse(HttpRequest request) {
+        if (request == null) {
+            return false;
+        }
+        String accept = request.getFirstHeader("accept");
+        if (accept != null && accept.toLowerCase().contains("text/event-stream")) {
+            return true;
+        }
+        String contentType = request.getFirstHeader("content-type");
+        if (contentType != null && contentType.toLowerCase().contains("json")) {
+            String body = request.getBodyAsString();
+            if (body != null && !body.isEmpty() && STREAM_TRUE_IN_BODY.matcher(body).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public CompletableFuture<HttpResponse> sendRequest(final HttpRequest httpRequest, @Nullable InetSocketAddress remoteAddress) throws SocketConnectionException {
@@ -133,6 +168,10 @@ public class NettyHttpClient {
             final AtomicLong firstByteMillis = new AtomicLong();
 
             final boolean secure = httpRequest.isSecure() != null && httpRequest.isSecure();
+            // Relay the response as a stream (not aggregated) when the client asked for one, so a
+            // streaming upstream that omits Content-Type: text/event-stream (e.g. opencode's Codex
+            // backend) is not buffered to completion before its headers reach the client.
+            final boolean expectStreaming = !disableStreaming && requestExpectsStreamingResponse(httpRequest);
             final InetSocketAddress effectiveRemoteAddress = remoteAddress;
             // Only plain HTTP/1.1 keep-alive connections are pooled. HTTP/2, HTTP/3 (multiplexed
             // differently), binary forwarding, and any proxy-tunnelled connection bypass the pool
@@ -153,6 +192,7 @@ public class NettyHttpClient {
                 reused.attr(ERROR_IF_CHANNEL_CLOSED_WITHOUT_RESPONSE).set(true);
                 reused.attr(FIRST_BYTE_MILLIS).set(firstByteMillis);
                 reused.attr(DISABLE_RESPONSE_STREAMING).set(disableStreaming ? Boolean.TRUE : null);
+                reused.attr(EXPECT_STREAMING_RESPONSE).set(expectStreaming ? Boolean.TRUE : null);
                 reused.eventLoop().execute(() -> {
                     if (reused.isActive()) {
                         reused.writeAndFlush(httpRequest).addListener((ChannelFutureListener) writeFuture -> {
@@ -247,6 +287,9 @@ public class NettyHttpClient {
         applyForwardSocketKeepAlive(bootstrap);
         if (disableStreaming) {
             bootstrap.attr(DISABLE_RESPONSE_STREAMING, true);
+        }
+        if (!disableStreaming && requestExpectsStreamingResponse(httpRequest)) {
+            bootstrap.attr(EXPECT_STREAMING_RESPONSE, true);
         }
         if (poolKey != null) {
             // Mark the fresh channel so HttpClientHandler returns it to the pool after a reusable

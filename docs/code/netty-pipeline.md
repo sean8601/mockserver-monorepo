@@ -326,10 +326,17 @@ SOCKS5 is multi-phase: initial handshake → optional password auth → CONNECT 
 
 When `streamingResponsesEnabled` is `true` (default), the `HttpObjectAggregator` in the **forward-path client pipeline** (inside `NettyHttpClient`) and in the relay pipelines inside `RelayConnectHandler` is replaced by `StreamingAwareHttpObjectAggregator`.
 
-`StreamingAwareHttpObjectAggregator` is a subclass of `HttpObjectAggregator` (`mockserver-core` `org.mockserver.codec`). It inspects the first response head:
+`StreamingAwareHttpObjectAggregator` is a subclass of `HttpObjectAggregator` (`mockserver-core` `org.mockserver.codec`). It inspects the first response head and switches to streaming when **either** signal is present:
 
-- **Non-streaming response** (does not have `Content-Type: text/event-stream`): delegates to `super` — behaviour is byte-for-byte identical to before. Ordinary chunked responses without SSE content type are always aggregated normally.
-- **Streaming response**: removes itself from the pipeline and installs `StreamingResponseRelayHandler` in its place, positioned before `MockServerHttpClientCodec`. The relay handler then processes unaggregated `HttpObject` events.
+- **Response says so** — `Content-Type: text/event-stream`.
+- **The client asked for a stream** — `NettyHttpClient` sets an `EXPECT_STREAMING_RESPONSE` channel attribute when the forwarded *request* declares streaming intent (an `Accept: text/event-stream` header, or a JSON body with `"stream": true`). This covers streaming backends that omit the content type — notably the OpenAI **Codex** backend used by the opencode CLI (`chatgpt.com/backend-api/codex/responses`), whose SSE response carries **no content type at all**. Without it MockServer would aggregate the whole (10–30s) response before sending any headers, and the client would time out waiting for response headers.
+
+Then:
+
+- **Non-streaming** (neither signal): delegates to `super` — behaviour is byte-for-byte identical to before. Ordinary chunked responses without an SSE content type or a streaming request are always aggregated normally. `DISABLE_RESPONSE_STREAMING` (set for `FORWARD_REPLACE` response overrides) wins over both signals.
+- **Streaming**: removes itself from the pipeline and installs `StreamingResponseRelayHandler` in its place, positioned before `MockServerHttpClientCodec`. It also removes the per-request `ReadTimeoutHandler` (sized from `maxSocketTimeout`, ~20s, armed on non-pooled channels) so the longer stream-appropriate idle bound (`streamIdleTimeoutSeconds`, default 60s) governs — a streaming LLM response can legitimately pause longer than 20s between chunks. The relay handler then processes unaggregated `HttpObject` events.
+
+> **Boundaries.** The request-intent path covers the **forward-action** client pipeline (`HttpActionHandler` → `NettyHttpClient`), which is the path TLS-intercepted proxy traffic from coding CLIs takes. The transparent CONNECT-relay pipeline (`RelayConnectHandler`, `relayOnly`) and the **HTTP/2** upstream pipeline (which aggregates via `InboundHttp2ToHttpAdapter`) still rely on the response content type; a streaming response with no content type over those paths is aggregated. In practice coding-CLI proxy traffic is HTTP/1.1 over the forward path, so it is covered.
 
 ### StreamingResponseRelayHandler
 

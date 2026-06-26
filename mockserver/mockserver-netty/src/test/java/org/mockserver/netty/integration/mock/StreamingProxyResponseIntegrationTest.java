@@ -35,6 +35,7 @@ import java.util.function.BooleanSupplier;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.mockserver.model.HttpForward.forward;
 import static org.mockserver.model.HttpOverrideForwardedRequest.forwardOverriddenRequest;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
@@ -153,6 +154,8 @@ public class StreamingProxyResponseIntegrationTest {
                 sendAndCloseResponse(ctx);
             } else if ("/binary-stream".equals(path)) {
                 sendBinaryStreamResponse(ctx);
+            } else if ("/codex-stream".equals(path)) {
+                sendNoContentTypeSseResponse(ctx);
             } else {
                 DefaultFullHttpResponse resp = new DefaultFullHttpResponse(
                     HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND,
@@ -254,6 +257,32 @@ public class StreamingProxyResponseIntegrationTest {
                     .addListener(f -> ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT)
                         .addListener(ChannelFutureListener.CLOSE));
             }, 50, TimeUnit.MILLISECONDS);
+        }
+
+        /**
+         * Mimics the OpenAI Codex backend used by the opencode CLI: a Server-Sent Events
+         * stream served with NO Content-Type header at all. Sends the response head and an
+         * early event immediately, then DELAYS the final event + completion by 2s. A correct
+         * streaming relay forwards the head + early event to the client at once (so its headers
+         * arrive promptly); a buffering proxy withholds everything until the 2s completion,
+         * which is what made opencode time out waiting for response headers.
+         */
+        private void sendNoContentTypeSseResponse(ChannelHandlerContext ctx) {
+            DefaultHttpResponse head = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            // Deliberately NO Content-Type (this is the codex-backend behaviour).
+            head.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-cache");
+            HttpUtil.setTransferEncodingChunked(head, true);
+            ctx.writeAndFlush(head);
+            ctx.writeAndFlush(new DefaultHttpContent(
+                Unpooled.copiedBuffer("data: early\n\n", StandardCharsets.UTF_8)));
+            ctx.executor().schedule(() -> {
+                if (ctx.channel().isActive()) {
+                    ctx.writeAndFlush(new DefaultHttpContent(
+                        Unpooled.copiedBuffer("data: late\n\n", StandardCharsets.UTF_8)))
+                        .addListener(f -> ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT)
+                            .addListener(ChannelFutureListener.CLOSE));
+                }
+            }, 2000, TimeUnit.MILLISECONDS);
         }
 
         private void scheduleChunks(ChannelHandlerContext ctx, String[] chunks, int index, long delayMs, boolean closeAfterLast) {
@@ -594,5 +623,92 @@ public class StreamingProxyResponseIntegrationTest {
         // Binary chunked body should be logged as BINARY type (standard aggregation)
         assertThat("binary chunked body should be logged as BINARY",
             loggedResponse.getBody().getType(), is(Body.Type.BINARY));
+    }
+
+    /** A raw response read back with the time (ms) until the first response byte arrived. */
+    private static final class TimedResponse {
+        final long firstByteMs;
+        final String body;
+        TimedResponse(long firstByteMs, String body) {
+            this.firstByteMs = firstByteMs;
+            this.body = body;
+        }
+    }
+
+    private TimedResponse sendAndMeasure(String rawRequest, int soTimeoutMs) throws Exception {
+        try (Socket socket = new Socket("localhost", mockServerPort)) {
+            socket.setSoTimeout(soTimeoutMs);
+            OutputStream output = socket.getOutputStream();
+            long start = System.currentTimeMillis();
+            output.write(rawRequest.getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            java.io.InputStream in = socket.getInputStream();
+            int first = in.read(); // blocks until the first response byte is relayed back
+            long firstByteMs = System.currentTimeMillis() - start;
+            StringBuilder sb = new StringBuilder();
+            if (first != -1) {
+                sb.append((char) first);
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            }
+            return new TimedResponse(firstByteMs, sb.toString());
+        }
+    }
+
+    @Test
+    public void shouldStreamWhenClientRequestedStreamEvenWithoutSseContentType() throws Exception {
+        // Regression test for the opencode/Codex header-timeout bug. Exercises the FORWARD-action
+        // path (HttpActionHandler -> NettyHttpClient), which is the path real coding-CLI proxy
+        // traffic takes (it carries the x-mockserver-response-time-ms header). The upstream streams
+        // SSE with NO Content-Type and delays completion by 2s. The request body carries
+        // "stream": true, so MockServer must relay the response as a stream regardless of the
+        // missing content-type — the head + early event must reach the client promptly rather than
+        // after the 2s completion (which is what made opencode time out on response headers).
+        mockServerClient
+            .when(request().withPath("/codex-stream"))
+            .forward(forward().withHost("localhost").withPort(upstreamPort));
+
+        String body = "{\"stream\":true,\"model\":\"x\"}";
+        String req = "POST /codex-stream HTTP/1.1\r\n" +
+            "Host: localhost\r\n" +
+            "Content-Type: application/json\r\n" +
+            "Content-Length: " + body.getBytes(StandardCharsets.UTF_8).length + "\r\n" +
+            "Connection: close\r\n\r\n" + body;
+
+        TimedResponse r = sendAndMeasure(req, 10000);
+
+        assertThat("response should contain HTTP 200", r.body, containsString("200"));
+        assertThat("should receive the early event", r.body, containsString("data: early"));
+        assertThat("should receive the late event", r.body, containsString("data: late"));
+        // The key assertion: response headers arrive well before the upstream's 2s completion,
+        // proving the stream was relayed incrementally (not buffered) despite no content-type.
+        assertThat("response headers should arrive promptly (streaming), not after the 2s body delay",
+            r.firstByteMs, lessThan(1500L));
+    }
+
+    @Test
+    public void shouldAggregateNoContentTypeStreamWhenClientDidNotRequestStream() throws Exception {
+        // Same forward path and no-Content-Type upstream, but a plain GET with no streaming intent
+        // (no "stream": true, no Accept: text/event-stream). MockServer aggregates as before, so the
+        // first byte only arrives after the upstream completes (~2s). Proves the streaming relay is
+        // gated on the client's request intent, not merely on the endpoint — so ordinary
+        // (non-streaming) forward traffic is unaffected.
+        mockServerClient
+            .when(request().withPath("/codex-stream"))
+            .forward(forward().withHost("localhost").withPort(upstreamPort));
+
+        String req = "GET /codex-stream HTTP/1.1\r\n" +
+            "Host: localhost\r\n" +
+            "Connection: close\r\n\r\n";
+
+        TimedResponse r = sendAndMeasure(req, 10000);
+
+        assertThat("aggregated response should still contain both events",
+            r.body, allOf(containsString("data: early"), containsString("data: late")));
+        assertThat("without a streaming request the response is buffered until completion (~2s)",
+            r.firstByteMs, greaterThanOrEqualTo(1500L));
     }
 }

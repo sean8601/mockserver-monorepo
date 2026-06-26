@@ -212,6 +212,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forward/cost path): LLM traffic is recognised from its wire format, so a coding assistant that moves to a new
   endpoint or a private gateway, or a new tool, stays classified without a code change. Claude Code (`/v1/messages`)
   and Tabnine CLI (`…/chat/completions`) were already recognised.
+- **Streamed proxy responses without `Content-Type: text/event-stream` are no longer buffered, fixing a
+  header-timeout for opencode.** MockServer only relayed a forwarded response incrementally when it advertised
+  `text/event-stream`; opencode's OpenAI Codex backend streams Server-Sent Events with **no content-type at all**,
+  so MockServer aggregated the whole 10–30s response before sending any headers and opencode failed with
+  "Provider response headers timed out after 10000ms". The forward path now also relays as a stream when the
+  **client's request asked for one** — an `Accept: text/event-stream` header or a JSON body with `"stream": true`
+  — so the response head reaches the client immediately regardless of the upstream's content-type. Ordinary
+  (non-streaming) forward traffic is unaffected, and a `FORWARD_REPLACE` response override still fully aggregates.
+- **Long pauses in a streamed proxy response no longer hit the socket read timeout.** On switching a non-pooled
+  forward connection to streaming, the per-request socket read timeout (`maxSocketTimeout`, default 20s) is now
+  replaced by the stream-appropriate idle bound (`streamIdleTimeoutSeconds`, default 60s), so a streaming LLM
+  response that pauses longer than 20s between chunks (model reasoning) is not killed mid-stream.
 - **Forward DNS resolution moved off the calling thread.** Forward actions hand the connect path an unresolved
   address so DNS runs on the Netty event loop; SSRF validation still resolves and rejects private/loopback
   targets first, and a missing SSRF guard was added to the forward-validate path.
