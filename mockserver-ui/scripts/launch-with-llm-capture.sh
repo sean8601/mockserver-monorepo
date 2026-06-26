@@ -26,10 +26,6 @@
 #   exit the tool (or Ctrl+C) to tear everything down.
 #
 # Options:
-#   --direct         A/B CONTROL: run the TOOL with NO proxy and NO MockServer (talks
-#                    straight to its provider). Nothing is captured — use it to compare
-#                    against the proxied run and isolate whether a problem (e.g. a request
-#                    timeout) is the upstream provider or the MockServer proxy hop.
 #   --rebuild        Force rebuild of the MockServer JAR even if one exists
 #   --no-browser     Do not auto-open the dashboard
 #   --keep-log       Do NOT clear the recorded request log on start (default: clear,
@@ -38,10 +34,6 @@
 #   --ui-port PORT   UI dev server port (default: 3000)
 #   --ca PATH        Proxy CA cert the tool must trust (default: MockServer's repo test CA)
 #   --help           Show this help
-#
-# A/B example (isolate a timeout): run the same prompt both ways and compare —
-#   npm run capture -- opencode            # through MockServer (captured)
-#   npm run capture -- opencode --direct   # straight to the provider (control)
 #
 # Anything after a literal `--` is passed through to the launched tool.
 # Press Ctrl+C (or exit the tool) to stop the servers.
@@ -61,7 +53,6 @@ UI_PORT=3000
 REBUILD=false
 NO_BROWSER=false
 KEEP_LOG=false
-DIRECT=false
 CA_CERT="$REPO_ROOT/mockserver/mockserver-core/src/main/resources/org/mockserver/socket/CertificateAuthorityCertificate.pem"
 TOOL="none"
 TOOL_ARGS=()
@@ -72,11 +63,10 @@ while [[ $# -gt 0 ]]; do
     --rebuild) REBUILD=true; shift ;;
     --no-browser) NO_BROWSER=true; shift ;;
     --keep-log) KEEP_LOG=true; shift ;;
-    --direct) DIRECT=true; shift ;;
     --port) MOCKSERVER_PORT="$2"; shift 2 ;;
     --ui-port) UI_PORT="$2"; shift 2 ;;
     --ca) CA_CERT="$2"; shift 2 ;;
-    --help|-h) sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; TOOL_ARGS+=("$@"); break ;;
     claude|opencode|tabnine|none) TOOL="$1"; shift ;;
     *) echo "Unknown argument: $1 (use --help)"; exit 1 ;;
@@ -88,38 +78,6 @@ if [ "$TOOL" != "none" ] && ! command -v "$TOOL" >/dev/null 2>&1; then
   echo "       Install it, or run with no TOOL to just start the servers + print the env block."
   exit 1
 fi
-
-# --- DIRECT mode: run the tool with NO proxy and NO MockServer, for an A/B comparison
-#     against the proxied run (e.g. to isolate whether a timeout is the upstream provider
-#     or the proxy hop). Nothing is captured; this is purely the control sample. -----------
-if [ "$DIRECT" = true ]; then
-  if [ "$TOOL" = "none" ]; then
-    echo "ERROR: --direct needs a TOOL to run (e.g. 'opencode'); there are no servers to start in direct mode."
-    exit 1
-  fi
-  # Strip any proxy / custom-CA env the caller's shell may have set, so the tool talks
-  # straight to its real provider over its own default transport (e.g. HTTP/2).
-  unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE
-  # tabnine refuses to run in an untrusted dir; default it to --skip-trust (matches proxied mode).
-  if [ "$TOOL" = "tabnine" ] && [ "${#TOOL_ARGS[@]}" -eq 0 ]; then
-    TOOL_ARGS=(--skip-trust)
-  fi
-  echo "========================================"
-  echo "DIRECT mode — no proxy, no MockServer (A/B control)"
-  echo "========================================"
-  echo "  Running '$TOOL' straight to its provider — proxy env cleared, nothing captured."
-  echo "  Compare against the proxied run: npm run capture -- $TOOL"
-  echo "  Exit the tool (or Ctrl+C) when done."
-  echo ""
-  rc=0
-  if [ "${#TOOL_ARGS[@]}" -gt 0 ]; then
-    "$TOOL" "${TOOL_ARGS[@]}" || rc=$?
-  else
-    "$TOOL" || rc=$?
-  fi
-  exit "$rc"
-fi
-
 [ -f "$CA_CERT" ] || { echo "ERROR: CA cert not found: $CA_CERT (override with --ca)"; exit 1; }
 
 echo "========================================"

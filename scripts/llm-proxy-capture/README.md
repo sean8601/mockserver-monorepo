@@ -43,19 +43,6 @@ rebuilding the jar. Exit the tool (or Ctrl+C) to tear the servers down. It is th
 LLM-capture sibling of `npm run demo` (which loads synthetic data instead). See
 `mockserver-ui/scripts/launch-with-llm-capture.sh --help`.
 
-### A/B control: `--direct`
-
-To isolate whether a problem (e.g. a request timeout) is the upstream **provider** or the
-**MockServer proxy hop**, run the same prompt both ways and compare:
-
-```bash
-npm run capture -- opencode            # through MockServer (captured)
-npm run capture -- opencode --direct   # straight to the provider — no proxy, no MockServer
-```
-
-`--direct` clears any proxy/CA env and runs the tool against its real provider over its own
-default transport (e.g. HTTP/2). Nothing is captured — it is the control sample.
-
 ## What it checks, per tool
 
 | Step | Meaning |
